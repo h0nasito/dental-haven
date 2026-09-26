@@ -35,18 +35,28 @@
 </svg>
 {%- endmacro %}
 
+{% macro ba_slider(w) -%}
+<div class="ba" style="--pos:50%">
+  <img class="ba-after" src="{{ url_for('static', filename=w.image_path) }}" alt="{{ w.title }}: after" loading="lazy">
+  <div class="ba-before"><img src="{{ url_for('static', filename=w.before_image_path) }}" alt="{{ w.title }}: before" loading="lazy"></div>
+  <span class="ba-label l">Before</span><span class="ba-label r">After</span>
+  <span class="ba-handle" aria-hidden="true"></span>
+  <input class="ba-range" type="range" min="0" max="100" value="50" aria-label="Compare before and after: {{ w.title }}">
+</div>
+{%- endmacro %}
+
 {% block content %}
 {# ---------------------------------------------------------------- HERO #}
 <section class="lp-hero" id="top">
   <div class="lp-hero-bg" aria-hidden="true"></div>
   <div class="wrap lp-hero-grid">
     <div class="lp-hero-copy reveal">
-      <span class="lp-kicker">Dental Haven · Complete dental care</span>
+      <span class="lp-kicker">Aesthetic &amp; general dentistry</span>
       <h1>{{ hero.title or 'Happiest your teeth will ever be' }}</h1>
       <div class="lp-lead">{{ hero.body|richtext }}</div>
       <div class="lp-cta-row">
         <a class="lp-btn lp-btn-gold" href="{{ url_for('public.book') }}">Book your visit</a>
-        <a class="lp-btn lp-btn-glass" href="#work">See real smiles</a>
+        <a class="lp-btn lp-btn-glass" href="#specialty">See before &amp; after</a>
       </div>
       <ul class="lp-branch-chips" aria-label="Branches">
         {% for b in site_branches %}<li><a href="#branches">{{ b.name.split(' (')[0] }}</a></li>{% endfor %}
@@ -54,7 +64,9 @@
     </div>
     <div class="lp-hero-visual reveal" aria-hidden="{{ 'false' if works else 'true' }}">
       {% set shots = works[:3] %}
-      {% if shots|length >= 3 %}
+      {% if featured %}
+        <figure class="lp-hero-ba">{{ ba_slider(featured) }}<figcaption>{{ featured.title }}<span>Drag to compare</span></figcaption></figure>
+      {% elif shots|length >= 3 %}
         <div class="lp-stack">
           {% for w in shots %}<figure class="lp-shot s{{ loop.index }}"><img src="{{ url_for('static', filename=w.image_path) }}" alt="{{ w.title }}"></figure>{% endfor %}
         </div>
@@ -70,7 +82,7 @@
             <path d="M62 18c-26 0-44 20-44 48 0 30 16 46 22 76 5 28 10 60 28 60 16 0 16-30 22-50 4-14 6-20 10-20s6 6 10 20c6 20 6 50 22 50 18 0 23-32 28-60 6-30 22-46 22-76 0-28-18-48-44-48-16 0-24 10-38 10S78 18 62 18z" fill="url(#tg)"/>
             <g clip-path="url(#tc)"><rect width="200" height="220" fill="url(#mesh)"/><rect class="lp-scanline" x="0" y="0" width="200" height="6" fill="rgba(232,199,143,.9)"/></g>
           </svg>
-          <span class="lp-tag t1">Check-ups</span><span class="lp-tag t2">Smile makeovers</span><span class="lp-tag t3">Kids &amp; special care</span>
+          <span class="lp-tag t1">Smile makeovers</span><span class="lp-tag t2">Veneers</span><span class="lp-tag t3">Crowns &amp; implants</span>
         </div>
       {% endif %}
     </div>
@@ -85,14 +97,56 @@
   </div>
 </section>
 
+{# ---------------------------------------------------------------- SPECIALTY: aesthetic dentistry, shown with before & after #}
+<section class="lp-section lp-aesthetic" id="specialty">
+  <div class="wrap">
+    <div class="lp-aes-grid">
+      <div class="lp-aes-visual reveal">
+        {% if ba_cases %}{% set main = ba_cases[0] %}
+          <figure class="lp-aes-main">{{ ba_slider(main) }}<figcaption><strong>{{ main.title }}</strong>{% if main.caption %}<span>{{ main.caption }}</span>{% endif %}</figcaption></figure>
+        {% else %}
+          <div class="lp-aes-empty" role="img" aria-label="Before and after photos coming soon">
+            <div class="half before"><span class="ba-label l">Before</span></div>
+            <div class="half after"><span class="ba-label r">After</span></div>
+            <span class="ba-handle" aria-hidden="true" style="left:50%"></span>
+            <p>Before &amp; after photos of our aesthetic cases are coming soon</p>
+          </div>
+        {% endif %}
+      </div>
+      <div class="lp-aes-copy reveal">
+        <span class="lp-eyebrow">Our specialty</span>
+        <h2>Aesthetic <em>dentistry</em></h2>
+        <p>We care for the whole family's teeth, and creating beautiful, natural-looking smiles is our specialty. Each smile is planned by our dentists and crafted in our own digital lab.</p>
+        <ul class="lp-aes-list">
+          {% for label, slug in [('Smile makeovers', 'aesthetic-dentistry'), ('Composite veneers', 'aesthetic-dentistry'), ('Teeth whitening', 'aesthetic-dentistry'),
+                                 ('Crowns & bridges', 'aesthetic-dentistry'), ('Zirconia restorations', 'prosthodontics'), ('Dental implants', 'dental-implants')] %}
+          <li><a href="{{ url_for('public.service', slug=slug) }}">{{ label }}</a></li>
+          {% endfor %}
+        </ul>
+        <div class="lp-cta-row">
+          <a class="lp-btn lp-btn-gold" href="{{ url_for('public.book') }}">Book a smile consultation</a>
+          <a class="lp-btn lp-btn-outline" href="#work">See all our work</a>
+        </div>
+      </div>
+    </div>
+    {% if ba_cases|length > 1 %}
+    <div class="lp-aes-more">
+      {% for w in ba_cases[1:4] %}<figure class="lp-aes-thumb reveal">{{ ba_slider(w) }}<figcaption>{{ w.title }}</figcaption></figure>{% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</section>
+
 {# ---------------------------------------------------------------- PORTFOLIO #}
 <section class="lp-section lp-work" id="work">
   <div class="wrap">
     <header class="lp-head reveal">
       <span class="lp-eyebrow">Our work</span>
-      <h2>Real smiles. Real results.</h2>
+      <h2>Real smiles. <em>Real results.</em></h2>
       <p>Every smile here was crafted by our dentists for a Dental Haven patient: makeovers, restorations, implants and more.</p>
     </header>
+  </div>
+  <div class="wrap wrap-wide">
     {% if works %}
       {% if filters|length > 1 %}
       <div class="lp-filters reveal" role="group" aria-label="Filter our work">
@@ -100,17 +154,11 @@
         {% for k, label in filters %}<button type="button" data-filter="{{ k }}" aria-pressed="false">{{ label }}</button>{% endfor %}
       </div>
       {% endif %}
-      <div class="lp-gallery">
+      <div class="lp-gallery{% if works|length < 3 %} count-{{ works|length }}{% endif %}">
         {% for w in works %}
-        <figure class="lp-case reveal{% if loop.first %} is-feature{% endif %}{% if w.before_image_path %} has-ba{% endif %}" data-cat="{{ w.category or 'other' }}">
+        <figure class="lp-case reveal{% if loop.first and works|length >= 3 %} is-feature{% endif %}{% if w.before_image_path %} has-ba{% endif %}" data-cat="{{ w.category or 'other' }}">
           {% if w.before_image_path %}
-          <div class="ba" style="--pos:50%">
-            <img class="ba-after" src="{{ url_for('static', filename=w.image_path) }}" alt="{{ w.title }}: after" loading="lazy">
-            <div class="ba-before"><img src="{{ url_for('static', filename=w.before_image_path) }}" alt="{{ w.title }}: before" loading="lazy"></div>
-            <span class="ba-label l">Before</span><span class="ba-label r">After</span>
-            <span class="ba-handle" aria-hidden="true"></span>
-            <input class="ba-range" type="range" min="0" max="100" value="50" aria-label="Compare before and after: {{ w.title }}">
-          </div>
+          {{ ba_slider(w) }}
           {% else %}
           <button type="button" class="lp-case-open" data-full="{{ url_for('static', filename=w.image_path) }}" data-title="{{ w.title }}" data-caption="{{ w.caption }}">
             <img src="{{ url_for('static', filename=w.image_path) }}" alt="{{ w.title }}" loading="lazy">
@@ -142,45 +190,41 @@
   <div class="wrap">
     <header class="lp-head reveal">
       <span class="lp-eyebrow">Main services</span>
-      <h2>Everything your smile needs, under one roof</h2>
+      <h2>Everything your smile needs, <em>under one roof</em></h2>
       <p>From a routine cleaning to a complete smile makeover, every treatment is planned around you and your goals.</p>
     </header>
-    <div class="lp-svc-grid">
+    <ol class="lp-index">
       {% for s in site_services %}
-      <a class="lp-svc reveal" href="{{ url_for('public.service', slug=s.slug) }}">
-        <span class="lp-svc-icon">{{ icon(s.slug) }}</span>
-        <h3>{{ s.name }}</h3>
-        <ul>{% for it in s.summary|items %}<li>{{ it }}</li>{% endfor %}</ul>
-        <span class="lp-svc-more">Learn more <span aria-hidden="true">→</span></span>
-      </a>
+      <li class="reveal"><details>
+        <summary>
+          <span class="lp-index-n">{{ '%02d' % loop.index }}</span>
+          <span class="lp-index-name">{{ s.name }}</span>
+          <span class="lp-index-items">{{ (s.summary|items)|join(' · ') }}</span>
+          <span class="lp-index-arrow" aria-hidden="true">+</span>
+        </summary>
+        <div class="lp-index-body">
+          <div class="lp-index-text">{{ s.body|richtext }}</div>
+          <a class="lp-btn lp-btn-navy lp-btn-sm" href="{{ url_for('public.book', service=s.id) }}">Book {{ s.name }}</a>
+        </div>
+      </details></li>
       {% endfor %}
-      <a class="lp-svc lp-svc-cta reveal{% if site_services|length % 3 == 0 %} is-wide{% endif %}" href="{{ url_for('public.book') }}">
-        <h3>Not sure where to start?</h3>
-        <p>Book a consultation. We'll check your teeth and walk you through your options and costs before any treatment.</p>
-        <span class="lp-btn lp-btn-gold">Book a consultation</span>
-      </a>
+    </ol>
+    <div class="lp-cta-row reveal">
+      <a class="lp-btn lp-btn-navy" href="{{ url_for('public.book') }}">Book a consultation</a>
+      <span class="lp-index-note">Not sure where to start? We'll check your teeth and explain your options and costs before any treatment.</span>
     </div>
   </div>
 </section>
 
 {# ---------------------------------------------------------------- WHY DENTAL HAVEN (the clinic) #}
-<section class="lp-section lp-why" id="clinic">
+<section class="lp-why" id="clinic" aria-label="Why Dental Haven">
   <div class="wrap">
-    <header class="lp-head reveal">
-      <span class="lp-eyebrow">Why Dental Haven</span>
-      <h2>Dentistry that feels like a haven</h2>
-      <p>Comfortable care for every age, backed by modern technology.</p>
-    </header>
-    <div class="lp-why-grid">
-      <article class="lp-why-card reveal">{{ icon('general-dentistry') }}<h3>Everything in one place</h3>
-        <p>Cleanings, fillings, veneers, braces, implants and full-mouth rehabilitation, all at Dental Haven.</p></article>
-      <article class="lp-why-card reveal">{{ icon('pediatric-dentistry') }}<h3>Gentle with kids and special needs</h3>
-        <p>Child-friendly dentistry, crowns for kids, and conscious sedation for patients who need extra comfort.</p></article>
-      <article class="lp-why-card reveal">{{ icon('xray') }}<h3>See clearly, treat precisely</h3>
-        <p>In-house 3D CBCT, panoramic X-rays and intraoral scanners help our dentists plan your treatment accurately.</p></article>
-      <article class="lp-why-card reveal">{{ icon('fit') }}<h3>Your new smile, sooner</h3>
-        <p>Crowns, bridges and dentures are made in our own digital lab, for a precise fit and fewer days of waiting.</p></article>
-    </div>
+    <ul class="lp-why-strip">
+      <li class="reveal">{{ icon('general-dentistry') }}<div><strong>Everything in one place</strong><span>From cleanings to full-mouth rehabilitation</span></div></li>
+      <li class="reveal">{{ icon('pediatric-dentistry') }}<div><strong>Gentle with kids &amp; special needs</strong><span>Including conscious sedation</span></div></li>
+      <li class="reveal">{{ icon('xray') }}<div><strong>See clearly, treat precisely</strong><span>In-house 3D CBCT &amp; panoramic X-rays</span></div></li>
+      <li class="reveal">{{ icon('fit') }}<div><strong>Your new smile, sooner</strong><span>Made in our own digital lab</span></div></li>
+    </ul>
   </div>
 </section>
 
@@ -250,17 +294,22 @@
 </section>
 
 {# ---------------------------------------------------------------- FINAL CTA #}
-<section class="lp-final">
+<section class="lp-final" id="contact">
   <div class="wrap lp-final-inner reveal">
     <img src="{{ url_for('static', filename='img/logo-white.png') }}" alt="" width="72" height="48">
-    <h2>Your happiest smile starts here</h2>
+    <h2>Your happiest smile <em>starts here</em></h2>
     <p>Pick a branch and a time that suits you. Our team will call or message you to confirm your visit.</p>
     <div class="lp-cta-row center">
       <a class="lp-btn lp-btn-gold" href="{{ url_for('public.book') }}">Book your visit</a>
       <a class="lp-btn lp-btn-glass" href="{{ url_for('public.inquire') }}">Ask us anything</a>
     </div>
+    <ul class="lp-contact-list">
+      {% for b in site_branches %}<li><strong>{{ b.name.split(' (')[0] }}</strong>{% for disp, tel in (b.phone|phones)[:1] %}<a href="{{ tel }}">{{ disp }}</a>{% endfor %}{% if b.facebook_url %}<a href="{{ b.facebook_url }}" target="_blank" rel="noopener">Facebook</a>{% endif %}</li>{% endfor %}
+    </ul>
   </div>
 </section>
+
+<a class="lp-top" href="#top" aria-label="Back to top">↑</a>
 
 <dialog class="lp-lightbox" id="lightbox" aria-label="Photo">
   <form method="dialog"><button class="lp-lightbox-close" aria-label="Close">×</button></form>

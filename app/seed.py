@@ -60,14 +60,11 @@ BRANCH_DETAILS = {
     },
 }
 
-EXPECT = ("## What to expect\n- A conversation about your concerns and health history\n"
+EXPECT = ("## What to expect\n\n- A conversation about your concerns and health history\n"
           "- An examination, with images or scans when needed\n- Your options and costs explained before any treatment")
 
 # (slug, name, category, default minutes, one-line summary, page body). Wording from Dental Haven (Sep 26, 2026).
 SERVICES = [
-    ("general-dentistry", "General & Preventive", "General & Preventive", 30,
-     "Check-ups, cleanings, and tooth fillings.",
-     "Keep your smile healthy for life with regular check-ups and care.\n\n- Check-ups\n- Cleanings\n- Tooth fillings\n\n" + EXPECT),
     ("aesthetic-dentistry", "Cosmetic & Restorative", "Cosmetic & Restorative", 60,
      "Composite veneers, crowns, bridges, and teeth whitening.",
      "Repair, brighten and reshape your smile.\n\n- Composite veneers\n- Crowns\n- Bridges\n"
@@ -80,6 +77,9 @@ SERVICES = [
      "Dental implants and extractions.",
      "Replace a missing tooth with an implant designed to look natural, or have a tooth that can't be saved removed safely.\n\n"
      "- Dental implants\n- Extractions\n\nPlanning can use in-house diagnostic imaging, including CBCT and panoramic X-rays.\n\n" + EXPECT),
+    ("general-dentistry", "General & Preventive", "General & Preventive", 30,
+     "Check-ups, cleanings, and tooth fillings.",
+     "Keep your smile healthy for life with regular check-ups and care.\n\n- Check-ups\n- Cleanings\n- Tooth fillings\n\n" + EXPECT),
     ("orthodontics", "Orthodontics & TMJ", "Orthodontics & TMJ", 45,
      "Braces, clear aligners, and management of TMJ disorders.",
      "Straighter teeth, a better bite, and care for jaw joint (TMJ) problems.\n\n- Braces\n- Clear aligners\n"
@@ -94,8 +94,8 @@ OLD_PLACEHOLDER = "[Service description to be confirmed"
 
 CONTENT = {
     "home_hero": ("Happiest your teeth will ever be",
-                  "From your child's first check-up to a brand-new smile, get complete dental care for the whole family "
-                  "under one roof, at any of our four branches."),
+                  "Complete dental care for the whole family, with a specialty in aesthetic dentistry: smile makeovers, "
+                  "veneers, crowns and implants crafted for beautiful, natural-looking results."),
     "home_about": ("About Dental Haven",
                    "[About-us copy to be provided by Dental Haven.]\n\nDental Haven serves patients at four branches: "
                    "Malolos, Guiguinto, Bocaue and San Jose del Monte."),

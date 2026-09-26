@@ -96,15 +96,23 @@ def home():
     conn = get_db()
     testimonials = conn.all("SELECT t.*, b.name AS branch FROM testimonials t LEFT JOIN branches b ON b.id = t.branch_id "
                             "WHERE t.approved = 1 AND t.published = 1 ORDER BY t.id DESC LIMIT 6")
-    # Before/after cases lead (the first one is shown large); newest first otherwise.
+    # Featured case first, then before/after cases, then newest.
     works = conn.all("SELECT * FROM gallery_items WHERE published = 1 AND authorized = 1 AND image_path != '' "
-                     "ORDER BY sort_order, CASE WHEN before_image_path != '' THEN 0 ELSE 1 END, id DESC LIMIT 24")
+                     "ORDER BY featured DESC, sort_order, CASE WHEN before_image_path != '' THEN 0 ELSE 1 END, id DESC LIMIT 24")
+    # Spread cases across the page so each section shows different ones:
+    # hero = featured case; specialty = next before/after cases; gallery = the rest.
+    ba_all = [w for w in works if w["before_image_path"]]
+    featured = ba_all[0] if ba_all else None
+    ba_cases = ba_all[1:5] if len(ba_all) > 1 else ba_all[:1]
+    shown = {w["id"] for w in ba_all[:5]}
+    works = [w for w in works if w["id"] not in shown] or works
     if len(works) > 3:
         works = works[:len(works) // 3 * 3]  # whole rows only (the first tile is double size); the rest are in the gallery
     from .admin import PORTFOLIO_CATEGORIES
     used = {w["category"] for w in works}
     filters = [(k, label) for k, label in PORTFOLIO_CATEGORIES if k in used]
     return render_template("public/home.html", testimonials=testimonials, works=works, filters=filters,
+                           featured=featured, ba_cases=ba_cases,
                            category_labels=dict(PORTFOLIO_CATEGORIES))
 
 

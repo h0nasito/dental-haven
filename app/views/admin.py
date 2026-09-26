@@ -598,6 +598,13 @@ def gallery_save():
             else:
                 conn.execute("UPDATE gallery_items SET published = ? WHERE id = ?", (0 if item["published"] else 1, gid))
                 audit.record("gallery_published" if not item["published"] else "gallery_unpublished", "gallery_item", gid, item["title"])
+        elif action == "feature":
+            if not (item["published"] and item["before_image_path"]):
+                flash("Only a published case with a before photo can be featured on the home page.", "error")
+            else:
+                conn.execute("UPDATE gallery_items SET featured = CASE WHEN id = ? THEN 1 ELSE 0 END", (gid,))
+                audit.record("gallery_featured", "gallery_item", gid, item["title"])
+                flash("This case is now featured on the home page.", "success")
         elif action == "delete":
             conn.execute("DELETE FROM gallery_items WHERE id = ?", (gid,))
             audit.record("gallery_deleted", "gallery_item", gid, item["title"])

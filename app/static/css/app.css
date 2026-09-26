@@ -28,7 +28,7 @@
   --radius-sm: 8px;
   --shadow: 0 1px 2px rgba(10, 31, 68, .06), 0 4px 16px rgba(10, 31, 68, .05);
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --serif: "Bodoni Moda", "Didot", "Bodoni 72", Georgia, "Times New Roman", serif;
+  --serif: "Playfair Display", "Didot", "Bodoni 72", Georgia, "Times New Roman", serif;
   color-scheme: light;
 }
 
@@ -223,7 +223,7 @@ dl.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .nav-toggle { display: none; }
 .hero { background: radial-gradient(1200px 400px at 85% -10%, #d6e3f8 0, transparent 60%), linear-gradient(180deg, var(--brand-50), #fff); padding: 4.5rem 0 3.5rem; }
 .hero-grid { display: grid; grid-template-columns: 1.2fr .8fr; gap: 2.5rem; align-items: center; }
-.hero h1 { font-family: var(--serif); font-size: clamp(2rem, 4.5vw, 3.1rem); font-weight: 600; letter-spacing: -.01em; color: var(--brand-900); }
+.hero h1 { font-family: var(--serif); font-size: clamp(2rem, 4.5vw, 3.1rem); font-weight: 400; letter-spacing: -.01em; color: var(--brand-900); }
 .hero p.lead { font-size: 1.15rem; color: var(--ink-2); max-width: 36em; }
 .hero-card { background: #fff; border: 1px solid var(--line); border-radius: 20px; padding: 1.4rem; box-shadow: 0 10px 40px rgba(16, 41, 90, .10); }
 .hero-card h3 { margin-bottom: .75rem; }
@@ -234,7 +234,7 @@ dl.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .section.alt { background: #fff; border-top: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2); }
 .section.sand { background: var(--sand); }
 .section-head { max-width: 680px; margin-bottom: 2rem; }
-.section-head h2 { font-family: var(--serif); font-size: clamp(1.5rem, 3vw, 2.1rem); font-weight: 600; color: var(--brand-900); }
+.section-head h2 { font-family: var(--serif); font-size: clamp(1.5rem, 3vw, 2.1rem); font-weight: 400; color: var(--brand-900); }
 .eyebrow { text-transform: uppercase; letter-spacing: .12em; font-size: .75rem; font-weight: 800; color: var(--brand-700); margin-bottom: .6rem; display: block; }
 .svc-card { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 1.4rem; text-decoration: none; color: inherit; display: flex; flex-direction: column; gap: .4rem; transition: border-color .15s, transform .15s; height: 100%; }
 .svc-card:hover { border-color: var(--brand-600); transform: translateY(-2px); color: inherit; }
@@ -247,7 +247,7 @@ dl.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .quote { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 1.3rem; font-family: var(--serif); font-size: 1.05rem; }
 .quote footer { font-family: var(--font); font-size: .88rem; color: var(--ink-3); margin-top: .6rem; }
 .cta-band { background: var(--brand-800); color: #e6edf9; border-radius: 20px; padding: 2.2rem; display: flex; justify-content: space-between; align-items: center; gap: 1.5rem; flex-wrap: wrap; }
-.cta-band h2 { color: #fff; font-family: var(--serif); font-weight: 600; margin: 0 0 .3rem; }
+.cta-band h2 { color: #fff; font-family: var(--serif); font-weight: 400; margin: 0 0 .3rem; }
 .cta-band .btn { background: #fff; color: var(--brand-900); }
 .cta-band .btn-secondary { background: transparent; color: #fff; border-color: rgba(255, 255, 255, .5); }
 .site-footer { background: var(--brand-900); color: #bccbe8; padding: 2.5rem 0 1.5rem; margin-top: 0; font-size: .92rem; }
@@ -356,7 +356,7 @@ section[id] { scroll-margin-top: 72px; }
 
 /* Prescriptions & certificates */
 .letterhead { display: flex; gap: 1rem; align-items: center; border-bottom: 2px solid var(--brand-900); padding-bottom: .8rem; margin-bottom: 1rem; }
-.lh-name { font-family: var(--serif); font-size: 1.4rem; color: var(--brand-900); font-weight: 600; }
+.lh-name { font-family: var(--serif); font-size: 1.4rem; color: var(--brand-900); font-weight: 400; }
 .lh-sub { font-size: .85rem; color: var(--ink-2); }
 .rx-symbol { font-family: var(--serif); font-size: 3rem; color: var(--brand-900); line-height: 1; margin: 1rem 0 .4rem; }
 .rx-items li { margin-bottom: .9rem; font-size: 1.05rem; }
