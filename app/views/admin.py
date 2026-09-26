@@ -601,10 +601,61 @@ def content():
     gallery = conn.all("SELECT * FROM gallery_items ORDER BY id DESC")
     testimonials = conn.all("SELECT t.*, b.name AS branch FROM testimonials t LEFT JOIN branches b ON b.id = t.branch_id ORDER BY t.id DESC")
     photos = {r["key"]: r for r in conn.all("SELECT * FROM site_images")}
+    guides = conn.all("SELECT gd.*, s.name AS service FROM guides gd LEFT JOIN services s ON s.id = gd.service_id "
+                      "ORDER BY s.sort_order, gd.sort_order, gd.id")
+    from .. import stock_photos
     return render_template("staff/admin/content.html", branches=conn.all("SELECT id, name FROM branches ORDER BY sort_order"),
+                           guides=guides, stock=stock_photos.url,
                            photo_keys=SITE_IMAGE_KEYS, photos=photos, keys=CONTENT_KEYS, items=items, gallery=gallery,
                            testimonials=testimonials, categories=PORTFOLIO_CATEGORIES,
                            category_labels=dict(PORTFOLIO_CATEGORIES))
+
+
+@bp.route("/content/guides/new", methods=["GET", "POST"])
+@bp.route("/content/guides/<int:guide_id>", methods=["GET", "POST"])
+@require("content.manage")
+def guide_edit(guide_id=None):
+    """Patient guides: short articles shown on the website, linked to a service."""
+    conn = get_db()
+    gd = conn.one("SELECT * FROM guides WHERE id = ?", (guide_id,)) if guide_id else None
+    if guide_id and not gd:
+        abort(404)
+    services = conn.all("SELECT id, name FROM services WHERE active = 1 ORDER BY sort_order")
+    v = dict(gd) if gd else {"title": "", "slug": "", "service_id": None, "summary": "", "body": "", "image_path": "",
+                             "sort_order": 0, "published": 0}
+    errors = {}
+    if request.method == "POST":
+        v.update({"title": clean(request.form.get("title"), 160), "summary": clean(request.form.get("summary"), 400),
+                  "body": clean(request.form.get("body"), 30000), "service_id": to_int(request.form.get("service_id")) or None,
+                  "sort_order": to_int(request.form.get("sort_order"), 0), "published": 1 if request.form.get("published") else 0})
+        slug = re.sub(r"[^a-z0-9]+", "-", (clean(request.form.get("slug"), 120) or v["title"]).lower()).strip("-")
+        v["slug"] = slug
+        if len(v["title"]) < 3:
+            errors["title"] = "Give the guide a title."
+        if not slug:
+            errors["slug"] = "Enter a URL name (letters, numbers and dashes)."
+        elif conn.one("SELECT id FROM guides WHERE slug = ? AND id != ?", (slug, guide_id or 0)):
+            errors["slug"] = "Another guide already uses this URL name."
+        if len(v["body"]) < 20:
+            errors["body"] = "Write the guide text."
+        if v["service_id"] and not any(x["id"] == v["service_id"] for x in services):
+            v["service_id"] = None
+        img, img_err = _uploaded_image()
+        if img_err:
+            errors["image"] = img_err
+        if not errors:
+            v["image_path"] = img or ("" if request.form.get("remove_image") else v.get("image_path", ""))
+            vals = {k: v[k] for k in ("title", "slug", "service_id", "summary", "body", "image_path", "sort_order", "published")}
+            vals.update({"updated_at": now_str(), "updated_by": g.user.id})
+            if gd:
+                conn.update("guides", gd["id"], vals)
+                audit.record("guide_updated", "site_content", gd["id"], f"Updated patient guide: {v['title']}")
+            else:
+                gid = conn.insert("guides", {**vals, "created_at": now_str()})
+                audit.record("guide_created", "site_content", gid, f"Added patient guide: {v['title']}")
+            flash("Patient guide saved." + ("" if v["published"] else " It's hidden until you tick Published."), "success")
+            return redirect(url_for("admin.content") + "#guides")
+    return render_template("staff/admin/guide_form.html", gd=gd, v=v, errors=errors, services=services)
 
 
 @bp.route("/content/gallery", methods=["POST"])

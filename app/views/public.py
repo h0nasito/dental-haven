@@ -65,6 +65,7 @@ def _public_ctx():
         "content": content,
         "site_images": {r["key"]: r["image_path"] for r in conn.all("SELECT key, image_path FROM site_images")},
         "stock": stock_photos.url,
+        "hours_lines": lambda b: _hours_summary(conn, b),
         "stock_samples": stock_photos.samples,
     }
 
@@ -79,21 +80,37 @@ def summary_items(text: str) -> list[str]:
 
 @bp.app_template_filter("richtext")
 def richtext(text: str):
-    """Plain text → safe HTML paragraphs. '## ' lines become headings; '- ' lines become list items."""
+    """Plain text → safe HTML. Blank line = new paragraph; '## ' line = heading; '- ' lines = bulleted list
+    (a list can follow an intro line in the same paragraph)."""
     from markupsafe import Markup, escape
     if not text:
         return ""
     out = []
     for block in re.split(r"\n\s*\n", text.strip()):
-        lines = block.strip().split("\n")
-        if all(l.strip().startswith("- ") for l in lines):
-            out.append("<ul>" + "".join(f"<li>{escape(l.strip()[2:])}</li>" for l in lines) + "</ul>")
-        elif lines[0].startswith("## "):
-            out.append(f"<h2>{escape(lines[0][3:])}</h2>")
-            if len(lines) > 1:
-                out.append("<p>" + "<br>".join(str(escape(l)) for l in lines[1:]) + "</p>")
-        else:
-            out.append("<p>" + "<br>".join(str(escape(l)) for l in lines) + "</p>")
+        para, items = [], []
+
+        def flush_para():
+            if para:
+                out.append("<p>" + "<br>".join(str(escape(x)) for x in para) + "</p>")
+                para.clear()
+
+        def flush_list():
+            if items:
+                out.append("<ul>" + "".join(f"<li>{escape(x)}</li>" for x in items) + "</ul>")
+                items.clear()
+
+        for line in block.strip().split("\n"):
+            st = line.strip()
+            if st.startswith("## "):
+                flush_para(); flush_list()
+                out.append(f"<h2>{escape(st[3:])}</h2>")
+            elif st.startswith("- "):
+                flush_para()
+                items.append(st[2:])
+            else:
+                flush_list()
+                para.append(line)
+        flush_para(); flush_list()
     return Markup("\n".join(out))
 
 
@@ -117,7 +134,13 @@ def home():
     from .admin import PORTFOLIO_CATEGORIES
     used = {w["category"] for w in works}
     filters = [(k, label) for k, label in PORTFOLIO_CATEGORIES if k in used]
-    return render_template("public/home.html", testimonials=testimonials, works=works, filters=filters,
+    all_guides = conn.all(GUIDE_SELECT + " ORDER BY s.sort_order, gd.sort_order, gd.id")
+    firsts, seen = [], set()
+    for gd in all_guides:  # one guide per service first, so every service is represented
+        if gd["service_id"] not in seen:
+            seen.add(gd["service_id"]); firsts.append(gd)
+    guides = (firsts + [gd for gd in all_guides if gd not in firsts])[:6]
+    return render_template("public/home.html", guides=guides, testimonials=testimonials, works=works, filters=filters,
                            featured=featured, ba_cases=ba_cases,
                            **_booking_defaults(conn),
                            category_labels=dict(PORTFOLIO_CATEGORIES))
@@ -142,7 +165,29 @@ def service(slug):
     s = get_db().one("SELECT * FROM services WHERE slug = ? AND active = 1", (slug,))
     if not s:
         abort(404)
-    return render_template("public/service.html", s=s)
+    guides = get_db().all("SELECT * FROM guides WHERE service_id = ? AND published = 1 ORDER BY sort_order, id", (s["id"],))
+    return render_template("public/service.html", s=s, guides=guides)
+
+
+GUIDE_SELECT = ("SELECT gd.*, s.name AS service, s.slug AS service_slug, s.image_path AS service_image FROM guides gd "
+                "LEFT JOIN services s ON s.id = gd.service_id WHERE gd.published = 1")
+
+
+@bp.route("/guides")
+def guides():
+    rows = get_db().all(GUIDE_SELECT + " ORDER BY s.sort_order, gd.sort_order, gd.id")
+    return render_template("public/guides.html", guides=rows)
+
+
+@bp.route("/guides/<slug>")
+def guide(slug):
+    conn = get_db()
+    gd = conn.one(GUIDE_SELECT + " AND gd.slug = ?", (slug,))
+    if not gd:
+        abort(404)
+    related = conn.all(GUIDE_SELECT + " AND gd.id != ? ORDER BY CASE WHEN gd.service_id = ? THEN 0 ELSE 1 END, gd.sort_order LIMIT 3",
+                       (gd["id"], gd["service_id"] or 0))
+    return render_template("public/guide.html", gd=gd, related=related)
 
 
 @bp.route("/branches/<slug>")
@@ -451,7 +496,9 @@ def chat_info():
     } for b in conn.all("SELECT * FROM branches WHERE active = 1 ORDER BY sort_order")]
     services = [{"id": s["id"], "slug": s["slug"], "name": s["name"], "summary": s["summary"] or "", "url": url_for("public.service", slug=s["slug"])}
                 for s in conn.all("SELECT * FROM services WHERE active = 1 ORDER BY sort_order")]
-    resp = jsonify({"branches": branches, "services": services, "book": url_for("public.book"),
+    guides = [{"slug": g["slug"], "title": g["title"], "service": g["service_slug"] or "", "url": url_for("public.guide", slug=g["slug"])}
+              for g in conn.all(GUIDE_SELECT + " ORDER BY gd.sort_order, gd.id")]
+    resp = jsonify({"branches": branches, "services": services, "guides": guides, "book": url_for("public.book"),
                     "inquire": url_for("public.inquire"), "privacy": url_for("public.privacy")})
     resp.headers["Cache-Control"] = "public, max-age=300"
     return resp

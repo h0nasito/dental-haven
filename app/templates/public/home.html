@@ -247,6 +247,20 @@
 </section>
 
 {# ---------------------------------------------------------------- WHY DENTAL HAVEN (the clinic) #}
+{% if guides %}
+<section class="lp-section lp-guides" id="guides">
+  <div class="wrap">
+    <header class="lp-head reveal">
+      <span class="lp-eyebrow">Patient guides</span>
+      <h2>Know before <em>you go</em></h2>
+      <p>Short, easy-to-read guides to help you understand your treatment and feel at ease before your visit.</p>
+    </header>
+    <div class="guide-grid reveal">{% for gd in guides %}{% include "public/_guide_card.html" %}{% endfor %}</div>
+    <p class="lp-center reveal"><a class="lp-link" href="{{ url_for('public.guides') }}">See all patient guides →</a></p>
+  </div>
+</section>
+{% endif %}
+
 <section class="lp-why" id="clinic" aria-label="Why Dental Haven">
   <div class="wrap">
     <ul class="lp-why-strip">
@@ -297,6 +311,7 @@
         <h3>{{ b.name }}</h3>
         <p class="lp-branch-addr">{{ b.address }}</p>
         <p class="lp-branch-tel">{% for disp, tel in b.phone|phones %}<a href="{{ tel }}">{{ disp }}</a>{% endfor %}</p>
+        {% set hl = hours_lines(b) %}{% if hl %}<ul class="lp-branch-hours" aria-label="Clinic hours">{% for h in hl %}<li>{{ h }}</li>{% endfor %}</ul>{% endif %}
         {% include "public/_branch_links.html" %}
         <a class="lp-btn lp-btn-navy lp-btn-sm" href="{{ url_for('public.book', branch=b.id) }}">Book at {{ b.name.split(' (')[0] }}</a>
       </article>
@@ -340,6 +355,10 @@
     <img src="{{ url_for('static', filename='img/logo-white.png') }}" alt="" width="72" height="48">
     <h2>Your happiest smile <em>starts here</em></h2>
     <p>Pick a branch and a time that suits you. Our team will call or message you to confirm your visit.</p>
+    {% set first = hours_lines(site_branches[0]) if site_branches else [] %}
+    {% if first and site_branches|selectattr('hours_text', 'equalto', site_branches[0].hours_text)|list|length == site_branches|length %}
+    <p class="lp-hours-all"><span aria-hidden="true">🕘</span> All branches: {{ first|join(' · ') }}</p>
+    {% endif %}
     <div class="lp-cta-row center">
       <a class="lp-btn lp-btn-gold" href="{{ url_for('public.book') }}">Book your visit</a>
       <a class="lp-btn lp-btn-glass" href="{{ url_for('public.inquire') }}">Ask us anything</a>

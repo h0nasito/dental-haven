@@ -32,8 +32,12 @@ BRANCHES = [
 # Dental chairs per branch (one dentist per chair, so this many patients can be seen at once).
 BRANCH_CHAIRS = {"malolos": 5, "guiguinto": 3, "bocaue": 2, "sjdm": 2}
 
+# Confirmed by the clinic (Sept 2026): all branches Monday–Saturday 9:00 AM–6:00 PM, closed Sundays.
+CONFIRMED_HOURS = "Monday – Saturday: 9:00 AM – 6:00 PM\nSunday: Closed"
+
 BRANCH_DETAILS = {
     "malolos": {
+        "hours_text": CONFIRMED_HOURS,
         "address": "76 Paseo del Congreso, Malolos City, Bulacan (former Matt Balloons)",
         "phone": "+63 927 277 7833 / +63 942 381 1106",
         "facebook_url": "https://www.facebook.com/dentalhavenmalolos",
@@ -41,6 +45,7 @@ BRANCH_DETAILS = {
         "map_url": "https://www.google.com/maps/search/?api=1&query=Dental+Haven+76+Paseo+del+Congreso+Malolos+Bulacan",
     },
     "guiguinto": {
+        "hours_text": CONFIRMED_HOURS,
         "address": "0113 CMISS Bldg., Cagayan Valley Road, Sta. Rita, Guiguinto, Bulacan (below Guiguinto Water District)",
         "phone": "+63 981 463 3664 / +63 906 835 5868",
         "facebook_url": "https://www.facebook.com/dentalhavenguiguinto",
@@ -48,6 +53,7 @@ BRANCH_DETAILS = {
         "map_url": "https://www.google.com/maps/search/?api=1&query=Dental+Haven+Cagayan+Valley+Road+Sta+Rita+Guiguinto+Bulacan",
     },
     "bocaue": {
+        "hours_text": CONFIRMED_HOURS,
         "address": "758 McArthur Highway, Bunlo, Bocaue, Bulacan (in front of JIL Christian School)",
         "phone": "+63 966 558 5997 / +63 969 637 8075",
         "facebook_url": "https://www.facebook.com/dentalhavenbocaue",
@@ -55,6 +61,7 @@ BRANCH_DETAILS = {
         "map_url": "https://www.google.com/maps/search/?api=1&query=Dental+Haven+758+McArthur+Highway+Bunlo+Bocaue+Bulacan",
     },
     "sjdm": {
+        "hours_text": CONFIRMED_HOURS,
         "address": "368 Carriedo, Muzon Proper, San Jose del Monte, Bulacan (near Ace Hospital and McDonald's Muzon)",
         "phone": "+63 955 653 9702 / +63 962 213 1315",
         "facebook_url": "https://www.facebook.com/dentalhavensjdm",
@@ -193,8 +200,9 @@ def seed_base(conn):
             bid = conn.insert("branches", {
                 "slug": slug, "name": name, "address": f"[{name} address to be confirmed]",
                 "phone": "[Contact number to be confirmed]", "email": "", "map_url": "",
+                "hours_text": "[Clinic hours to be confirmed]",
                 **BRANCH_DETAILS.get(slug, {}),
-                "hours_text": "[Clinic hours to be confirmed]", "intro": f"Welcome to Dental Haven {name}. [Branch description to be confirmed.]",
+                "intro": f"Welcome to Dental Haven {name}. [Branch description to be confirmed.]",
                 "active": 1, "sort_order": i, "created_at": now_str()})
             for wd in range(7):
                 conn.execute("INSERT INTO branch_hours (branch_id, weekday, open_time, close_time, closed) VALUES (?, ?, '09:00', '18:00', ?)",
@@ -223,6 +231,13 @@ def seed_base(conn):
                                            "template_id": t1, "channel": "sms", "active": 1})
             conn.insert("reminder_rules", {"name": "Same day (3 hours before)", "purpose": "appointment", "offset_minutes": -3 * 60,
                                            "template_id": t2, "channel": "sms", "active": 0})
+        from .guides_content import GUIDES
+        for i, gd in enumerate(GUIDES):
+            if not conn.one("SELECT id FROM guides WHERE slug = ?", (gd["slug"],)):  # added once; staff edits are kept
+                svc = conn.one("SELECT id FROM services WHERE slug = ?", (gd["service"],))
+                conn.insert("guides", {"slug": gd["slug"], "service_id": svc["id"] if svc else None, "title": gd["title"],
+                                       "summary": gd["summary"], "body": gd["body"], "sort_order": i, "published": 1,
+                                       "created_at": now_str(), "updated_at": now_str()})
         if not conn.scalar("SELECT COUNT(*) FROM laboratories"):
             conn.insert("laboratories", {"name": "DSDL", "address": "Liang, Malolos, Bulacan", "phone": "", "active": 1})
         if not conn.scalar("SELECT COUNT(*) FROM role_permissions"):

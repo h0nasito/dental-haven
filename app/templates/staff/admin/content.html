@@ -19,7 +19,7 @@
 <p class="muted">Big photos make the website feel like a portfolio. Service photos are added on each service (Administration → Services), and branch photos on each branch (Branches &amp; chairs).</p>
 {% for key, label, hint in photo_keys %}{% set ph = photos.get(key) %}
 <div class="row mt-1" style="align-items:flex-start;gap:1rem;flex-wrap:wrap">
-  {% if ph %}<img src="{{ url_for('static', filename=ph.image_path) }}" alt="" style="width:200px;border-radius:10px">{% else %}<div style="position:relative;width:200px"><img src="{{ url_for('static', filename='img/template/' ~ key ~ '.svg') }}" alt="" style="width:200px;border-radius:10px;opacity:.8"><span class="badge badge-amber" style="position:absolute;left:8px;top:8px">Template image</span></div>{% endif %}
+  {% if ph %}<img src="{{ url_for('static', filename=ph.image_path) }}" alt="" style="width:200px;border-radius:10px">{% else %}{% set sample = stock(key, 400) %}<div style="position:relative;width:200px">{% if sample %}<img src="{{ sample }}" alt="" style="width:200px;aspect-ratio:4/3;object-fit:cover;border-radius:10px;opacity:.85">{% elif key in ('hero', 'lab') %}<img src="{{ url_for('static', filename='img/template/' ~ key ~ '.svg') }}" alt="" style="width:200px;border-radius:10px;opacity:.8">{% else %}<div style="width:200px;aspect-ratio:4/3;border-radius:10px;background:#e9e4d6"></div>{% endif %}<span class="badge badge-amber" style="position:absolute;left:8px;top:8px">{{ 'Sample photo' if sample else 'Template image' }}</span></div>{% endif %}
   <div style="flex:1;min-width:240px"><strong>{{ label }}</strong><p class="hint mb-0">{{ hint }}</p>
     <form method="post" action="{{ url_for('admin.site_image_save') }}" enctype="multipart/form-data" class="row mt-1">{{ csrf() }}<input type="hidden" name="key" value="{{ key }}">
       <input type="file" name="image" accept="image/png,image/jpeg,image/webp" required aria-label="{{ label }}"><button class="btn btn-secondary btn-sm">{{ 'Replace' if ph else 'Upload' }}</button></form>
@@ -27,6 +27,15 @@
   </div>
 </div>{% endfor %}
 </div>
+
+<div class="card" id="guides"><div class="card-head"><h2>Patient guides</h2><a class="btn btn-secondary btn-sm" href="{{ url_for('admin.guide_edit') }}">+ New guide</a></div>
+<p class="muted">Short articles that help patients understand a treatment before their visit. They appear on the home page, on each service page, and at /guides. Untick "Published" to hide one.</p>
+<table class="table"><thead><tr><th>Guide</th><th>Service</th><th>Status</th><th></th></tr></thead><tbody>
+{% for gd in guides %}<tr><td><strong>{{ gd.title }}</strong><br><small class="muted">{{ gd.summary|truncate(90) }}</small></td><td>{{ gd.service or '—' }}</td>
+<td>{% if gd.published %}<span class="badge badge-green">Published</span>{% else %}<span class="badge">Hidden</span>{% endif %}</td>
+<td><a class="btn btn-ghost btn-sm" href="{{ url_for('admin.guide_edit', guide_id=gd.id) }}">Edit</a></td></tr>
+{% else %}<tr><td colspan="4" class="muted">No guides yet.</td></tr>{% endfor %}
+</tbody></table></div>
 
 <div class="card" id="gallery"><h2>Gallery</h2>
 <p class="muted">Only upload images Dental Haven owns or has written permission to use. Patient photos need the patient's written consent. New items start unpublished.</p>

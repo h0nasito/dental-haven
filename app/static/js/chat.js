@@ -33,7 +33,10 @@
       done_more: "While you wait, you can also pick a time yourself:",
       unsure_nudge: "",
       c_consult: "Book a consultation", c_send: "Send my question", c_call: "Call a branch", c_never: "Never mind",
-      book1: "Great choice! 😊 Requesting an appointment online takes about a minute: pick a branch, a service and a time. Our team will call or message you to confirm.",
+      book1: "Great choice! 😊 Taking you to our booking page now. Just pick a date and time, and our team will call or message you to confirm.",
+      go_now: "If the page doesn't open, tap here:",
+      all_branches: "🕘 All our branches:", hours_book: "Book ahead so we can reserve your time with the dentist.",
+      read: "📖 Read: ", guide_intro: "We have a short guide on that:", guide_end: "Have more questions? Your dentist will explain everything at your consultation.",
       book_cta: "Book your visit →", consult_cta: "Book a consultation →", learn: "Learn more about ",
       svc_menu: "Here's what we offer. Tap one to learn more:", svc_yes: "Yes, we can help with that.",
       br_menu: function (n) { return "We have " + n + " branches. Which one would you like?"; },
@@ -79,7 +82,10 @@
       done_more: "Habang naghihintay, puwede na rin kayong pumili ng oras:",
       unsure_nudge: "",
       c_consult: "Mag-book ng konsulta", c_send: "Ipadala ang tanong ko", c_call: "Tawagan ang branch", c_never: "Huwag na lang",
-      book1: "Magandang desisyon po! 😊 Puwede kayong mag-request ng appointment online sa loob ng isang minuto: pumili ng branch, serbisyo at oras. Tatawagan o ite-text kayo ng aming team para kumpirmahin.",
+      book1: "Magandang desisyon po! 😊 Dadalhin ko na po kayo sa booking page. Pumili lang ng petsa at oras, at tatawagan o ite-text kayo ng aming team para kumpirmahin.",
+      go_now: "Kung hindi bumukas ang page, i-tap dito:",
+      all_branches: "🕘 Lahat po ng aming branch:", hours_book: "Mag-book po nang maaga para ma-reserve ang oras ninyo sa dentista.",
+      read: "📖 Basahin: ", guide_intro: "May maikling guide po kami tungkol diyan (nasa English):", guide_end: "May iba pa po kayong tanong? Ipapaliwanag ng dentista ang lahat sa inyong konsulta.",
       book_cta: "Mag-book na →", consult_cta: "Mag-book ng konsulta →", learn: "Alamin pa ang tungkol sa ",
       svc_menu: "Ito po ang aming mga serbisyo. Pumili para sa detalye:", svc_yes: "Opo, matutulungan namin kayo diyan.",
       br_menu: function (n) { return "Mayroon po kaming " + n + " branches. Alin po ang gusto ninyo?"; },
@@ -149,11 +155,8 @@
   function norm(t) { return (" " + (t || "").toLowerCase().replace(/[^a-z0-9ñ\s-]/g, " ").replace(/\s+/g, " ") + " "); }
   function has(t, words) { return words.some(function (w) { return t.indexOf(w) !== -1; }); }
 
-  var DAYS_TL = { Mon: "Lun", Tue: "Mar", Wed: "Miy", Thu: "Huw", Fri: "Biy", Sat: "Sab", Sun: "Lin" };
-  function hoursText(h) {
-    if (lang !== "tl") return h;
-    return h.replace(/\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b/g, function (d) { return DAYS_TL[d]; }).replace("Closed", "Sarado");
-  }
+  function hoursText(h) { return h; }  // day and hour labels stay in English in both languages
+
   var langBtns = root.querySelectorAll(".dh-lang button");
   function setLang(l, announce) {
     lang = l;
@@ -182,8 +185,10 @@
   function book() {
     var a = link(bookUrl(), t("book_cta")); a.className = "dh-cta";
     var what = [ctxService && ctxService.name, ctxBranch && ctxBranch.name].filter(Boolean).join(t("at"));
-    say([t("book1"), what ? t("prefilled")(what) : null, a]);
-    after([[t("c_team"), handoff], [t("c_branches"), branchesMenu]]);
+    say([t("book1"), what ? t("prefilled")(what) : null, t("go_now"), a]);
+    setChips([]);
+    var dest = bookUrl();
+    setTimeout(function () { window.location.href = dest; }, 1800);
   }
   function servicesMenu() {
     say(t("svc_menu"));
@@ -196,14 +201,16 @@
     var special = ["aesthetic-dentistry", "prosthodontics", "dental-implants"].indexOf(s.slug) !== -1;
     var more = link(s.url, t("learn") + s.name + " →");
     var bk = link(bookUrl(), t("consult_cta")); bk.className = "dh-cta";
+    var reads = (info.guides || []).filter(function (g) { return g.service === s.slug; }).map(function (g) {
+      var p = el("p"); p.appendChild(link(g.url, t("read") + g.title)); return p;
+    });
     say([lead || null, el("p", "dh-strong", s.name), special ? el("p", "dh-special", t("svc_special")) : null, s.summary || null,
-         t("svc_note") || null, t("svc_pitch"), more, bk]);
+         t("svc_note") || null, t("svc_pitch")].concat(reads).concat([more, bk]));
     after([[t("c_book_this"), book], [t("c_prices"), price], [t("c_team"), handoff]]);
   }
   function branchCard(b) {
     var parts = [el("p", "dh-strong", "Dental Haven " + b.name)];
     if (b.address) parts.push(b.address);
-    if (b.hours.length) parts.push(list(b.hours.map(hoursText)));
     var row = el("p", "dh-links");
     b.phones.forEach(function (p, i) { row.appendChild(link(b.tel[i], "📞 " + p)); });
     if (b.map) row.appendChild(link(b.map, t("map"), true));
@@ -225,8 +232,9 @@
     setChips([[t("c_consult"), book], [t("c_team"), handoff], [t("c_services"), servicesMenu]]);
   }
   function allHours() {
-    info.branches.forEach(function (b) { say([el("p", "dh-strong", b.name)].concat(b.hours.length ? [list(b.hours.map(hoursText))] : [t("no_hours")])); });
-    after([[t("c_book"), book]]);
+    var h = info.branches.length ? info.branches[0].hours.map(hoursText).join(" · ") : "";
+    say(h ? [t("all_branches") + " " + h + ".", t("hours_book")] : t("no_hours"));
+    after([[t("c_book"), book], [t("c_branches"), branchesMenu]]);
   }
   function contacts() {
     var items = info.branches.map(function (b) {
@@ -240,6 +248,15 @@
   function price() {
     say([t("price1"), t("price3"), t("price2")]);
     setChips([[t("c_consult"), book], [t("c_team"), handoff], [t("c_why"), why]]);
+  }
+  function guide(slug) {
+    var g = (info.guides || []).filter(function (x) { return x.slug === slug; })[0];
+    if (!g) return fallback();
+    if (g.service) ctxService = info.services.filter(function (x) { return x.slug === g.service; })[0] || ctxService;
+    var a = link(g.url, t("read") + g.title); a.className = "dh-strong";
+    var bk = link(bookUrl(), t("consult_cta")); bk.className = "dh-cta";
+    say([t("guide_intro"), a, t("guide_end"), bk]);
+    after([[t("c_consult"), book], [t("c_team"), handoff]]);
   }
   function pain() {
     say([t("pain1"), el("p", "dh-warn", t("pain2"))]);
@@ -323,6 +340,17 @@
     if (has(q, ["magkano", "presyo", "price", "cost", "how much", "rate", "fee", "bayad", "budget", "promo", "discount"])) return price();
     if (has(q, [" hmo", "insurance", "maxicare", "intellicare", "gcash", "maya", "credit card", "card ", "installment", "hulugan", "hulog", "payment", "cash"])) return payment();
     if (has(q, ["human", "staff", "person", "agent", "receptionist", "talk to", "kausap", "message the", "reply", "contact me", "call me", "tawagan"])) return handoff();
+    var GUIDE_WORDS = [
+      ["veneers-vs-crowns", function () { return has(q, ["veneer"]) && has(q, ["crown", "jacket"]) || has(q, ["difference", "pagkakaiba", " vs "]) && has(q, ["veneer", "crown"]); }],
+      ["silver-diamine-fluoride", function () { return has(q, [" sdf", "silver diamine", "diamine", "silver fluoride"]); }],
+      ["childs-first-dental-visit", function () { return has(q, ["first visit", "first dental", "first check", "unang", "first time"]) && has(q, ["kid", "child", "bata", "anak", "baby", "son", "daughter", "toddler", "visit"]); }],
+      ["preventive-dentistry-for-kids", function () { return has(q, ["sealant", "fluoride", "prevent", "iwas"]); }],
+      ["white-spots-and-fluorosis", function () { return has(q, ["white spot", "fluorosis", "chalky", "mantsa", "puting", "spots on"]); }],
+      ["about-dental-fillings", function () { return has(q, ["what is a filling", "about filling", "does filling hurt", "masakit ba ang pasta"]); }],
+      ["caring-for-dentures", function () { return has(q, ["denture care", "clean my denture", "linisin ang pustiso", "new denture"]); }],
+      ["braces-or-clear-aligners", function () { return has(q, ["brace", "aligner"]) && has(q, [" or ", " vs ", "difference", "better", "alin"]); }]
+    ];
+    for (var gi = 0; gi < GUIDE_WORDS.length; gi++) { if (GUIDE_WORDS[gi][1]()) return guide(GUIDE_WORDS[gi][0]); }
     for (var i = 0; i < info.branches.length; i++) {
       var b = info.branches[i];
       if (q.indexOf(" " + b.name.toLowerCase().split(" ")[0]) !== -1 || (b.slug === "sjdm" && has(q, ["san jose", "sjdm"]))) return branch(b);

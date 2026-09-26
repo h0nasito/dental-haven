@@ -27,7 +27,7 @@ class TestChat(Base):
         malolos = d["branches"][0]
         self.assertIn("+63 927 277 7833", malolos["phones"])
         self.assertTrue(malolos["hours"])
-        self.assertTrue(any("Sun: Closed" in h for h in malolos["hours"]))
+        self.assertTrue(malolos["hours"] == ["Monday – Saturday: 9:00 AM – 6:00 PM", "Sunday: Closed"])
         self.assertEqual(len(d["services"]), 6)
         self.assertNotIn("price", str(d).lower())  # the chat never quotes prices
         self.assertNotIn("patient", c.get("/chat/info.json").data.decode().lower())

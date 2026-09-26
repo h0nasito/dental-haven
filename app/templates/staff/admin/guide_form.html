@@ -1,0 +1,24 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, field, textarea %}
+{% block page_title %}Patient guide{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('admin.content') }}#guides">← Website content</a><h1>{{ gd.title if gd else 'New patient guide' }}</h1></div>
+{% if gd and gd.published %}<a class="btn btn-secondary" href="{{ url_for('public.guide', slug=gd.slug) }}" target="_blank" rel="noopener">View on site ↗</a>{% endif %}</div>
+<div class="card" style="max-width:860px"><form method="post" enctype="multipart/form-data">{{ csrf() }}
+<div class="form-grid">
+{{ field('title', 'Title', v.title, errors=errors, required=True) }}
+{{ field('slug', 'URL name', v.slug, errors=errors, hint='Used in /guides/<url-name>. Leave empty to make one from the title.') }}
+<div class="field"><label for="service_id">Service</label><select id="service_id" name="service_id"><option value="">None</option>{% for x in services %}<option value="{{ x.id }}" {% if v.service_id == x.id %}selected{% endif %}>{{ x.name }}</option>{% endfor %}</select><span class="hint">The guide appears on this service's page, and its photo is used if the guide has none.</span></div>
+{{ field('sort_order', 'Display order', v.sort_order, type='number') }}
+</div>
+{{ textarea('summary', 'Short summary (shown on the guide card)', v.summary, rows=2) }}
+{{ textarea('body', 'Guide text', v.body, errors=errors, rows=18, hint='Plain text. A blank line starts a new paragraph. "## " at the start of a line makes a heading, and lines starting with "- " become a bulleted list. Keep it general: no prices, guarantees or patient stories without consent.') }}
+<fieldset><legend>Photo</legend>
+{% if v.image_path %}<img src="{{ url_for('static', filename=v.image_path) }}" alt="" style="width:220px;border-radius:10px;margin-bottom:.5rem">
+<label class="check"><input type="checkbox" name="remove_image" value="1"> Remove this photo</label>{% else %}<p class="hint">No photo yet: the guide uses its service's photo.</p>{% endif %}
+<div class="field {% if errors.image %}error{% endif %}"><label for="image">{{ 'Replace photo' if v.image_path else 'Upload a photo' }} (JPG, PNG or WebP)</label><input id="image" type="file" name="image" accept="image/png,image/jpeg,image/webp">{% if errors.image %}<div class="field-error">{{ errors.image }}</div>{% endif %}</div>
+</fieldset>
+<label class="check"><input type="checkbox" name="published" value="1" {% if v.published %}checked{% endif %}> Published (shown on the website)</label>
+<div class="form-actions mt-1"><button class="btn" type="submit">Save guide</button></div>
+</form></div>
+{% endblock %}

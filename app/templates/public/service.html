@@ -12,4 +12,10 @@
     <a class="btn" style="width:100%" href="{{ url_for('public.book', service=s.id) }}">Request an appointment</a>
     <a class="btn btn-secondary mt-1" style="width:100%" href="{{ url_for('public.inquire', service=s.id) }}">Ask a question first</a></aside>
 </div></section>
+{% if guides %}
+<section class="section guide-list" style="padding-top:0"><div class="wrap">
+  <h2 class="guide-section-title">Patient guides</h2>
+  <div class="guide-grid">{% for gd in guides %}{% include "public/_guide_card.html" %}{% endfor %}</div>
+</div></section>
+{% endif %}
 {% endblock %}

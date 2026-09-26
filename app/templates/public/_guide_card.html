@@ -1,0 +1,11 @@
+{# One patient-guide card. Needs `gd` (guide row with service_slug/service_image). #}
+{% set img = gd.image_path or gd.service_image %}
+{% set src = url_for('static', filename=img) if img else stock('service:' ~ (gd.service_slug or ''), 700) %}
+<a class="guide-card" href="{{ url_for('public.guide', slug=gd.slug) }}">
+  <div class="guide-card-media">{% if src %}<img src="{{ src }}" alt="" loading="lazy">{% endif %}{% if gd.service %}<span>{{ gd.service }}</span>{% endif %}</div>
+  <div class="guide-card-body">
+    <h3>{{ gd.title }}</h3>
+    <p>{{ gd.summary }}</p>
+    <span class="guide-card-more">Read the guide →</span>
+  </div>
+</a>

@@ -360,3 +360,7 @@ html { scroll-behavior: smooth; }
 .lp-tech-photos figure:hover img { transform: scale(1.04); }
 .lp-tech-photos figcaption { position: absolute; left: 0; right: 0; bottom: 0; padding: 2.2rem 1rem .9rem; background: linear-gradient(transparent, rgba(11, 27, 49, .88)); color: #fff; font-weight: 600; font-size: .95rem; }
 @media (max-width: 720px) { .lp-tech-photos { grid-template-columns: 1fr; } .lp-tech-photos figure { aspect-ratio: 16 / 10; } }
+.lp-branch-hours { list-style: none; margin: 0 0 1rem; padding: .55rem .8rem .55rem 2.1rem; position: relative; border-radius: 12px; background: #f6f2e7; color: var(--navy); font-size: .9rem; line-height: 1.5; }
+.lp-branch-hours::before { content: ""; position: absolute; left: .75rem; top: .8rem; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--gold-2); }
+.lp-branch-hours::after { content: ""; position: absolute; left: calc(.75rem + 7px); top: calc(.8rem + 4px); width: 4px; height: 5px; border-left: 2px solid var(--gold-2); border-bottom: 2px solid var(--gold-2); }
+.lp-hours-all { display: inline-block; margin: .4rem auto 0; padding: .5rem 1.1rem; border-radius: 999px; background: rgba(255, 255, 255, .08); border: 1px solid rgba(198, 161, 91, .35); color: #fff; font-weight: 600; }
