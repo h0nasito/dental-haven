@@ -411,6 +411,92 @@ def inquire():
                            started=int(time.time()))
 
 
+# ---------------------------------------------------------------------------
+# Website chat assistant (built-in: no outside service; answers from the site's own content)
+# ---------------------------------------------------------------------------
+
+_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+
+def _t12(hm: str) -> str:
+    h, m = int(hm[:2]), hm[3:5]
+    return f"{(h - 1) % 12 + 1}{':' + m if m != '00' else ''} {'AM' if h < 12 else 'PM'}"
+
+
+def _hours_summary(conn, branch) -> list[str]:
+    text = (branch["hours_text"] or "").strip()
+    if text and not text.startswith("["):
+        return [line.strip() for line in text.splitlines() if line.strip()]
+    rows = {r["weekday"]: r for r in conn.all("SELECT * FROM branch_hours WHERE branch_id = ?", (branch["id"],))}
+    groups = []  # [start_day, end_day, label]
+    for wd in range(7):
+        r = rows.get(wd)
+        label = "Closed" if not r or r["closed"] else f"{_t12(r['open_time'])} – {_t12(r['close_time'])}"
+        if groups and groups[-1][2] == label and groups[-1][1] == wd - 1:
+            groups[-1][1] = wd
+        else:
+            groups.append([wd, wd, label])
+    return [(_DAYS[a] if a == b else f"{_DAYS[a]}–{_DAYS[b]}") + f": {label}" for a, b, label in groups]
+
+
+@bp.route("/chat/info.json")
+def chat_info():
+    """Everything the chat assistant may say, taken from the website's own content. No patient data."""
+    from ..jinja import _phones
+    conn = get_db()
+    branches = [{
+        "id": b["id"], "slug": b["slug"], "name": b["name"].split(" (")[0], "address": "" if (b["address"] or "").startswith("[") else b["address"],
+        "phones": [d for d, _ in _phones(b["phone"])], "tel": [t for _, t in _phones(b["phone"])], "hours": _hours_summary(conn, b),
+        "map": b["map_url"] or "", "facebook": b["facebook_url"] or "", "url": url_for("public.branch", slug=b["slug"]),
+    } for b in conn.all("SELECT * FROM branches WHERE active = 1 ORDER BY sort_order")]
+    services = [{"id": s["id"], "slug": s["slug"], "name": s["name"], "summary": s["summary"] or "", "url": url_for("public.service", slug=s["slug"])}
+                for s in conn.all("SELECT * FROM services WHERE active = 1 ORDER BY sort_order")]
+    resp = jsonify({"branches": branches, "services": services, "book": url_for("public.book"),
+                    "inquire": url_for("public.inquire"), "privacy": url_for("public.privacy")})
+    resp.headers["Cache-Control"] = "public, max-age=300"
+    return resp
+
+
+@bp.route("/chat/message", methods=["POST"])
+def chat_message():
+    """The chat's 'send to our team' form. Saved as a lead (source: Website chat), exactly like the inquiry form.
+    The chat conversation itself is never stored."""
+    conn = get_db()
+    if request.form.get("website"):
+        return jsonify({"ok": True})
+    v = {"full_name": clean(request.form.get("full_name"), 120), "phone": clean(request.form.get("phone"), 25),
+         "email": clean(request.form.get("email"), 200).lower(), "branch_id": to_int(request.form.get("branch_id")),
+         "message": clean(request.form.get("message"), 1500), "consent_privacy": bool(request.form.get("consent_privacy")),
+         "consent_contact": bool(request.form.get("consent_contact"))}
+    errors = {}
+    if len(v["full_name"]) < 2:
+        errors["full_name"] = "Enter your name."
+    if not v["phone"] and not v["email"]:
+        errors["phone"] = "Give a mobile number or email so we can reply."
+    if v["phone"] and not PHONE_RE.match(v["phone"]):
+        errors["phone"] = "Check the mobile number."
+    if v["email"] and not EMAIL_RE.match(v["email"]):
+        errors["email"] = "Check the email address."
+    if len(v["message"]) < 3:
+        errors["message"] = "Tell us briefly how we can help."
+    if not v["consent_privacy"]:
+        errors["consent_privacy"] = "Please agree to the privacy notice so we can reply."
+    if not errors and _rate_limited():
+        errors["_form"] = "Too many messages from this connection. Please call the branch or try again later."
+    if errors:
+        return jsonify({"ok": False, "errors": errors}), 400
+    if v["branch_id"] and not conn.one("SELECT id FROM branches WHERE id = ? AND active = 1", (v["branch_id"],)):
+        v["branch_id"] = None
+    lead_id = conn.insert("leads", {
+        "full_name": v["full_name"], "phone": v["phone"], "email": v["email"], "source": "chat", "branch_id": v["branch_id"],
+        "service_id": None, "message": v["message"], "status": "new", "consent_contact": 1 if v["consent_contact"] else 0,
+        "created_at": now_str()})
+    conn.execute("INSERT INTO lead_activities (lead_id, kind, body, created_at) VALUES (?, 'created', ?, ?)",
+                 (lead_id, "Website chat", now_str()))
+    audit.record("lead_created", "lead", lead_id, "Website chat inquiry", branch_id=v["branch_id"], actor_id=None)
+    return jsonify({"ok": True})
+
+
 @bp.route("/inquire/received")
 def inquire_received():
     return render_template("public/inquire_received.html")

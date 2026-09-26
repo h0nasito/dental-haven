@@ -17,7 +17,7 @@ from .common import branches_for_user, followup_scope, paginate, services
 bp = Blueprint("leads", __name__, url_prefix="/staff")
 
 LEAD_SOURCES = {
-    "facebook": "Facebook page", "messenger": "Messenger", "instagram": "Instagram", "website": "Website form",
+    "facebook": "Facebook page", "messenger": "Messenger", "instagram": "Instagram", "website": "Website form", "chat": "Website chat",
     "phone": "Phone call", "walk_in": "Walk-in", "referral": "Referral", "other": "Other",
 }
 LEAD_STATUSES = {"new": "New", "contacted": "Contacted", "qualified": "Interested", "booked": "Booked",

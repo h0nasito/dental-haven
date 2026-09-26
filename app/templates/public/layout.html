@@ -36,4 +36,27 @@
     <div class="fine row between"><span>© Dental Haven. Website content is being finalised with the clinic.</span><a href="{{ url_for('auth.login') }}">Staff sign in</a></div>
   </div>
 </footer>
+<div class="dh-chat" id="dh-chat" data-info="{{ url_for('public.chat_info') }}" data-send="{{ url_for('public.chat_message') }}" data-csrf="{{ csrf_token() }}">
+  <button type="button" class="dh-chat-launch" aria-expanded="false" aria-controls="dh-chat-panel">
+    <svg viewBox="0 0 24 24" aria-hidden="true" width="24" height="24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.2 3.6c-.5.4-1.3 0-1.3-.6V16A2.5 2.5 0 0 1 4 13.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="8.5" cy="9.5" r="1.1" fill="currentColor"/><circle cx="12" cy="9.5" r="1.1" fill="currentColor"/><circle cx="15.5" cy="9.5" r="1.1" fill="currentColor"/></svg>
+    <span>Chat with us</span>
+  </button>
+  <section class="dh-chat-panel" id="dh-chat-panel" role="dialog" aria-label="Dental Haven chat" hidden>
+    <header class="dh-chat-head">
+      <img src="{{ url_for('static', filename='img/logo-white.png') }}" alt="" width="36" height="24">
+      <div><strong>Dental Haven</strong><span>Virtual assistant · replies instantly</span></div>
+      <div class="dh-lang" role="group" aria-label="Language / Wika"><button type="button" data-lang="en" aria-pressed="false">EN</button><button type="button" data-lang="tl" aria-pressed="false">TL</button></div>
+      <button type="button" class="dh-chat-close" aria-label="Close chat">×</button>
+    </header>
+    <div class="dh-chat-log" role="log" aria-live="polite"></div>
+    <div class="dh-chat-chips"></div>
+    <form class="dh-chat-input" autocomplete="off">
+      <label class="sr-only" for="dh-chat-text">Type your question</label>
+      <input id="dh-chat-text" type="text" maxlength="300" placeholder="Type your question…">
+      <button type="submit" aria-label="Send">➤</button>
+    </form>
+    <p class="dh-chat-fine">Automated assistant: it can't give medical advice. Please don't share health details in the chat.</p>
+  </section>
+</div>
+<script src="{{ url_for('static', filename='js/chat.js') }}" defer></script>
 {% endblock %}

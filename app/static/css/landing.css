@@ -309,7 +309,7 @@ html { scroll-behavior: smooth; }
 .lp-contact-list strong { font-family: var(--display); font-weight: 400; color: #fff; font-size: 1.05rem; }
 .lp-contact-list a { color: rgba(255, 255, 255, .75); font-size: .92rem; }
 .lp-contact-list a:hover { color: var(--gold); }
-.lp-top { position: fixed; right: 18px; bottom: 18px; z-index: 30; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; background: var(--navy); color: var(--gold); text-decoration: none; font-size: 1.2rem; box-shadow: 0 10px 24px -8px rgba(0, 0, 0, .45); opacity: 0; pointer-events: none; transform: translateY(10px); transition: opacity .3s ease, transform .3s ease; }
+.lp-top { position: fixed; right: 22px; bottom: 84px; z-index: 30; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; background: var(--navy); color: var(--gold); text-decoration: none; font-size: 1.2rem; box-shadow: 0 10px 24px -8px rgba(0, 0, 0, .45); opacity: 0; pointer-events: none; transform: translateY(10px); transition: opacity .3s ease, transform .3s ease; }
 .lp-top.is-shown { opacity: 1; pointer-events: auto; transform: none; }
 .lp-top:hover { color: #fff; }
 
