@@ -567,12 +567,15 @@ CONTENT_KEYS = [
 
 # Portfolio filters on the home page (key, label)
 PORTFOLIO_CATEGORIES = [
-    ("cosmetic", "Cosmetic & Restorative"),
+    ("cosmetic", "Cosmetic Dentistry"),
+    ("restorative", "Restorative"),
     ("prosthodontics", "Prosthodontics"),
-    ("implants", "Implants & Surgery"),
+    ("implants", "Dental implants"),
+    ("surgery", "Oral Surgery"),
+    ("perio", "Gum care"),
     ("orthodontics", "Orthodontics & TMJ"),
     ("pediatric", "Pediatrics & Special Care"),
-    ("general", "General & Preventive"),
+    ("general", "Preventive & Diagnostic"),
     ("lab", "Digital lab"),
 ]
 

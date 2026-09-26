@@ -28,7 +28,7 @@ class TestChat(Base):
         self.assertIn("+63 927 277 7833", malolos["phones"])
         self.assertTrue(malolos["hours"])
         self.assertTrue(malolos["hours"] == ["Monday – Saturday: 9:00 AM – 6:00 PM", "Sunday: Closed"])
-        self.assertEqual(len(d["services"]), 6)
+        self.assertEqual(len(d["services"]), 8)
         self.assertEqual(d["prices"], [])  # live site: no prices until the clinic confirms its real price list
         raw = c.get("/chat/info.json").data.decode()
         for pt in self.conn.all("SELECT first_name, last_name, phone FROM patients LIMIT 20"):  # no patient data, ever

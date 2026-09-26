@@ -83,7 +83,7 @@ class TestDentistEmails(Base):
             self.assertEqual(msg["To"], "dentist.malolos" + DOMAIN)
             self.assertIn("New appointment", msg["Subject"])
             self.assertNotIn(self.patient["last_name"], msg["Subject"])  # no patient name on the lock screen
-            for part in (self.patient["first_name"], self.patient["last_name"], "General", "Malolos", "10:00 AM", "Monday"):
+            for part in (self.patient["first_name"], self.patient["last_name"], "Preventive", "Malolos", "10:00 AM", "Monday"):
                 self.assertIn(part, body)
             # reschedule the time → "rescheduled" with the old slot
             c.post(f"/staff/appointments/{a['id']}/reschedule", data=self._form(monday, "13:00", self.d1))

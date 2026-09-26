@@ -22,8 +22,10 @@ PHOTOS = {
     "specialty": "1654373535457-383a0a4d00f9",     # close-up of a bright white smile
     # services (by slug)
     "service:aesthetic-dentistry": "1677026010083-78ec7f1b84ed",
-    "service:prosthodontics": "1776406987595-ba14f3510c07",
-    "service:dental-implants": "1593022356769-11f762e25ed9",
+    "service:prosthodontics": "1593022356769-11f762e25ed9",
+    "service:oral-surgery": "1588776814546-daab30f310ce",       # dentists performing a procedure
+    "service:restorative-dentistry": "1771442873035-474765b40ac6",  # dental implant and crown
+    "service:periodontal-care": "1698749778813-ad5f2814e50f",   # dental mirror, clinic
     "service:general-dentistry": "1606811971618-4486d14f3f99",
     "service:orthodontics": "1720685193964-4529228a33c1",
     "service:pediatric-dentistry": "1758205307836-0829c799890b",

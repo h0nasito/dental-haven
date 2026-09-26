@@ -13,6 +13,12 @@
 <path d="M6 20c0-6 8-10 18-10s18 4 18 10"/><path d="M6 20v4c0 3 3 5 6 5h24c3 0 6-2 6-5v-4"/><path d="M12 20v9M18 20v9M24 20v9M30 20v9M36 20v9"/><path d="M10 34c4 3 9 4 14 4s10-1 14-4"/>
 {%- elif name == 'dental-implants' -%}
 <path d="M16 6c-3 0-5 2-5 6 0 3 2 5 3 7h20c1-2 3-4 3-7 0-4-2-6-5-6-2 0-3 1-5 1s-3-1-5-1z" transform="translate(0 0)"/><path d="M17 23h14"/><path d="M19 27h10l-1 4H20z"/><path d="M20 33h8M21 37h6M22 41h4"/>
+{%- elif name == 'restorative-dentistry' -%}
+<path d="M16 8c-5 0-8 4-8 9 0 6 3 9 4 15 1 5 2 9 5 9 3 0 3-5 4-9 1-3 2-4 3-4s2 1 3 4c1 4 1 9 4 9 3 0 4-4 5-9 1-6 4-9 4-15 0-5-3-9-8-9-3 0-5 2-8 2s-5-2-8-2z"/><path d="M19 16h10v7H19z" stroke-width="1.8"/>
+{%- elif name == 'oral-surgery' -%}
+<path d="M16 6c-4 0-6 3-6 7 0 5 3 7 3 12 0 4 1 7 3 7s2-4 3-7c.5-2 1.5-3 2-3s1.5 1 2 3c1 3 1 7 3 7s3-3 3-7c0-5 3-7 3-12 0-4-2-7-6-7-2 0-3 1-5 1s-3-1-5-1z"/><path d="M34 30l8 8M38 28l4 4-6 6-4-4" stroke-width="1.8"/>
+{%- elif name == 'periodontal-care' -%}
+<path d="M17 12c-4 0-6 3-6 7 0 5 3 7 3 12 0 4 1 7 3 7s2-4 3-7c.5-2 1.5-3 2-3s1.5 1 2 3c1 3 1 7 3 7s3-3 3-7c0-5 3-7 3-12 0-4-2-7-6-7-2 0-3 1-5 1s-3-1-5-1z"/><path d="M4 26c6-4 10 2 20 2s14-6 20-2" stroke-width="2"/>
 {%- elif name == 'pediatric-dentistry' -%}
 <path d="M17 14c-4 0-6 3-6 7 0 5 3 7 3 12 0 4 1 7 3 7s2-4 3-7c.5-2 1.5-3 2-3s1.5 1 2 3c1 3 1 7 3 7s3-3 3-7c0-5 3-7 3-12 0-4-2-7-6-7-2 0-3 1-5 1s-3-1-5-1z"/><path d="M36 4c-1.8 0-3 1.3-3 3 0 2.5 3 4.5 3 4.5s3-2 3-4.5c0-1.7-1.2-3-3-3z" stroke-width="1.6"/><circle cx="20" cy="22" r=".6" fill="currentColor"/><circle cx="28" cy="22" r=".6" fill="currentColor"/><path d="M21 26c1.5 1.2 4.5 1.2 6 0" stroke-width="1.8"/>
 {%- elif name == 'orthodontics' -%}
@@ -45,7 +51,7 @@
 </div>
 {%- endmacro %}
 
-{% set TEMPLATE_SERVICES = ['aesthetic-dentistry', 'prosthodontics', 'dental-implants', 'general-dentistry', 'orthodontics', 'pediatric-dentistry'] %}
+{% set TEMPLATE_SERVICES = ['aesthetic-dentistry', 'prosthodontics', 'general-dentistry', 'orthodontics', 'pediatric-dentistry'] %}
 {% set TEMPLATE_BRANCHES = ['malolos', 'guiguinto', 'bocaue', 'sjdm'] %}
 {% macro src(p) %}{{ p if p.startswith('http') else url_for('static', filename=p) }}{% endmacro %}
 {% set hero_img = site_images.hero or stock('hero', 2000) or 'img/template/hero.svg' %}
@@ -324,11 +330,11 @@
     <div class="reveal">
       <span class="lp-eyebrow light">Behind every smile</span>
       <h2>Your new smile, made in our own lab</h2>
-      <p class="lp-lab-lead">{{ labc.title or 'Digital Solutions Dental Laboratory' }} is our in-house digital lab. It crafts crowns, bridges, dentures and 3D-printed appliances for Dental Haven patients, for a precise fit and a faster turnaround.</p>
+      <p class="lp-lab-lead">Experience fast turnaround times for custom dental restorations, including crowns, bridges, dentures and aligners, crafted efficiently in-house at {{ labc.title or 'Digital Solutions Dental Laboratory' }} using advanced CAD/CAM technology.</p>
     </div>
     <figure class="lp-lab-photo reveal"><img src="{{ src(lab_img) }}" alt="{{ 'Digital Solutions Dental Laboratory' if site_images.lab else '' }}" loading="lazy"></figure>
     {% set tech = [] %}
-    {% for key, label in [('tech_xray', 'CBCT & panoramic X-rays'), ('tech_scanner', 'Intraoral scanning'), ('tech_milling', 'Milling & 3D printing')] %}
+    {% for key, label in [('tech_xray', 'X-rays: panoramic, cephalometric & CBCT'), ('tech_scanner', 'Intraoral scanning'), ('tech_milling', 'Milling & 3D printing')] %}
       {% set img = site_images[key] or stock(key, 700) %}{% if img %}{% set _ = tech.append((img, label)) %}{% endif %}
     {% endfor %}
     {% if tech %}
@@ -340,8 +346,8 @@
       <li>{{ icon('scan') }}<span>Intraoral scanners</span></li>
       <li>{{ icon('design') }}<span>exocad design</span></li>
       <li>{{ icon('print') }}<span>3D printers</span></li>
-      <li>{{ icon('mill') }}<span>Milling machines</span></li>
-      <li>{{ icon('xray') }}<span>CBCT &amp; panoramic X-rays</span></li>
+      <li>{{ icon('mill') }}<span>CAD/CAM milling</span></li>
+      <li>{{ icon('xray') }}<span>Panoramic, cephalometric &amp; CBCT X-rays</span></li>
     </ul>
   </div>
 </section>

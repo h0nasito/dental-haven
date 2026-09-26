@@ -27,11 +27,13 @@ class TestLanding(Base):
         html = self.app.test_client().get("/").data.decode()
         for anchor in ('id="work"', 'id="services"', 'id="lab"', 'id="branches"'):
             self.assertIn(anchor, html)
-        for name in ("General &amp; Preventive", "Cosmetic &amp; Restorative", "Prosthodontics", "Implants &amp; Surgery", "Orthodontics &amp; TMJ", "Pediatrics &amp; Special Care Dentistry"):
+        for name in ("Preventive &amp; Diagnostic Services", "Restorative Services", "Prosthodontics &amp; Tooth Replacement",
+                     "Orthodontics &amp; TMJ", "Oral Surgery", "Cosmetic Dentistry", "Periodontal (Gum) Care", "Pediatrics &amp; Special Care Dentistry"):
             self.assertIn(name, html)
-        for item in ("Composite veneers", "Zirconia restorations", "Clear aligners", "Extractions", "Management of TMJ disorders",
-                     "Preventive and corrective dentistry", "Crowns for kids", "Conscious sedation"):
+        for item in ("Oral cancer screenings", "Inlays &amp; onlays", "Root canal therapy", "Dental implants", "Veneers", "Retainers",
+                     "Management of TMJ disorders", "Bone grafting", "Dental bonding", "Gum grafting", "Crowns for kids", "Conscious sedation"):
             self.assertIn(item, html)
+        self.assertIn("CAD/CAM", html)
         self.assertIn("Digital Solutions Dental Laboratory", html)
         self.assertIn("CBCT", html)
         # no published work yet: stock sample photos, clearly labelled, and no "real results" claim
@@ -59,7 +61,7 @@ class TestLanding(Base):
         html = self.app.test_client().get("/").data.decode()
         self.assertIn("Veneer case", html)
         self.assertIn('class="ba-range"', html)
-        self.assertIn("Cosmetic &amp; Restorative", html)
+        self.assertIn("Cosmetic Dentistry", html)
         self.assertNotIn("Case photos coming soon", html)
 
     def test_reviews_section(self):
@@ -128,10 +130,33 @@ class TestHeroWording(Base):
         self.assertIn("See before &amp; after", html)
         self.assertLess(html.index("#specialty\">Smile transformations"), html.index("#services\">Services"))
         names = [r["slug"] for r in self.conn.all("SELECT slug FROM services WHERE active = 1 ORDER BY sort_order")]
-        self.assertEqual(names[:2], ["general-dentistry", "pediatric-dentistry"])
+        self.assertEqual(names, ["general-dentistry", "restorative-dentistry", "prosthodontics", "orthodontics", "oral-surgery",
+                                 "aesthetic-dentistry", "periodontal-care", "pediatric-dentistry"])
 
     def test_interim_hero_text_replaced_if_unedited(self):
         from app.seed import OLD_CONTENT, seed_base
         self.conn.execute("UPDATE site_content SET body = ?, updated_by = NULL WHERE key = 'home_hero'", (OLD_CONTENT["home_hero"],))
         seed_base(self.conn)
         self.assertIn("specialty in aesthetic", self.q("SELECT body FROM site_content WHERE key = 'home_hero'")["body"])
+
+
+class TestServiceListUpgrade(Base):
+    def test_old_services_upgraded_once_and_later_edits_kept(self):
+        from app import settings
+        from app.seed import seed_base
+        # simulate a live database created with the old six services
+        oral = self.q("SELECT * FROM services WHERE slug = 'oral-surgery'")
+        self.conn.execute("UPDATE services SET slug = 'dental-implants', name = 'Implants & Surgery' WHERE id = ?", (oral["id"],))
+        self.conn.execute("UPDATE services SET name = 'General & Preventive' WHERE slug = 'general-dentistry'")
+        settings.put("seed.services_version", 1, None, self.conn)
+        seed_base(self.conn)
+        row = self.q("SELECT * FROM services WHERE id = ?", (oral["id"],))
+        self.assertEqual((row["slug"], row["name"]), ("oral-surgery", "Oral Surgery"))  # same record: bookings keep their service
+        self.assertEqual(self.q("SELECT name FROM services WHERE slug = 'general-dentistry'")["name"], "Preventive & Diagnostic Services")
+        implant_guide = self.q("SELECT s.slug FROM guides g JOIN services s ON s.id = g.service_id WHERE g.slug = 'dental-implants-what-to-expect'")
+        self.assertEqual(implant_guide["slug"], "prosthodontics")
+        # an admin edit afterwards survives the next start
+        self.conn.execute("UPDATE services SET name = 'Check-ups & X-rays' WHERE slug = 'general-dentistry'")
+        seed_base(self.conn)
+        self.assertEqual(self.q("SELECT name FROM services WHERE slug = 'general-dentistry'")["name"], "Check-ups & X-rays")
+        self.conn.execute("UPDATE services SET name = 'Preventive & Diagnostic Services' WHERE slug = 'general-dentistry'")

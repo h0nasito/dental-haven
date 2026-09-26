@@ -73,34 +73,66 @@ BRANCH_DETAILS = {
 EXPECT = ("## What to expect\n\n- A conversation about your concerns and health history\n"
           "- An examination, with images or scans when needed\n- Your options and costs explained before any treatment")
 
-# (slug, name, category, default minutes, one-line summary, page body). Wording from Dental Haven (Sep 26, 2026).
+# (slug, name, category, default minutes, one-line summary, page body). Service list from Dental Haven (Sep 26, 2026, v2).
 SERVICES = [
-    ("general-dentistry", "General & Preventive", "General & Preventive", 30,
-     "Check-ups, cleanings, and tooth fillings.",
-     "Keep your smile healthy for life with regular check-ups and care.\n\n- Check-ups\n- Cleanings\n- Tooth fillings\n\n" + EXPECT),
+    ("general-dentistry", "Preventive & Diagnostic Services", "Preventive & Diagnostic", 30,
+     "Check-ups & cleanings, dental X-rays & imaging, fluoride treatments, dental sealants, and oral cancer screenings.",
+     "Stay ahead of problems with regular care and clear, detailed diagnostics.\n\n"
+     "- Routine dental check-ups & cleanings: regular examinations and professional scaling and polishing to remove plaque and tartar.\n"
+     "- Dental X-rays & imaging: panoramic (pano), cephalometric, and cone beam computed tomography (CBCT) for detailed 3D views of the jaw and teeth.\n"
+     "- Fluoride treatments: high-concentration fluoride to strengthen tooth enamel and prevent decay.\n"
+     "- Dental sealants: protective coatings on the chewing surfaces of the back teeth (molars) to prevent cavities.\n"
+     "- Oral cancer screenings: an examination of the soft tissues of the mouth to detect early signs of abnormalities or disease.\n\n" + EXPECT),
+    ("restorative-dentistry", "Restorative Services", "Restorative", 60,
+     "Dental fillings, crowns, bridges, inlays & onlays, and root canal therapy.",
+     "Repair decayed or damaged teeth and bring back their strength, shape and function.\n\n"
+     "- Dental fillings: restoring decayed or damaged teeth with tooth-colored composite or amalgam.\n"
+     "- Dental crowns (caps): custom-fitted covers that restore the shape, strength and appearance of badly decayed or broken teeth.\n"
+     "- Dental bridges: fixed replacements for one or more missing teeth, anchored to the natural teeth beside the gap.\n"
+     "- Inlays and onlays: lab-made fillings that repair larger areas of decay or damage on the chewing surfaces.\n"
+     "- Root canal therapy (endodontics): removing infected pulp from inside a tooth to relieve pain and save the natural tooth.\n\n"
+     "Crowns, bridges, inlays and onlays are crafted in our in-house digital dental laboratory.\n\n" + EXPECT),
+    ("prosthodontics", "Prosthodontics & Tooth Replacement", "Prosthodontics & Tooth Replacement", 60,
+     "Complete & partial dentures, dental implants, and veneers.",
+     "Replace missing teeth and rebuild your smile with restorations made to fit you.\n\n"
+     "- Complete & partial dentures: removable appliances that replace missing teeth and the surrounding gum tissue.\n"
+     "- Dental implants: permanent titanium posts placed in the jawbone to support crowns, bridges or dentures.\n"
+     "- Veneers: thin shells of porcelain or composite resin bonded to the front of the teeth to improve their appearance.\n\n"
+     "Dentures, implant crowns and veneers are crafted in our in-house digital dental laboratory.\n\n" + EXPECT),
+    ("orthodontics", "Orthodontics & TMJ", "Orthodontics & TMJ", 45,
+     "Traditional braces, clear aligners, retainers, and management of TMJ disorders.",
+     "Straighter teeth, a healthier bite, and relief for jaw joint problems.\n\n"
+     "- Traditional braces: metal or ceramic brackets and wires that correct misaligned teeth and bite problems.\n"
+     "- Clear aligners: removable, custom-made clear trays that gradually straighten the teeth.\n"
+     "- Retainers: custom appliances worn after orthodontic treatment to keep the teeth in their new positions.\n"
+     "- Management of TMJ disorders: care for jaw joint pain, clicking and limited opening.\n\n" + EXPECT),
+    ("oral-surgery", "Oral Surgery", "Oral Surgery", 60,
+     "Tooth extractions, wisdom tooth removal, and bone grafting.",
+     "Safe, carefully planned surgical care, with 3D imaging when needed.\n\n"
+     "- Tooth extractions: safe removal of teeth because of severe decay, trauma, crowding, or in preparation for braces.\n"
+     "- Wisdom tooth removal (third molar surgery): removal of impacted or problematic wisdom teeth.\n"
+     "- Bone grafting: rebuilding or regenerating bone in the jaw before implant placement.\n\n"
+     "Planning can use in-house panoramic and CBCT imaging.\n\n" + EXPECT),
+    ("aesthetic-dentistry", "Cosmetic Dentistry", "Cosmetic Dentistry", 60,
+     "Teeth whitening, dental bonding, and smile makeovers.",
+     "Brighten, repair and refine your smile.\n\n"
+     "- Teeth whitening (bleaching): professional in-office or take-home treatments to brighten stained or discolored teeth.\n"
+     "- Dental bonding: tooth-colored resin to repair chips, cracks or gaps.\n"
+     "- Smile makeovers: a complete treatment plan combining several cosmetic procedures to enhance your whole smile.\n\n" + EXPECT),
+    ("periodontal-care", "Periodontal (Gum) Care", "Periodontal (Gum) Care", 60,
+     "Scaling and root planing, and gum grafting.",
+     "Healthy gums are the foundation of a healthy smile.\n\n"
+     "- Scaling and root planing: a deep cleaning below the gumline to treat gum disease (periodontitis) and remove bacterial toxins.\n"
+     "- Gum grafting: procedures to treat receding gums and protect exposed tooth roots.\n\n" + EXPECT),
     ("pediatric-dentistry", "Pediatrics & Special Care Dentistry", "Pediatrics & Special Care", 45,
      "Preventive and corrective dentistry, crowns for kids, and conscious sedation.",
      "Gentle, child-friendly care, and extra support for patients with special needs.\n\n- Preventive and corrective dentistry\n"
      "- Crowns for kids\n- Conscious sedation\n\n" + EXPECT),
-    ("aesthetic-dentistry", "Cosmetic & Restorative", "Cosmetic & Restorative", 60,
-     "Composite veneers, crowns, bridges, and teeth whitening.",
-     "Repair, brighten and reshape your smile.\n\n- Composite veneers\n- Crowns\n- Bridges\n"
-     "- Teeth whitening\n\nCrowns and bridges can be designed and made in our in-house digital dental laboratory.\n\n" + EXPECT),
-    ("orthodontics", "Orthodontics & TMJ", "Orthodontics & TMJ", 45,
-     "Braces, clear aligners, and management of TMJ disorders.",
-     "Straighter teeth, a better bite, and care for jaw joint (TMJ) problems.\n\n- Braces\n- Clear aligners\n"
-     "- Management of TMJ (jaw joint) disorders\n\n" + EXPECT),
-    ("prosthodontics", "Prosthodontics", "Prosthodontics", 60,
-     "Dentures, zirconia restorations, and full-mouth rehabilitation.",
-     "Replace missing teeth and rebuild worn or damaged smiles, with restorations crafted to fit you.\n\n- Dentures\n- Zirconia restorations\n"
-     "- Full-mouth rehabilitation\n\nRestorations are fabricated in our in-house digital dental laboratory.\n\n" + EXPECT),
-    ("dental-implants", "Implants & Surgery", "Implants & Surgery", 90,
-     "Dental implants and extractions.",
-     "Replace a missing tooth with an implant designed to look natural, or have a tooth that can't be saved removed safely.\n\n"
-     "- Dental implants\n- Extractions\n\nPlanning can use in-house diagnostic imaging, including CBCT and panoramic X-rays.\n\n" + EXPECT),
 ]
-# Order used before Dental Haven was presented as a general clinic; untouched sort orders are updated.
-OLD_SERVICE_ORDER = ["aesthetic-dentistry", "prosthodontics", "dental-implants", "general-dentistry", "orthodontics", "pediatric-dentistry"]
+# Services renamed in the v2 list (old slug → new slug); the existing record, its bookings and guides are kept.
+SERVICE_RENAMES = {"dental-implants": "oral-surgery"}
+SERVICES_VERSION = 2   # bump when the clinic sends a new official service list
+
 # Earlier placeholder wording, replaced automatically if nobody has edited it.
 OLD_PLACEHOLDER = "[Service description to be confirmed"
 
@@ -219,17 +251,36 @@ def seed_base(conn):
                              (bid, wd, 1 if wd == 6 else 0))
             conn.execute("INSERT INTO invoice_sequences (branch_id, prefix, next_no) VALUES (?, ?, 1)", (bid, slug[:3].upper()))
             _top_up_chairs(conn, bid, slug)
+        for old, newslug in SERVICE_RENAMES.items():
+            if conn.one("SELECT id FROM services WHERE slug = ?", (old,)) and not conn.one("SELECT id FROM services WHERE slug = ?", (newslug,)):
+                conn.execute("UPDATE services SET slug = ? WHERE slug = ?", (newslug, old))
+        from . import settings as _settings
+        apply_list = int(_settings.get("seed.services_version", conn) or 1) < SERVICES_VERSION
         for i, (slug, name, cat, mins, summary, body) in enumerate(SERVICES):
             existing = conn.one("SELECT * FROM services WHERE slug = ?", (slug,))
+            if existing and apply_list:
+                # The clinic sent an official service list: apply it once. Later edits in the admin are kept.
+                conn.update("services", existing["id"], {"name": name, "category": cat, "summary": summary, "body": body,
+                                                         "sort_order": i, "active": 1})
+                continue
             if existing and OLD_PLACEHOLDER in (existing["body"] or ""):
                 conn.update("services", existing["id"], {"name": name, "category": cat, "summary": summary, "body": body,
                                                          "sort_order": i})
-            elif existing and slug in OLD_SERVICE_ORDER and existing["sort_order"] == OLD_SERVICE_ORDER.index(slug):
-                conn.update("services", existing["id"], {"sort_order": i})  # still in the old default order
             if not existing:
                 conn.insert("services", {"slug": slug, "name": name, "category": cat, "summary": summary, "body": body,
                                          "default_duration_min": mins, "default_price_cents": None, "bookable_online": 1,
                                          "active": 1, "sort_order": i})
+        if apply_list:
+            _settings.put("seed.services_version", SERVICES_VERSION, None, conn)
+            from .prices_content import SAMPLE_PRICES
+            from .guides_content import GUIDES
+            sid = {r["slug"]: r["id"] for r in conn.all("SELECT id, slug FROM services")}
+            for pname, sslug, *_ in SAMPLE_PRICES:  # sample prices only; real prices are never touched
+                if sslug in sid:
+                    conn.execute("UPDATE price_items SET service_id = ? WHERE name = ? AND sample = 1", (sid[sslug], pname))
+            for gd in GUIDES:  # guides nobody has edited
+                if gd["service"] in sid:
+                    conn.execute("UPDATE guides SET service_id = ? WHERE slug = ? AND updated_by IS NULL", (sid[gd["service"]], gd["slug"]))
         for key, (title, body) in CONTENT.items():
             _upsert_content(conn, key, title, body)
         for key, name, purpose, body in TEMPLATES:
@@ -394,7 +445,7 @@ def seed_demo(conn, password: str | None = None) -> str:
                         appt_ids.append((aid, status, p, svc, b_id, dentists[dkey], s))
 
         # clinical notes, procedures, invoices for completed visits
-        demo_prices = {"general-dentistry": 80000, "prosthodontics": 1200000, "dental-implants": 3500000, "aesthetic-dentistry": 900000, "orthodontics": 4500000,
+        demo_prices = {"general-dentistry": 80000, "prosthodontics": 1200000, "oral-surgery": 350000, "restorative-dentistry": 500000, "periodontal-care": 400000, "aesthetic-dentistry": 900000, "orthodontics": 4500000,
                        "pediatric-dentistry": 150000}
         methods = ["cash", "gcash", "maya", "card", "bank_transfer"]
         for aid, status, p, svc, b_id, did, s in appt_ids:
@@ -436,7 +487,7 @@ def seed_demo(conn, password: str | None = None) -> str:
             plan = conn.insert("treatment_plans", {"patient_id": p["id"], "dentist_id": did, "title": "Demo treatment plan",
                                                    "status": rnd.choice(["presented", "accepted", "in_progress"]), "notes": "Synthetic plan.",
                                                    "created_at": ts, "updated_at": ts})
-            for seq, (desc, svc) in enumerate([("Crown preparation (demo)", "prosthodontics"), ("Implant consultation (demo)", "dental-implants")], 1):
+            for seq, (desc, svc) in enumerate([("Crown preparation (demo)", "prosthodontics"), ("Implant consultation (demo)", "prosthodontics")], 1):
                 conn.insert("treatment_plan_items", {"plan_id": plan, "service_id": services[svc]["id"], "tooth": rnd.choice(["36", "46", "14"]),
                                                      "description": desc, "estimate_cents": None, "status": "pending", "seq": seq})
 
@@ -447,7 +498,7 @@ def seed_demo(conn, password: str | None = None) -> str:
                                            "title": "Missed appointment — call to rebook", "due_at": fmt_dt(s + timedelta(hours=3)),
                                            "status": "open" if s > now() - timedelta(days=10) else "done",
                                            "outcome": "" if s > now() - timedelta(days=10) else "Called; rebooked (demo)", "created_at": fmt_dt(s)})
-            elif status == "completed" and svc["slug"] in ("dental-implants", "prosthodontics") and rnd.random() < 0.6:
+            elif status == "completed" and svc["slug"] in ("restorative-dentistry", "prosthodontics") and rnd.random() < 0.6:
                 due = s + timedelta(days=7)
                 conn.insert("follow_ups", {"branch_id": b_id, "patient_id": p["id"], "appointment_id": aid, "kind": "post_treatment",
                                            "title": f"Post-treatment check: {svc['name']}", "due_at": fmt_dt(due.replace(hour=10, minute=0)),

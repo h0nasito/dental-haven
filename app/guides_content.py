@@ -78,10 +78,10 @@ The silver helps kill the bacteria that cause decay, and the fluoride helps hard
 ## Is SDF right for my child?
 SDF is not for every cavity. It isn't used for teeth with deep decay that reaches the nerve, infection or ongoing pain, or for people with a silver allergy. Your dentist will check your child's teeth and explain whether SDF, a filling, or another treatment is the best choice.""",
     },
-    # ------------------------------------------------------------------ General & Preventive
+    # ------------------------------------------------------------------ Preventive & Diagnostic / Restorative
     {
         "slug": "about-dental-fillings",
-        "service": "general-dentistry",
+        "service": "restorative-dentistry",
         "title": "Dental fillings: what to expect",
         "summary": "How cavities are repaired with natural-looking, tooth-colored fillings, and how to care for your tooth afterwards.",
         "body": """A cavity is a hole in the tooth caused by decay. Left untreated, it grows deeper and can lead to pain, infection, or the need for a root canal or extraction. A filling removes the decay and restores the tooth's shape and strength, usually in a single visit.
@@ -128,10 +128,10 @@ The best treatment depends on the cause, how deep the spots are, and your goals.
 
 For deeper or larger areas, tooth-colored bonding or veneers may give the best result. Your dentist will examine your teeth and explain the most conservative option for you.""",
     },
-    # ------------------------------------------------------------------ Cosmetic & Restorative
+    # ------------------------------------------------------------------ Restorative
     {
         "slug": "veneers-vs-crowns",
-        "service": "aesthetic-dentistry",
+        "service": "restorative-dentistry",
         "title": "Veneers vs. crowns: what's the difference?",
         "summary": "Both can give you a beautiful, natural-looking smile. Here's how they differ, and when each one is the better choice.",
         "body": """Veneers and crowns are both custom-made to improve how your teeth look. The biggest difference is how much of the tooth they cover, and whether the tooth mainly needs a cosmetic change or needs to be strengthened.
@@ -187,10 +187,10 @@ It is normal for new dentures to feel a little strange at first. You may notice 
 ## Regular check-ups
 Your gums and jawbone slowly change shape over time, so dentures can become loose. Regular check-ups let your dentist adjust or reline them for a comfortable fit and check the health of your mouth.""",
     },
-    # ------------------------------------------------------------------ Implants & Surgery
+    # ------------------------------------------------------------------ Prosthodontics & Tooth Replacement
     {
         "slug": "dental-implants-what-to-expect",
-        "service": "dental-implants",
+        "service": "prosthodontics",
         "title": "Dental implants: what to expect, step by step",
         "summary": "How a missing tooth is replaced with an implant, from the 3D scan to your final crown.",
         "body": """A dental implant replaces the root of a missing tooth. It is a small post placed in the jawbone that supports a natural-looking crown. Implants don't rely on the neighboring teeth for support, and they help preserve the jawbone where a tooth was lost.

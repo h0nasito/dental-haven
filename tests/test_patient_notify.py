@@ -59,7 +59,7 @@ class TestPatientMessages(Base):
             self.assertEqual(len(pm), 1)
             self.assertIn("confirmed", pm[0]["Subject"])
             body = pm[0].get_content()
-            for part in ("approved", "Monday", "10:00 AM", "Malolos", "General"):
+            for part in ("approved", "Monday", "10:00 AM", "Malolos", "Preventive"):
                 self.assertIn(part, body)
             self.assertEqual(len(self._to("dentist.malolos" + DOMAIN)), 1)
             # reschedule → patient told the new time

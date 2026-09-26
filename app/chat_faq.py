@@ -30,7 +30,7 @@ FAQ = [
      "kw": ["how long cleaning", "how long does cleaning", "gaano katagal ang cleaning", "gaano katagal linis", "cleaning takes", "how long is the cleaning"],
      "en": "A check-up and cleaning usually takes about 30 to 60 minutes, depending on how much tartar needs to be removed.",
      "tl": "Karaniwang 30 hanggang 60 minuto po ang check-up at cleaning, depende sa dami ng tartar na kailangang tanggalin."},
-    {"key": "extraction_after", "service": "dental-implants",
+    {"key": "extraction_after", "service": "oral-surgery",
      "kw": ["after extraction", "after tooth extraction", "pagkatapos bunot", "pagkatapos ng bunot", "after bunot", "bagong bunot", "aftercare",
             "after pulling", "can i eat after", "puwede na kumain", "pwede na kumain"],
      "en": "After an extraction: bite on the gauze for 30 to 45 minutes; for the first 24 hours don't spit hard, rinse, use a straw or smoke; "
@@ -39,13 +39,13 @@ FAQ = [
      "tl": "Pagkatapos magpabunot: kagatin ang gauze nang 30 hanggang 45 minuto; sa unang 24 oras, huwag dumura nang malakas, magmumog, gumamit ng straw o manigarilyo; "
            "kumain ng malambot at malamig na pagkain at ngumuya sa kabilang side; makakatulong ang cold compress sa pamamaga. "
            "Tumawag po sa branch kung hindi tumitigil ang dugo, o lumala ang sakit o pamamaga pagkalipas ng 2 hanggang 3 araw."},
-    {"key": "wisdom", "service": "dental-implants",
+    {"key": "wisdom", "service": "oral-surgery",
      "kw": ["wisdom", "impacted", "odontectomy", "bagang sa dulo", "huling bagang", "tumutubong bagang"],
      "en": "Wisdom teeth don't always need to be removed. Your dentist checks them with an X-ray (panoramic or 3D CBCT) to see their position. "
            "Removal is usually recommended if the tooth is impacted, keeps getting infected, causes pain, or damages the tooth next to it.",
      "tl": "Hindi po laging kailangang tanggalin ang wisdom tooth. Titingnan ito ng dentista gamit ang X-ray (panoramic o 3D CBCT) para makita ang posisyon. "
            "Karaniwang inirerekomendang tanggalin kung impacted, paulit-ulit na namamaga, masakit, o nasisira ang katabing ngipin."},
-    {"key": "root_canal", "service": "general-dentistry",
+    {"key": "root_canal", "service": "restorative-dentistry",
      "kw": ["root canal", "rct", "patay na ugat", "nerve treatment", "infected tooth", "abscess"],
      "en": "A root canal saves a badly decayed or infected tooth instead of pulling it. The infected pulp inside is cleaned out, and the tooth is sealed. "
            "It's done with local anesthesia, and a crown is often recommended afterwards to protect the tooth.",
@@ -63,25 +63,31 @@ FAQ = [
            "After braces, wearing a retainer keeps your teeth in place.",
      "tl": "Karaniwang 1 hanggang 3 taon po ang braces, depende sa kung gaano kalaki ang kailangang galaw ng ngipin. Babalik kayo nang regular, kadalasan buwan-buwan, para sa adjustment. "
            "Pagkatapos ng braces, ang retainer ang magpapanatili sa ayos ng ngipin."},
-    {"key": "missing_tooth", "service": "dental-implants", "guide": "dental-implants-what-to-expect",
+    {"key": "missing_tooth", "service": "prosthodontics", "guide": "dental-implants-what-to-expect",
      "kw": ["missing tooth", "nawalang ngipin", "walang ngipin", "bungi", "replace tooth", "palitan ang ngipin", "denture or implant", "implant or denture",
             "implant vs", "tooth gap", "nabunot na ngipin"],
      "en": "There are three main ways to replace a missing tooth: a dental implant (fixed, doesn't touch the neighboring teeth), a bridge (fixed, supported by the teeth beside the gap), "
            "or a denture (removable, and usually the most affordable). Your dentist will check your teeth and bone and explain which fits you best.",
      "tl": "May tatlong pangunahing paraan para palitan ang nawalang ngipin: dental implant (nakakabit, hindi ginagalaw ang katabing ngipin), bridge (nakakabit, nakakapit sa katabing ngipin), "
            "o pustiso (natatanggal, at kadalasang pinaka-abot-kaya). Titingnan ng dentista ang inyong ngipin at buto at ipapaliwanag kung alin ang bagay sa inyo."},
-    {"key": "implant_long", "service": "dental-implants", "guide": "dental-implants-what-to-expect",
+    {"key": "implant_long", "service": "prosthodontics", "guide": "dental-implants-what-to-expect",
      "kw": ["how long implant", "gaano katagal implant", "implant process", "implant takes", "implant healing"],
      "en": "An implant is usually done in stages over a few months: planning with a 3D scan, placing the implant, a few months of healing while it bonds with the bone, then the final crown. "
            "Your dentist will give you a timeline for your case.",
      "tl": "Karaniwang ilang buwan po ang implant, sa ilang yugto: planning gamit ang 3D scan, paglalagay ng implant, ilang buwang paghilom habang kumakapit sa buto, at ang huling crown. "
            "Bibigyan kayo ng dentista ng timeline para sa inyong kaso."},
-    {"key": "bleeding_gums", "service": "general-dentistry",
+    {"key": "bleeding_gums", "service": "periodontal-care",
      "kw": ["bleeding gums", "gums bleed", "gums are bleeding", "gums bleeding", "bleeding when i brush", "dumudugo ang gilagid", "gums", "dumudugo gilagid", "dumudugong gilagid", "nagdudugo ang gilagid", "gum bleeding", "swollen gums", "gilagid"],
      "en": "Gums that bleed when you brush are often a sign of gum inflammation (gingivitis), usually from plaque and tartar. A professional cleaning and good daily brushing and flossing often help. "
            "It's best to have it checked, because untreated gum disease can get worse.",
      "tl": "Ang pagdurugo ng gilagid habang nagsisipilyo ay kadalasang senyales ng pamamaga ng gilagid (gingivitis), dahil sa plaque at tartar. Nakakatulong ang professional cleaning at maayos na pagsisipilyo at floss araw-araw. "
            "Mas mabuti pong ipa-check, dahil puwedeng lumala ang sakit sa gilagid kapag hindi naagapan."},
+    {"key": "receding", "service": "periodontal-care",
+     "kw": ["receding gums", "receding gum", "gum recession", "umuurong na gilagid", "umuurong ang gilagid", "exposed root", "long teeth", "gum graft"],
+     "en": "Receding gums expose the roots of the teeth, which can cause sensitivity and make teeth look longer. Common causes are gum disease and brushing too hard. "
+           "Depending on the cause, treatment may include a deep cleaning (scaling and root planing) or gum grafting to cover and protect the exposed roots.",
+     "tl": "Kapag umuurong ang gilagid, lumalabas ang ugat ng ngipin, kaya puwedeng mangilo at magmukhang mas mahaba ang ngipin. Karaniwang dahilan ang sakit sa gilagid at sobrang diin ng pagsisipilyo. "
+           "Depende sa dahilan, puwedeng irekomenda ang deep cleaning (scaling and root planing) o gum grafting para matakpan at maprotektahan ang ugat."},
     {"key": "bad_breath", "service": "general-dentistry",
      "kw": ["bad breath", "mabaho hininga", "mabahong hininga", "halitosis", "bad smell mouth"],
      "en": "Bad breath is commonly caused by plaque, tartar, gum problems, cavities or a coated tongue. Brushing twice a day, cleaning your tongue, flossing, and a professional cleaning usually help. "
@@ -94,13 +100,13 @@ FAQ = [
            "but it's good to have a check-up so the dentist can find and treat the cause.",
      "tl": "Ang pangingilo ay puwedeng dahil sa nasirang enamel, umuurong na gilagid, butas na ngipin, o sirang pasta. Nakakatulong ang toothpaste para sa sensitive teeth, "
            "pero mas mabuting magpa-check-up para malaman at magamot ng dentista ang dahilan."},
-    {"key": "broken", "service": "aesthetic-dentistry", "guide": "veneers-vs-crowns",
+    {"key": "broken", "service": "restorative-dentistry", "guide": "veneers-vs-crowns",
      "kw": ["broken tooth", "chipped", "cracked", "nabasag", "nabiyak", "natapyas", "sira ang ngipin", "basag na ngipin", "chip"],
      "en": "If a tooth breaks or chips, rinse your mouth with warm water, keep any pieces, and call the nearest branch as soon as you can. "
            "Small chips can often be repaired with tooth-colored bonding; bigger breaks may need a crown.",
      "tl": "Kung nabasag o natapyas ang ngipin, magmumog ng maligamgam na tubig, itabi ang piraso kung mayroon, at tumawag agad sa pinakamalapit na branch. "
            "Ang maliit na tapyas ay kadalasang naaayos ng tooth-colored bonding; ang malaking sira ay puwedeng kailanganin ng crown."},
-    {"key": "lost_filling", "service": "general-dentistry", "guide": "about-dental-fillings",
+    {"key": "lost_filling", "service": "restorative-dentistry", "guide": "about-dental-fillings",
      "kw": ["natanggal pasta", "filling fell", "natanggal pasta", "natanggal ang pasta", "lost filling", "crown fell", "natanggal crown", "jacket natanggal", "natanggal ang jacket", "loose crown"],
      "en": "If a filling or crown comes off, keep the crown if you have it, avoid chewing on that side, and call the branch to have it checked and fixed soon.",
      "tl": "Kung natanggal ang pasta o crown, itabi po ang crown kung mayroon, iwasang ngumuya sa side na iyon, at tumawag sa branch para maipa-check at maayos agad."},

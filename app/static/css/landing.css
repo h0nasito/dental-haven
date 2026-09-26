@@ -364,3 +364,4 @@ html { scroll-behavior: smooth; }
 .lp-branch-hours::before { content: ""; position: absolute; left: .75rem; top: .8rem; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--gold-2); }
 .lp-branch-hours::after { content: ""; position: absolute; left: calc(.75rem + 7px); top: calc(.8rem + 4px); width: 4px; height: 5px; border-left: 2px solid var(--gold-2); border-bottom: 2px solid var(--gold-2); }
 .lp-hours-all { display: inline-block; margin: .4rem auto 0; padding: .5rem 1.1rem; border-radius: 999px; background: rgba(255, 255, 255, .08); border: 1px solid rgba(198, 161, 91, .35); color: #fff; font-weight: 600; }
+@media (min-width: 1200px) { .lp-svc-cards { grid-template-columns: repeat(4, 1fr); gap: 26px 18px; } }

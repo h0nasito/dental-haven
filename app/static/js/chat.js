@@ -343,12 +343,14 @@
 
   // ------------------------------------------------------------ understanding free text (English + Tagalog)
   var SERVICE_WORDS = [
-    ["aesthetic-dentistry", ["veneer", "whiten", "bleach", "makeover", "cosmetic", "aesthetic", "smile design", "bonding", "crown", "jacket", "bridge", "zirconia"]],
-    ["prosthodontics", ["denture", "pustiso", "flexite", "prostho", "full mouth"]],
-    ["dental-implants", ["implant", "extract", "bunot", "wisdom", "surgery", "opera", "impacted"]],
+    ["periodontal-care", ["gum disease", "periodont", "deep clean", "root planing", "gum graft", "receding", "gilagid", "gums"]],
+    ["aesthetic-dentistry", ["whiten", "bleach", "makeover", "cosmetic", "aesthetic", "smile design", "bonding"]],
+    ["prosthodontics", ["denture", "pustiso", "flexite", "prostho", "implant", "veneer", "replace", "missing"]],
+    ["restorative-dentistry", ["crown", "jacket", "bridge", "zirconia", "inlay", "onlay", "root canal", "pasta", "filling", "cavity", "butas", "restor", "endo"]],
+    ["oral-surgery", ["extract", "bunot", "wisdom", "surgery", "opera", "impacted", "bone graft", "third molar"]],
     ["orthodontics", ["brace", "bracket", "aligner", "invisalign", "retainer", "ortho", "tmj", "jaw", "panga", "sungki", "crooked"]],
     ["pediatric-dentistry", ["kid", "child", "bata", "anak", "baby", "pedia", "sedation", "special need", "toddler"]],
-    ["general-dentistry", ["clean", "linis", "prophy", "check-up", "checkup", "check up", "root canal", "x-ray", "xray", "gum", "gilagid", "fluoride", "sealant", "pasta", "filling", "cavity", "butas"]]
+    ["general-dentistry", ["clean", "linis", "prophy", "check-up", "checkup", "check up", "x-ray", "xray", "cbct", "panoramic", "fluoride", "sealant", "screening", "cancer"]]
   ];
   var STOP = (" the a an is are am do does did i my me you your we our us it its this that what how can could will would should to of in on for with and or be " +
               "have has there any about tell please want know need ano ang ng sa po ba ko mo na at para yung kung may mga pag paano ako kayo nyo ninyo " +

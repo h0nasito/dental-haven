@@ -311,7 +311,7 @@ class TestPayrollAndReportCards(Base):
 class TestPublicSite(Base):
     def test_pages_render_with_placeholders(self):
         c = self.app.test_client()
-        for path in ("/", "/services/dental-implants", "/branches/sjdm", "/laboratory", "/gallery", "/feedback", "/privacy", "/book", "/inquire"):
+        for path in ("/", "/services/oral-surgery", "/branches/sjdm", "/laboratory", "/gallery", "/feedback", "/privacy", "/book", "/inquire"):
             r = c.get(path)
             self.assertEqual(r.status_code, 200, path)
         self.assertIn(b"to be confirmed", c.get("/branches/sjdm").data)
