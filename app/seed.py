@@ -29,6 +29,9 @@ BRANCHES = [
 ]
 
 # Confirmed by the clinic (Sep 25, 2026). Hours are still to be confirmed.
+# Dental chairs per branch (one dentist per chair, so this many patients can be seen at once).
+BRANCH_CHAIRS = {"malolos": 5, "guiguinto": 3, "bocaue": 2, "sjdm": 2}
+
 BRANCH_DETAILS = {
     "malolos": {
         "address": "76 Paseo del Congreso, Malolos City, Bulacan (former Matt Balloons)",
@@ -60,14 +63,11 @@ BRANCH_DETAILS = {
     },
 }
 
-EXPECT = ("## What to expect\n- A conversation about your concerns and health history\n"
+EXPECT = ("## What to expect\n\n- A conversation about your concerns and health history\n"
           "- An examination, with images or scans when needed\n- Your options and costs explained before any treatment")
 
 # (slug, name, category, default minutes, one-line summary, page body). Wording from Dental Haven (Sep 26, 2026).
 SERVICES = [
-    ("general-dentistry", "General & Preventive", "General & Preventive", 30,
-     "Check-ups, cleanings, and tooth fillings.",
-     "Keep your smile healthy for life with regular check-ups and care.\n\n- Check-ups\n- Cleanings\n- Tooth fillings\n\n" + EXPECT),
     ("aesthetic-dentistry", "Cosmetic & Restorative", "Cosmetic & Restorative", 60,
      "Composite veneers, crowns, bridges, and teeth whitening.",
      "Repair, brighten and reshape your smile.\n\n- Composite veneers\n- Crowns\n- Bridges\n"
@@ -80,6 +80,9 @@ SERVICES = [
      "Dental implants and extractions.",
      "Replace a missing tooth with an implant designed to look natural, or have a tooth that can't be saved removed safely.\n\n"
      "- Dental implants\n- Extractions\n\nPlanning can use in-house diagnostic imaging, including CBCT and panoramic X-rays.\n\n" + EXPECT),
+    ("general-dentistry", "General & Preventive", "General & Preventive", 30,
+     "Check-ups, cleanings, and tooth fillings.",
+     "Keep your smile healthy for life with regular check-ups and care.\n\n- Check-ups\n- Cleanings\n- Tooth fillings\n\n" + EXPECT),
     ("orthodontics", "Orthodontics & TMJ", "Orthodontics & TMJ", 45,
      "Braces, clear aligners, and management of TMJ disorders.",
      "Straighter teeth, a better bite, and care for jaw joint (TMJ) problems.\n\n- Braces\n- Clear aligners\n"
@@ -94,8 +97,8 @@ OLD_PLACEHOLDER = "[Service description to be confirmed"
 
 CONTENT = {
     "home_hero": ("Happiest your teeth will ever be",
-                  "From your child's first check-up to a brand-new smile, get complete dental care for the whole family "
-                  "under one roof, at any of our four branches."),
+                  "Complete dental care for the whole family, with a specialty in aesthetic dentistry: smile makeovers, "
+                  "veneers, crowns and implants crafted for beautiful, natural-looking results."),
     "home_about": ("About Dental Haven",
                    "[About-us copy to be provided by Dental Haven.]\n\nDental Haven serves patients at four branches: "
                    "Malolos, Guiguinto, Bocaue and San Jose del Monte."),
@@ -168,6 +171,13 @@ def _upsert_content(conn, key, title, body):
         conn.execute("UPDATE site_content SET title = ?, body = ?, updated_at = ? WHERE key = ?", (title, body, now_str(), key))
 
 
+def _top_up_chairs(conn, branch_id, slug):
+    """Add chairs until the branch has its set number. Never removes or re-enables chairs staff switched off."""
+    have = conn.one("SELECT COUNT(*) AS n FROM resources WHERE branch_id = ? AND kind = 'chair'", (branch_id,))["n"]
+    for n in range(have + 1, BRANCH_CHAIRS.get(slug, 2) + 1):
+        conn.insert("resources", {"branch_id": branch_id, "name": f"Chair {n}", "kind": "chair", "active": 1})
+
+
 def seed_base(conn):
     with conn.transaction():
         for i, (slug, name) in enumerate(BRANCHES):
@@ -178,6 +188,7 @@ def seed_base(conn):
                 upd = {k: v for k, v in det.items() if not existing.get(k) or str(existing.get(k)).startswith("[")}
                 if upd:
                     conn.update("branches", existing["id"], upd)
+                _top_up_chairs(conn, existing["id"], slug)
                 continue
             bid = conn.insert("branches", {
                 "slug": slug, "name": name, "address": f"[{name} address to be confirmed]",
@@ -189,8 +200,7 @@ def seed_base(conn):
                 conn.execute("INSERT INTO branch_hours (branch_id, weekday, open_time, close_time, closed) VALUES (?, ?, '09:00', '18:00', ?)",
                              (bid, wd, 1 if wd == 6 else 0))
             conn.execute("INSERT INTO invoice_sequences (branch_id, prefix, next_no) VALUES (?, ?, 1)", (bid, slug[:3].upper()))
-            for n in (1, 2):
-                conn.insert("resources", {"branch_id": bid, "name": f"Chair {n}", "kind": "chair", "active": 1})
+            _top_up_chairs(conn, bid, slug)
         for i, (slug, name, cat, mins, summary, body) in enumerate(SERVICES):
             existing = conn.one("SELECT * FROM services WHERE slug = ?", (slug,))
             if existing and OLD_PLACEHOLDER in (existing["body"] or ""):

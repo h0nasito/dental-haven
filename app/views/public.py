@@ -51,6 +51,9 @@ def content(key: str):
     return row or {"title": "", "body": ""}
 
 
+from .. import stock_photos  # noqa: E402
+
+
 @bp.app_context_processor
 def _public_ctx():
     if request.path.startswith("/staff"):
@@ -60,6 +63,9 @@ def _public_ctx():
         "site_branches": conn.all("SELECT * FROM branches WHERE active = 1 ORDER BY sort_order"),
         "site_services": conn.all("SELECT * FROM services WHERE active = 1 ORDER BY sort_order"),
         "content": content,
+        "site_images": {r["key"]: r["image_path"] for r in conn.all("SELECT key, image_path FROM site_images")},
+        "stock": stock_photos.url,
+        "stock_samples": stock_photos.samples,
     }
 
 
@@ -96,16 +102,39 @@ def home():
     conn = get_db()
     testimonials = conn.all("SELECT t.*, b.name AS branch FROM testimonials t LEFT JOIN branches b ON b.id = t.branch_id "
                             "WHERE t.approved = 1 AND t.published = 1 ORDER BY t.id DESC LIMIT 6")
-    # Before/after cases lead (the first one is shown large); newest first otherwise.
+    # Featured case first, then before/after cases, then newest.
     works = conn.all("SELECT * FROM gallery_items WHERE published = 1 AND authorized = 1 AND image_path != '' "
-                     "ORDER BY sort_order, CASE WHEN before_image_path != '' THEN 0 ELSE 1 END, id DESC LIMIT 24")
+                     "ORDER BY featured DESC, sort_order, CASE WHEN before_image_path != '' THEN 0 ELSE 1 END, id DESC LIMIT 24")
+    # Spread cases across the page so each section shows different ones:
+    # hero = featured case; specialty = next before/after cases; gallery = the rest.
+    ba_all = [w for w in works if w["before_image_path"]]
+    featured = ba_all[0] if ba_all else None
+    ba_cases = ba_all[1:5] if len(ba_all) > 1 else ba_all[:1]
+    shown = {w["id"] for w in ba_all[:5]}
+    works = [w for w in works if w["id"] not in shown] or works
     if len(works) > 3:
         works = works[:len(works) // 3 * 3]  # whole rows only (the first tile is double size); the rest are in the gallery
     from .admin import PORTFOLIO_CATEGORIES
     used = {w["category"] for w in works}
     filters = [(k, label) for k, label in PORTFOLIO_CATEGORIES if k in used]
     return render_template("public/home.html", testimonials=testimonials, works=works, filters=filters,
+                           featured=featured, ba_cases=ba_cases,
+                           **_booking_defaults(conn),
                            category_labels=dict(PORTFOLIO_CATEGORIES))
+
+
+def _booking_defaults(conn):
+    """Context for an empty appointment-request form (used on the home page)."""
+    max_days = int(settings.get("booking.max_days_ahead", conn) or 60)
+    return {
+        "branches": conn.all("SELECT * FROM branches WHERE active = 1 ORDER BY sort_order"),
+        "services": conn.all("SELECT * FROM services WHERE active = 1 AND bookable_online = 1 ORDER BY sort_order"),
+        "dentists": _bookable_dentists(conn), "slots": [], "errors": {},
+        "v": {"branch_id": None, "service_id": None, "dentist_id": None, "date": "", "time": "", "full_name": "", "phone": "",
+              "email": "", "message": "", "consent_privacy": False, "consent_contact": False},
+        "min_date": today().isoformat(), "max_date": (today() + timedelta(days=max_days)).isoformat(),
+        "started": int(time.time()),
+    }
 
 
 @bp.route("/services/<slug>")

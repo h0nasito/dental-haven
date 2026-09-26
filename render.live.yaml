@@ -36,7 +36,7 @@ services:
         sync: false
       - key: INITIAL_ADMIN_PASSWORD
         sync: false
-      # Dentist emails: each branch's Gmail + its app password (optional; add when ready).
+      # Dentist + patient emails: each branch's Gmail + its app password (optional; add when ready).
       - key: MAIL_MALOLOS_USERNAME
         value: dentalhavenmalolos@gmail.com
       - key: MAIL_MALOLOS_PASSWORD
@@ -53,3 +53,8 @@ services:
         value: dentalhavensjdm@gmail.com
       - key: MAIL_SJDM_PASSWORD
         sync: false
+      # Patient SMS through Semaphore (optional; leave empty until the account is approved).
+      - key: SEMAPHORE_API_KEY
+        sync: false
+      - key: SEMAPHORE_SENDER_NAME
+        value: DentalHaven

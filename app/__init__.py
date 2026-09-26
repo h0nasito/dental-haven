@@ -97,7 +97,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         resp.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
         resp.headers.setdefault(
             "Content-Security-Policy",
-            "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "default-src 'self'; img-src 'self' data: https://images.unsplash.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
             "font-src 'self' https://fonts.gstatic.com; script-src 'self'; "
             "frame-ancestors 'none'; form-action 'self'; base-uri 'self'",
         )
@@ -146,6 +146,9 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     from .cli import register_cli
     register_cli(app)
+
+    from .patient_notify import start_worker
+    start_worker(app)
 
     @app.context_processor
     def _ctx():

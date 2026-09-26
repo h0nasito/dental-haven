@@ -185,12 +185,13 @@ class TestBooking(Base):
         # outside branch hours → rejected
         r = c.post("/staff/appointments/new", data=dict(form, time="19:00"))
         self.assertIn(b"Outside branch hours", r.data)
-        # rooms: fill both chairs with no dentist then a third is rejected
+        # chairs: fill every chair at the branch, then one more is rejected
+        chairs = self.q("SELECT COUNT(*) AS n FROM resources WHERE branch_id = ? AND active = 1", (form["branch_id"],))["n"]
         for t in ("11:00",):
-            for _ in range(2):
+            for _ in range(chairs):
                 c.post("/staff/appointments/new", data=dict(form, dentist_id="", time=t))
             r = c.post("/staff/appointments/new", data=dict(form, dentist_id="", time=t))
-            self.assertIn(b"All rooms", r.data)
+            self.assertIn(b"All chairs", r.data)
         # reschedule into conflict is rejected
         other = c.post("/staff/appointments/new", data=dict(form, time="14:00"))
         second = self.q("SELECT * FROM appointments WHERE dentist_id = ? AND start_at = ?", (dentist, f"{day.isoformat()} 14:00"))
