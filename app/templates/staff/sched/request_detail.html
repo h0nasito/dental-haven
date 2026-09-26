@@ -9,7 +9,6 @@
 <dt>Preferred dentist</dt><dd>{{ r.dentist or 'No preference' }}</dd><dt>Mobile</dt><dd>{{ r.phone }}</dd><dt>Email</dt><dd>{{ r.email or '—' }}</dd>
 <dt>Message</dt><dd class="pre">{{ r.message or '—' }}</dd><dt>Privacy consent</dt><dd>{{ 'Yes' if r.consent_privacy else 'No' }}</dd><dt>Reminder consent</dt><dd>{{ 'Yes' if r.consent_contact else 'No' }}</dd></dl>
 {% if r.status == 'declined' %}<p class="notice mt-1">Declined: {{ r.decline_reason }}</p>{% endif %}
-{% for m in patient_messages %}<p class="muted small">{{ pm_events[m.event] }} · {{ 'SMS' if m.channel == 'sms' else 'Email' }} to {{ m.recipient_masked }}: <strong>{{ pm_status[m.status] }}</strong></p>{% endfor %}
 {% if r.appointment_id %}<p class="mt-1"><a class="btn btn-secondary btn-sm" href="{{ url_for('sched.appointment', appt_id=r.appointment_id) }}">View appointment</a></p>{% endif %}
 </div>
 {% if r.status == 'pending' and current_user.can('bookings.manage') %}
@@ -26,7 +25,7 @@
 <button class="btn">Confirm and book</button>
 </form>
 <details class="mt-1"><summary>Decline request</summary>
-<form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="decline"><div class="field"><label for="dr">Reason (internal)</label><input id="dr" name="decline_reason" required placeholder="e.g. Fully booked — offered another day by phone"></div><p class="muted small">The patient is told automatically that this time isn't available and invited to pick another. Your reason stays internal.</p><button class="btn btn-danger">Decline</button></form></details>
+<form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="decline"><div class="field"><label for="dr">Reason (internal)</label><input id="dr" name="decline_reason" required placeholder="e.g. Fully booked — offered another day by phone"></div><button class="btn btn-danger">Decline</button></form></details>
 </div>
 {% endif %}
 </div>

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block fonts %}<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..700;1,400..700&amp;display=swap">{% endblock %}
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900;1,6..96,400..900&amp;display=swap">{% endblock %}
 {% block body %}
 <header class="site-header">
   <div class="wrap">
@@ -8,11 +8,11 @@
     <input type="checkbox" id="nav-toggle" class="nav-toggle sr-only">
     <label for="nav-toggle" class="btn btn-secondary btn-sm nav-toggle-btn">Menu</label>
     <nav class="site-nav" aria-label="Main">
-      <a href="{{ url_for('public.home') }}#specialty">Smile transformations</a>
       <a href="{{ url_for('public.home') }}#work">Our work</a>
       <a href="{{ url_for('public.home') }}#services">Services</a>
+      <a href="{{ url_for('public.home') }}#clinic">Why us</a>
       <a href="{{ url_for('public.home') }}#branches">Branches</a>
-      <a href="{{ url_for('public.home') }}#contact">Contact</a>
+      <a href="{{ url_for('public.inquire') }}">Contact</a>
       <a class="btn" href="{{ url_for('public.book') }}">Book now</a>
     </nav>
   </div>

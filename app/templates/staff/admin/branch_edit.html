@@ -6,7 +6,7 @@
 <div class="grid grid-2">
 <div class="card"><h2>Public details</h2>
 <p class="notice">Only publish details the clinic has confirmed. Leave text marked "[to be confirmed]" until you have the final version.</p>
-<form method="post" class="mt-1" enctype="multipart/form-data">{{ csrf() }}<input type="hidden" name="section" value="details">
+<form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="section" value="details">
   {{ field('name', 'Branch name', b.name, errors=errors, required=True) }}
   {{ textarea('address', 'Address', b.address, errors=errors, rows=2) }}
   {{ field('phone', 'Contact numbers', b.phone, hint='Separate several numbers with /') }}
@@ -16,12 +16,6 @@
   {{ field('facebook_url', 'Facebook page', b.facebook_url, errors=errors) }}
   {{ textarea('hours_text', 'Hours as shown to the public', b.hours_text, rows=3, hint='Operating hours for booking are set below.') }}
   {{ textarea('intro', 'Short intro for the branch page', b.intro, rows=3) }}
-  <fieldset><legend>Branch photo (website)</legend>
-  {% if not b.image_path %}<p class="hint">No photo yet: the website shows a template image until you upload one.</p>{% endif %}
-  {% if b.image_path %}<img src="{{ url_for('static', filename=b.image_path) }}" alt="" style="width:220px;border-radius:10px;margin-bottom:.5rem">
-  <label class="check"><input type="checkbox" name="remove_image" value="1"> Remove this photo</label>{% endif %}
-  <div class="field {% if errors.image %}error{% endif %}"><label for="image">{{ 'Replace photo' if b.image_path else 'Upload a photo' }} (JPG, PNG or WebP)</label><input id="image" type="file" name="image" accept="image/png,image/jpeg,image/webp">
-  <span class="hint">The branch front or reception works well.</span>{% if errors.image %}<div class="field-error">{{ errors.image }}</div>{% endif %}</div></fieldset>
   <button class="btn" type="submit">Save details</button>
 </form></div>
 <div>
@@ -36,11 +30,11 @@
 <td><label class="sr-only" for="x{{wd}}">Closed</label><input id="x{{wd}}" type="checkbox" name="closed_{{ wd }}" value="1" {% if h and h.closed %}checked{% endif %}></td></tr>
 {% endfor %}</tbody></table></div>
 <button class="btn mt-1" type="submit">Save hours</button></form></div>
-<div class="card"><h2>Dental chairs</h2>
-<p class="muted">One dentist works on one chair, so this branch can see as many patients at the same time as it has active chairs. Two appointments can never use the same chair at the same time, and online booking only offers times when a chair and a dentist are both free. When staff don't pick a chair, the system assigns a free one.</p>
+<div class="card"><h2>Rooms / chairs / equipment</h2>
+<p class="muted">Two appointments can't use the same room at the same time. When staff don't pick a room, the system assigns a free one.</p>
 <ul class="list-plain">{% for r in resources %}<li class="row between"><span>{{ r.name }} <span class="badge">{{ r.kind }}</span> {% if not r.active %}<span class="badge">inactive</span>{% endif %}</span>
 <form method="post" class="inline-form">{{ csrf() }}<input type="hidden" name="section" value="resource_toggle"><input type="hidden" name="resource_id" value="{{ r.id }}"><button class="btn btn-ghost btn-sm">{{ 'Deactivate' if r.active else 'Activate' }}</button></form></li>
-{% else %}<li class="muted">No chairs yet. Without chairs, only dentist conflicts are checked.</li>{% endfor %}</ul>
+{% else %}<li class="muted">No rooms yet. Without rooms, only dentist conflicts are checked.</li>{% endfor %}</ul>
 <form method="post" class="row mt-1">{{ csrf() }}<input type="hidden" name="section" value="resource_add">
 <label class="sr-only" for="rn">Name</label><input id="rn" name="name" placeholder="e.g. Operatory 3" style="max-width:200px">
 <label class="sr-only" for="rk">Type</label><select id="rk" name="kind" style="max-width:140px"><option value="chair">Chair</option><option value="room">Room</option><option value="equipment">Equipment</option></select>

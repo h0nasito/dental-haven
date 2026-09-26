@@ -147,9 +147,6 @@ def create_app(test_config: dict | None = None) -> Flask:
     from .cli import register_cli
     register_cli(app)
 
-    from .patient_notify import start_worker
-    start_worker(app)
-
     @app.context_processor
     def _ctx():
         return {"current_user": g.get("user"), "demo_mode": app.config["APP_ENV"] == "demo"}

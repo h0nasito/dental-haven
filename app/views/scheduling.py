@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
 
-from .. import audit, dentist_mail, patient_notify
+from .. import audit, dentist_mail
 from ..auth import require
 from ..db import get_db
 from ..messaging import cancel_appointment_reminders, schedule_appointment_reminders
@@ -56,8 +56,6 @@ def calendar():
     conn = get_db()
     user = g.user
     view = request.args.get("view", "day")
-    if view not in ("day", "chairs", "week"):
-        view = "day"
     day = parse_date(request.args.get("date")) or today()
     dentist_id = to_int(request.args.get("dentist"))
     if user.own_schedule_only:
@@ -78,18 +76,6 @@ def calendar():
     appts = conn.all(APPT_SELECT + f" WHERE {' AND '.join(where)} ORDER BY a.start_at", args)
     dentist_list = dentists(user.scope_branch_ids)
     columns, hours = [], (8, 19)
-    if view == "chairs":
-        branch_ids = user.scope_branch_ids or [b["id"] for b in conn.all("SELECT id FROM branches WHERE active = 1")]
-        marks = ",".join("?" for _ in branch_ids)
-        chairs = conn.all(f"SELECT r.*, b.name AS branch FROM resources r JOIN branches b ON b.id = r.branch_id "
-                          f"WHERE r.active = 1 AND r.branch_id IN ({marks}) ORDER BY b.sort_order, r.name", branch_ids)
-        multi = len(branch_ids) > 1
-        for ch in chairs:
-            columns.append({"id": ch["id"], "name": ch["name"] + (" · " + ch["branch"].split(" (")[0] if multi else ""),
-                            "appts": [a for a in appts if a["resource_id"] == ch["id"]]})
-        no_chair = [a for a in appts if not a["resource_id"]]
-        if no_chair:
-            columns.append({"id": None, "name": "No chair yet", "appts": no_chair})
     if view == "day":
         # columns: one per dentist with appointments or schedule; plus "Unassigned"
         ids = [d["id"] for d in dentist_list] if not dentist_id else [dentist_id]
@@ -99,7 +85,6 @@ def calendar():
         unassigned = [a for a in appts if not a["dentist_id"]]
         if unassigned and not dentist_id:
             columns.append({"id": None, "name": "No dentist yet", "appts": unassigned})
-    if view in ("day", "chairs"):
         if user.scope_branch_ids:
             marks = ",".join("?" for _ in user.scope_branch_ids)
             bh = conn.one(f"SELECT MIN(open_time) AS o, MAX(close_time) AS c FROM branch_hours WHERE closed = 0 AND weekday = ? "
@@ -230,7 +215,7 @@ def _validate_and_save(conn, patient, v, appt=None):
         errors["dentist_id"] = "That dentist doesn't work at this branch."
     if v["resource_id"] and not conn.one("SELECT id FROM resources WHERE id = ? AND branch_id = ? AND active = 1",
                                          (v["resource_id"], v["branch_id"] or 0)):
-        errors["resource_id"] = "That chair isn't at this branch."
+        errors["resource_id"] = "That room isn't at this branch."
     start = parse_dt(f"{v['date']} {v['time']}")
     if not start:
         errors["date"] = "Enter a valid date and time."
@@ -250,7 +235,7 @@ def _validate_and_save(conn, patient, v, appt=None):
         if not resource_id:
             resource_id, has_res = free_resource(conn, v["branch_id"], fmt_dt(start), fmt_dt(end), exclude_id=exclude)
             if has_res and not resource_id:
-                return {"_form": ["All chairs at this branch are taken at that time. Choose another time."]}
+                return {"_form": ["All rooms at this branch are booked at that time."]}
         problems = validate_slot(conn, branch_id=v["branch_id"], start=start, end=end, dentist_id=v["dentist_id"],
                                  resource_id=resource_id, exclude_id=exclude)
         if problems:
@@ -288,10 +273,8 @@ def appointment(appt_id):
     reminders = conn.all("SELECT * FROM reminders WHERE appointment_id = ? ORDER BY scheduled_for", (appt_id,))
     dentist_emails = conn.all("SELECT e.*, u.name AS dentist FROM dentist_emails e JOIN users u ON u.id = e.user_id "
                               "WHERE e.appointment_id = ? ORDER BY e.id DESC", (appt_id,))
-    patient_messages = conn.all("SELECT * FROM patient_messages WHERE appointment_id = ? ORDER BY id DESC", (appt_id,))
     invoices = conn.all("SELECT * FROM invoices WHERE appointment_id = ?", (appt_id,)) if g.user.can("billing.view") else []
     return render_template("staff/sched/appointment.html", a=a, history=history, reminders=reminders, invoices=invoices, dentist_emails=dentist_emails,
-                           patient_messages=patient_messages, pm_events=patient_notify.EVENT_LABELS, pm_status=patient_notify.STATUS_LABELS,
                            email_events=dentist_mail.EVENTS, email_status=dentist_mail.STATUS_LABELS,
                            transitions=TRANSITIONS.get(a["status"], set()), services=services(),
                            dentists=dentists([a["branch_id"]]), resources=_resources(conn, [a["branch_id"]]),
@@ -352,10 +335,8 @@ def appointment_status(appt_id):
                 audit.record("followup_created", "follow_up", fid, f"Follow-up in {days} days after treatment", branch_id=a["branch_id"])
     if new == "confirmed":
         dentist_mail.notify(conn, appt_id, "confirmed", a["dentist_id"])
-        patient_notify.notify_appointment(conn, appt_id, "approved")
     elif new == "cancelled" and a["status"] == "confirmed":
         dentist_mail.notify(conn, appt_id, "cancelled", a["dentist_id"])
-        patient_notify.notify_appointment(conn, appt_id, "cancelled")
     flash(f"Appointment marked {STATUSES[new].lower()}.", "success")
     return redirect(url_for("sched.appointment", appt_id=appt_id))
 
@@ -385,8 +366,6 @@ def appointment_reschedule(appt_id):
                 dentist_mail.notify(conn, appt_id, "confirmed", b["dentist_id"])
             elif any(a[k] != b[k] for k in ("start_at", "end_at", "branch_id", "service_id")):
                 dentist_mail.notify(conn, appt_id, "rescheduled", b["dentist_id"], previous=dentist_mail.describe_slot(a))
-            if any(a[k] != b[k] for k in ("start_at", "branch_id")):
-                patient_notify.notify_appointment(conn, appt_id, "rescheduled")
         flash("Appointment rescheduled. Reminders were updated for the new time.", "success")
     else:
         msgs = result.get("_form") or list(result.values())
@@ -465,8 +444,7 @@ def request_detail(req_id):
                 conn.execute("UPDATE booking_requests SET status='declined', decline_reason=?, handled_by=?, handled_at=? WHERE id=?",
                              (reason, g.user.id, now_str(), req_id))
                 audit.record("booking_declined", "booking_request", req_id, f"Declined {r['ref_code']}", {"reason": reason}, r["branch_id"])
-                patient_notify.notify_declined(conn, r)
-                flash(_patient_flash(conn, "Request declined.", booking_request_id=req_id), "success")
+                flash("Request declined. Remember to let the patient know and offer another time.", "success")
                 return redirect(url_for("sched.requests"))
         elif action == "confirm":
             v.update({
@@ -509,22 +487,11 @@ def request_detail(req_id):
                 pass
             else:
                 dentist_mail.notify(conn, result, "confirmed", v["dentist_id"])
-                patient_notify.notify_appointment(conn, result, "approved", booking_request_id=req_id, fallback_email=r["email"])
-                flash(_patient_flash(conn, "Request confirmed and appointment booked.", booking_request_id=req_id), "success")
+                flash("Request confirmed and appointment booked. Let the patient know using the confirmation template.", "success")
                 return redirect(url_for("sched.appointment", appt_id=result))
-    patient_messages = conn.all("SELECT * FROM patient_messages WHERE booking_request_id = ? ORDER BY id", (req_id,))
     return render_template("staff/sched/request_detail.html", r=r, matches=matches, v=v, errors=errors,
-                           patient_messages=patient_messages, pm_events=patient_notify.EVENT_LABELS, pm_status=patient_notify.STATUS_LABELS,
                            services=services(), dentists=dentists([r["branch_id"]]),
                            resources=_resources(conn, [r["branch_id"]]), branches=branches_for_user(g.user))
-
-
-def _patient_flash(conn, prefix, booking_request_id):
-    rows = conn.all("SELECT channel, status FROM patient_messages WHERE booking_request_id = ?", (booking_request_id,))
-    sent = [r["channel"] for r in rows if r["status"] == "sent"]
-    if sent:
-        return prefix + " The patient was notified by " + " and ".join("SMS" if c == "sms" else "email" for c in sent) + "."
-    return prefix + " The patient was NOT notified automatically: please call or text them."
 
 
 class _Rollback(Exception):

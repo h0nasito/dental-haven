@@ -283,46 +283,6 @@ def branches():
     return render_template("staff/admin/branches.html", branches=rows)
 
 
-def _uploaded_image(field="image"):
-    """Save an optional uploaded website photo. Returns (path or None, error or None)."""
-    from ..uploads import save_public_image
-    f = request.files.get(field)
-    if not f or not f.filename:
-        return None, None
-    return save_public_image(f)
-
-
-SITE_IMAGE_KEYS = [
-    ("hero", "Top of the home page (large background photo)", "A wide, bright photo: your clinic interior, a dentist with a patient, or a smile close-up. Landscape, at least 1600 px wide."),
-    ("lab", "Laboratory section", "A photo of your lab: scanners, milling machine, technicians at work."),
-]
-
-
-@bp.route("/content/photos", methods=["POST"])
-@require("content.manage")
-def site_image_save():
-    conn = get_db()
-    key = request.form.get("key")
-    if key not in dict((k, l) for k, l, _ in SITE_IMAGE_KEYS):
-        abort(400)
-    if request.form.get("action") == "remove":
-        conn.execute("DELETE FROM site_images WHERE key = ?", (key,))
-        audit.record("site_image_removed", "site_content", None, f"Removed website photo: {key}")
-        flash("Photo removed.", "success")
-    else:
-        path, err = _uploaded_image()
-        if err or not path:
-            flash(err or "Choose a photo to upload.", "error")
-        else:
-            if conn.one("SELECT key FROM site_images WHERE key = ?", (key,)):
-                conn.execute("UPDATE site_images SET image_path = ?, updated_at = ?, updated_by = ? WHERE key = ?", (path, now_str(), g.user.id, key))
-            else:
-                conn.execute("INSERT INTO site_images (key, image_path, updated_at, updated_by) VALUES (?, ?, ?, ?)", (key, path, now_str(), g.user.id))
-            audit.record("site_image_updated", "site_content", None, f"Updated website photo: {key}")
-            flash("Photo saved. It now shows on the website.", "success")
-    return redirect(url_for("admin.content") + "#photos")
-
-
 @bp.route("/branches/<int:branch_id>", methods=["GET", "POST"])
 @require("settings.manage")
 def branch_edit(branch_id):
@@ -342,13 +302,6 @@ def branch_edit(branch_id):
                     errors[k] = "Link must start with https://"
             if not vals["name"]:
                 errors["name"] = "Name is required."
-            img, img_err = _uploaded_image()
-            if img_err:
-                errors["image"] = img_err
-            elif img:
-                vals["image_path"] = img
-            elif request.form.get("remove_image"):
-                vals["image_path"] = ""
             if not errors:
                 changes = audit.diff(dict(b), vals, vals.keys())
                 conn.update("branches", branch_id, vals)
@@ -446,10 +399,6 @@ def service_edit(service_id):
             errors["default_duration_min"] = "Duration must be between 5 and 480 minutes."
         if request.form.get("default_price") and v["default_price_cents"] is None:
             errors["default_price"] = "Enter an amount like 1500 or 1500.00."
-        img, img_err = _uploaded_image()
-        if img_err:
-            errors["image"] = img_err
-        v["image_path"] = img or ("" if request.form.get("remove_image") else (s["image_path"] if s else ""))
         if not errors:
             if s:
                 conn.update("services", service_id, v)
@@ -596,9 +545,7 @@ def content():
     items = {r["key"]: r for r in conn.all("SELECT * FROM site_content")}
     gallery = conn.all("SELECT * FROM gallery_items ORDER BY id DESC")
     testimonials = conn.all("SELECT t.*, b.name AS branch FROM testimonials t LEFT JOIN branches b ON b.id = t.branch_id ORDER BY t.id DESC")
-    photos = {r["key"]: r for r in conn.all("SELECT * FROM site_images")}
-    return render_template("staff/admin/content.html", branches=conn.all("SELECT id, name FROM branches ORDER BY sort_order"),
-                           photo_keys=SITE_IMAGE_KEYS, photos=photos, keys=CONTENT_KEYS, items=items, gallery=gallery,
+    return render_template("staff/admin/content.html", branches=conn.all("SELECT id, name FROM branches ORDER BY sort_order"), keys=CONTENT_KEYS, items=items, gallery=gallery,
                            testimonials=testimonials, categories=PORTFOLIO_CATEGORIES,
                            category_labels=dict(PORTFOLIO_CATEGORIES))
 
@@ -651,13 +598,6 @@ def gallery_save():
             else:
                 conn.execute("UPDATE gallery_items SET published = ? WHERE id = ?", (0 if item["published"] else 1, gid))
                 audit.record("gallery_published" if not item["published"] else "gallery_unpublished", "gallery_item", gid, item["title"])
-        elif action == "feature":
-            if not (item["published"] and item["before_image_path"]):
-                flash("Only a published case with a before photo can be featured on the home page.", "error")
-            else:
-                conn.execute("UPDATE gallery_items SET featured = CASE WHEN id = ? THEN 1 ELSE 0 END", (gid,))
-                audit.record("gallery_featured", "gallery_item", gid, item["title"])
-                flash("This case is now featured on the home page.", "success")
         elif action == "delete":
             conn.execute("DELETE FROM gallery_items WHERE id = ?", (gid,))
             audit.record("gallery_deleted", "gallery_item", gid, item["title"])

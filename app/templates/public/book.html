@@ -10,7 +10,53 @@
   <p class="muted">{{ note.body or 'Choose your branch, service and a preferred time. This is a request, not a confirmed booking — our team will contact you to confirm.' }}</p>
   {{ form_errors(errors) }}
   {% if errors and errors|length > (1 if errors.get('_form') else 0) %}<div class="flash flash-error" role="alert">Please check the highlighted fields.</div>{% endif %}
-  {% include "public/_booking_form.html" %}
+  <form method="post" id="booking-form" class="card" data-slots-url="{{ url_for('public.book_slots') }}" novalidate>
+    {{ csrf() }}
+    <input type="hidden" name="started" value="{{ started }}">
+    <div class="hp" aria-hidden="true"><label>Leave this empty <input name="website" tabindex="-1" autocomplete="off"></label></div>
+    <fieldset><legend>1. Where and what</legend>
+    <div class="form-grid">
+      <div class="field {% if errors.branch_id %}error{% endif %}"><label for="branch_id">Branch *</label>
+        <select id="branch_id" name="branch_id" required><option value="">Choose a branch</option>{% for b in branches %}<option value="{{ b.id }}" {% if v.branch_id == b.id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select>
+        {% if errors.branch_id %}<div class="field-error">{{ errors.branch_id }}</div>{% endif %}</div>
+      <div class="field {% if errors.service_id %}error{% endif %}"><label for="service_id">Service *</label>
+        <select id="service_id" name="service_id" required><option value="">Choose a service</option>{% for s in services %}<option value="{{ s.id }}" {% if v.service_id == s.id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}</select>
+        {% if errors.service_id %}<div class="field-error">{{ errors.service_id }}</div>{% endif %}</div>
+      <div class="field {% if errors.dentist_id %}error{% endif %}"><label for="dentist_id">Preferred dentist (optional)</label>
+        <select id="dentist_id" name="dentist_id"><option value="">No preference</option>{% for d in dentists %}<option value="{{ d.id }}" {% if v.dentist_id == d.id %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select>
+        {% if errors.dentist_id %}<div class="field-error">{{ errors.dentist_id }}</div>{% endif %}</div>
+    </div></fieldset>
+    <fieldset><legend>2. Preferred date and time</legend>
+      <div class="field {% if errors.date %}error{% endif %}" style="max-width:260px"><label for="date">Date *</label>
+        <input id="date" type="date" name="date" min="{{ min_date }}" max="{{ max_date }}" value="{{ v.date }}" required>
+        {% if errors.date %}<div class="field-error">{{ errors.date }}</div>{% endif %}</div>
+      <div class="field {% if errors.time %}error{% endif %}"><span class="label" style="font-weight:600;font-size:.9rem;color:var(--ink-2)">Available times *</span>
+        <div id="slot-box" aria-live="polite">
+          {% if slots %}<div class="slot-grid" role="radiogroup">{% for val, lab in slots %}<label><input type="radio" name="time" value="{{ val }}" {% if v.time == val %}checked{% endif %} required><span>{{ lab }}</span></label>{% endfor %}</div>
+          {% else %}<p class="muted">Choose a branch, service and date to see open times.</p>{% endif %}
+        </div>
+        <noscript><p class="hint">Without JavaScript: choose your branch, service and date, then press "Show available times".</p></noscript>
+        <button id="slot-nojs" class="btn btn-secondary btn-sm mt-1" type="submit" name="show" value="1" formnovalidate>Show available times</button>
+        {% if errors.time %}<div class="field-error">{{ errors.time }}</div>{% endif %}</div>
+    </fieldset>
+    <fieldset><legend>3. Your details</legend>
+    <div class="form-grid">
+      <div class="field {% if errors.full_name %}error{% endif %}"><label for="full_name">Full name *</label><input id="full_name" name="full_name" value="{{ v.full_name }}" autocomplete="name" required>{% if errors.full_name %}<div class="field-error">{{ errors.full_name }}</div>{% endif %}</div>
+      <div class="field {% if errors.phone %}error{% endif %}"><label for="phone">Mobile number *</label><input id="phone" name="phone" type="tel" value="{{ v.phone }}" autocomplete="tel" placeholder="09XX XXX XXXX" required>{% if errors.phone %}<div class="field-error">{{ errors.phone }}</div>{% endif %}</div>
+      <div class="field {% if errors.email %}error{% endif %}"><label for="email">Email (optional)</label><input id="email" name="email" type="email" value="{{ v.email }}" autocomplete="email">{% if errors.email %}<div class="field-error">{{ errors.email }}</div>{% endif %}</div>
+    </div>
+    <div class="field"><label for="message">Anything we should know? (optional)</label><textarea id="message" name="message" rows="3" placeholder="e.g. tooth pain on the lower left, prefer afternoons">{{ v.message }}</textarea>
+      <span class="hint">Please don't include detailed medical information here. We'll ask for your health history privately at your visit.</span></div>
+    </fieldset>
+    <div class="field {% if errors.consent_privacy %}error{% endif %}">
+      <label class="check"><input type="checkbox" name="consent_privacy" value="1" {% if v.consent_privacy %}checked{% endif %} required>
+      <span>{{ consent.body or 'I agree that Dental Haven may collect and use the information above to process my appointment request, as described in the privacy notice.' }} <a href="{{ url_for('public.privacy') }}" target="_blank">Read the privacy notice</a>. *</span></label>
+      {% if errors.consent_privacy %}<div class="field-error">{{ errors.consent_privacy }}</div>{% endif %}</div>
+    <div class="field"><label class="check"><input type="checkbox" name="consent_contact" value="1" {% if v.consent_contact %}checked{% endif %}>
+      <span>{{ cc.body or 'I agree to receive appointment reminders and follow-up messages by SMS or email. I can opt out at any time.' }} (optional)</span></label></div>
+    <button class="btn btn-lg" type="submit">Send appointment request</button>
+    <p class="hint">Sending this form does not confirm an appointment. We'll contact you to confirm.</p>
+  </form>
 </div>
 <aside class="hero-card" style="position:sticky;top:90px">
   <h3>What happens next</h3>

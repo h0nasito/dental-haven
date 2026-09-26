@@ -95,14 +95,6 @@ def register_cli(app):
             audit.record("user_created", "user", uid, f"Created first super admin {email} from server settings", actor_id=None, conn=conn)
         click.echo(f"Created the first super admin: {email}. They must change the password at first sign-in.")
 
-    @app.cli.command("send-reminders")
-    def send_reminders():
-        """Send due appointment reminders by email/SMS now (the live site also does this every 5 minutes)."""
-        from .db import get_db
-        from .patient_notify import send_due_reminders
-        with app.app_context():
-            click.echo(f"Sent {send_due_reminders(get_db())} reminder(s).")
-
     @app.cli.command("generate-reminders")
     def generate_reminders():
         """Queue reminder rows for upcoming confirmed appointments (for a daily cron). Sends nothing."""

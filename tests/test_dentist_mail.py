@@ -50,7 +50,6 @@ class TestDentistEmails(Base):
         self.svc = self.q("SELECT id FROM services WHERE slug='general-dentistry'")["id"]
         self.patient = self.q("SELECT * FROM patients WHERE preferred_branch_id = ? LIMIT 1", (self.malolos,))
         self.conn.execute("UPDATE users SET notify_email = 1")
-        self.conn.execute("UPDATE patients SET email = ''")  # patient emails are covered in test_patient_notify.py
 
     def _form(self, day, time, dentist):
         return {"patient_id": self.patient["id"], "branch_id": self.malolos, "service_id": self.svc, "dentist_id": dentist,

@@ -26,7 +26,7 @@ no demo data, and your own domain. Cost: about $7/month for the server plus $1.2
 1. Open `https://<your-service>.onrender.com/staff/login` and sign in with the INITIAL_ADMIN email and password.
 2. Choose a new password.
 3. In Render → Environment, delete `INITIAL_ADMIN_PASSWORD` (it's no longer used).
-4. Check **Administration → Role access**, then **Branches & chairs** (hours, chairs), **Dentist schedules**, and **Website content**.
+4. Check **Administration → Role access**, then **Branches & rooms** (hours, rooms), **Dentist schedules**, and **Website content**.
 5. Create the staff accounts under **Administration → Users**. Each person gets a temporary password.
 6. Import the patient records under **Administration → Import from MyMedsPH**.
 
@@ -35,10 +35,10 @@ no demo data, and your own domain. Cost: about $7/month for the server plus $1.2
 2. Porkbun → **Domain Management** → dentalhaven.net → **DNS**. Delete the default parking records, then add exactly the records Render shows.
 3. Wait until Render marks both as verified (usually under an hour). HTTPS is set up automatically.
 
-## 5. Dentist and patient emails (any time; needed for automatic patient messages)
+## 5. Dentist emails (optional, any time)
 For each branch Gmail: turn on 2-Step Verification, create an app password (myaccount.google.com/apppasswords),
 and paste it into the matching `MAIL_<BRANCH>_PASSWORD` in Render → Environment. Then use
-**Administration → System settings → Send me a test email**. Once set up, patients are emailed automatically when a booking is approved, declined, moved or cancelled, and the day before. SMS can be added later with Semaphore. Details: docs/INTEGRATIONS.md.
+**Administration → System settings → Send me a test email**. Details: docs/INTEGRATIONS.md.
 
 ## 6. Backups (every week)
 **Administration → System settings → Download full backup** saves one zip with the whole database and all uploaded

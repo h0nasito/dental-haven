@@ -104,28 +104,6 @@ document.addEventListener('DOMContentLoaded', function () {
       });
       lb.addEventListener('click', function (e) { if (e.target === lb) lb.close(); });
     }
-    // One-page navigation: highlight the menu link for the section in view
-    var navLinks = {};
-    document.querySelectorAll('.site-nav a[href*="#"]').forEach(function (a) {
-      var id = a.getAttribute('href').split('#')[1];
-      if (id) navLinks[id] = a;
-    });
-    var spySections = Object.keys(navLinks).map(function (id) { return document.getElementById(id); }).filter(Boolean);
-    if ('IntersectionObserver' in window && spySections.length) {
-      var spy = new IntersectionObserver(function (entries) {
-        entries.forEach(function (e) {
-          if (!e.isIntersecting) return;
-          Object.keys(navLinks).forEach(function (id) { navLinks[id].classList.toggle('is-active', id === e.target.id); });
-        });
-      }, { rootMargin: '-45% 0px -50% 0px' });
-      spySections.forEach(function (sec) { spy.observe(sec); });
-    }
-    // Back-to-top button
-    var topBtn = document.querySelector('.lp-top');
-    if (topBtn) {
-      var onScroll = function () { topBtn.classList.toggle('is-shown', window.scrollY > 700); };
-      window.addEventListener('scroll', onScroll, { passive: true }); onScroll();
-    }
     // Close the mobile menu after tapping a section link
     document.querySelectorAll('.site-nav a[href*="#"]').forEach(function (a) {
       a.addEventListener('click', function () { var t = document.getElementById('nav-toggle'); if (t) t.checked = false; });

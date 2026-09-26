@@ -3,7 +3,7 @@
 {% block page_title %}Service{% endblock %}
 {% block content %}
 <div class="page-head"><div><a href="{{ url_for('admin.services') }}">← Services</a><h1>{{ s.name if s else 'New service' }}</h1></div></div>
-<div class="card" style="max-width:820px"><form method="post" enctype="multipart/form-data">{{ csrf() }}
+<div class="card" style="max-width:820px"><form method="post">{{ csrf() }}
 <div class="form-grid">
 {{ field('name', 'Name', v.name, errors=errors, required=True) }}
 {{ field('slug', 'URL name', v.slug, errors=errors, required=True, hint='Used in /services/<url-name>') }}
@@ -14,13 +14,6 @@
 </div>
 {{ textarea('summary', 'Short summary (service cards)', v.summary, rows=2) }}
 {{ textarea('body', 'Service page text', v.body, rows=8, hint='Plain text. Blank lines start new paragraphs. Avoid claims the clinic has not approved.') }}
-<fieldset><legend>Photo for the website</legend>
-{% if not v.image_path %}<p class="hint">No photo yet: the website shows a template image until you upload one.</p>{% endif %}
-{% if v.image_path %}<img src="{{ url_for('static', filename=v.image_path) }}" alt="" style="width:220px;border-radius:10px;margin-bottom:.5rem">
-<label class="check"><input type="checkbox" name="remove_image" value="1"> Remove this photo</label>{% endif %}
-<div class="field {% if errors.image %}error{% endif %}"><label for="image">{{ 'Replace photo' if v.image_path else 'Upload a photo' }} (JPG, PNG or WebP)</label><input id="image" type="file" name="image" accept="image/png,image/jpeg,image/webp">
-<span class="hint">Shown on this service's card on the home page. Use a photo you own; patient photos need written consent.</span>{% if errors.image %}<div class="field-error">{{ errors.image }}</div>{% endif %}</div>
-</fieldset>
 <label class="check"><input type="checkbox" name="bookable_online" value="1" {% if v.bookable_online %}checked{% endif %}> Patients can request this service online</label>
 <label class="check"><input type="checkbox" name="active" value="1" {% if v.active %}checked{% endif %}> Active</label>
 <div class="form-actions mt-1"><button class="btn" type="submit">Save service</button></div>
