@@ -92,3 +92,19 @@ class TestLanding(Base):
         self.assertIn('class="lp-hero-ba"', html)
         self.assertIn('class="lp-aes-main"', html)
         self.assertIn("Compare before and after: Smile makeover case", html)
+
+    def test_website_photos(self):
+        c = self.login("admin")
+        r = c.post("/staff/admin/content/photos", content_type="multipart/form-data",
+                   data={"key": "hero", "image": (io.BytesIO(tiny_png()), "hero.png")})
+        self.assertEqual(r.status_code, 302)
+        svc = self.q("SELECT * FROM services WHERE slug = 'aesthetic-dentistry'")
+        form = {k: str(svc[k]) for k in ("name", "slug", "category", "summary", "body", "default_duration_min", "sort_order")}
+        form.update({"active": "1", "bookable_online": "1", "image": (io.BytesIO(tiny_png()), "svc.png")})
+        r = c.post(f"/staff/admin/services/{svc['id']}", data=form, content_type="multipart/form-data")
+        self.assertEqual(r.status_code, 302)
+        self.assertTrue(self.q("SELECT image_path FROM services WHERE id = ?", (svc["id"],))["image_path"])
+        html = self.app.test_client().get("/").data.decode()
+        self.assertIn('lp-hero has-photo', html)
+        self.assertIn('class="lp-svc-media"', html)
+        self.assertEqual(self.login("staff.malolos").post("/staff/admin/content/photos", data={"key": "hero"}).status_code, 403)

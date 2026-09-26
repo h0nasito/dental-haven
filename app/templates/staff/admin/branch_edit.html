@@ -6,7 +6,7 @@
 <div class="grid grid-2">
 <div class="card"><h2>Public details</h2>
 <p class="notice">Only publish details the clinic has confirmed. Leave text marked "[to be confirmed]" until you have the final version.</p>
-<form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="section" value="details">
+<form method="post" class="mt-1" enctype="multipart/form-data">{{ csrf() }}<input type="hidden" name="section" value="details">
   {{ field('name', 'Branch name', b.name, errors=errors, required=True) }}
   {{ textarea('address', 'Address', b.address, errors=errors, rows=2) }}
   {{ field('phone', 'Contact numbers', b.phone, hint='Separate several numbers with /') }}
@@ -16,6 +16,12 @@
   {{ field('facebook_url', 'Facebook page', b.facebook_url, errors=errors) }}
   {{ textarea('hours_text', 'Hours as shown to the public', b.hours_text, rows=3, hint='Operating hours for booking are set below.') }}
   {{ textarea('intro', 'Short intro for the branch page', b.intro, rows=3) }}
+  <fieldset><legend>Branch photo (website)</legend>
+  {% if not b.image_path %}<p class="hint">No photo yet: the website shows a template image until you upload one.</p>{% endif %}
+  {% if b.image_path %}<img src="{{ url_for('static', filename=b.image_path) }}" alt="" style="width:220px;border-radius:10px;margin-bottom:.5rem">
+  <label class="check"><input type="checkbox" name="remove_image" value="1"> Remove this photo</label>{% endif %}
+  <div class="field {% if errors.image %}error{% endif %}"><label for="image">{{ 'Replace photo' if b.image_path else 'Upload a photo' }} (JPG, PNG or WebP)</label><input id="image" type="file" name="image" accept="image/png,image/jpeg,image/webp">
+  <span class="hint">The branch front or reception works well.</span>{% if errors.image %}<div class="field-error">{{ errors.image }}</div>{% endif %}</div></fieldset>
   <button class="btn" type="submit">Save details</button>
 </form></div>
 <div>

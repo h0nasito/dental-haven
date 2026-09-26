@@ -45,9 +45,14 @@
 </div>
 {%- endmacro %}
 
+{% set TEMPLATE_SERVICES = ['aesthetic-dentistry', 'prosthodontics', 'dental-implants', 'general-dentistry', 'orthodontics', 'pediatric-dentistry'] %}
+{% set TEMPLATE_BRANCHES = ['malolos', 'guiguinto', 'bocaue', 'sjdm'] %}
+{% set hero_img = site_images.hero or 'img/template/hero.svg' %}
+{% set lab_img = site_images.lab or 'img/template/lab.svg' %}
 {% block content %}
 {# ---------------------------------------------------------------- HERO #}
-<section class="lp-hero" id="top">
+<section class="lp-hero has-photo" id="top">
+  <div class="lp-hero-photo" style="background-image:url('{{ url_for('static', filename=hero_img) }}')" aria-hidden="true"></div>
   <div class="lp-hero-bg" aria-hidden="true"></div>
   <div class="wrap lp-hero-grid">
     <div class="lp-hero-copy reveal">
@@ -66,6 +71,7 @@
       {% set shots = works[:3] %}
       {% if featured %}
         <figure class="lp-hero-ba">{{ ba_slider(featured) }}<figcaption>{{ featured.title }}<span>Drag to compare</span></figcaption></figure>
+      {% elif hero_img %}
       {% elif shots|length >= 3 %}
         <div class="lp-stack">
           {% for w in shots %}<figure class="lp-shot s{{ loop.index }}"><img src="{{ url_for('static', filename=w.image_path) }}" alt="{{ w.title }}"></figure>{% endfor %}
@@ -114,7 +120,7 @@
         {% endif %}
       </div>
       <div class="lp-aes-copy reveal">
-        <span class="lp-eyebrow">Our specialty</span>
+        <span class="lp-eyebrow">Smile transformations</span>
         <h2>Aesthetic <em>dentistry</em></h2>
         <p>We care for the whole family's teeth, and creating beautiful, natural-looking smiles is our specialty. Each smile is planned by our dentists and crafted in our own digital lab.</p>
         <ul class="lp-aes-list">
@@ -193,22 +199,23 @@
       <h2>Everything your smile needs, <em>under one roof</em></h2>
       <p>From a routine cleaning to a complete smile makeover, every treatment is planned around you and your goals.</p>
     </header>
-    <ol class="lp-index">
+    <div class="lp-svc-cards">
       {% for s in site_services %}
-      <li class="reveal"><details>
-        <summary>
-          <span class="lp-index-n">{{ '%02d' % loop.index }}</span>
-          <span class="lp-index-name">{{ s.name }}</span>
-          <span class="lp-index-items">{{ (s.summary|items)|join(' · ') }}</span>
-          <span class="lp-index-arrow" aria-hidden="true">+</span>
-        </summary>
-        <div class="lp-index-body">
-          <div class="lp-index-text">{{ s.body|richtext }}</div>
-          <a class="lp-btn lp-btn-navy lp-btn-sm" href="{{ url_for('public.book', service=s.id) }}">Book {{ s.name }}</a>
+      <article class="lp-svc-card reveal">
+        <a class="lp-svc-media" href="{{ url_for('public.service', slug=s.slug) }}" tabindex="-1" aria-hidden="true">
+          {% if s.image_path %}<img src="{{ url_for('static', filename=s.image_path) }}" alt="" loading="lazy">
+          {% elif s.slug in TEMPLATE_SERVICES %}<img src="{{ url_for('static', filename='img/template/service-' ~ s.slug ~ '.svg') }}" alt="" loading="lazy">
+          {% else %}<span class="lp-svc-ph">{{ icon(s.slug) }}</span>{% endif %}
+          <span class="lp-svc-num">{{ '%02d' % loop.index }}</span>
+        </a>
+        <div class="lp-svc-body">
+          <h3><a href="{{ url_for('public.service', slug=s.slug) }}">{{ s.name }}</a></h3>
+          <p>{{ (s.summary|items)|join(' · ') }}</p>
+          <a class="lp-index-book" href="{{ url_for('public.book', service=s.id) }}">Book now <span aria-hidden="true">→</span></a>
         </div>
-      </details></li>
+      </article>
       {% endfor %}
-    </ol>
+    </div>
     <div class="lp-cta-row reveal">
       <a class="lp-btn lp-btn-navy" href="{{ url_for('public.book') }}">Book a consultation</a>
       <span class="lp-index-note">Not sure where to start? We'll check your teeth and explain your options and costs before any treatment.</span>
@@ -263,6 +270,7 @@
     <div class="lp-branch-grid">
       {% for b in site_branches %}
       <article class="lp-branch reveal">
+        <div class="lp-branch-media">{% if b.image_path %}<img src="{{ url_for('static', filename=b.image_path) }}" alt="Dental Haven {{ b.name }}" loading="lazy">{% elif b.slug in TEMPLATE_BRANCHES %}<img src="{{ url_for('static', filename='img/template/branch-' ~ b.slug ~ '.svg') }}" alt="" loading="lazy">{% else %}<span>{{ b.name.split(' (')[0] }}</span>{% endif %}</div>
         <h3>{{ b.name }}</h3>
         <p class="lp-branch-addr">{{ b.address }}</p>
         <p class="lp-branch-tel">{% for disp, tel in b.phone|phones %}<a href="{{ tel }}">{{ disp }}</a>{% endfor %}</p>
@@ -283,7 +291,8 @@
       <h2>Your new smile, made in our own lab</h2>
       <p class="lp-lab-lead">{{ labc.title or 'Digital Solutions Dental Laboratory' }} is our in-house digital lab. It crafts crowns, bridges, dentures and 3D-printed appliances for Dental Haven patients, for a precise fit and a faster turnaround.</p>
     </div>
-    <ul class="lp-tech reveal" aria-label="Technology">
+    <figure class="lp-lab-photo reveal"><img src="{{ url_for('static', filename=lab_img) }}" alt="{{ 'Digital Solutions Dental Laboratory' if site_images.lab else '' }}" loading="lazy"></figure>
+    <ul class="lp-tech reveal under-photo" aria-label="Technology">
       <li>{{ icon('scan') }}<span>Intraoral scanners</span></li>
       <li>{{ icon('design') }}<span>exocad design</span></li>
       <li>{{ icon('print') }}<span>3D printers</span></li>

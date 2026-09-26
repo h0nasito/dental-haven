@@ -268,26 +268,16 @@ html { scroll-behavior: smooth; }
 .lp-gallery.count-1 { grid-template-columns: 1fr; grid-auto-rows: clamp(260px, 40vw, 520px); }
 .lp-gallery.count-2 { grid-template-columns: repeat(2, 1fr); grid-auto-rows: clamp(240px, 32vw, 460px); }
 
-/* ---------------- Services: numbered editorial index (expands in place) */
-.lp-index details > summary { list-style: none; cursor: pointer; }
-.lp-index details > summary::-webkit-details-marker { display: none; }
-.lp-index details[open] .lp-index-arrow { transform: rotate(45deg); }
-.lp-index-body { display: grid; grid-template-columns: 3.5rem minmax(0, 1fr); padding: 0 .25rem 1.8rem; animation: lp-open .35s ease; }
-.lp-index-text, .lp-index-body .lp-btn { grid-column: 2; }
-.lp-index-text { color: #4a566d; max-width: 46rem; }
-.lp-index-text ul { margin: .4rem 0 .9rem; padding-left: 1.2rem; }
-.lp-index-text li { border: 0; padding: .1rem 0; }
-.lp-index-text h2 { font-family: var(--display); font-weight: 400; font-size: 1.2rem; color: var(--navy); margin: 1rem 0 .4rem; }
-.lp-index-body .lp-btn { justify-self: start; margin-top: .6rem; }
-@keyframes lp-open { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+/* ---------------- Services: numbered editorial index (all open) */
 .lp-index { list-style: none; margin: 0 0 2.5rem; padding: 0; border-top: 1px solid #e2dccf; }
-.lp-index li { border-bottom: 1px solid #e2dccf; }
-.lp-index summary { display: grid; grid-template-columns: 3.5rem minmax(0, 1.1fr) minmax(0, 1fr) 2rem; align-items: baseline; gap: 1rem; padding: 1.5rem .25rem; text-decoration: none; color: var(--navy); transition: padding .3s ease, background .3s ease; }
-.lp-index summary:hover { background: var(--paper); padding-left: 1rem; }
-.lp-index-n { font-family: var(--display); font-style: italic; color: var(--gold-2); }
-.lp-index-name { font-family: var(--display); font-size: clamp(1.5rem, 2.6vw, 2.1rem); line-height: 1.15; }
-.lp-index-items { color: #56627a; font-size: .98rem; }
-.lp-index-arrow { color: var(--gold-2); font-size: 1.6rem; line-height: 1; text-align: right; transition: transform .3s ease; }
+.lp-index-row { display: grid; grid-template-columns: 3.5rem minmax(0, 1fr) minmax(0, 1.2fr); gap: 1rem 2rem; align-items: start; padding: 2rem .25rem; border-bottom: 1px solid #e2dccf; }
+.lp-index-n { font-family: var(--display); font-style: italic; color: var(--gold-2); padding-top: .5rem; }
+.lp-index-name { font-family: var(--display); font-weight: 400; font-size: clamp(1.5rem, 2.6vw, 2.1rem); line-height: 1.15; color: var(--navy); margin: 0; }
+.lp-index-intro { color: #4a566d; margin: .35rem 0 .9rem; }
+.lp-index-list { list-style: none; margin: 0 0 1rem; padding: 0; display: flex; flex-wrap: wrap; gap: .45rem; }
+.lp-index-list li { padding: .35em .85em; border-radius: 999px; background: var(--paper); border: 1px solid #ece8df; color: var(--navy); font-size: .88rem; font-weight: 600; }
+.lp-index-book { font-weight: 700; font-size: .92rem; color: var(--navy); text-decoration: none; border-bottom: 2px solid var(--gold); padding-bottom: 1px; }
+.lp-index-book:hover { color: var(--gold-2); }
 .lp-index-note { color: #56627a; max-width: 34rem; align-self: center; }
 
 /* ---------------- Why Dental Haven: slim strip */
@@ -301,16 +291,12 @@ html { scroll-behavior: smooth; }
 /* Responsive rules for the sections above (kept last so they win) */
 @media (max-width: 1024px) {
   .lp-why-strip { grid-template-columns: repeat(2, 1fr); }
-  .lp-index summary { grid-template-columns: 3rem minmax(0, 1fr) 1.5rem; }
-  .lp-index-body { grid-template-columns: 3rem minmax(0, 1fr); }
-  .lp-index-items { grid-column: 2; grid-row: 2; }
-  .lp-index-arrow { grid-column: 3; grid-row: 1; }
+  .lp-index-row { grid-template-columns: 3rem minmax(0, 1fr); }
+  .lp-index-detail { grid-column: 2; }
 }
 @media (max-width: 560px) {
   .lp-branch-grid, .lp-aes-more, .lp-why-strip { grid-template-columns: 1fr; }
-  .lp-index summary { grid-template-columns: 2.2rem minmax(0, 1fr) 1.2rem; padding: 1.2rem 0; }
-  .lp-index summary:hover { padding-left: .4rem; }
-  .lp-index-body { grid-template-columns: 2.2rem minmax(0, 1fr); }
+  .lp-index-row { grid-template-columns: 2.2rem minmax(0, 1fr); padding: 1.5rem 0; }
 }
 
 /* ---------------- One-page extras: active menu link, contact list, back-to-top */
@@ -323,3 +309,38 @@ html { scroll-behavior: smooth; }
 .lp-top { position: fixed; right: 18px; bottom: 18px; z-index: 30; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; background: var(--navy); color: var(--gold); text-decoration: none; font-size: 1.2rem; box-shadow: 0 10px 24px -8px rgba(0, 0, 0, .45); opacity: 0; pointer-events: none; transform: translateY(10px); transition: opacity .3s ease, transform .3s ease; }
 .lp-top.is-shown { opacity: 1; pointer-events: auto; transform: none; }
 .lp-top:hover { color: #fff; }
+
+/* ---------------- Photo-led pieces */
+.lp-hero-photo { position: absolute; inset: 0; background-size: cover; background-position: center; }
+.lp-hero.has-photo .lp-hero-bg { background: linear-gradient(90deg, rgba(3, 20, 39, .92) 0%, rgba(6, 33, 63, .72) 45%, rgba(6, 33, 63, .25) 100%); }
+.lp-hero.has-photo .lp-hero-bg::after { display: none; }
+.lp-hero.has-photo { min-height: min(92vh, 860px); display: flex; flex-direction: column; justify-content: center; }
+
+.lp-svc-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px 22px; margin-bottom: 2.5rem; }
+.lp-svc-card { display: flex; flex-direction: column; }
+.lp-svc-media { position: relative; display: block; aspect-ratio: 4 / 3; border-radius: 14px; overflow: hidden; background: linear-gradient(145deg, #13386a, var(--navy-deep)); }
+.lp-svc-media img { width: 100%; height: 100%; object-fit: cover; transition: transform .7s cubic-bezier(.2, .7, .2, 1); }
+.lp-svc-card:hover .lp-svc-media img { transform: scale(1.05); }
+.lp-svc-ph { position: absolute; inset: 0; display: grid; place-items: center; color: rgba(227, 193, 134, .6);
+  background-image: linear-gradient(rgba(255, 255, 255, .05) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, .05) 1px, transparent 1px); background-size: 28px 28px; }
+.lp-svc-ph svg { width: 28%; max-width: 110px; }
+.lp-svc-num { position: absolute; left: 14px; top: 12px; font-family: var(--display); font-style: italic; color: #fff; font-size: 1.05rem; text-shadow: 0 1px 8px rgba(0, 0, 0, .4); }
+.lp-svc-body { padding: 1.1rem .2rem 0; }
+.lp-svc-body h3 { font-family: var(--display); font-weight: 400; font-size: 1.45rem; line-height: 1.2; margin: 0 0 .4rem; }
+.lp-svc-body h3 a { color: var(--navy); text-decoration: none; }
+.lp-svc-body h3 a:hover { color: var(--gold-2); }
+.lp-svc-body p { color: #56627a; font-size: .95rem; margin: 0 0 .8rem; }
+
+.lp-branch { padding-top: 0; overflow: hidden; }
+.lp-branch-media { margin: 0 -1.5rem 1.2rem; aspect-ratio: 16 / 10; background: linear-gradient(145deg, #0f3d73, var(--navy-deep)); display: grid; place-items: center; overflow: hidden; }
+.lp-branch-media img { width: 100%; height: 100%; object-fit: cover; }
+.lp-branch-media span { font-family: var(--display); font-style: italic; color: rgba(227, 193, 134, .75); font-size: 1.4rem; }
+
+.lp-lab-photo { margin: 0; border-radius: 18px; overflow: hidden; aspect-ratio: 4 / 3; box-shadow: 0 30px 60px -30px rgba(0, 0, 0, .6); }
+.lp-lab-photo img { width: 100%; height: 100%; object-fit: cover; }
+.lp-tech.under-photo { grid-column: 1 / -1; }
+
+@media (max-width: 1024px) { .lp-svc-cards { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .lp-svc-cards { grid-template-columns: 1fr; } .lp-hero.has-photo { min-height: 0; } }
+.lp-branch .lp-btn { white-space: normal; text-align: center; line-height: 1.25; }
+.lp-hero.has-photo > .wrap { width: 100%; }

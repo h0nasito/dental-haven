@@ -15,6 +15,19 @@
 </form></div>
 {% endfor %}
 
+<div class="card" id="photos"><h2>Website photos</h2>
+<p class="muted">Big photos make the website feel like a portfolio. Service photos are added on each service (Administration → Services), and branch photos on each branch (Branches &amp; rooms).</p>
+{% for key, label, hint in photo_keys %}{% set ph = photos.get(key) %}
+<div class="row mt-1" style="align-items:flex-start;gap:1rem;flex-wrap:wrap">
+  {% if ph %}<img src="{{ url_for('static', filename=ph.image_path) }}" alt="" style="width:200px;border-radius:10px">{% else %}<div style="position:relative;width:200px"><img src="{{ url_for('static', filename='img/template/' ~ key ~ '.svg') }}" alt="" style="width:200px;border-radius:10px;opacity:.8"><span class="badge badge-amber" style="position:absolute;left:8px;top:8px">Template image</span></div>{% endif %}
+  <div style="flex:1;min-width:240px"><strong>{{ label }}</strong><p class="hint mb-0">{{ hint }}</p>
+    <form method="post" action="{{ url_for('admin.site_image_save') }}" enctype="multipart/form-data" class="row mt-1">{{ csrf() }}<input type="hidden" name="key" value="{{ key }}">
+      <input type="file" name="image" accept="image/png,image/jpeg,image/webp" required aria-label="{{ label }}"><button class="btn btn-secondary btn-sm">{{ 'Replace' if ph else 'Upload' }}</button></form>
+    {% if ph %}<form method="post" action="{{ url_for('admin.site_image_save') }}" class="mt-1">{{ csrf() }}<input type="hidden" name="key" value="{{ key }}"><input type="hidden" name="action" value="remove"><button class="btn btn-ghost btn-sm">Remove</button></form>{% endif %}
+  </div>
+</div>{% endfor %}
+</div>
+
 <div class="card" id="gallery"><h2>Gallery</h2>
 <p class="muted">Only upload images Dental Haven owns or has written permission to use. Patient photos need the patient's written consent. New items start unpublished.</p>
 <div class="table-wrap"><table><thead><tr><th>Image</th><th>Title</th><th>Authorisation</th><th>Status</th><th></th></tr></thead><tbody>
