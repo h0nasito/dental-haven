@@ -4,7 +4,8 @@
 <section class="hero" style="padding:3rem 0 2rem"><div class="wrap"><span class="eyebrow">Patient feedback</span><h1>In our patients' words</h1>
 <p class="lead">Shared with each patient's permission, in their own words.</p></div></section>
 <section class="section" style="padding-top:1.5rem"><div class="wrap">
-{% if items %}<div class="grid grid-3">{% for t in items %}<blockquote class="quote">“{{ t.quote }}”<footer>— {{ t.attribution or 'Dental Haven patient' }}</footer></blockquote>{% endfor %}</div>
-{% else %}<p class="muted">We'll share patient feedback here once patients have given permission. You can also see reviews on our <a href="https://www.facebook.com/dentalhavenmalolos" target="_blank" rel="noopener">Facebook page</a>.</p>{% endif %}
+{% if items %}<div class="grid grid-3">{% for t in items %}<blockquote class="quote">{% if t.rating %}<span class="stars" aria-label="{{ t.rating }} out of 5 stars">{{ '★' * t.rating }}</span><br>{% endif %}“{{ t.quote }}”<footer>— {{ t.attribution or 'Dental Haven patient' }}{% if t.branch %}, {{ t.branch.split(' (')[0] }}{% endif %}{% if t.source %} · {{ t.source }}{% endif %}</footer></blockquote>{% endfor %}</div>
+{% else %}<p class="muted">We'll share patient reviews here once patients have given permission.</p>{% endif %}
+<p class="mt-1">Read more reviews on our Facebook pages:{% for b in site_branches if b.facebook_url %} <a href="{{ b.facebook_url.rstrip('/') }}/reviews" target="_blank" rel="noopener">{{ b.name.split(' (')[0] }}</a>{% if not loop.last %} ·{% endif %}{% endfor %}</p>
 </div></section>
 {% endblock %}

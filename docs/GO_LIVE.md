@@ -5,9 +5,12 @@ no demo data, and your own domain. Cost: about $7/month for the server plus $1.2
 
 **Important:** the live site starts from an empty database. Anything typed into the demo is not carried over.
 
-## 1. Create the service from the Blueprint
-`render.yaml` is already the live-site configuration (the old demo settings are in `render.demo.yaml`).
-In Render, click **New → Blueprint**, choose the `dental-haven` repository, and continue.
+## 1. Switch render.yaml to the live settings
+`render.yaml` currently runs the free demo. The live-site settings are in `render.live.yaml`.
+1. In your GitHub Desktop folder, open `render.live.yaml` in Notepad, select all and copy.
+2. Open `render.yaml`, select all, paste (replacing everything) and save. Don't type any passwords into it.
+3. In GitHub Desktop, commit ("Go live") and click **Push origin**.
+4. In Render, delete the demo service, then click **New → Blueprint** and choose the `dental-haven` repository.
 
 ## 2. Fill in the settings in Render
 1. Render lists what it will create: a web service on the Starter plan with a 5 GB disk.

@@ -25,9 +25,10 @@ class TestLanding(Base):
         html = self.app.test_client().get("/").data.decode()
         for anchor in ('id="work"', 'id="services"', 'id="lab"', 'id="branches"'):
             self.assertIn(anchor, html)
-        for name in ("General &amp; Preventive", "Cosmetic &amp; Restorative", "Prosthodontics", "Implants &amp; Surgery", "Orthodontics"):
+        for name in ("General &amp; Preventive", "Cosmetic &amp; Restorative", "Prosthodontics", "Implants &amp; Surgery", "Orthodontics &amp; TMJ", "Pediatrics &amp; Special Care Dentistry"):
             self.assertIn(name, html)
-        for item in ("Composite veneers", "Zirconia restorations", "Clear aligners", "Extractions"):
+        for item in ("Composite veneers", "Zirconia restorations", "Clear aligners", "Extractions", "Management of TMJ disorders",
+                     "Preventive and corrective dentistry", "Crowns for kids", "Conscious sedation"):
             self.assertIn(item, html)
         self.assertIn("Digital Solutions Dental Laboratory", html)
         self.assertIn("CBCT", html)
@@ -50,3 +51,24 @@ class TestLanding(Base):
         self.assertIn('class="ba-range"', html)
         self.assertIn("Cosmetic &amp; Restorative", html)
         self.assertNotIn("Case photos coming soon", html)
+
+    def test_reviews_section(self):
+        self.conn.execute("UPDATE testimonials SET published = 0")
+        html = self.app.test_client().get("/").data.decode()
+        self.assertIn('id="reviews"', html)
+        self.assertIn("facebook.com/dentalhavenmalolos/reviews", html)  # links to real reviews, nothing invented
+        self.assertNotIn('class="lp-stars"', html)
+        c = self.login("admin")
+        c.post("/staff/admin/content/testimonials", data={
+            "action": "add", "quote": "Synthetic review for testing.", "attribution": "Test P.", "consent_note": "test consent",
+            "rating": "5", "source": "Facebook review", "branch_id": str(self.branch("bocaue"))})
+        t = self.q("SELECT * FROM testimonials WHERE quote = 'Synthetic review for testing.'")
+        self.assertEqual((t["rating"], t["source"]), (5, "Facebook review"))
+        c.post("/staff/admin/content/testimonials", data={"action": "toggle", "id": t["id"]})  # not approved yet → refused
+        self.assertNotIn("Synthetic review", self.app.test_client().get("/").data.decode())
+        c.post("/staff/admin/content/testimonials", data={"action": "approve", "id": t["id"]})
+        c.post("/staff/admin/content/testimonials", data={"action": "toggle", "id": t["id"]})
+        html = self.app.test_client().get("/").data.decode()
+        self.assertIn("Synthetic review for testing.", html)
+        self.assertIn('aria-label="5 out of 5 stars"', html)
+        self.assertIn("Bocaue · Facebook review", html)

@@ -109,9 +109,11 @@ class TestDentistEmails(Base):
     def test_approving_online_request_emails_chosen_dentist(self):
         c = self.login("reception.malolos")
         monday = self.next_weekday(0, weeks=9)
-        req = self.q("SELECT * FROM booking_requests WHERE status='pending' AND branch_id = ? LIMIT 1", (self.malolos,))
-        if not req:
-            self.skipTest("no pending Malolos request in demo data")
+        rid = self.conn.insert("booking_requests", {
+            "ref_code": "DH-TEST-MAIL1", "full_name": "Test Requester", "phone": "0900 000 1234", "branch_id": self.malolos,
+            "service_id": self.svc, "dentist_id": self.d1, "preferred_start": f"{monday} 11:00", "consent_privacy": 1,
+            "status": "pending", "created_at": "2026-01-01 09:00:00"})
+        req = self.q("SELECT * FROM booking_requests WHERE id = ?", (rid,))
         with mock.patch("smtplib.SMTP", FakeSMTP), mock.patch.dict(os.environ, MAIL_ENV):
             r = c.post(f"/staff/requests/{req['id']}", data={
                 "action": "confirm", "patient_id": "", "branch_id": self.malolos, "service_id": self.svc,

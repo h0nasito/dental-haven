@@ -97,7 +97,8 @@ def create_app(test_config: dict | None = None) -> Flask:
         resp.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
         resp.headers.setdefault(
             "Content-Security-Policy",
-            "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; "
+            "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "font-src 'self' https://fonts.gstatic.com; script-src 'self'; "
             "frame-ancestors 'none'; form-action 'self'; base-uri 'self'",
         )
         if request.path.startswith("/staff"):

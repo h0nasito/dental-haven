@@ -13,6 +13,8 @@
 <path d="M6 20c0-6 8-10 18-10s18 4 18 10"/><path d="M6 20v4c0 3 3 5 6 5h24c3 0 6-2 6-5v-4"/><path d="M12 20v9M18 20v9M24 20v9M30 20v9M36 20v9"/><path d="M10 34c4 3 9 4 14 4s10-1 14-4"/>
 {%- elif name == 'dental-implants' -%}
 <path d="M16 6c-3 0-5 2-5 6 0 3 2 5 3 7h20c1-2 3-4 3-7 0-4-2-6-5-6-2 0-3 1-5 1s-3-1-5-1z" transform="translate(0 0)"/><path d="M17 23h14"/><path d="M19 27h10l-1 4H20z"/><path d="M20 33h8M21 37h6M22 41h4"/>
+{%- elif name == 'pediatric-dentistry' -%}
+<path d="M17 14c-4 0-6 3-6 7 0 5 3 7 3 12 0 4 1 7 3 7s2-4 3-7c.5-2 1.5-3 2-3s1.5 1 2 3c1 3 1 7 3 7s3-3 3-7c0-5 3-7 3-12 0-4-2-7-6-7-2 0-3 1-5 1s-3-1-5-1z"/><path d="M36 4c-1.8 0-3 1.3-3 3 0 2.5 3 4.5 3 4.5s3-2 3-4.5c0-1.7-1.2-3-3-3z" stroke-width="1.6"/><circle cx="20" cy="22" r=".6" fill="currentColor"/><circle cx="28" cy="22" r=".6" fill="currentColor"/><path d="M21 26c1.5 1.2 4.5 1.2 6 0" stroke-width="1.8"/>
 {%- elif name == 'orthodontics' -%}
 <rect x="6" y="18" width="8" height="10" rx="2"/><rect x="20" y="18" width="8" height="10" rx="2"/><rect x="34" y="18" width="8" height="10" rx="2"/><path d="M4 23h40"/><path d="M8 18v-3M40 18v-3M24 18v-3"/>
 {%- elif name == 'scan' -%}
@@ -39,12 +41,12 @@
   <div class="lp-hero-bg" aria-hidden="true"></div>
   <div class="wrap lp-hero-grid">
     <div class="lp-hero-copy reveal">
-      <span class="lp-kicker">Dental Haven · Bulacan</span>
+      <span class="lp-kicker">Dental Haven · Complete dental care</span>
       <h1>{{ hero.title or 'Happiest your teeth will ever be' }}</h1>
       <div class="lp-lead">{{ hero.body|richtext }}</div>
       <div class="lp-cta-row">
-        <a class="lp-btn lp-btn-gold" href="{{ url_for('public.book') }}">Book an appointment</a>
-        <a class="lp-btn lp-btn-glass" href="#work">See our work</a>
+        <a class="lp-btn lp-btn-gold" href="{{ url_for('public.book') }}">Book your visit</a>
+        <a class="lp-btn lp-btn-glass" href="#work">See real smiles</a>
       </div>
       <ul class="lp-branch-chips" aria-label="Branches">
         {% for b in site_branches %}<li><a href="#branches">{{ b.name.split(' (')[0] }}</a></li>{% endfor %}
@@ -68,17 +70,17 @@
             <path d="M62 18c-26 0-44 20-44 48 0 30 16 46 22 76 5 28 10 60 28 60 16 0 16-30 22-50 4-14 6-20 10-20s6 6 10 20c6 20 6 50 22 50 18 0 23-32 28-60 6-30 22-46 22-76 0-28-18-48-44-48-16 0-24 10-38 10S78 18 62 18z" fill="url(#tg)"/>
             <g clip-path="url(#tc)"><rect width="200" height="220" fill="url(#mesh)"/><rect class="lp-scanline" x="0" y="0" width="200" height="6" fill="rgba(232,199,143,.9)"/></g>
           </svg>
-          <span class="lp-tag t1">Scan</span><span class="lp-tag t2">Design</span><span class="lp-tag t3">Mill &amp; print</span>
+          <span class="lp-tag t1">Check-ups</span><span class="lp-tag t2">Smile makeovers</span><span class="lp-tag t3">Kids &amp; special care</span>
         </div>
       {% endif %}
     </div>
   </div>
   <div class="wrap">
     <ul class="lp-facts reveal">
-      <li><strong>4</strong><span>branches across Bulacan</span></li>
-      <li><strong>{{ site_services|length }}</strong><span>areas of dental care</span></li>
-      <li><strong>In-house</strong><span>digital dental laboratory</span></li>
-      <li><strong>CBCT</strong><span>&amp; panoramic imaging</span></li>
+      <li><strong>4</strong><span>branches to serve you</span></li>
+      <li><strong>{{ site_services|length }}</strong><span>areas of care, one clinic</span></li>
+      <li><strong>Gentle</strong><span>care for kids &amp; special needs</span></li>
+      <li><strong>3D</strong><span>CBCT &amp; panoramic X-rays in-house</span></li>
     </ul>
   </div>
 </section>
@@ -88,8 +90,8 @@
   <div class="wrap">
     <header class="lp-head reveal">
       <span class="lp-eyebrow">Our work</span>
-      <h2>Smiles crafted by our dentists and our lab</h2>
-      <p>Real results from Dental Haven: restorations, implants and smile makeovers, many designed and made in our own digital laboratory.</p>
+      <h2>Real smiles. Real results.</h2>
+      <p>Every smile here was crafted by our dentists for a Dental Haven patient: makeovers, restorations, implants and more.</p>
     </header>
     {% if works %}
       {% if filters|length > 1 %}
@@ -141,7 +143,7 @@
     <header class="lp-head reveal">
       <span class="lp-eyebrow">Main services</span>
       <h2>Everything your smile needs, under one roof</h2>
-      <p>From your first check-up to full-mouth rehabilitation, planned around you.</p>
+      <p>From a routine cleaning to a complete smile makeover, every treatment is planned around you and your goals.</p>
     </header>
     <div class="lp-svc-grid">
       {% for s in site_services %}
@@ -152,39 +154,57 @@
         <span class="lp-svc-more">Learn more <span aria-hidden="true">→</span></span>
       </a>
       {% endfor %}
-      <a class="lp-svc lp-svc-cta reveal" href="{{ url_for('public.book') }}">
-        <h3>Not sure what you need?</h3>
-        <p>Book a consultation and our dentists will explain your options before any treatment.</p>
+      <a class="lp-svc lp-svc-cta reveal{% if site_services|length % 3 == 0 %} is-wide{% endif %}" href="{{ url_for('public.book') }}">
+        <h3>Not sure where to start?</h3>
+        <p>Book a consultation. We'll check your teeth and walk you through your options and costs before any treatment.</p>
         <span class="lp-btn lp-btn-gold">Book a consultation</span>
       </a>
     </div>
   </div>
 </section>
 
-{# ---------------------------------------------------------------- DIGITAL LAB #}
-<section class="lp-section lp-lab" id="lab">
-  <div class="lp-lab-bg" aria-hidden="true"></div>
+{# ---------------------------------------------------------------- WHY DENTAL HAVEN (the clinic) #}
+<section class="lp-section lp-why" id="clinic">
   <div class="wrap">
-    <div class="lp-lab-grid">
-      <div class="reveal">
-        <span class="lp-eyebrow light">Digital dentistry &amp; in-house laboratory</span>
-        <h2>{{ labc.title or 'Digital Solutions Dental Laboratory' }}</h2>
-        <div class="lp-lab-copy">{{ labc.body|richtext }}</div>
-      </div>
-      <ul class="lp-tech reveal" aria-label="Technology">
-        <li>{{ icon('scan') }}<div><strong>Intraoral scanners</strong><span>Digital impressions of your teeth</span></div></li>
-        <li>{{ icon('design') }}<div><strong>exocad design systems</strong><span>Restorations designed on screen</span></div></li>
-        <li>{{ icon('print') }}<div><strong>3D printers</strong><span>3D-printed appliances</span></div></li>
-        <li>{{ icon('mill') }}<div><strong>Milling machines</strong><span>Custom crowns, bridges and restorations</span></div></li>
-        <li>{{ icon('xray') }}<div><strong>CBCT &amp; panoramic X-rays</strong><span>In-house diagnostic imaging</span></div></li>
-      </ul>
+    <header class="lp-head reveal">
+      <span class="lp-eyebrow">Why Dental Haven</span>
+      <h2>Dentistry that feels like a haven</h2>
+      <p>Comfortable care for every age, backed by modern technology.</p>
+    </header>
+    <div class="lp-why-grid">
+      <article class="lp-why-card reveal">{{ icon('general-dentistry') }}<h3>Everything in one place</h3>
+        <p>Cleanings, fillings, veneers, braces, implants and full-mouth rehabilitation, all at Dental Haven.</p></article>
+      <article class="lp-why-card reveal">{{ icon('pediatric-dentistry') }}<h3>Gentle with kids and special needs</h3>
+        <p>Child-friendly dentistry, crowns for kids, and conscious sedation for patients who need extra comfort.</p></article>
+      <article class="lp-why-card reveal">{{ icon('xray') }}<h3>See clearly, treat precisely</h3>
+        <p>In-house 3D CBCT, panoramic X-rays and intraoral scanners help our dentists plan your treatment accurately.</p></article>
+      <article class="lp-why-card reveal">{{ icon('fit') }}<h3>Your new smile, sooner</h3>
+        <p>Crowns, bridges and dentures are made in our own digital lab, for a precise fit and fewer days of waiting.</p></article>
     </div>
-    <ol class="lp-flow reveal" aria-label="How a restoration is made">
-      <li><span class="n">01</span>{{ icon('scan') }}<strong>Scan</strong><span>Intraoral scan and imaging</span></li>
-      <li><span class="n">02</span>{{ icon('design') }}<strong>Design</strong><span>Digitally designed in exocad</span></li>
-      <li><span class="n">03</span>{{ icon('mill') }}<strong>Make</strong><span>Milled or 3D-printed in our lab</span></li>
-      <li><span class="n">04</span>{{ icon('fit') }}<strong>Fit</strong><span>Fitted by your dentist</span></li>
-    </ol>
+  </div>
+</section>
+
+{# ---------------------------------------------------------------- REVIEWS (real, consented only) #}
+<section class="lp-section lp-quotes" id="reviews">
+  <div class="wrap">
+    <header class="lp-head reveal">
+      <span class="lp-eyebrow">Patient reviews</span>
+      <h2>Hear it from our patients</h2>
+      {% if not testimonials %}<p>Read what patients say about each branch on our Facebook pages.</p>{% endif %}
+    </header>
+    {% if testimonials %}
+    <div class="lp-quote-grid">{% for t in testimonials %}
+      <figure class="lp-quote reveal">
+        {% if t.rating %}<div class="lp-stars" role="img" aria-label="{{ t.rating }} out of 5 stars">{% for i in range(5) %}<span class="{{ 'on' if i < t.rating else '' }}">★</span>{% endfor %}</div>{% endif %}
+        <blockquote>“{{ t.quote }}”</blockquote>
+        <figcaption><strong>{{ t.attribution or 'Dental Haven patient' }}</strong>{% if t.branch or t.source %}<span>{{ [t.branch.split(' (')[0] if t.branch else '', t.source]|select|join(' · ') }}</span>{% endif %}</figcaption>
+      </figure>{% endfor %}
+    </div>
+    {% endif %}
+    <div class="lp-review-links reveal">
+      <span class="lp-review-label">{{ 'More reviews on Facebook' if testimonials else 'Facebook reviews' }}:</span>
+      {% for b in site_branches if b.facebook_url %}<a class="lp-btn lp-btn-navy lp-btn-sm" href="{{ b.facebook_url.rstrip('/') }}/reviews" target="_blank" rel="noopener">{{ b.name.split(' (')[0] }} <span aria-hidden="true">↗</span></a>{% endfor %}
+    </div>
   </div>
 </section>
 
@@ -193,8 +213,8 @@
   <div class="wrap">
     <header class="lp-head reveal">
       <span class="lp-eyebrow">Visit us</span>
-      <h2>Four branches across Bulacan</h2>
-      <p>Choose the branch nearest you. Every branch is backed by the same digital lab.</p>
+      <h2>Four branches to serve you</h2>
+      <p>Visit the branch that's most convenient for you. Book online in minutes or give us a call.</p>
     </header>
     <div class="lp-branch-grid">
       {% for b in site_branches %}
@@ -210,24 +230,34 @@
   </div>
 </section>
 
-{% if testimonials %}
-<section class="lp-section lp-quotes">
-  <div class="wrap">
-    <header class="lp-head reveal"><span class="lp-eyebrow">Patient feedback</span><h2>In our patients' words</h2></header>
-    <div class="lp-quote-grid">{% for t in testimonials %}<blockquote class="lp-quote reveal">“{{ t.quote }}”<footer>{{ t.attribution or 'Dental Haven patient' }}</footer></blockquote>{% endfor %}</div>
+{# ---------------------------------------------------------------- DIGITAL LAB (supporting) #}
+<section class="lp-lab" id="lab">
+  <div class="lp-lab-bg" aria-hidden="true"></div>
+  <div class="wrap lp-lab-grid">
+    <div class="reveal">
+      <span class="lp-eyebrow light">Behind every smile</span>
+      <h2>Your new smile, made in our own lab</h2>
+      <p class="lp-lab-lead">{{ labc.title or 'Digital Solutions Dental Laboratory' }} is our in-house digital lab. It crafts crowns, bridges, dentures and 3D-printed appliances for Dental Haven patients, for a precise fit and a faster turnaround.</p>
+    </div>
+    <ul class="lp-tech reveal" aria-label="Technology">
+      <li>{{ icon('scan') }}<span>Intraoral scanners</span></li>
+      <li>{{ icon('design') }}<span>exocad design</span></li>
+      <li>{{ icon('print') }}<span>3D printers</span></li>
+      <li>{{ icon('mill') }}<span>Milling machines</span></li>
+      <li>{{ icon('xray') }}<span>CBCT &amp; panoramic X-rays</span></li>
+    </ul>
   </div>
 </section>
-{% endif %}
 
 {# ---------------------------------------------------------------- FINAL CTA #}
 <section class="lp-final">
   <div class="wrap lp-final-inner reveal">
     <img src="{{ url_for('static', filename='img/logo-white.png') }}" alt="" width="72" height="48">
     <h2>Your happiest smile starts here</h2>
-    <p>Request a time online and our team will call or message you to confirm.</p>
+    <p>Pick a branch and a time that suits you. Our team will call or message you to confirm your visit.</p>
     <div class="lp-cta-row center">
-      <a class="lp-btn lp-btn-gold" href="{{ url_for('public.book') }}">Book an appointment</a>
-      <a class="lp-btn lp-btn-glass" href="{{ url_for('public.inquire') }}">Send us a message</a>
+      <a class="lp-btn lp-btn-gold" href="{{ url_for('public.book') }}">Book your visit</a>
+      <a class="lp-btn lp-btn-glass" href="{{ url_for('public.inquire') }}">Ask us anything</a>
     </div>
   </div>
 </section>

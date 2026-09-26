@@ -67,32 +67,37 @@ EXPECT = ("## What to expect\n- A conversation about your concerns and health hi
 SERVICES = [
     ("general-dentistry", "General & Preventive", "General & Preventive", 30,
      "Check-ups, cleanings, and tooth fillings.",
-     "Regular care that keeps your teeth and gums healthy.\n\n- Check-ups\n- Cleanings\n- Tooth fillings\n\n" + EXPECT),
+     "Keep your smile healthy for life with regular check-ups and care.\n\n- Check-ups\n- Cleanings\n- Tooth fillings\n\n" + EXPECT),
     ("aesthetic-dentistry", "Cosmetic & Restorative", "Cosmetic & Restorative", 60,
      "Composite veneers, crowns, bridges, and teeth whitening.",
-     "Treatments that restore damaged teeth and improve the look of your smile.\n\n- Composite veneers\n- Crowns\n- Bridges\n"
+     "Repair, brighten and reshape your smile.\n\n- Composite veneers\n- Crowns\n- Bridges\n"
      "- Teeth whitening\n\nCrowns and bridges can be designed and made in our in-house digital dental laboratory.\n\n" + EXPECT),
     ("prosthodontics", "Prosthodontics", "Prosthodontics", 60,
      "Dentures, zirconia restorations, and full-mouth rehabilitation.",
-     "Replacing missing teeth and rebuilding worn or damaged smiles.\n\n- Dentures\n- Zirconia restorations\n"
+     "Replace missing teeth and rebuild worn or damaged smiles, with restorations crafted to fit you.\n\n- Dentures\n- Zirconia restorations\n"
      "- Full-mouth rehabilitation\n\nRestorations are fabricated in our in-house digital dental laboratory.\n\n" + EXPECT),
     ("dental-implants", "Implants & Surgery", "Implants & Surgery", 90,
      "Dental implants and extractions.",
-     "Surgical care, from replacing a missing tooth with an implant to removing a tooth that can't be saved.\n\n"
+     "Replace a missing tooth with an implant designed to look natural, or have a tooth that can't be saved removed safely.\n\n"
      "- Dental implants\n- Extractions\n\nPlanning can use in-house diagnostic imaging, including CBCT and panoramic X-rays.\n\n" + EXPECT),
-    ("orthodontics", "Orthodontics", "Orthodontics", 45,
-     "Braces and clear aligners.",
-     "Straightening teeth and correcting the bite.\n\n- Braces\n- Clear aligners\n\n" + EXPECT),
+    ("orthodontics", "Orthodontics & TMJ", "Orthodontics & TMJ", 45,
+     "Braces, clear aligners, and management of TMJ disorders.",
+     "Straighter teeth, a better bite, and care for jaw joint (TMJ) problems.\n\n- Braces\n- Clear aligners\n"
+     "- Management of TMJ (jaw joint) disorders\n\n" + EXPECT),
+    ("pediatric-dentistry", "Pediatrics & Special Care Dentistry", "Pediatrics & Special Care", 45,
+     "Preventive and corrective dentistry, crowns for kids, and conscious sedation.",
+     "Gentle, child-friendly care, and extra support for patients with special needs.\n\n- Preventive and corrective dentistry\n"
+     "- Crowns for kids\n- Conscious sedation\n\n" + EXPECT),
 ]
 # Earlier placeholder wording, replaced automatically if nobody has edited it.
 OLD_PLACEHOLDER = "[Service description to be confirmed"
 
 CONTENT = {
     "home_hero": ("Happiest your teeth will ever be",
-                  "Complete dental care in Bulacan, from check-ups to full-mouth rehabilitation, with restorations made in our own "
-                  "in-house digital dental laboratory."),
+                  "From your child's first check-up to a brand-new smile, get complete dental care for the whole family "
+                  "under one roof, at any of our four branches."),
     "home_about": ("About Dental Haven",
-                   "[About-us copy to be provided by Dental Haven.]\n\nDental Haven serves patients across four branches in Bulacan: "
+                   "[About-us copy to be provided by Dental Haven.]\n\nDental Haven serves patients at four branches: "
                    "Malolos, Guiguinto, Bocaue and San Jose del Monte."),
     "lab": ("Digital Solutions Dental Laboratory",
             "Our in-house digital lab allows for fast, high-precision fabrication of custom restorations (like crowns, bridges, "
@@ -343,7 +348,8 @@ def seed_demo(conn, password: str | None = None) -> str:
                         appt_ids.append((aid, status, p, svc, b_id, dentists[dkey], s))
 
         # clinical notes, procedures, invoices for completed visits
-        demo_prices = {"general-dentistry": 80000, "prosthodontics": 1200000, "dental-implants": 3500000, "aesthetic-dentistry": 900000, "orthodontics": 4500000}
+        demo_prices = {"general-dentistry": 80000, "prosthodontics": 1200000, "dental-implants": 3500000, "aesthetic-dentistry": 900000, "orthodontics": 4500000,
+                       "pediatric-dentistry": 150000}
         methods = ["cash", "gcash", "maya", "card", "bank_transfer"]
         for aid, status, p, svc, b_id, did, s in appt_ids:
             if status != "completed":

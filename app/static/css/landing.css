@@ -7,7 +7,7 @@
   --gold-2: #cda565;
   --ice: #eaf1fb;
   --paper: #fbfaf7;
-  --display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --display: "Bodoni Moda", "Didot", "Bodoni 72", "Iowan Old Style", Georgia, serif;
   background: var(--paper);
   font-size: 16px;
 }
@@ -77,7 +77,7 @@ html { scroll-behavior: smooth; }
 .lp-scanline { animation: lp-scan 3.6s ease-in-out infinite; }
 .lp-tag { position: absolute; padding: .5em 1em; border-radius: 999px; font-size: .82rem; font-weight: 700; background: rgba(255, 255, 255, .1); border: 1px solid rgba(255, 255, 255, .22); backdrop-filter: blur(6px); color: #fff; }
 .lp-tag::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--gold); margin-right: .5em; vertical-align: middle; }
-.lp-tag.t1 { top: 12%; left: 0; } .lp-tag.t2 { top: 44%; right: -4%; } .lp-tag.t3 { bottom: 10%; left: 8%; }
+.lp-tag.t1 { top: 12%; left: 0; } .lp-tag.t2 { top: 44%; right: -12%; } .lp-tag.t3 { bottom: 10%; left: 8%; }
 @keyframes lp-scan { 0%, 100% { transform: translateY(10px); } 50% { transform: translateY(200px); } }
 @keyframes lp-spin { to { transform: rotate(360deg); } }
 
@@ -162,33 +162,38 @@ html { scroll-behavior: smooth; }
 .lp-svc-cta h3 { color: #fff; }
 .lp-svc-cta p { color: rgba(255, 255, 255, .75); margin: 0 0 1.5rem; }
 .lp-svc-cta .lp-btn { align-self: flex-start; }
+.lp-svc-cta.is-wide { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr auto; column-gap: 2rem; align-items: center; }
+.lp-svc-cta.is-wide h3 { grid-column: 1; margin-bottom: .3rem; }
+.lp-svc-cta.is-wide p { grid-column: 1; margin: 0; }
+.lp-svc-cta.is-wide .lp-btn { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+@media (max-width: 560px) { .lp-svc-cta.is-wide { display: flex; } .lp-svc-cta.is-wide p { margin-bottom: 1.5rem; } }
 
 /* ---------------- Digital lab */
-.lp-lab { position: relative; overflow: hidden; background: var(--navy-deep); color: #fff; }
+/* ---------------- Why Dental Haven (the clinic) */
+.lp-why { background: #fff; }
+.lp-why-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+.lp-why-card { padding: 2rem 1.6rem; border-radius: 22px; background: var(--paper); border: 1px solid #ece8df; }
+.lp-why-card svg { width: 52px; height: 52px; padding: 11px; border-radius: 16px; background: var(--navy); color: var(--gold); margin-bottom: 1.2rem; }
+.lp-why-card h3 { font-family: var(--display); font-weight: 600; font-size: 1.3rem; color: var(--navy); margin: 0 0 .6rem; }
+.lp-why-card p { color: #4a566d; margin: 0; }
+
+/* ---------------- Digital lab (supporting band) */
+.lp-lab { position: relative; overflow: hidden; background: var(--navy-deep); color: #fff; padding: clamp(3rem, 6vw, 4.5rem) 0; }
 .lp-lab-bg { position: absolute; inset: 0; pointer-events: none;
-  background: radial-gradient(50% 60% at 0% 0%, rgba(84, 132, 214, .28), transparent 60%), radial-gradient(40% 50% at 100% 100%, rgba(42, 82, 158, .22), transparent 60%); }
+  background: radial-gradient(50% 80% at 0% 0%, rgba(84, 132, 214, .25), transparent 60%); }
 .lp-lab .wrap { position: relative; }
-.lp-lab-grid { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(2rem, 5vw, 4.5rem); align-items: start; }
-.lp-lab h2 { color: #fff; }
-.lp-lab-copy { color: rgba(255, 255, 255, .76); font-size: 1.06rem; }
-.lp-tech { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
-.lp-tech li { display: flex; align-items: center; gap: 1rem; padding: 1rem 1.2rem; border-radius: 16px; background: rgba(255, 255, 255, .05); border: 1px solid rgba(255, 255, 255, .09); transition: background .3s ease, border-color .3s ease; }
-.lp-tech li:hover { background: rgba(255, 255, 255, .08); border-color: rgba(227, 193, 134, .4); }
-.lp-tech svg { flex: none; width: 42px; height: 42px; padding: 8px; border-radius: 12px; background: rgba(227, 193, 134, .12); color: var(--gold); }
-.lp-tech strong { display: block; color: #fff; }
-.lp-tech span { color: rgba(255, 255, 255, .6); font-size: .9rem; }
-.lp-flow { list-style: none; padding: 0; margin: clamp(3rem, 6vw, 4.5rem) 0 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; counter-reset: none; }
-.lp-flow li { position: relative; padding: 1.6rem 1.3rem; border-radius: 18px; border: 1px solid rgba(255, 255, 255, .1); background: linear-gradient(180deg, rgba(255, 255, 255, .06), rgba(255, 255, 255, .01)); }
-.lp-flow li:not(:last-child)::after { content: "→"; position: absolute; right: -14px; top: 50%; transform: translateY(-50%); color: var(--gold); font-weight: 800; z-index: 1; }
-.lp-flow .n { position: absolute; top: 1rem; right: 1.2rem; font-family: var(--display); color: rgba(255, 255, 255, .25); font-size: 1.4rem; }
-.lp-flow svg { width: 36px; height: 36px; color: var(--gold); margin-bottom: .9rem; }
-.lp-flow strong { display: block; font-family: var(--display); font-size: 1.3rem; font-weight: 600; }
-.lp-flow span:not(.n) { color: rgba(255, 255, 255, .62); font-size: .92rem; }
+.lp-lab-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: clamp(1.5rem, 4vw, 3.5rem); align-items: center; }
+.lp-lab h2 { color: #fff; font-size: clamp(1.6rem, 3vw, 2.2rem); }
+.lp-lab-lead { color: rgba(255, 255, 255, .75); margin: 0; }
+.lp-tech { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 10px; }
+.lp-tech li { display: inline-flex; align-items: center; gap: .6rem; padding: .55rem 1rem .55rem .55rem; border-radius: 999px; background: rgba(255, 255, 255, .06); border: 1px solid rgba(255, 255, 255, .1); }
+.lp-tech svg { flex: none; width: 32px; height: 32px; padding: 6px; border-radius: 50%; background: rgba(227, 193, 134, .14); color: var(--gold); }
+.lp-tech span { color: rgba(255, 255, 255, .85); font-size: .92rem; font-weight: 600; }
 
 /* ---------------- Branches */
-.lp-branches { background: var(--paper); }
+.lp-branches { background: #fff; }
 .lp-branch-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
-.lp-branch { display: flex; flex-direction: column; padding: 1.7rem 1.5rem; border-radius: 20px; background: #fff; border: 1px solid #ece8df; }
+.lp-branch { display: flex; flex-direction: column; padding: 1.7rem 1.5rem; border-radius: 20px; background: var(--paper); border: 1px solid #ece8df; }
 .lp-branch h3 { font-family: var(--display); font-weight: 600; font-size: 1.35rem; color: var(--navy); margin: 0 0 .7rem; }
 .lp-branch-addr { color: #4a566d; font-size: .94rem; margin: 0 0 .7rem; }
 .lp-branch-tel { display: flex; flex-direction: column; font-weight: 700; font-size: .95rem; margin: 0 0 1rem; }
@@ -197,10 +202,18 @@ html { scroll-behavior: smooth; }
 .lp-branch .lp-btn { margin-top: auto; }
 
 /* ---------------- Quotes */
-.lp-quotes { background: #fff; }
+.lp-quotes { background: var(--paper); }
+.lp-quotes .lp-quote { background: #fff; }
 .lp-quote-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-.lp-quote { margin: 0; padding: 2rem; border-radius: 20px; background: var(--paper); font-family: var(--display); font-size: 1.15rem; color: var(--navy); }
-.lp-quote footer { margin-top: 1rem; font-family: var(--font); font-size: .88rem; color: #6b778c; }
+.lp-quote { margin: 0; padding: 2rem; border-radius: 22px; background: var(--paper); border: 1px solid #ece8df; display: flex; flex-direction: column; }
+.lp-quote blockquote { margin: 0 0 1.4rem; font-family: var(--display); font-size: 1.2rem; line-height: 1.45; color: var(--navy); }
+.lp-quote figcaption { margin-top: auto; display: flex; flex-direction: column; }
+.lp-quote figcaption strong { color: var(--navy); }
+.lp-quote figcaption span { color: #6b778c; font-size: .88rem; }
+.lp-stars { margin-bottom: .8rem; letter-spacing: .15em; color: #d6dbe4; font-size: 1.15rem; }
+.lp-stars .on { color: var(--gold-2); }
+.lp-review-links { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: .6rem; margin-top: 2.2rem; }
+.lp-review-label { width: 100%; text-align: center; font-weight: 700; color: var(--navy); margin-bottom: .2rem; }
 
 /* ---------------- Final CTA */
 .lp-final { position: relative; padding: clamp(4.5rem, 10vw, 7rem) 0; background: radial-gradient(60% 90% at 50% 0%, #15437f, var(--navy) 60%, var(--navy-deep)); color: #fff; text-align: center; overflow: hidden; }
@@ -221,8 +234,7 @@ html { scroll-behavior: smooth; }
 @media (max-width: 1024px) {
   .lp-svc-grid { grid-template-columns: repeat(2, 1fr); }
   .lp-branch-grid { grid-template-columns: repeat(2, 1fr); }
-  .lp-flow { grid-template-columns: repeat(2, 1fr); }
-  .lp-flow li:nth-child(2)::after { display: none; }
+  .lp-why-grid { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 860px) {
   .lp-hero-grid, .lp-lab-grid { grid-template-columns: 1fr; }
@@ -237,8 +249,7 @@ html { scroll-behavior: smooth; }
   .lp-hero { padding-top: 2rem; }
   .lp-hero h1 { max-width: none; }
   .lp-cta-row .lp-btn { flex: 1 1 100%; }
-  .lp-svc-grid, .lp-branch-grid, .lp-flow { grid-template-columns: 1fr; }
-  .lp-flow li::after { display: none; }
+  .lp-svc-grid, .lp-branch-grid, .lp-why-grid { grid-template-columns: 1fr; }
   .lp-gallery { grid-template-columns: 1fr 1fr; grid-auto-rows: 160px; }
   .lp-case.is-feature { grid-column: span 2; grid-row: span 2; }
   .lp-gallery .lp-case:last-child:nth-child(even) { grid-column: span 2; }

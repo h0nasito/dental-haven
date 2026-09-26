@@ -94,7 +94,8 @@ def richtext(text: str):
 @bp.route("/")
 def home():
     conn = get_db()
-    testimonials = conn.all("SELECT * FROM testimonials WHERE approved = 1 AND published = 1 ORDER BY id DESC LIMIT 3")
+    testimonials = conn.all("SELECT t.*, b.name AS branch FROM testimonials t LEFT JOIN branches b ON b.id = t.branch_id "
+                            "WHERE t.approved = 1 AND t.published = 1 ORDER BY t.id DESC LIMIT 6")
     # Before/after cases lead (the first one is shown large); newest first otherwise.
     works = conn.all("SELECT * FROM gallery_items WHERE published = 1 AND authorized = 1 AND image_path != '' "
                      "ORDER BY sort_order, CASE WHEN before_image_path != '' THEN 0 ELSE 1 END, id DESC LIMIT 24")
@@ -138,7 +139,8 @@ def gallery():
 
 @bp.route("/feedback")
 def feedback():
-    items = get_db().all("SELECT * FROM testimonials WHERE approved = 1 AND published = 1 ORDER BY id DESC")
+    items = get_db().all("SELECT t.*, b.name AS branch FROM testimonials t LEFT JOIN branches b ON b.id = t.branch_id "
+                         "WHERE t.approved = 1 AND t.published = 1 ORDER BY t.id DESC")
     return render_template("public/feedback.html", items=items)
 
 

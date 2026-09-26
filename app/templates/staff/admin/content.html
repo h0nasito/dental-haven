@@ -36,7 +36,7 @@
 
 <div class="card" id="testimonials"><h2>Patient feedback</h2>
 <p class="muted">Use the patient's own words, only with their written consent. Never write or edit feedback on a patient's behalf. Each entry needs approval before it can be published.</p>
-<ul class="list-plain">{% for t in testimonials %}<li><blockquote class="mb-0">“{{ t.quote }}”</blockquote><small>— {{ t.attribution or 'Anonymous' }} · Consent: {{ t.consent_note }}</small>
+<ul class="list-plain">{% for t in testimonials %}<li>{% if t.rating %}<span aria-label="{{ t.rating }} out of 5 stars">{{ '★' * t.rating }}{{ '☆' * (5 - t.rating) }}</span>{% endif %}<blockquote class="mb-0">“{{ t.quote }}”</blockquote><small>— {{ t.attribution or 'Anonymous' }}{% if t.branch %} · {{ t.branch }}{% endif %}{% if t.source %} · {{ t.source }}{% endif %} · Consent: {{ t.consent_note }}</small>
 <div class="row mt-1">{% if t.approved %}<span class="badge badge-green">Approved</span>{% else %}<span class="badge badge-amber">Pending approval</span>{% endif %}
 {% if t.published %}<span class="badge badge-teal">Published</span>{% endif %}
 {% if not t.approved %}<form method="post" action="{{ url_for('admin.testimonial_save') }}">{{ csrf() }}<input type="hidden" name="id" value="{{ t.id }}"><input type="hidden" name="action" value="approve"><button class="btn btn-secondary btn-sm">Approve</button></form>{% endif %}
@@ -45,6 +45,9 @@
 {% else %}<li class="muted">No feedback entries yet. The public page shows a friendly placeholder until approved feedback is published.</li>{% endfor %}</ul>
 <form method="post" action="{{ url_for('admin.testimonial_save') }}" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="add">
 <div class="field"><label for="tq">Patient's words (verbatim)</label><textarea id="tq" name="quote" rows="3" required></textarea></div>
+<div class="form-grid"><div class="field"><label for="tr">Star rating (if the patient gave one)</label><select id="tr" name="rating"><option value="">No rating</option>{% for n in (5, 4, 3, 2, 1) %}<option value="{{ n }}">{{ n }} star{{ 's' if n > 1 }}</option>{% endfor %}</select></div>
+<div class="field"><label for="ts">Where the review came from</label><input id="ts" name="source" list="review-sources" placeholder="e.g. Facebook review"><datalist id="review-sources"><option value="Facebook review"><option value="Google review"><option value="Clinic feedback form"></datalist></div>
+<div class="field"><label for="tb">Branch</label><select id="tb" name="branch_id"><option value="">Not specified</option>{% for b in branches %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}</select></div></div>
 <div class="form-grid"><div class="field"><label for="ta">Attribution (as the patient agreed)</label><input id="ta" name="attribution" placeholder="e.g. Maria S., Malolos"></div>
 <div class="field"><label for="tc">Consent record</label><input id="tc" name="consent_note" placeholder="e.g. Signed consent 2026-09-01, file #45" required></div></div>
 <button class="btn btn-secondary">Add feedback</button></form></div>

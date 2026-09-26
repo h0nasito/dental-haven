@@ -515,7 +515,8 @@ PORTFOLIO_CATEGORIES = [
     ("cosmetic", "Cosmetic & Restorative"),
     ("prosthodontics", "Prosthodontics"),
     ("implants", "Implants & Surgery"),
-    ("orthodontics", "Orthodontics"),
+    ("orthodontics", "Orthodontics & TMJ"),
+    ("pediatric", "Pediatrics & Special Care"),
     ("general", "General & Preventive"),
     ("lab", "Digital lab"),
 ]
@@ -543,8 +544,8 @@ def content():
         return redirect(url_for("admin.content") + f"#c-{key}")
     items = {r["key"]: r for r in conn.all("SELECT * FROM site_content")}
     gallery = conn.all("SELECT * FROM gallery_items ORDER BY id DESC")
-    testimonials = conn.all("SELECT * FROM testimonials ORDER BY id DESC")
-    return render_template("staff/admin/content.html", keys=CONTENT_KEYS, items=items, gallery=gallery,
+    testimonials = conn.all("SELECT t.*, b.name AS branch FROM testimonials t LEFT JOIN branches b ON b.id = t.branch_id ORDER BY t.id DESC")
+    return render_template("staff/admin/content.html", branches=conn.all("SELECT id, name FROM branches ORDER BY sort_order"), keys=CONTENT_KEYS, items=items, gallery=gallery,
                            testimonials=testimonials, categories=PORTFOLIO_CATEGORIES,
                            category_labels=dict(PORTFOLIO_CATEGORIES))
 
@@ -614,8 +615,14 @@ def testimonial_save():
         if not quote or not consent:
             flash("Add the patient's own words and a note of their written consent. Do not write testimonials on a patient's behalf.", "error")
         else:
+            rating = to_int(request.form.get("rating"))
+            branch_id = to_int(request.form.get("branch_id"))
+            if branch_id and not conn.one("SELECT id FROM branches WHERE id = ?", (branch_id,)):
+                branch_id = None
             tid = conn.insert("testimonials", {"quote": quote, "attribution": clean(request.form.get("attribution"), 120),
-                                               "consent_note": consent, "approved": 0, "published": 0, "created_at": now_str()})
+                                               "consent_note": consent, "approved": 0, "published": 0, "created_at": now_str(),
+                                               "rating": rating if rating in (1, 2, 3, 4, 5) else None,
+                                               "source": clean(request.form.get("source"), 60), "branch_id": branch_id})
             audit.record("testimonial_added", "testimonial", tid, "Added testimonial (pending approval)")
             flash("Testimonial saved as pending approval.", "success")
     else:

@@ -28,7 +28,7 @@
   --radius-sm: 8px;
   --shadow: 0 1px 2px rgba(10, 31, 68, .06), 0 4px 16px rgba(10, 31, 68, .05);
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --serif: Georgia, "Iowan Old Style", "Times New Roman", serif;
+  --serif: "Bodoni Moda", "Didot", "Bodoni 72", Georgia, "Times New Roman", serif;
   color-scheme: light;
 }
 

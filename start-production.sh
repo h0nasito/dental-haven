@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Starts the LIVE clinic site (used by render.yaml). Data lives on the persistent disk (DATA_DIR).
+# Starts the LIVE clinic site (used by render.live.yaml). Data lives on the persistent disk (DATA_DIR).
 # Never loads demo data. Safe to run on every start: migrations and base setup only add what's missing.
 set -euo pipefail
 : "${DATA_DIR:?Set DATA_DIR to the persistent disk path (e.g. /var/data).}"

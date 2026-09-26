@@ -1,0 +1,55 @@
+# LIVE clinic site on Render (paid Starter plan + 5 GB persistent disk; about $8–9/month).
+# To go live: copy this file over render.yaml, commit and push (see docs/GO_LIVE.md).
+# See docs/GO_LIVE.md.
+services:
+  - type: web
+    name: dental-haven
+    runtime: python
+    plan: starter
+    region: singapore
+    buildCommand: pip install -r requirements.txt
+    startCommand: bash start-production.sh
+    healthCheckPath: /
+    disk:
+      name: dental-haven-data
+      mountPath: /var/data
+      sizeGB: 5
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATA_DIR
+        value: /var/data
+      - key: SECRET_KEY
+        generateValue: true
+      - key: TRUST_PROXY
+        value: "1"
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: CLINIC_TIMEZONE
+        value: Asia/Manila
+      - key: PUBLIC_BASE_URL
+        value: https://dentalhaven.net
+      # First super admin, created on first start only (must change password at first sign-in).
+      - key: INITIAL_ADMIN_EMAIL
+        sync: false
+      - key: INITIAL_ADMIN_NAME
+        sync: false
+      - key: INITIAL_ADMIN_PASSWORD
+        sync: false
+      # Dentist emails: each branch's Gmail + its app password (optional; add when ready).
+      - key: MAIL_MALOLOS_USERNAME
+        value: dentalhavenmalolos@gmail.com
+      - key: MAIL_MALOLOS_PASSWORD
+        sync: false
+      - key: MAIL_GUIGUINTO_USERNAME
+        value: dentalhavenguiguintobranch@gmail.com
+      - key: MAIL_GUIGUINTO_PASSWORD
+        sync: false
+      - key: MAIL_BOCAUE_USERNAME
+        value: dentalhavenbocaue@gmail.com
+      - key: MAIL_BOCAUE_PASSWORD
+        sync: false
+      - key: MAIL_SJDM_USERNAME
+        value: dentalhavensjdm@gmail.com
+      - key: MAIL_SJDM_PASSWORD
+        sync: false
