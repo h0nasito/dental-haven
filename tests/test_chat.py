@@ -29,8 +29,10 @@ class TestChat(Base):
         self.assertTrue(malolos["hours"])
         self.assertTrue(malolos["hours"] == ["Monday – Saturday: 9:00 AM – 6:00 PM", "Sunday: Closed"])
         self.assertEqual(len(d["services"]), 6)
-        self.assertNotIn("price", str(d).lower())  # the chat never quotes prices
-        self.assertNotIn("patient", c.get("/chat/info.json").data.decode().lower())
+        self.assertEqual(d["prices"], [])  # live site: no prices until the clinic confirms its real price list
+        raw = c.get("/chat/info.json").data.decode()
+        for pt in self.conn.all("SELECT first_name, last_name, phone FROM patients LIMIT 20"):  # no patient data, ever
+            self.assertNotIn(f"{pt['first_name']} {pt['last_name']}", raw)
 
     def test_send_to_team_creates_chat_lead(self):
         c, token, _ = self._client_with_csrf()

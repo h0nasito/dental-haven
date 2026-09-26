@@ -118,3 +118,20 @@ class TestLanding(Base):
         self.assertIn('lp-hero has-photo', html)
         self.assertIn('class="lp-svc-media"', html)
         self.assertEqual(self.login("staff.malolos").post("/staff/admin/content/photos", data={"key": "hero"}).status_code, 403)
+
+
+class TestHeroWording(Base):
+    def test_hero_as_chosen_by_clinic(self):
+        html = self.app.test_client().get("/").data.decode()
+        self.assertIn("Aesthetic &amp; general dentistry", html)
+        self.assertIn("with a specialty in aesthetic dentistry", html)
+        self.assertIn("See before &amp; after", html)
+        self.assertLess(html.index("#specialty\">Smile transformations"), html.index("#services\">Services"))
+        names = [r["slug"] for r in self.conn.all("SELECT slug FROM services WHERE active = 1 ORDER BY sort_order")]
+        self.assertEqual(names[:2], ["general-dentistry", "pediatric-dentistry"])
+
+    def test_interim_hero_text_replaced_if_unedited(self):
+        from app.seed import OLD_CONTENT, seed_base
+        self.conn.execute("UPDATE site_content SET body = ?, updated_by = NULL WHERE key = 'home_hero'", (OLD_CONTENT["home_hero"],))
+        seed_base(self.conn)
+        self.assertIn("specialty in aesthetic", self.q("SELECT body FROM site_content WHERE key = 'home_hero'")["body"])

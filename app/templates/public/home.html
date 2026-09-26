@@ -105,7 +105,40 @@
   </div>
 </section>
 
-{# ---------------------------------------------------------------- SPECIALTY: aesthetic dentistry, shown with before & after #}
+{# ---------------------------------------------------------------- SERVICES #}
+<section class="lp-section lp-services" id="services">
+  <div class="wrap">
+    <header class="lp-head reveal">
+      <span class="lp-eyebrow">Main services</span>
+      <h2>Everything your smile needs, <em>under one roof</em></h2>
+      <p>From a routine cleaning to a complete smile makeover, every treatment is planned around you and your goals.</p>
+    </header>
+    <div class="lp-svc-cards">
+      {% for s in site_services %}
+      <article class="lp-svc-card reveal">
+        <a class="lp-svc-media" href="{{ url_for('public.service', slug=s.slug) }}" tabindex="-1" aria-hidden="true">
+          {% if s.image_path %}<img src="{{ url_for('static', filename=s.image_path) }}" alt="" loading="lazy">
+          {% elif stock('service:' ~ s.slug, 900) %}<img src="{{ stock('service:' ~ s.slug, 900) }}" alt="" loading="lazy">
+          {% elif s.slug in TEMPLATE_SERVICES %}<img src="{{ url_for('static', filename='img/template/service-' ~ s.slug ~ '.svg') }}" alt="" loading="lazy">
+          {% else %}<span class="lp-svc-ph">{{ icon(s.slug) }}</span>{% endif %}
+          <span class="lp-svc-num">{{ '%02d' % loop.index }}</span>
+        </a>
+        <div class="lp-svc-body">
+          <h3><a href="{{ url_for('public.service', slug=s.slug) }}">{{ s.name }}</a></h3>
+          <p>{{ (s.summary|items)|join(' · ') }}</p>
+          <a class="lp-index-book" href="{{ url_for('public.book', service=s.id) }}">Book now <span aria-hidden="true">→</span></a>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+    <div class="lp-cta-row reveal">
+      <a class="lp-btn lp-btn-navy" href="{{ url_for('public.book') }}">Book a consultation</a>
+      <span class="lp-index-note">Not sure where to start? We'll check your teeth and explain your options and costs before any treatment.</span>
+    </div>
+  </div>
+</section>
+
+{# ---------------------------------------------------------------- SMILE TRANSFORMATIONS: results across all our care, with before & after #}
 <section class="lp-section lp-aesthetic" id="specialty">
   <div class="wrap">
     <div class="lp-aes-grid">
@@ -119,22 +152,19 @@
             <div class="half before"><span class="ba-label l">Before</span></div>
             <div class="half after"><span class="ba-label r">After</span></div>
             <span class="ba-handle" aria-hidden="true" style="left:50%"></span>
-            <p>Before &amp; after photos of our aesthetic cases are coming soon</p>
+            <p>Before &amp; after photos of our patients are coming soon</p>
           </div>
         {% endif %}
       </div>
       <div class="lp-aes-copy reveal">
         <span class="lp-eyebrow">Smile transformations</span>
-        <h2>Aesthetic <em>dentistry</em></h2>
-        <p>We care for the whole family's teeth, and creating beautiful, natural-looking smiles is our specialty. Each smile is planned by our dentists and crafted in our own digital lab.</p>
+        <h2>Care for <em>every smile</em></h2>
+        <p>From your child's first check-up to fillings, braces, crowns, dentures and implants, our dentists care for every smile in the family. Restorations are crafted in our own digital lab for a precise, natural-looking fit.</p>
         <ul class="lp-aes-list">
-          {% for label, slug in [('Smile makeovers', 'aesthetic-dentistry'), ('Composite veneers', 'aesthetic-dentistry'), ('Teeth whitening', 'aesthetic-dentistry'),
-                                 ('Crowns & bridges', 'aesthetic-dentistry'), ('Zirconia restorations', 'prosthodontics'), ('Dental implants', 'dental-implants')] %}
-          <li><a href="{{ url_for('public.service', slug=slug) }}">{{ label }}</a></li>
-          {% endfor %}
+          {% for s in site_services %}<li><a href="{{ url_for('public.service', slug=s.slug) }}">{{ s.name }}</a></li>{% endfor %}
         </ul>
         <div class="lp-cta-row">
-          <a class="lp-btn lp-btn-gold" href="{{ url_for('public.book') }}">Book a smile consultation</a>
+          <a class="lp-btn lp-btn-gold" href="{{ url_for('public.book') }}">Book a consultation</a>
           <a class="lp-btn lp-btn-outline" href="#work">See all our work</a>
         </div>
       </div>
@@ -210,39 +240,6 @@
         {% endfor %}
       </div>
     {% endif %}
-  </div>
-</section>
-
-{# ---------------------------------------------------------------- SERVICES #}
-<section class="lp-section lp-services" id="services">
-  <div class="wrap">
-    <header class="lp-head reveal">
-      <span class="lp-eyebrow">Main services</span>
-      <h2>Everything your smile needs, <em>under one roof</em></h2>
-      <p>From a routine cleaning to a complete smile makeover, every treatment is planned around you and your goals.</p>
-    </header>
-    <div class="lp-svc-cards">
-      {% for s in site_services %}
-      <article class="lp-svc-card reveal">
-        <a class="lp-svc-media" href="{{ url_for('public.service', slug=s.slug) }}" tabindex="-1" aria-hidden="true">
-          {% if s.image_path %}<img src="{{ url_for('static', filename=s.image_path) }}" alt="" loading="lazy">
-          {% elif stock('service:' ~ s.slug, 900) %}<img src="{{ stock('service:' ~ s.slug, 900) }}" alt="" loading="lazy">
-          {% elif s.slug in TEMPLATE_SERVICES %}<img src="{{ url_for('static', filename='img/template/service-' ~ s.slug ~ '.svg') }}" alt="" loading="lazy">
-          {% else %}<span class="lp-svc-ph">{{ icon(s.slug) }}</span>{% endif %}
-          <span class="lp-svc-num">{{ '%02d' % loop.index }}</span>
-        </a>
-        <div class="lp-svc-body">
-          <h3><a href="{{ url_for('public.service', slug=s.slug) }}">{{ s.name }}</a></h3>
-          <p>{{ (s.summary|items)|join(' · ') }}</p>
-          <a class="lp-index-book" href="{{ url_for('public.book', service=s.id) }}">Book now <span aria-hidden="true">→</span></a>
-        </div>
-      </article>
-      {% endfor %}
-    </div>
-    <div class="lp-cta-row reveal">
-      <a class="lp-btn lp-btn-navy" href="{{ url_for('public.book') }}">Book a consultation</a>
-      <span class="lp-index-note">Not sure where to start? We'll check your teeth and explain your options and costs before any treatment.</span>
-    </div>
   </div>
 </section>
 

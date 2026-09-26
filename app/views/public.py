@@ -498,7 +498,35 @@ def chat_info():
                 for s in conn.all("SELECT * FROM services WHERE active = 1 ORDER BY sort_order")]
     guides = [{"slug": g["slug"], "title": g["title"], "service": g["service_slug"] or "", "url": url_for("public.guide", slug=g["slug"])}
               for g in conn.all(GUIDE_SELECT + " ORDER BY gd.sort_order, gd.id")]
-    resp = jsonify({"branches": branches, "services": services, "guides": guides, "book": url_for("public.book"),
+    # Guide sections, so the chat can answer from the articles (heading + text).
+    sections = []
+    for g in conn.all(GUIDE_SELECT + " ORDER BY gd.sort_order, gd.id"):
+        head, buf = g["title"], []
+        for line in (g["body"] or "").splitlines() + ["## "]:
+            if line.startswith("## "):
+                text = " ".join(x.strip().lstrip("- ").strip() for x in buf if x.strip())
+                if text:
+                    sections.append({"guide": g["slug"], "title": g["title"], "heading": head, "text": text[:900],
+                                     "url": url_for("public.guide", slug=g["slug"]), "service": g["service_slug"] or ""})
+                head, buf = line[3:].strip(), []
+            else:
+                buf.append(line)
+    # Prices: only once the clinic has confirmed its real price list; the demo shows them labelled as samples.
+    demo = current_app.config.get("APP_ENV") == "demo"
+    show = bool(settings.get("prices.show_public", conn))
+    prices = []
+    if show or demo:
+        for p in conn.all("SELECT p.*, s.slug AS service FROM price_items p LEFT JOIN services s ON s.id = p.service_id "
+                          "WHERE p.published = 1 ORDER BY s.sort_order, p.sort_order, p.id"):
+            amount = f"₱{p['price_from_cents'] // 100:,}"
+            if p["price_to_cents"]:
+                amount += f" – ₱{p['price_to_cents'] // 100:,}"
+            prices.append({"name": p["name"], "amount": amount, "range": bool(p["price_to_cents"]), "unit": p["unit"],
+                           "service": p["service"] or "", "sample": bool(p["sample"]) or not show,
+                           "kw": [k.strip() for k in (p["keywords"] + "," + p["name"]).lower().split(",") if k.strip()]})
+    from ..chat_faq import FAQ
+    resp = jsonify({"branches": branches, "services": services, "guides": guides, "sections": sections, "faq": FAQ,
+                    "prices": prices, "book": url_for("public.book"),
                     "inquire": url_for("public.inquire"), "privacy": url_for("public.privacy")})
     resp.headers["Cache-Control"] = "public, max-age=300"
     return resp

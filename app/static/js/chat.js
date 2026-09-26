@@ -15,11 +15,11 @@
   var T = {
     en: {
       hi: "Hi! 👋 Welcome to Dental Haven, where we make you the happiest your teeth will ever be.",
-      help: "Aesthetic dentistry is our specialty: smile makeovers, veneers, crowns and implants, plus complete care for the whole family. How can I help you today?",
+      help: "We're a complete family dental clinic: check-ups and cleanings, fillings, kids' dentistry, braces, veneers and crowns, dentures, and implants. How can I help you today?",
       c_book: "Book a visit", c_services: "Our services", c_branches: "Branches & hours", c_prices: "Prices", c_team: "Have our team call me",
       c_why: "Why Dental Haven?", c_book_here: function (n) { return "Book at " + n; }, c_book_this: "Book this treatment",
       why_t: "Why patients choose Dental Haven:",
-      why: ["Aesthetic dentistry is our specialty: natural-looking smile makeovers, veneers, crowns and implants",
+      why: ["Complete care in one clinic: check-ups, cleanings and fillings, kids' dentistry, braces, veneers and crowns, dentures, and implants",
             "Our own Digital Solutions Dental Laboratory crafts your crowns, bridges and dentures, for a precise fit and a faster turnaround",
             "3D CBCT and panoramic X-rays in-house, so your dentist sees the full picture",
             "Gentle care for kids and patients with special needs",
@@ -27,7 +27,6 @@
       why_end: "The best first step is a consultation: your dentist checks your teeth and walks you through your options. Shall I help you book one?",
       prefilled: function (what) { return "I've already filled in " + what + " for you. Just choose a date and time."; },
       at: " at ", svc_pitch: "Our dentists plan every treatment around you and your goals, and our own lab crafts restorations for a natural-looking fit.",
-      svc_special: "✨ This is our specialty.",
       br_pitch: function (n) { return "Want me to set up your visit at our " + n + " branch?"; },
       price3: "Your consultation is where you get a clear treatment plan and the exact cost, so there are no surprises.",
       done_more: "While you wait, you can also pick a time yourself:",
@@ -36,6 +35,12 @@
       book1: "Great choice! 😊 Taking you to our booking page now. Just pick a date and time, and our team will call or message you to confirm.",
       go_now: "If the page doesn't open, tap here:",
       all_branches: "🕘 All our branches:", hours_book: "Book ahead so we can reserve your time with the dentist.",
+      from: "from ", sample_note: "Sample prices for testing only (demo site). These are not Dental Haven's actual prices yet.",
+      price_list: "Here are some of our starting prices:", price_ask: "Ask me about a specific treatment, for example \"How much are braces?\"",
+      price_final: "The final cost depends on your teeth and treatment plan. Your dentist confirms it at your consultation, before any work begins.",
+      again: "I think I've already answered that. Would you like our team to explain it in more detail?",
+      unsure2: "Sorry, I still didn't catch that. You can type a short question like \"How much is cleaning?\", \"Do you do braces?\" or \"Where is your Bocaue branch?\", or I can have our team call you.",
+      more_read: "Read the full guide →",
       read: "📖 Read: ", guide_intro: "We have a short guide on that:", guide_end: "Have more questions? Your dentist will explain everything at your consultation.",
       book_cta: "Book your visit →", consult_cta: "Book a consultation →", learn: "Learn more about ",
       svc_menu: "Here's what we offer. Tap one to learn more:", svc_yes: "Yes, we can help with that.",
@@ -64,11 +69,11 @@
     },
     tl: {
       hi: "Hello po! 👋 Welcome sa Dental Haven, kung saan ang inyong ngipin ay magiging pinakamasaya.",
-      help: "Aesthetic dentistry po ang aming specialty: smile makeover, veneers, crowns at implants, kasama ang kumpletong dental care para sa buong pamilya. Paano ko po kayo matutulungan?",
+      help: "Kumpletong dental clinic po kami para sa buong pamilya: check-up at cleaning, pasta, dentistry para sa bata, braces, veneers at crowns, pustiso, at implants. Paano ko po kayo matutulungan?",
       c_book: "Mag-book", c_services: "Mga serbisyo", c_branches: "Branches at oras", c_prices: "Presyo", c_team: "Patawagan ako sa staff",
       c_why: "Bakit Dental Haven?", c_book_here: function (n) { return "Mag-book sa " + n; }, c_book_this: "I-book ang treatment na ito",
       why_t: "Bakit pinipili ng mga pasyente ang Dental Haven:",
-      why: ["Aesthetic dentistry ang aming specialty: natural-looking na smile makeover, veneers, crowns at implants",
+      why: ["Kumpletong serbisyo sa iisang clinic: check-up, cleaning at pasta, dentistry para sa bata, braces, veneers at crowns, pustiso, at implants",
             "Sariling Digital Solutions Dental Laboratory ang gumagawa ng inyong crowns, bridges at pustiso, para sa eksaktong sukat at mas mabilis na paggawa",
             "May 3D CBCT at panoramic X-ray sa clinic, para kita ng dentista ang buong larawan",
             "Maingat at magiliw na pag-aalaga sa mga bata at pasyenteng may special needs",
@@ -76,7 +81,6 @@
       why_end: "Ang pinakamagandang unang hakbang ay konsulta: titingnan ng dentista ang inyong ngipin at ipapaliwanag ang mga opsyon. Tutulungan ko po ba kayong mag-book?",
       prefilled: function (what) { return "Nailagay ko na po ang " + what + " para sa inyo. Pumili na lang ng petsa at oras."; },
       at: " sa ", svc_pitch: "Pinaplano ng aming mga dentista ang bawat treatment ayon sa inyong pangangailangan, at ang sarili naming lab ang gumagawa ng restorations para natural ang itsura.",
-      svc_special: "✨ Ito po ang aming specialty.",
       br_pitch: function (n) { return "Gusto n'yo po bang i-set ang inyong visit sa aming " + n + " branch?"; },
       price3: "Sa konsulta po ninyo malalaman ang malinaw na treatment plan at eksaktong halaga, kaya walang sorpresa.",
       done_more: "Habang naghihintay, puwede na rin kayong pumili ng oras:",
@@ -85,6 +89,12 @@
       book1: "Magandang desisyon po! 😊 Dadalhin ko na po kayo sa booking page. Pumili lang ng petsa at oras, at tatawagan o ite-text kayo ng aming team para kumpirmahin.",
       go_now: "Kung hindi bumukas ang page, i-tap dito:",
       all_branches: "🕘 Lahat po ng aming branch:", hours_book: "Mag-book po nang maaga para ma-reserve ang oras ninyo sa dentista.",
+      from: "mula ", sample_note: "Sample na presyo lang po ito para sa testing (demo site). Hindi pa ito ang aktuwal na presyo ng Dental Haven.",
+      price_list: "Narito po ang ilan sa aming starting prices:", price_ask: "Magtanong po tungkol sa partikular na treatment, halimbawa \"Magkano ang braces?\"",
+      price_final: "Ang huling halaga ay depende sa inyong ngipin at treatment plan. Kukumpirmahin ito ng dentista sa konsulta, bago simulan ang anumang treatment.",
+      again: "Parang nasagot ko na po iyan. Gusto n'yo po bang ipaliwanag pa ito nang mas detalyado ng aming team?",
+      unsure2: "Pasensya na po, hindi ko pa rin nakuha. Subukan ang maikling tanong gaya ng \"Magkano ang cleaning?\", \"May braces ba kayo?\" o \"Saan ang Bocaue branch?\", o ipapatawag ko kayo sa aming team.",
+      more_read: "Basahin ang buong guide →",
       read: "📖 Basahin: ", guide_intro: "May maikling guide po kami tungkol diyan (nasa English):", guide_end: "May iba pa po kayong tanong? Ipapaliwanag ng dentista ang lahat sa inyong konsulta.",
       book_cta: "Mag-book na →", consult_cta: "Mag-book ng konsulta →", learn: "Alamin pa ang tungkol sa ",
       svc_menu: "Ito po ang aming mga serbisyo. Pumili para sa detalye:", svc_yes: "Opo, matutulungan namin kayo diyan.",
@@ -142,9 +152,13 @@
   }
   var MAIN = function () {
     return [[t("c_book"), book], [t("c_why"), why], [t("c_services"), servicesMenu], [t("c_branches"), branchesMenu],
-            [t("c_prices"), price], [t("c_team"), handoff]];
+            [t("c_prices"), function () { priceAnswer(" "); }], [t("c_team"), handoff]];
   };
-  function after(list) { setChips((list || []).concat(MAIN().filter(function (m) { return !(list || []).some(function (l) { return l[0] === m[0]; }); })).slice(0, 6)); }
+  function after(list) {
+    list = (list || []).slice(0, 3);
+    if (!list.some(function (l) { return l[1] === book; })) list.push([t("c_book"), book]);
+    setChips(list.slice(0, 4));
+  }
   function bookUrl() {
     var q = [];
     if (ctxBranch) q.push("branch=" + ctxBranch.id);
@@ -198,13 +212,12 @@
     var s = info.services.filter(function (x) { return x.slug === slug; })[0];
     if (!s) return fallback();
     ctxService = s;
-    var special = ["aesthetic-dentistry", "prosthodontics", "dental-implants"].indexOf(s.slug) !== -1;
     var more = link(s.url, t("learn") + s.name + " →");
     var bk = link(bookUrl(), t("consult_cta")); bk.className = "dh-cta";
     var reads = (info.guides || []).filter(function (g) { return g.service === s.slug; }).map(function (g) {
       var p = el("p"); p.appendChild(link(g.url, t("read") + g.title)); return p;
     });
-    say([lead || null, el("p", "dh-strong", s.name), special ? el("p", "dh-special", t("svc_special")) : null, s.summary || null,
+    say([lead || null, el("p", "dh-strong", s.name), s.summary || null,
          t("svc_note") || null, t("svc_pitch")].concat(reads).concat([more, bk]));
     after([[t("c_book_this"), book], [t("c_prices"), price], [t("c_team"), handoff]]);
   }
@@ -246,6 +259,7 @@
     say([t("contacts"), list(items)]); after([[t("c_team"), handoff]]);
   }
   function price() {
+    if ((info.prices || []).length) return priceAnswer(" ");
     say([t("price1"), t("price3"), t("price2")]);
     setChips([[t("c_consult"), book], [t("c_team"), handoff], [t("c_why"), why]]);
   }
@@ -270,7 +284,13 @@
     say([t("lab1"), t("lab2")]);
     after([[t("c_services"), servicesMenu], [t("c_book"), book]]);
   }
+  var misses = 0;
   function fallback() {
+    misses += 1;
+    if (misses > 1) {
+      say(t("unsure2"));
+      return setChips([[t("c_team"), handoff], [t("c_prices"), price], [t("c_services"), servicesMenu], [t("c_book"), book]]);
+    }
     say(t("unsure"));
     setChips([[t("c_team"), handoff], [t("c_book"), book], [t("c_why"), why], [t("c_services"), servicesMenu]]);
   }
@@ -323,53 +343,168 @@
 
   // ------------------------------------------------------------ understanding free text (English + Tagalog)
   var SERVICE_WORDS = [
-    ["aesthetic-dentistry", ["veneer", "whiten", "bleach", "makeover", "cosmetic", "aesthetic", "smile design", "composite", "bonding", "pasta", "filling", "restor"]],
-    ["prosthodontics", ["denture", "pustiso", "crown", "bridge", "zirconia", "jacket", "flexite", "prostho"]],
+    ["aesthetic-dentistry", ["veneer", "whiten", "bleach", "makeover", "cosmetic", "aesthetic", "smile design", "bonding", "crown", "jacket", "bridge", "zirconia"]],
+    ["prosthodontics", ["denture", "pustiso", "flexite", "prostho", "full mouth"]],
     ["dental-implants", ["implant", "extract", "bunot", "wisdom", "surgery", "opera", "impacted"]],
     ["orthodontics", ["brace", "bracket", "aligner", "invisalign", "retainer", "ortho", "tmj", "jaw", "panga", "sungki", "crooked"]],
     ["pediatric-dentistry", ["kid", "child", "bata", "anak", "baby", "pedia", "sedation", "special need", "toddler"]],
-    ["general-dentistry", ["clean", "linis", "prophy", "check-up", "checkup", "check up", "root canal", "x-ray", "xray", "gum", "gilagid", "fluoride", "sealant"]]
+    ["general-dentistry", ["clean", "linis", "prophy", "check-up", "checkup", "check up", "root canal", "x-ray", "xray", "gum", "gilagid", "fluoride", "sealant", "pasta", "filling", "cavity", "butas"]]
   ];
+  var STOP = (" the a an is are am do does did i my me you your we our us it its this that what how can could will would should to of in on for with and or be " +
+              "have has there any about tell please want know need ano ang ng sa po ba ko mo na at para yung kung may mga pag paano ako kayo nyo ninyo " +
+              "namin natin si ni kay din rin lang ho opo yes no hi hello ").split(" ");
+  function tokens(q) {
+    return q.split(" ").filter(function (w) { return w.length > 2 && STOP.indexOf(w) === -1; });
+  }
+  function svcBySlug(slug) { return info.services.filter(function (x) { return x.slug === slug; })[0]; }
+
+  // Common questions: best keyword match (phrases count more than single words).
+  function faqMatch(q) {
+    var best = null, bestScore = 0;
+    (info.faq || []).forEach(function (f) {
+      var sc = 0;
+      f.kw.forEach(function (k) {
+        k = k.toLowerCase();
+        if (q.indexOf(k) !== -1) { sc += k.indexOf(" ") !== -1 ? 3 : 2; return; }
+        var ws = k.split(" ").filter(function (w) { return w.length > 2 && STOP.indexOf(w) === -1; });
+        if (ws.length > 1 && ws.every(function (w) { return q.indexOf(w) !== -1; })) sc += 2.5;  // same words, any order
+      });
+      if (sc > bestScore) { bestScore = sc; best = f; }
+    });
+    return bestScore >= 2 ? best : null;
+  }
+  function faqAnswer(f) {
+    if (f.service) ctxService = svcBySlug(f.service) || ctxService;
+    var g = (info.guides || []).filter(function (x) { return f.guide && x.slug === f.guide; })[0];
+    say([f[lang === "tl" ? "tl" : "en"], g ? link(g.url, t("read") + g.title) : null]);
+    if (f.key === "discount" || f.key === "change_booking") return setChips([[t("c_team"), handoff], [t("c_call"), contacts]]);
+    after([[t("c_consult"), book], [t("c_team"), handoff]]);
+  }
+
+  // Search inside the patient guides and answer with the best-matching part.
+  function sectionMatch(q) {
+    var words = tokens(q);
+    if (!words.length) return null;
+    var best = null, bestScore = 0;
+    (info.sections || []).forEach(function (sec) {
+      var head = (" " + sec.heading + " " + sec.title + " ").toLowerCase(), body = (" " + sec.text + " ").toLowerCase(), sc = 0;
+      words.forEach(function (w) { if (head.indexOf(w) !== -1) sc += 2; else if (body.indexOf(w) !== -1) sc += 1; });
+      if (sc > bestScore) { bestScore = sc; best = sec; }
+    });
+    return bestScore >= Math.max(3, words.length) ? best : null;
+  }
+  function sectionAnswer(sec) {
+    if (sec.service) ctxService = svcBySlug(sec.service) || ctxService;
+    var sentences = sec.text.match(/[^.!?]+[.!?]+["”)]?/g) || [sec.text];
+    var short = sentences.slice(0, 3).join(" ").trim();
+    say([lang === "tl" ? t("guide_intro") : null, el("p", "dh-strong", sec.heading === sec.title ? sec.title : sec.heading), short,
+         link(sec.url, t("more_read"))]);
+    after([[t("c_consult"), book], [t("c_team"), handoff]]);
+  }
+
+  // Prices (only when the clinic has published its price list; demo shows labelled samples).
+  function priceMatch(q) {
+    var scored = (info.prices || []).map(function (p) {
+      var sc = 0;
+      p.kw.forEach(function (k) { if (k.length > 2 && q.indexOf(k) !== -1) sc = Math.max(sc, k.length); });
+      return [sc, p];
+    }).filter(function (x) { return x[0] > 0; });
+    if (!scored.length) return [];
+    var top = Math.max.apply(null, scored.map(function (x) { return x[0]; }));
+    return scored.filter(function (x) { return x[0] >= top - 3; }).map(function (x) { return x[1]; }).slice(0, 4);
+  }
+  function priceLine(p) {
+    return p.name + ": " + (p.range ? "" : t("from")) + p.amount + (p.unit ? " " + p.unit : "");
+  }
+  function priceAnswer(q) {
+    if (!(info.prices || []).length) return price();
+    var items = priceMatch(q);
+    var intro = null;
+    if (!items.length && ctxService) items = info.prices.filter(function (p) { return p.service === ctxService.slug; }).slice(0, 5);
+    if (!items.length) {
+      var seen = {};
+      items = info.prices.filter(function (p) { if (seen[p.service]) return false; seen[p.service] = 1; return true; }).slice(0, 6);
+      intro = t("price_list");
+    }
+    if (items[0] && items[0].service) ctxService = svcBySlug(items[0].service) || ctxService;
+    var parts = [intro, list(items.map(priceLine)), t("price_final")];
+    if (intro) parts.push(t("price_ask"));
+    if (items.some(function (p) { return p.sample; })) parts.push(el("p", "dh-sample", t("sample_note")));
+    say(parts);
+    after([[t("c_consult"), book], [t("c_team"), handoff]]);
+  }
+
+  // Don't give the same answer twice in a row.
+  var lastKey = null, lastQ = null;
+  function reply(key, fn, q) {
+    var same = key === lastKey && q === lastQ;
+    lastQ = q;
+    if (same && ["book", "hello", "pain", "fallback", "thanks"].indexOf(key) === -1) {
+      say(t("again"));
+      setChips([[t("c_team"), handoff], [t("c_book"), book]]);
+      lastKey = null;
+      return;
+    }
+    lastKey = key;
+    if (key !== "fallback") misses = 0;
+    fn();
+  }
+
   function answer(text) {
     var q = norm(text);
     // remember a treatment they mention (e.g. "how much are veneers?") so the booking form is pre-filled
     for (var k = 0; k < SERVICE_WORDS.length; k++) {
-      if (has(q, SERVICE_WORDS[k][1])) { ctxService = info.services.filter(function (x) { return x.slug === SERVICE_WORDS[k][0]; })[0] || ctxService; break; }
+      if (has(q, SERVICE_WORDS[k][1])) { ctxService = svcBySlug(SERVICE_WORDS[k][0]) || ctxService; break; }
     }
-    if (has(q, [" masakit", " sakit", "pain", "ache", " hurt", "swell", "namamaga", "maga ", "bleed", "dugo", "emergency", "urgent", "infect", "nana "])) return pain();
-    if (has(q, ["magkano", "presyo", "price", "cost", "how much", "rate", "fee", "bayad", "budget", "promo", "discount"])) return price();
-    if (has(q, [" hmo", "insurance", "maxicare", "intellicare", "gcash", "maya", "credit card", "card ", "installment", "hulugan", "hulog", "payment", "cash"])) return payment();
-    if (has(q, ["human", "staff", "person", "agent", "receptionist", "talk to", "kausap", "message the", "reply", "contact me", "call me", "tawagan"])) return handoff();
+    var faq = faqMatch(q);
+    var urgent = has(q, ["emergency", "urgent", "namamaga", "swell", " nana", "abscess", "sobrang sakit", "severe", "toothache", "sakit ng ngipin",
+                         "masakit ang ngipin", "masakit ngipin", "masakit na ngipin", "hindi makatulog", "can't sleep", "fever", "lagnat"]);
+    var comfortQ = /\b(does|will|would|is|do)\b.*\b(hurt|painful)\b/.test(q) || has(q, ["masakit ba", "sasakit ba", "masakit po ba", "painful ba"]);
+    if (comfortQ && !urgent) { var fh = (info.faq || []).filter(function (x) { return x.key === "hurt"; })[0]; if (fh) return reply("faq:hurt", function () { faqAnswer(fh); }, q); }
+    if (urgent && !(faq && faq.key === "extraction_after")) return reply("pain", pain, q);
+    if (has(q, ["human", "real person", "agent", "receptionist", "talk to", "kausap", "contact me", "call me", "tawagan", "someone call"])) return reply("handoff", handoff, q);
+    if (has(q, ["magkano", "presyo", "price", "cost", "how much", "rate", "fee", "halaga", "budget", "mahal ba", "expensive", "cheap", "mura"]) &&
+        !(faq && faq.key === "discount" && !has(q, ["magkano", "how much", "price", "presyo"]))) {
+      return reply("price", function () { priceAnswer(q); }, q);
+    }
+    if (faq) return reply("faq:" + faq.key, function () { faqAnswer(faq); }, q);
+    if (has(q, ["pain", "masakit", "sakit", "ache", "hurt", "bleed", "dugo", "infect"])) return reply("pain", pain, q);
     var GUIDE_WORDS = [
       ["veneers-vs-crowns", function () { return has(q, ["veneer"]) && has(q, ["crown", "jacket"]) || has(q, ["difference", "pagkakaiba", " vs "]) && has(q, ["veneer", "crown"]); }],
       ["silver-diamine-fluoride", function () { return has(q, [" sdf", "silver diamine", "diamine", "silver fluoride"]); }],
       ["childs-first-dental-visit", function () { return has(q, ["first visit", "first dental", "first check", "unang", "first time"]) && has(q, ["kid", "child", "bata", "anak", "baby", "son", "daughter", "toddler", "visit"]); }],
       ["preventive-dentistry-for-kids", function () { return has(q, ["sealant", "fluoride", "prevent", "iwas"]); }],
-      ["white-spots-and-fluorosis", function () { return has(q, ["white spot", "fluorosis", "chalky", "mantsa", "puting", "spots on"]); }],
+      ["white-spots-and-fluorosis", function () { return has(q, ["white spot", "fluorosis", "chalky", "puting", "spots on"]); }],
       ["about-dental-fillings", function () { return has(q, ["what is a filling", "about filling", "does filling hurt", "masakit ba ang pasta"]); }],
       ["caring-for-dentures", function () { return has(q, ["denture care", "clean my denture", "linisin ang pustiso", "new denture"]); }],
       ["braces-or-clear-aligners", function () { return has(q, ["brace", "aligner"]) && has(q, [" or ", " vs ", "difference", "better", "alin"]); }]
     ];
-    for (var gi = 0; gi < GUIDE_WORDS.length; gi++) { if (GUIDE_WORDS[gi][1]()) return guide(GUIDE_WORDS[gi][0]); }
+    for (var gi = 0; gi < GUIDE_WORDS.length; gi++) {
+      if (GUIDE_WORDS[gi][1]()) { var gs = GUIDE_WORDS[gi][0]; return reply("guide:" + gs, function () { guide(gs); }, q); }
+    }
     for (var i = 0; i < info.branches.length; i++) {
       var b = info.branches[i];
-      if (q.indexOf(" " + b.name.toLowerCase().split(" ")[0]) !== -1 || (b.slug === "sjdm" && has(q, ["san jose", "sjdm"]))) return branch(b);
+      if (q.indexOf(" " + b.name.toLowerCase().split(" ")[0] + " ") !== -1 || (b.slug === "sjdm" && has(q, ["san jose", "sjdm"]))) {
+        return reply("branch:" + b.slug, function () { branch(b); }, q);
+      }
     }
-    if (has(q, ["why", "bakit", "legit", "trusted", "reliable", "maganda ba", "okay ba", "ok ba", "magaling", "experience", "recommend", "sulit", "worth"])) return why();
-    if (has(q, ["hour", "open", "close", "oras", "bukas", "sarado", "sunday", "linggo", "saturday", "sabado", "holiday", "what time", "anong oras"])) return allHours();
-    if (has(q, ["book", "appoint", "schedule", "sched", "reserve", "slot", "magpa", "pa-appoint", "available"])) return book();
-    if (has(q, ["where", "saan", "location", "address", "direction", "map", "branch", "near", "malapit", "located"])) return branchesMenu();
-    if (has(q, ["phone", "number", "contact", "call", "tawag", "text ", "viber", "cellphone", "mobile", "landline"])) return contacts();
-    if (has(q, [" lab", "laborator", "cbct", "scanner", "3d", "milling", "digital"])) return lab();
+    if (has(q, ["why", "bakit", "legit", "trusted", "reliable", "maganda ba", "okay ba", "ok ba", "magaling", "recommend", "sulit", "worth"])) return reply("why", why, q);
+    if (has(q, ["hour", "open", "close", "oras", "bukas", "sarado", "sunday", "linggo", "saturday", "sabado", "holiday", "what time", "anong oras"])) return reply("hours", allHours, q);
+    if (has(q, ["book", "appoint", "schedule", "sched", "reserve", "slot", "magpa", "pa-appoint", "available"])) return reply("book", book, q);
+    if (has(q, ["where", "saan", "location", "address", "direction", "map", "branch", "near", "malapit", "located"])) return reply("branches", branchesMenu, q);
+    if (has(q, ["phone", "number", "contact", "call", "tawag", "text ", "viber", "cellphone", "mobile", "landline"])) return reply("contacts", contacts, q);
+    if (has(q, [" lab", "laborator", "cbct", "scanner", " 3d", "milling", "digital"])) return reply("lab", lab, q);
+    var sec = sectionMatch(q);
+    if (sec) return reply("sec:" + sec.guide + sec.heading, function () { sectionAnswer(sec); }, q);
     for (var j = 0; j < SERVICE_WORDS.length; j++) {
-      if (has(q, SERVICE_WORDS[j][1])) return service(SERVICE_WORDS[j][0], t("svc_yes"));
+      if (has(q, SERVICE_WORDS[j][1])) { var sl = SERVICE_WORDS[j][0]; return reply("svc:" + sl, function () { service(sl, t("svc_yes")); }, q); }
     }
-    if (has(q, ["service", "offer", "treatment", "procedure", "ginagawa"])) return servicesMenu();
+    if (has(q, ["service", "offer", "treatment", "procedure", "ginagawa"])) return reply("services", servicesMenu, q);
+    if (has(q, ["thank", "salamat", " ty "])) return reply("thanks", function () { say(t("thanks")); setChips(MAIN()); }, q);
     if (has(q, [" hi ", "hello", " hey", "good morning", "good afternoon", "good evening", "magandang", "kumusta", " po "]) && q.length < 30) {
-      say(t("hello")); return setChips(MAIN());
+      return reply("hello", function () { say(t("hello")); setChips(MAIN()); }, q);
     }
-    if (has(q, ["thank", "salamat", "ty "])) { say(t("thanks")); return setChips(MAIN()); }
-    return fallback();
+    return reply("fallback", fallback, q);
   }
 
   // ------------------------------------------------------------ wiring

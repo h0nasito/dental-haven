@@ -1,0 +1,44 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Price list{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Price list</h1><p>Starting prices the website chat can quote when a patient asks "how much?". The chat always adds that the dentist confirms the final cost after a check-up.</p></div></div>
+
+<div class="card">
+  {% if show %}
+    <p><span class="badge badge-green">Shown to patients</span> The website chat quotes these prices.</p>
+    {% if current_user.is_super_admin %}<form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="visibility"><input type="hidden" name="show" value="0"><button class="btn btn-secondary btn-sm">Hide prices from patients</button></form>{% endif %}
+  {% else %}
+    <p><span class="badge badge-amber">Hidden from patients</span> On the live site, the chat doesn't quote prices yet: it offers a consultation instead. The demo site shows them labelled "sample price".</p>
+    {% if samples %}<p class="notice">{{ samples }} prices below are <strong>sample prices for testing only</strong>, not Dental Haven's. Type the clinic's real price (or untick "Show" to hide an item) before showing prices to patients.</p>{% endif %}
+    {% if current_user.is_super_admin %}
+    <form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="visibility"><input type="hidden" name="show" value="1">
+      <label class="check"><input type="checkbox" name="confirm" value="1"> I confirm these are Dental Haven's actual starting prices.</label>
+      <button class="btn btn-sm mt-1" {% if samples %}disabled title="Replace or hide the sample prices first"{% endif %}>Show prices to patients</button></form>
+    {% else %}<p class="hint">A super admin turns this on once the prices are confirmed.</p>{% endif %}
+  {% endif %}
+</div>
+
+<form method="post" class="card">{{ csrf() }}<input type="hidden" name="action" value="save">
+<div class="table-wrap"><table class="table">
+<thead><tr><th>Treatment</th><th>Service</th><th>From (₱)</th><th>To (₱, optional)</th><th>Unit</th><th>Words patients might use</th><th>Show</th><th></th></tr></thead>
+<tbody>
+{% for r in rows %}<tr>
+  <td><input name="name_{{ r.id }}" value="{{ r.name }}" aria-label="Treatment" style="min-width:180px">{% if r.sample %}<br><span class="badge badge-amber">Sample price</span> <label class="check" style="display:inline-flex;font-size:.8rem"><input type="checkbox" name="real_{{ r.id }}" value="1"> This is our real price</label>{% endif %}</td>
+  <td><select name="service_{{ r.id }}" aria-label="Service"><option value="">—</option>{% for x in services %}<option value="{{ x.id }}" {% if r.service_id == x.id %}selected{% endif %}>{{ x.name }}</option>{% endfor %}</select></td>
+  <td><input name="from_{{ r.id }}" value="{{ '%d' % (r.price_from_cents // 100) if r.price_from_cents is not none else '' }}" inputmode="decimal" style="width:90px" aria-label="From"></td>
+  <td><input name="to_{{ r.id }}" value="{{ '%d' % (r.price_to_cents // 100) if r.price_to_cents else '' }}" inputmode="decimal" style="width:90px" aria-label="To"></td>
+  <td><input name="unit_{{ r.id }}" value="{{ r.unit }}" placeholder="per tooth" style="width:120px" aria-label="Unit"></td>
+  <td><input name="keywords_{{ r.id }}" value="{{ r.keywords }}" style="min-width:200px" aria-label="Keywords"></td>
+  <td><input type="checkbox" name="published_{{ r.id }}" value="1" {% if r.published %}checked{% endif %} aria-label="Show"></td>
+  <td><label class="check" style="font-size:.8rem"><input type="checkbox" name="delete_{{ r.id }}" value="1"> Delete</label></td>
+</tr>{% endfor %}
+<tr><td><input name="name_new" placeholder="Add a treatment…" aria-label="New treatment"></td>
+  <td><select name="service_new" aria-label="Service"><option value="">—</option>{% for x in services %}<option value="{{ x.id }}">{{ x.name }}</option>{% endfor %}</select></td>
+  <td><input name="from_new" inputmode="decimal" style="width:90px" aria-label="From"></td><td><input name="to_new" inputmode="decimal" style="width:90px" aria-label="To"></td>
+  <td><input name="unit_new" placeholder="per tooth" style="width:120px" aria-label="Unit"></td><td><input name="keywords_new" placeholder="e.g. pasta, filling" aria-label="Keywords"></td><td></td><td></td></tr>
+</tbody></table></div>
+<p class="hint">Keywords: comma-separated words in English or Tagalog that patients might type (e.g. "pustiso, denture"). Prices are "starting at"; add a "To" price to show a range.</p>
+<div class="form-actions"><button class="btn">Save price list</button></div>
+</form>
+{% endblock %}

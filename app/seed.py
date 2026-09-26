@@ -75,10 +75,21 @@ EXPECT = ("## What to expect\n\n- A conversation about your concerns and health 
 
 # (slug, name, category, default minutes, one-line summary, page body). Wording from Dental Haven (Sep 26, 2026).
 SERVICES = [
+    ("general-dentistry", "General & Preventive", "General & Preventive", 30,
+     "Check-ups, cleanings, and tooth fillings.",
+     "Keep your smile healthy for life with regular check-ups and care.\n\n- Check-ups\n- Cleanings\n- Tooth fillings\n\n" + EXPECT),
+    ("pediatric-dentistry", "Pediatrics & Special Care Dentistry", "Pediatrics & Special Care", 45,
+     "Preventive and corrective dentistry, crowns for kids, and conscious sedation.",
+     "Gentle, child-friendly care, and extra support for patients with special needs.\n\n- Preventive and corrective dentistry\n"
+     "- Crowns for kids\n- Conscious sedation\n\n" + EXPECT),
     ("aesthetic-dentistry", "Cosmetic & Restorative", "Cosmetic & Restorative", 60,
      "Composite veneers, crowns, bridges, and teeth whitening.",
      "Repair, brighten and reshape your smile.\n\n- Composite veneers\n- Crowns\n- Bridges\n"
      "- Teeth whitening\n\nCrowns and bridges can be designed and made in our in-house digital dental laboratory.\n\n" + EXPECT),
+    ("orthodontics", "Orthodontics & TMJ", "Orthodontics & TMJ", 45,
+     "Braces, clear aligners, and management of TMJ disorders.",
+     "Straighter teeth, a better bite, and care for jaw joint (TMJ) problems.\n\n- Braces\n- Clear aligners\n"
+     "- Management of TMJ (jaw joint) disorders\n\n" + EXPECT),
     ("prosthodontics", "Prosthodontics", "Prosthodontics", 60,
      "Dentures, zirconia restorations, and full-mouth rehabilitation.",
      "Replace missing teeth and rebuild worn or damaged smiles, with restorations crafted to fit you.\n\n- Dentures\n- Zirconia restorations\n"
@@ -87,18 +98,9 @@ SERVICES = [
      "Dental implants and extractions.",
      "Replace a missing tooth with an implant designed to look natural, or have a tooth that can't be saved removed safely.\n\n"
      "- Dental implants\n- Extractions\n\nPlanning can use in-house diagnostic imaging, including CBCT and panoramic X-rays.\n\n" + EXPECT),
-    ("general-dentistry", "General & Preventive", "General & Preventive", 30,
-     "Check-ups, cleanings, and tooth fillings.",
-     "Keep your smile healthy for life with regular check-ups and care.\n\n- Check-ups\n- Cleanings\n- Tooth fillings\n\n" + EXPECT),
-    ("orthodontics", "Orthodontics & TMJ", "Orthodontics & TMJ", 45,
-     "Braces, clear aligners, and management of TMJ disorders.",
-     "Straighter teeth, a better bite, and care for jaw joint (TMJ) problems.\n\n- Braces\n- Clear aligners\n"
-     "- Management of TMJ (jaw joint) disorders\n\n" + EXPECT),
-    ("pediatric-dentistry", "Pediatrics & Special Care Dentistry", "Pediatrics & Special Care", 45,
-     "Preventive and corrective dentistry, crowns for kids, and conscious sedation.",
-     "Gentle, child-friendly care, and extra support for patients with special needs.\n\n- Preventive and corrective dentistry\n"
-     "- Crowns for kids\n- Conscious sedation\n\n" + EXPECT),
 ]
+# Order used before Dental Haven was presented as a general clinic; untouched sort orders are updated.
+OLD_SERVICE_ORDER = ["aesthetic-dentistry", "prosthodontics", "dental-implants", "general-dentistry", "orthodontics", "pediatric-dentistry"]
 # Earlier placeholder wording, replaced automatically if nobody has edited it.
 OLD_PLACEHOLDER = "[Service description to be confirmed"
 
@@ -169,8 +171,16 @@ TEMPLATES = [
 ]
 
 
+# Wording replaced automatically when staff haven't edited it (the clinic chose the original hero wording).
+OLD_CONTENT = {"home_hero": "Complete dental care for the whole family, all in one clinic: check-ups and cleanings, fillings, "
+                            "care for kids, braces, veneers and crowns, dentures, and implants."}
+
+
 def _upsert_content(conn, key, title, body):
     row = conn.one("SELECT * FROM site_content WHERE key = ?", (key,))
+    if row and row["body"] == OLD_CONTENT.get(key) and row["body"] != body:
+        conn.execute("UPDATE site_content SET body = ?, updated_at = ? WHERE key = ?", (body, now_str(), key))
+        return
     if not row:
         conn.execute("INSERT INTO site_content (key, title, body, updated_at) VALUES (?, ?, ?, ?)", (key, title, body, now_str()))
     elif row["updated_by"] is None and "[" in (row["body"] or "") and "[" not in body:
@@ -214,6 +224,8 @@ def seed_base(conn):
             if existing and OLD_PLACEHOLDER in (existing["body"] or ""):
                 conn.update("services", existing["id"], {"name": name, "category": cat, "summary": summary, "body": body,
                                                          "sort_order": i})
+            elif existing and slug in OLD_SERVICE_ORDER and existing["sort_order"] == OLD_SERVICE_ORDER.index(slug):
+                conn.update("services", existing["id"], {"sort_order": i})  # still in the old default order
             if not existing:
                 conn.insert("services", {"slug": slug, "name": name, "category": cat, "summary": summary, "body": body,
                                          "default_duration_min": mins, "default_price_cents": None, "bookable_online": 1,
@@ -231,6 +243,15 @@ def seed_base(conn):
                                            "template_id": t1, "channel": "sms", "active": 1})
             conn.insert("reminder_rules", {"name": "Same day (3 hours before)", "purpose": "appointment", "offset_minutes": -3 * 60,
                                            "template_id": t2, "channel": "sms", "active": 0})
+        if not conn.scalar("SELECT COUNT(*) FROM price_items"):
+            # Placeholder prices for testing, marked sample=1. Never shown to the public until the clinic
+            # enters its real prices and turns on "Show prices to patients".
+            from .prices_content import SAMPLE_PRICES
+            for i, (pname, sslug, pfrom, pto, unit, kw) in enumerate(SAMPLE_PRICES):
+                svc = conn.one("SELECT id FROM services WHERE slug = ?", (sslug,))
+                conn.insert("price_items", {"name": pname, "service_id": svc["id"] if svc else None, "price_from_cents": pfrom * 100,
+                                            "price_to_cents": pto * 100 if pto else None, "unit": unit, "keywords": kw,
+                                            "sort_order": i, "published": 1, "sample": 1, "updated_at": now_str()})
         from .guides_content import GUIDES
         for i, gd in enumerate(GUIDES):
             if not conn.one("SELECT id FROM guides WHERE slug = ?", (gd["slug"],)):  # added once; staff edits are kept

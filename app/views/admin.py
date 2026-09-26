@@ -658,6 +658,96 @@ def guide_edit(guide_id=None):
     return render_template("staff/admin/guide_form.html", gd=gd, v=v, errors=errors, services=services)
 
 
+@bp.route("/prices", methods=["GET", "POST"])
+@require("content.manage")
+def prices():
+    """Price list used by the website chat. Hidden from patients until a super admin confirms it's the real price list."""
+    conn = get_db()
+    services = conn.all("SELECT id, name FROM services WHERE active = 1 ORDER BY sort_order")
+    svc_ids = {x["id"] for x in services}
+
+    def money(field):
+        raw = (request.form.get(field) or "").replace(",", "").replace("₱", "").strip()
+        if not raw:
+            return None, False
+        try:
+            val = round(float(raw) * 100)
+        except ValueError:
+            return None, True
+        return (val, False) if 0 <= val <= 100_000_000 else (None, True)
+
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "visibility":
+            if not g.user.is_super_admin:
+                abort(403)
+            show = request.form.get("show") == "1"
+            samples = conn.scalar("SELECT COUNT(*) FROM price_items WHERE published = 1 AND sample = 1")
+            if show and samples:
+                flash(f"{samples} published prices are still sample prices. Enter Dental Haven's real price or hide them first.", "error")
+            elif show and not request.form.get("confirm"):
+                flash("Tick the box to confirm these are Dental Haven's actual prices.", "error")
+            else:
+                settings.put("prices.show_public", show, g.user.id, conn)
+                audit.record("settings_changed", "settings", None, ("Showing" if show else "Hiding") + " prices to patients")
+                flash("Prices are now shown to patients in the website chat." if show else "Prices are hidden from patients.", "success")
+            return redirect(url_for("admin.prices"))
+        bad = []
+        with conn.transaction():
+            for row in conn.all("SELECT * FROM price_items"):
+                rid = row["id"]
+                if request.form.get(f"delete_{rid}"):
+                    conn.execute("DELETE FROM price_items WHERE id = ?", (rid,))
+                    continue
+                if f"name_{rid}" not in request.form:
+                    continue
+                pfrom, e1 = money(f"from_{rid}")
+                pto, e2 = money(f"to_{rid}")
+                name = clean(request.form.get(f"name_{rid}"), 120)
+                if e1 or e2 or not name or pfrom is None:
+                    bad.append(name or f"row {rid}")
+                    continue
+                sid = to_int(request.form.get(f"service_{rid}"))
+                vals = {"name": name, "service_id": sid if sid in svc_ids else None, "price_from_cents": pfrom,
+                        "price_to_cents": pto if pto and pto > pfrom else None, "unit": clean(request.form.get(f"unit_{rid}"), 60),
+                        "keywords": clean(request.form.get(f"keywords_{rid}"), 400).lower(),
+                        "published": 1 if request.form.get(f"published_{rid}") else 0}
+                changed = any(vals[k] != row[k] for k in ("price_from_cents", "price_to_cents"))
+                if changed or any(vals[k] != row[k] for k in vals):
+                    if changed:
+                        vals["sample"] = 0  # someone entered a real price for this item
+                    if request.form.get(f"real_{rid}"):
+                        vals["sample"] = 0
+                    conn.update("price_items", rid, {**vals, "updated_at": now_str(), "updated_by": g.user.id})
+                elif request.form.get(f"real_{rid}") and row["sample"]:
+                    conn.update("price_items", rid, {"sample": 0, "updated_at": now_str(), "updated_by": g.user.id})
+            name = clean(request.form.get("name_new"), 120)
+            if name:
+                pfrom, e1 = money("from_new")
+                pto, e2 = money("to_new")
+                if e1 or e2 or pfrom is None:
+                    bad.append(name)
+                else:
+                    sid = to_int(request.form.get("service_new"))
+                    conn.insert("price_items", {"name": name, "service_id": sid if sid in svc_ids else None, "price_from_cents": pfrom,
+                                                "price_to_cents": pto if pto and pto > pfrom else None,
+                                                "unit": clean(request.form.get("unit_new"), 60),
+                                                "keywords": clean(request.form.get("keywords_new"), 400).lower(),
+                                                "sort_order": (conn.scalar("SELECT MAX(sort_order) FROM price_items") or 0) + 1,
+                                                "published": 1, "sample": 0, "updated_at": now_str(), "updated_by": g.user.id})
+            audit.record("prices_updated", "settings", None, "Updated the price list")
+        if bad:
+            flash("Check the price for: " + ", ".join(bad) + ". Enter a number, e.g. 1500.", "error")
+        else:
+            flash("Price list saved.", "success")
+        return redirect(url_for("admin.prices"))
+    rows = conn.all("SELECT p.*, s.name AS service FROM price_items p LEFT JOIN services s ON s.id = p.service_id "
+                    "ORDER BY s.sort_order, p.sort_order, p.id")
+    return render_template("staff/admin/prices.html", rows=rows, services=services,
+                           show=bool(settings.get("prices.show_public", conn)),
+                           samples=sum(1 for r in rows if r["sample"] and r["published"]))
+
+
 @bp.route("/content/gallery", methods=["POST"])
 @require("content.manage")
 def gallery_save():

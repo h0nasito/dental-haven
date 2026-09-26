@@ -64,7 +64,7 @@
       {% if current_user.can('settings.manage') %}{{ nav('admin.branches', 'Branches & chairs', 'admin.branch') }}
       {{ nav('admin.services', 'Services', 'admin.service') }}
       {{ nav('admin.schedules', 'Dentist schedules', 'admin.schedule') }}{% endif %}
-      {% if current_user.can('content.manage') %}{{ nav('admin.content', 'Website content', 'admin.content') }}{% endif %}
+      {% if current_user.can('content.manage') %}{{ nav('admin.content', 'Website content', 'admin.content') }}{{ nav('admin.prices', 'Price list', 'admin.prices') }}{% endif %}
       {% if current_user.can('system.settings') %}{{ nav('admin.system', 'System settings', 'admin.system') }}{% endif %}
       {% if current_user.can('system.settings') %}{{ nav('admin.import_data', 'Import from MyMedsPH', 'admin.import') }}{% endif %}
       {% if current_user.can('audit.view') %}{{ nav('admin.audit_log', 'Audit trail', 'admin.audit') }}{% endif %}
