@@ -303,6 +303,31 @@ def seed_base(conn):
                 conn.insert("price_items", {"name": pname, "service_id": svc["id"] if svc else None, "price_from_cents": pfrom * 100,
                                             "price_to_cents": pto * 100 if pto else None, "unit": unit, "keywords": kw,
                                             "sort_order": i, "published": 1, "sample": 1, "updated_at": now_str()})
+        # The clinic's official price list replaces the sample prices once (sample rows only; staff edits and
+        # items staff added are kept). It's shown to patients only through the website chat.
+        from .prices_content import CLINIC_PRICES, CLINIC_PRICES_VERSION
+        from . import settings as _settings3
+        from .prices_content import PER_TOOTH_V2, RENAMES_V2
+        loaded = int(_settings3.get("seed.clinic_prices_version", conn) or 0)
+        if 1 <= loaded < 2:  # per-tooth units; rows staff already renamed or gave a unit are left alone
+            for oldn, newn in RENAMES_V2.items():
+                if not conn.one("SELECT id FROM price_items WHERE name = ?", (newn,)):
+                    conn.execute("UPDATE price_items SET name = ? WHERE name = ?", (newn, oldn))
+            for n in PER_TOOTH_V2:
+                conn.execute("UPDATE price_items SET unit = 'per tooth' WHERE name = ? AND unit = ''", (n,))
+            _settings3.put("seed.clinic_prices_version", CLINIC_PRICES_VERSION, None, conn)
+        if loaded < 1:
+            conn.execute("DELETE FROM price_items WHERE sample = 1")
+            have = {r["name"] for r in conn.all("SELECT name FROM price_items")}
+            for i, (pname, sslug, pfrom, pto, kind, unit, kw, note) in enumerate(CLINIC_PRICES):
+                if pname in have:
+                    continue
+                svc = conn.one("SELECT id FROM services WHERE slug = ?", (sslug,))
+                conn.insert("price_items", {"name": pname, "service_id": svc["id"] if svc else None, "price_from_cents": pfrom * 100,
+                                            "price_to_cents": pto * 100 if pto else None, "kind": kind, "unit": unit, "keywords": kw,
+                                            "note": note, "sort_order": 100 + i, "published": 1, "sample": 0, "updated_at": now_str()})
+            _settings3.put("seed.clinic_prices_version", CLINIC_PRICES_VERSION, None, conn)
+            _settings3.put("prices.show_public", True, None, conn)  # the clinic asked for these prices to be used in the chat
         from .guides_content import GUIDES
         for i, gd in enumerate(GUIDES):
             if not conn.one("SELECT id FROM guides WHERE slug = ?", (gd["slug"],)):  # added once; staff edits are kept

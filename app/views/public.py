@@ -525,6 +525,7 @@ def chat_info():
             if p["price_to_cents"]:
                 amount += f" – ₱{p['price_to_cents'] // 100:,}"
             prices.append({"name": p["name"], "amount": amount, "range": bool(p["price_to_cents"]), "unit": p["unit"],
+                           "fixed": (p["kind"] == "fixed") and not p["price_to_cents"], "note": p["note"] or "",
                            "service": p["service"] or "", "sample": bool(p["sample"]) or not show,
                            "kw": [k.strip() for k in (p["keywords"] + "," + p["name"]).lower().split(",") if k.strip()]})
     from ..chat_faq import FAQ

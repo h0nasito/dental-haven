@@ -29,7 +29,7 @@
 <select id="pi" name="price_item_id" data-quote-price>
 <option value="" data-price="">Other (type below)</option>
 {% for p in prices %}{% if loop.first or p.service != loop.previtem.service %}{% if not loop.first %}</optgroup>{% endif %}<optgroup label="{{ p.service or 'Other' }}">{% endif %}
-<option value="{{ p.id }}" data-price="{{ '%d' % (p.price_from_cents // 100) }}" data-name="{{ p.name }}">{{ p.name }} · {{ 'from ' if not p.price_to_cents }}{{ p.price_from_cents|peso }}{% if p.price_to_cents %} – {{ p.price_to_cents|peso }}{% endif %}{% if p.unit %} {{ p.unit }}{% endif %}{% if p.sample %} (sample){% endif %}</option>
+<option value="{{ p.id }}" data-price="{{ '%d' % (p.price_from_cents // 100) }}" data-name="{{ p.name }}">{{ p.name }} · {{ 'from ' if not p.price_to_cents and p.kind != 'fixed' }}{{ p.price_from_cents|peso }}{% if p.price_to_cents %} – {{ p.price_to_cents|peso }}{% endif %}{% if p.unit %} {{ p.unit }}{% endif %}{% if p.sample %} (sample){% endif %}</option>
 {% if loop.last %}</optgroup>{% endif %}{% endfor %}
 </select></div>
 <div class="field"><label for="de">Description</label><input id="de" name="description" placeholder="Filled in from the price list"></div>

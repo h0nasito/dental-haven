@@ -714,7 +714,8 @@ def prices():
                 vals = {"name": name, "service_id": sid if sid in svc_ids else None, "price_from_cents": pfrom,
                         "price_to_cents": pto if pto and pto > pfrom else None, "unit": clean(request.form.get(f"unit_{rid}"), 60),
                         "keywords": clean(request.form.get(f"keywords_{rid}"), 400).lower(),
-                        "published": 1 if request.form.get(f"published_{rid}") else 0}
+                        "published": 1 if request.form.get(f"published_{rid}") else 0,
+                        "kind": "fixed" if request.form.get(f"kind_{rid}", row["kind"]) == "fixed" else "from"}
                 changed = any(vals[k] != row[k] for k in ("price_from_cents", "price_to_cents"))
                 if changed or any(vals[k] != row[k] for k in vals):
                     if changed:

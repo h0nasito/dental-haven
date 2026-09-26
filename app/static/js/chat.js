@@ -51,6 +51,7 @@
       from: "from ", sample_note: "Sample prices for testing only (demo site). These are not Dental Haven's actual prices yet.",
       price_list: "Here are some of our starting prices:", price_ask: "Ask me about a specific treatment, for example \"How much are braces?\"",
       price_final: "The final cost depends on your teeth and treatment plan. Your dentist confirms it at your consultation, before any work begins.",
+      no_price: "We don't have a set price for {x} on our list, because it depends a lot on your case. Our dentist checks your teeth and gives you an exact quote at your consultation.",
       again: "I think I've already answered that. Would you like our team to explain it in more detail?",
       unsure2: "Sorry, I still didn't catch that. You can type a short question like \"How much is cleaning?\", \"Do you do braces?\" or \"Where is your Bocaue branch?\", or I can have our team call you.",
       more_read: "Read the full guide →",
@@ -118,6 +119,7 @@
       from: "mula ", sample_note: "Sample na presyo lang po ito para sa testing (demo site). Hindi pa ito ang aktuwal na presyo ng Dental Haven.",
       price_list: "Narito po ang ilan sa aming starting prices:", price_ask: "Magtanong po tungkol sa partikular na treatment, halimbawa \"Magkano ang braces?\"",
       price_final: "Ang huling halaga ay depende sa inyong ngipin at treatment plan. Kukumpirmahin ito ng dentista sa konsulta, bago simulan ang anumang treatment.",
+      no_price: "Wala pa po kaming nakatakdang presyo para sa {x} sa aming listahan, dahil malaki ang nakadepende sa inyong kaso. Titingnan po ng dentista ang inyong ngipin at ibibigay ang eksaktong quote sa konsulta.",
       again: "Parang nasagot ko na po iyan. Gusto n'yo po bang ipaliwanag pa ito nang mas detalyado ng aming team?",
       unsure2: "Pasensya na po, hindi ko pa rin nakuha. Subukan ang maikling tanong gaya ng \"Magkano ang cleaning?\", \"May braces ba kayo?\" o \"Saan ang Bocaue branch?\", o ipapatawag ko kayo sa aming team.",
       more_read: "Basahin ang buong guide →",
@@ -443,15 +445,35 @@
     }).filter(function (x) { return x[0] > 0; });
     if (!scored.length) return [];
     var top = Math.max.apply(null, scored.map(function (x) { return x[0]; }));
-    return scored.filter(function (x) { return all || x[0] >= top - 3; }).map(function (x) { return x[1]; }).slice(0, all ? 5 : 4);
+    return scored.filter(function (x) { return all || x[0] >= top - 3; }).map(function (x) { return x[1]; }).slice(0, 6);
   }
-  function priceLine(p) {
-    return p.name + ": " + (p.range ? "" : t("from")) + p.amount + (p.unit ? " " + p.unit : "");
+  function priceLine(p, inlineNote) {
+    return p.name + ": " + (p.range || p.fixed ? "" : t("from")) + p.amount + (p.unit ? " " + p.unit : "") + (inlineNote && p.note ? " (" + p.note.replace(/\.$/, "") + ")" : "");
+  }
+  // Treatments on the clinic's price list without a readable price: offer a quote at the consultation, never a guess.
+  var UNPRICED = [{ x: "dental implants", kw: ["implant", "implants", "itanim na ngipin"] }, { x: "sapphire braces", kw: ["sapphire"] }, { x: "a night guard or mouthguard", kw: ["night guard", "nightguard", "mouthguard", "mouth guard", "sports guard"] },
+                  { x: "ceramic braces for Class 2 or 3", kw: ["ceramic braces class 2", "ceramic braces class 3", "ceramic class 2", "ceramic class 3"] }];
+  function unpriced(q) {
+    return UNPRICED.filter(function (u) {
+      return u.kw.some(function (k) { return q.indexOf(k) !== -1; }) &&
+        !(info.prices || []).some(function (p) { return u.kw.some(function (k) { return p.kw.indexOf(k) !== -1; }); });
+    })[0];
   }
   function priceAnswer(q) {
     if (!(info.prices || []).length) return price();
+    var up = unpriced(q);
+    if (up) {
+      say([t("no_price").replace("{x}", up.x), t("price2")]);
+      return after([[t("c_consult"), book], [t("c_team"), handoff]]);
+    }
     var items = priceMatch(q);
     var intro = null;
+    var named = procMatch(q);  // a treatment named in this question beats the one discussed earlier
+    if (!items.length && named) items = priceMatch(" " + named.kw.concat([named.name.toLowerCase()]).join(" ") + " ", true);
+    if (!items.length && named) {
+      say([t("no_price").replace("{x}", named.name.toLowerCase()), t("price2")]);
+      return after([[t("c_consult"), book], [t("c_team"), handoff]]);
+    }
     if (!items.length && ctxProc) items = priceMatch(" " + ctxProc.kw.concat([ctxProc.name.toLowerCase()]).join(" ") + " ", true);
     if (!items.length && ctxService) items = info.prices.filter(function (p) { return p.service === ctxService.slug; }).slice(0, 5);
     if (!items.length) {
@@ -460,7 +482,11 @@
       intro = t("price_list");
     }
     if (items[0] && items[0].service) ctxService = svcBySlug(items[0].service) || ctxService;
-    var parts = [intro, list(items.map(priceLine)), t("price_final")];
+    // A note every listed item shares is said once; item-specific notes go next to their price.
+    var shared = items.length > 1 && items.every(function (p) { return p.note && p.note === items[0].note; }) ? items[0].note : "";
+    if (items.length === 1) shared = items[0].note || "";
+    var parts = [intro, list(items.map(function (p) { return priceLine(p, !shared); }))]
+      .concat(shared ? [el("p", "dh-note", shared)] : []).concat([t("price_final")]);
     if (intro) parts.push(t("price_ask"));
     if (items.some(function (p) { return p.sample; })) parts.push(el("p", "dh-sample", t("sample_note")));
     say(parts);

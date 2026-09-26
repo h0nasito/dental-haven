@@ -21,14 +21,15 @@
 
 <form method="post" class="card">{{ csrf() }}<input type="hidden" name="action" value="save">
 <div class="table-wrap"><table class="table">
-<thead><tr><th>Treatment</th><th>Service</th><th>From (₱)</th><th>To (₱, optional)</th><th>Unit</th><th>Words patients might use</th><th>Show</th><th></th></tr></thead>
+<thead><tr><th>Treatment</th><th>Service</th><th>From (₱)</th><th>To (₱, optional)</th><th>Type &amp; unit</th><th>Words patients might use</th><th>Show</th><th></th></tr></thead>
 <tbody>
 {% for r in rows %}<tr>
   <td><input name="name_{{ r.id }}" value="{{ r.name }}" aria-label="Treatment" style="min-width:180px">{% if r.sample %}<br><span class="badge badge-amber">Sample price</span> <label class="check" style="display:inline-flex;font-size:.8rem"><input type="checkbox" name="real_{{ r.id }}" value="1"> This is our real price</label>{% endif %}</td>
   <td><select name="service_{{ r.id }}" aria-label="Service"><option value="">—</option>{% for x in services %}<option value="{{ x.id }}" {% if r.service_id == x.id %}selected{% endif %}>{{ x.name }}</option>{% endfor %}</select></td>
   <td><input name="from_{{ r.id }}" value="{{ '%d' % (r.price_from_cents // 100) if r.price_from_cents is not none else '' }}" inputmode="decimal" style="width:90px" aria-label="From"></td>
   <td><input name="to_{{ r.id }}" value="{{ '%d' % (r.price_to_cents // 100) if r.price_to_cents else '' }}" inputmode="decimal" style="width:90px" aria-label="To"></td>
-  <td><input name="unit_{{ r.id }}" value="{{ r.unit }}" placeholder="per tooth" style="width:120px" aria-label="Unit"></td>
+  <td><select name="kind_{{ r.id }}" aria-label="Price type"><option value="fixed" {% if r.kind == 'fixed' %}selected{% endif %}>Exact</option><option value="from" {% if r.kind != 'fixed' %}selected{% endif %}>From / minimum</option></select>
+  <input name="unit_{{ r.id }}" value="{{ r.unit }}" placeholder="per tooth" style="width:120px;margin-top:.3rem" aria-label="Unit"></td>
   <td><input name="keywords_{{ r.id }}" value="{{ r.keywords }}" style="min-width:200px" aria-label="Keywords"></td>
   <td><input type="checkbox" name="published_{{ r.id }}" value="1" {% if r.published %}checked{% endif %} aria-label="Show"></td>
   <td><label class="check" style="font-size:.8rem"><input type="checkbox" name="delete_{{ r.id }}" value="1"> Delete</label></td>
