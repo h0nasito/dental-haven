@@ -56,3 +56,25 @@ class TestChat(Base):
         page = self.login("admin").get("/staff/leads?source=chat").data
         self.assertIn(b"Chat Demo", page)
         self.assertIn(b"Website chat", page)
+
+
+class TestChatKnowledge(Base):
+    def test_procedures_complete_and_served(self):
+        from app.chat_procedures import PROCEDURES
+        slugs = {r["slug"] for r in self.conn.all("SELECT slug FROM services")}
+        keys = set()
+        for p in PROCEDURES:
+            self.assertNotIn(p["key"], keys)
+            keys.add(p["key"])
+            self.assertIn(p["service"], slugs, p["key"])
+            self.assertTrue(p["kw"], p["key"])
+            for aspect in ("what", "duration", "pain", "recovery", "lasts"):
+                if p[aspect] is not None:
+                    self.assertTrue(p[aspect]["en"] and p[aspect]["tl"], (p["key"], aspect))
+            self.assertIsNotNone(p["duration"], p["key"])  # every procedure can answer "how long?"
+        for k in ("extraction", "wisdom", "root_canal", "braces", "implant", "crown", "filling", "cleaning", "deep_cleaning", "whitening"):
+            self.assertIn(k, keys)
+        info = self.app.test_client().get("/chat/info.json").get_json()
+        self.assertEqual(len(info["procedures"]), len(PROCEDURES))
+        ext = next(p for p in info["procedures"] if p["key"] == "extraction")
+        self.assertIn("minutes", ext["duration"]["en"])

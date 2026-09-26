@@ -490,3 +490,6 @@ section[id] { scroll-margin-top: 72px; }
 .guide-related h2, .guide-section-title { font-family: var(--serif); font-weight: 400; color: #102542; font-size: 1.7rem; margin: 0 0 1.2rem; }
 .guide-list { padding-top: 2.5rem; }
 .dh-sample { font-size: .8rem; color: #8a5a00; background: #fff6e0; padding: .35rem .5rem; border-radius: 8px; }
+.dh-note { font-size: .8rem; color: #5a616b; }
+.quote-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 1rem; align-items: start; }
+@media (max-width: 1000px) { .quote-grid { grid-template-columns: 1fr; } }

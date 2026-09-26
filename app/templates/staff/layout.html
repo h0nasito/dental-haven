@@ -42,8 +42,9 @@
       {% if current_user.can('templates.manage') or current_user.can('leads.view') %}{{ nav('leads.templates', 'Response templates', 'leads.template') }}{% endif %}
     </div>
     {% endif %}
-    {% if current_user.can('billing.view') or current_user.can('reports.sales') or current_user.can('reports.operations') or current_user.can('expenses.view') or current_user.can('expenses.add') %}
+    {% if current_user.can('billing.view') or current_user.can('quotes.view') or current_user.can('reports.sales') or current_user.can('reports.operations') or current_user.can('expenses.view') or current_user.can('expenses.add') %}
     <div class="nav-group"><div class="title">Billing &amp; reports</div>
+      {% if current_user.can('quotes.view') %}{{ nav('quotes.index', 'Quotations', 'quotes.') }}{% endif %}
       {% if current_user.can('billing.view') %}{{ nav('billing.invoices', 'Invoices', 'billing.invoice') }}{% endif %}
       {% if current_user.can('reports.sales') %}{{ nav('billing.sales', 'Sales & collections', 'billing.sales') }}{% endif %}
       {% if current_user.can('reports.operations') %}{{ nav('billing.operations', 'Operations report', 'billing.operations') }}{% endif %}

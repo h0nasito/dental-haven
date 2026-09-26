@@ -66,6 +66,9 @@ CATALOG: list[Perm] = [
     Perm("payments.add", "Add Payment (and patient deposits)", "Patient bills/payments"),
     Perm("credit.apply", "Apply Account Credit", "Patient bills/payments"),
     Perm("billing.void", "Delete patient bill (void) and refunds", "Patient bills/payments", True),
+    # Quotations
+    Perm("quotes.view", "View price quotations", "Price quotations"),
+    Perm("quotes.manage", "Create and edit price quotations", "Price quotations"),
     # Prescriptions
     Perm("rx.delete", "Delete patient prescription", "Patient prescriptions", True),
     Perm("rx.create", "Create patient prescription", "Patient prescriptions", True),
@@ -123,6 +126,7 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
         "dashboard.view", "appointments.view", "appointments.complete", "calendar.birthdays", "calendar.events",
         "followups.view", "followups.manage", "patients.view", "clinical.view", "clinical.edit", *_CLINICAL_WRITE,
         "documents.upload", "lab.view", "lab.manage", "reportcards.generate", "reportcards.review",
+        "quotes.view", "quotes.manage",
     },
     "staff": {
         "dashboard.view", "dashboard.balances", "appointments.view", "calendar.associates", "calendar.birthdays",
@@ -131,12 +135,14 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
         "leads.view", "followups.view", "followups.manage", "reminders.view", "reminders.send",
         "billing.view", "billing.manage", "bills.edit", "payments.add", "credit.apply",
         "expenses.view", "expenses.add", "lab.view", "reports.operations", "attendance.view",
+        "quotes.view", "quotes.manage",
     },
     "receptionist": {
         "dashboard.view", "appointments.view", "calendar.associates", "calendar.birthdays", "calendar.events",
         "bookings.view", "appointments.manage", "appointments.complete", "bookings.manage",
         "patients.view", "patients.contact", "patients.manage", "documents.upload",
         "leads.view", "leads.manage", "followups.view", "followups.manage", "reminders.view", "reminders.send",
+        "quotes.view", "quotes.manage",
     },
 }
 

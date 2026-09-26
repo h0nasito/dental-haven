@@ -35,6 +35,19 @@
       book1: "Great choice! 😊 Taking you to our booking page now. Just pick a date and time, and our team will call or message you to confirm.",
       go_now: "If the page doesn't open, tap here:",
       all_branches: "🕘 All our branches:", hours_book: "Book ahead so we can reserve your time with the dentist.",
+      a_what: "What is it?", a_duration: "How long does it take?", a_pain: "Does it hurt?", a_recovery: "Recovery", a_lasts: "How long does it last?",
+      a_prepare: "How to prepare", a_avoid: "What to avoid after", a_risks: "Risks & side effects", a_alternatives: "Alternatives",
+      a_materials: "Materials", a_before: "Is an X-ray needed?", a_contact: "When to call us", yes_offer: function (n) { return "Yes, we offer " + n + "."; },
+      generic_pick: "That depends a little on the treatment. Tell me which one and I'll be more specific:",
+      open_now: function (until) { return "Yes, we're open now, until " + until + " today."; },
+      closed_now: function (when) { return "We're closed right now. We open again " + when + "."; },
+      today: "today", tomorrow: "tomorrow", at: " at ",
+      er: "Please go to the nearest hospital emergency room now, or call 911. Uncontrolled bleeding, trouble breathing or swallowing, or a serious injury needs emergency care right away. Once you're safe, call your branch and we'll help with follow-up care.",
+      slots_title: function (day) { return "Online appointments available " + day + " (check-up):"; },
+      slots_none: "I couldn't find open online slots in the next few days. Please call your branch: they may still be able to fit you in.",
+      slots_more: "Pick your time on the booking page:", checking: "Checking available times…",
+      a_price: "Price", which_proc: "Which treatment are you asking about? Tap one, or type its name:",
+      proc_note: "Every patient is different: your dentist will confirm the details for you at your consultation.",
       from: "from ", sample_note: "Sample prices for testing only (demo site). These are not Dental Haven's actual prices yet.",
       price_list: "Here are some of our starting prices:", price_ask: "Ask me about a specific treatment, for example \"How much are braces?\"",
       price_final: "The final cost depends on your teeth and treatment plan. Your dentist confirms it at your consultation, before any work begins.",
@@ -89,6 +102,19 @@
       book1: "Magandang desisyon po! 😊 Dadalhin ko na po kayo sa booking page. Pumili lang ng petsa at oras, at tatawagan o ite-text kayo ng aming team para kumpirmahin.",
       go_now: "Kung hindi bumukas ang page, i-tap dito:",
       all_branches: "🕘 Lahat po ng aming branch:", hours_book: "Mag-book po nang maaga para ma-reserve ang oras ninyo sa dentista.",
+      a_what: "Ano ito?", a_duration: "Gaano katagal?", a_pain: "Masakit ba?", a_recovery: "Paggaling", a_lasts: "Gaano tatagal?",
+      a_prepare: "Paano maghanda", a_avoid: "Iiwasan pagkatapos", a_risks: "Panganib at side effects", a_alternatives: "Ibang opsyon",
+      a_materials: "Materyales", a_before: "Kailangan ba ng X-ray?", a_contact: "Kailan tatawag", yes_offer: function (n) { return "Opo, mayroon kaming " + n + "."; },
+      generic_pick: "Depende po ito nang kaunti sa treatment. Sabihin kung alin para mas eksakto ang sagot ko:",
+      open_now: function (until) { return "Opo, bukas kami ngayon, hanggang " + until + " ngayong araw."; },
+      closed_now: function (when) { return "Sarado po kami ngayon. Magbubukas ulit " + when + "."; },
+      today: "ngayong araw", tomorrow: "bukas", at: " nang ",
+      er: "Pumunta po agad sa pinakamalapit na emergency room ng ospital, o tumawag sa 911. Ang pagdurugong hindi tumitigil, hirap huminga o lumunok, o malubhang pinsala ay kailangan ng emergency care agad. Kapag ligtas na kayo, tumawag sa branch at tutulungan namin kayo sa follow-up.",
+      slots_title: function (day) { return "May bakanteng online appointment " + day + " (check-up):"; },
+      slots_none: "Wala akong nakitang bakanteng online slot sa susunod na ilang araw. Pakitawagan ang branch: baka maisingit pa kayo.",
+      slots_more: "Pumili ng oras sa booking page:", checking: "Tinitingnan ang mga bakanteng oras…",
+      a_price: "Presyo", which_proc: "Anong treatment po ang tinutukoy ninyo? Pumili o i-type ang pangalan:",
+      proc_note: "Iba-iba ang bawat pasyente: kukumpirmahin ng dentista ang detalye para sa inyo sa konsulta.",
       from: "mula ", sample_note: "Sample na presyo lang po ito para sa testing (demo site). Hindi pa ito ang aktuwal na presyo ng Dental Haven.",
       price_list: "Narito po ang ilan sa aming starting prices:", price_ask: "Magtanong po tungkol sa partikular na treatment, halimbawa \"Magkano ang braces?\"",
       price_final: "Ang huling halaga ay depende sa inyong ngipin at treatment plan. Kukumpirmahin ito ng dentista sa konsulta, bago simulan ang anumang treatment.",
@@ -166,8 +192,9 @@
     return info.book + (q.length ? "?" + q.join("&") : "");
   }
   function list(items) { var ul = el("ul"); items.forEach(function (i) { var li = el("li"); if (typeof i === "string") li.textContent = i; else li.appendChild(i); ul.appendChild(li); }); return ul; }
-  function norm(t) { return (" " + (t || "").toLowerCase().replace(/[^a-z0-9ñ\s-]/g, " ").replace(/\s+/g, " ") + " "); }
-  function has(t, words) { return words.some(function (w) { return t.indexOf(w) !== -1; }); }
+  function norm(t) { return (" " + (t || "").toLowerCase().replace(/[’']/g, "").replace(/[^a-z0-9ñ\s-]/g, " ").replace(/\s+/g, " ") + " "); }
+  function kwn(w) { return w.toLowerCase().replace(/[’']/g, ""); }
+  function has(t, words) { return words.some(function (w) { return t.indexOf(kwn(w)) !== -1; }); }
 
   function hoursText(h) { return h; }  // day and hour labels stay in English in both languages
 
@@ -254,6 +281,7 @@
       var li = el("span"); li.append(b.name + ": ");
       b.phones.forEach(function (p, i) { if (i) li.append(" / "); li.appendChild(link(b.tel[i], p)); });
       if (!b.phones.length) li.append(t("see_fb"));
+      if (b.facebook) { li.append(" · "); li.appendChild(link(b.facebook, "Facebook", true)); }
       return li;
     });
     say([t("contacts"), list(items)]); after([[t("c_team"), handoff]]);
@@ -366,13 +394,15 @@
     (info.faq || []).forEach(function (f) {
       var sc = 0;
       f.kw.forEach(function (k) {
-        k = k.toLowerCase();
-        if (q.indexOf(k) !== -1) { sc += k.indexOf(" ") !== -1 ? 3 : 2; return; }
+        k = kwn(k);
+        var single = k.indexOf(" ") === -1;
+        if (single ? new RegExp("(^|\\s)" + k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(s|es)?(\\s|$)").test(q) : q.indexOf(k) !== -1) { sc += single ? 2 : 3; return; }
         var ws = k.split(" ").filter(function (w) { return w.length > 2 && STOP.indexOf(w) === -1; });
         if (ws.length > 1 && ws.every(function (w) { return q.indexOf(w) !== -1; })) sc += 2.5;  // same words, any order
       });
       if (sc > bestScore) { bestScore = sc; best = f; }
     });
+    if (best) best = Object.assign({}, best, { strong: bestScore >= 3 });
     return bestScore >= 2 ? best : null;
   }
   function faqAnswer(f) {
@@ -405,7 +435,7 @@
   }
 
   // Prices (only when the clinic has published its price list; demo shows labelled samples).
-  function priceMatch(q) {
+  function priceMatch(q, all) {
     var scored = (info.prices || []).map(function (p) {
       var sc = 0;
       p.kw.forEach(function (k) { if (k.length > 2 && q.indexOf(k) !== -1) sc = Math.max(sc, k.length); });
@@ -413,7 +443,7 @@
     }).filter(function (x) { return x[0] > 0; });
     if (!scored.length) return [];
     var top = Math.max.apply(null, scored.map(function (x) { return x[0]; }));
-    return scored.filter(function (x) { return x[0] >= top - 3; }).map(function (x) { return x[1]; }).slice(0, 4);
+    return scored.filter(function (x) { return all || x[0] >= top - 3; }).map(function (x) { return x[1]; }).slice(0, all ? 5 : 4);
   }
   function priceLine(p) {
     return p.name + ": " + (p.range ? "" : t("from")) + p.amount + (p.unit ? " " + p.unit : "");
@@ -422,6 +452,7 @@
     if (!(info.prices || []).length) return price();
     var items = priceMatch(q);
     var intro = null;
+    if (!items.length && ctxProc) items = priceMatch(" " + ctxProc.kw.concat([ctxProc.name.toLowerCase()]).join(" ") + " ", true);
     if (!items.length && ctxService) items = info.prices.filter(function (p) { return p.service === ctxService.slug; }).slice(0, 5);
     if (!items.length) {
       var seen = {};
@@ -434,6 +465,171 @@
     if (items.some(function (p) { return p.sample; })) parts.push(el("p", "dh-sample", t("sample_note")));
     say(parts);
     after([[t("c_consult"), book], [t("c_team"), handoff]]);
+  }
+
+  // Procedures: which treatment + what the patient wants to know about it.
+  var ctxProc = null;
+  var PROC_GUIDE = { filling: "about-dental-fillings", crown: "veneers-vs-crowns", veneer: "veneers-vs-crowns", implant: "dental-implants-what-to-expect",
+                     denture: "caring-for-dentures", braces: "braces-or-clear-aligners", aligners: "braces-or-clear-aligners",
+                     sdf: "silver-diamine-fluoride", sealant: "preventive-dentistry-for-kids", fluoride: "preventive-dentistry-for-kids" };
+  var SECONDARY = ["sedation", "xray", "checkup"];  // "anesthesia or sedation for a filling" is about the filling
+  function procMatch(q) {
+    var best = null, bestLen = 0;
+    (info.procedures || []).forEach(function (p) {
+      if (SECONDARY.indexOf(p.key) !== -1) return;
+      p.kw.forEach(function (k) {
+        k = k.toLowerCase();
+        var hit = k.length <= 4 ? q.indexOf(" " + k + " ") !== -1 || q.indexOf(" " + k + "s ") !== -1 : q.indexOf(k) !== -1;
+        if (hit && k.length > bestLen) { bestLen = k.length; best = p; }
+      });
+    });
+    if (best) return best;
+    (info.procedures || []).forEach(function (p) {
+      if (SECONDARY.indexOf(p.key) === -1) return;
+      p.kw.forEach(function (k) {
+        k = k.toLowerCase();
+        var hit = k.length <= 4 ? q.indexOf(" " + k + " ") !== -1 || q.indexOf(" " + k + "s ") !== -1 : q.indexOf(k) !== -1;
+        if (hit && k.length > bestLen) { bestLen = k.length; best = p; }
+      });
+    });
+    return best;
+  }
+  function aspectOf(q) {
+    if (has(q, ["when should i call", "when to call", "when should i contact", "contact the clinic after", "call the clinic after", "call you after",
+                "pain after", "swelling after", "bleeding after", "sumakit pagkatapos", "namaga pagkatapos", "masakit pa rin", "still hurts", "still painful",
+                "kailan tatawag", "kailan ako tatawag"])) return "contact";
+    if (/how long (does|do|will|would) (it|they|this|that|the \w+|\w+) ?(\w+ )?last/.test(q) || has(q, ["tatagal ba", "ilang taon tatagal", "gaano tatagal",
+        "gaano katagal tatagal", "last long", "permanent ba", "is it permanent", "lifespan", "how many years"])) return "lasts";
+    if (has(q, ["x-ray needed", "xray needed", "need an x-ray", "need x-ray", "need xray", "need a consultation", "consultation needed", "consultation first",
+                "x-ray first", "xray first", "consultation or x-ray", "kailangan ba ng x-ray", "kailangan ba ng xray", "kailangan ba ng konsulta", "need a check-up first",
+                "need a checkup first"])) return "before";
+    if (has(q, ["prepare", "preparation", "maghanda", "paghahanda", "get ready", "before the procedure", "before surgery", "before my procedure",
+                "before the extraction", "before extraction", "before treatment", "bago ang procedure", "bago magpa"])) return "prepare";
+    if (has(q, ["avoid", "bawal", "iwasan", "iiwasan", "should not eat", "shouldn't eat", "can't eat", "cannot eat", "foods to", "food to", "hindi puwedeng kainin",
+                "hindi pwedeng kainin", "activities after", "exercise after", "can i smoke", "coffee", "kape", "can i drink", "puwede uminom", "pwede uminom"])) return "avoid";
+    if (has(q, ["risk", "side effect", "side-effect", "complication", "danger", "delikado", "safe ba", "is it safe", "ligtas ba", "masama ba"])) return "risks";
+    if (has(q, ["alternative", "other option", "instead of", "ibang paraan", "ibang opsyon", "iba pang opsyon", "other than"])) return "alternatives";
+    if (has(q, ["recover", "heal", "gumaling", "hilom", "downtime", "aftercare", "after care", "pagkatapos", "after the procedure", "afterwards", "expect after",
+                "bed rest", "back to work", "back to school", "work after", "school after", "swelling after", "can i eat", "puwede kumain", "pwede kumain",
+                "pwede na kumain", "puwede na kumain", " after "])) return "recovery";
+    if (has(q, ["how long", "gaano katagal", "katagal", "ilang oras", "ilang minuto", "how many hours", "how many minutes", "how many visits", "appointments will",
+                "how many appointments", "ilang balik", "ilang beses", "duration", "how much time", "take long", "same day", "one day", "isang araw", "one visit",
+                "isang balik", "gaano kabilis", "how fast", "how quick", "ilang araw", "how many days", "how many sessions", "session"])) return "duration";
+    if (/\b(does|will|would|is|do)\b.*\b(hurt|painful)\b/.test(q) || has(q, ["masakit ba", "sasakit", "masakit po ba", "painful", "anesthesia",
+                "anaesthesia", "numb", "turok", "manhid", "pain free", "painless", "sedation for", "need sedation"])) return "pain";
+    if (has(q, ["material", "made of", "gawa sa", "yari sa", "materyales", "porcelain", "ceramic", "zirconia", "metal", "acrylic", "titanium",
+                "composite", "amalgam", "types of", "kinds of", "klase ng", "uri ng", "temporary"])) return "materials";
+    if (has(q, ["do you offer", "do you do", "do you provide", "do you make", "do you have", "do you perform", "offer ba", "meron ba", "mayroon ba",
+                "may ginagawa", "gumagawa ba", "gumagawa kayo", "nagpapa", "can you do", "can i get", "pwede ba magpa", "puwede ba magpa"])) return "offer";
+    if (has(q, ["what is", "what's", "what are", "whats", "ano ang", "ano yung", "ano po ang", "ano ba ang", "explain", "how is it done",
+                "paano ginagawa", "what happens", "how does it work", "paano", "meaning", "ibig sabihin", "procedure for", "process"])) return "what";
+    return null;
+  }
+  function procMatchAll(q) {
+    var found = [];
+    (info.procedures || []).forEach(function (p) {
+      if (p.kw.some(function (k) { k = k.toLowerCase(); return k.length <= 4 ? q.indexOf(" " + k + " ") !== -1 || q.indexOf(" " + k + "s ") !== -1 : q.indexOf(k) !== -1; })) found.push(p);
+    });
+    return found;
+  }
+  function genericAnswer(aspect) {
+    var L = lang === "tl" ? "tl" : "en";
+    say([info.generic[aspect][L], t("generic_pick")]);
+    var common = ["extraction", "wisdom", "root_canal", "filling", "implant", "braces", "whitening", "deep_cleaning"];
+    setChips((info.procedures || []).filter(function (p) { return common.indexOf(p.key) !== -1; }).slice(0, 6).map(function (p) {
+      return [p.name, function () { procAnswer(p, aspect); }];
+    }));
+  }
+
+  // "Are you open now?" from each branch's hours, in Philippine time.
+  function manilaNow() {
+    var parts = {};
+    new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Manila", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false, year: "numeric", month: "2-digit", day: "2-digit" })
+      .formatToParts(new Date()).forEach(function (x) { parts[x.type] = x.value; });
+    var wd = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].indexOf(parts.weekday);
+    return { wd: wd, min: (parseInt(parts.hour, 10) % 24) * 60 + parseInt(parts.minute, 10), date: parts.year + "-" + parts.month + "-" + parts.day };
+  }
+  function hm(s) { return parseInt(s.slice(0, 2), 10) * 60 + parseInt(s.slice(3, 5), 10); }
+  function t12(s) { var h = parseInt(s.slice(0, 2), 10), m = s.slice(3, 5); return ((h + 11) % 12 + 1) + (m !== "00" ? ":" + m : "") + (h < 12 ? " AM" : " PM"); }
+  var DAYNAMES = { en: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], tl: ["Lunes", "Martes", "Miyerkules", "Huwebes", "Biyernes", "Sabado", "Linggo"] };
+  function openNow() {
+    var b = info.branches[0];
+    if (!b || !b.week || !b.week.length) return allHours();
+    var now = manilaNow(), day = b.week.filter(function (d) { return d.wd === now.wd; })[0];
+    if (day && !day.closed && now.min >= hm(day.open) && now.min < hm(day.close)) {
+      say([t("open_now")(t12(day.close)), t("hours_book")]);
+    } else {
+      var when = null;
+      if (day && !day.closed && now.min < hm(day.open)) when = t("today") + t("at") + t12(day.open);
+      for (var i = 1; !when && i <= 7; i++) {
+        var wd = (now.wd + i) % 7, d = b.week.filter(function (x) { return x.wd === wd; })[0];
+        if (d && !d.closed) when = (i === 1 ? t("tomorrow") : DAYNAMES[lang === "tl" ? "tl" : "en"][wd]) + t("at") + t12(d.open);
+      }
+      say([t("closed_now")(when || "soon"), t("hours_book")]);
+    }
+    after([[t("c_branches"), branchesMenu]]);
+  }
+
+  // "Any appointments available today?" from the live booking system.
+  function availability() {
+    var svc = svcBySlug("general-dentistry") || info.services[0], now = manilaNow();
+    say(t("checking"));
+    var base = new Date(now.date + "T00:00:00");
+    function ymd(d) { return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); }
+    function tryDay(offset) {
+      if (offset > 6) { say(t("slots_none")); return setChips([[t("c_call"), contacts], [t("c_team"), handoff]]); }
+      var d = new Date(base.getTime() + offset * 86400000), day = ymd(d);
+      Promise.all(info.branches.map(function (b) {
+        return fetch(info.slots + "?branch_id=" + b.id + "&service_id=" + svc.id + "&date=" + day, { credentials: "same-origin" })
+          .then(function (r) { return r.json(); }).then(function (j) { return { b: b, labels: j.labels || [] }; })
+          .catch(function () { return { b: b, labels: [] }; });
+      })).then(function (res) {
+        var open = res.filter(function (x) { return x.labels.length; });
+        if (!open.length) return tryDay(offset + 1);
+        var label = offset === 0 ? t("today") : offset === 1 ? t("tomorrow") : DAYNAMES[lang === "tl" ? "tl" : "en"][(d.getDay() + 6) % 7];
+        var a = link(info.book, t("book_cta")); a.className = "dh-cta";
+        say([t("slots_title")(label), list(open.map(function (x) { return x.b.name + ": " + x.labels.slice(0, 4).join(", ") + (x.labels.length > 4 ? "…" : ""); })), t("slots_more"), a]);
+        after([[t("c_team"), handoff]]);
+      });
+    }
+    tryDay(0);
+  }
+  function er() {
+    say(el("p", "dh-warn", t("er")));
+    setChips([[t("c_call"), contacts]]);
+  }
+  function procPrice(p) { ctxProc = p; priceAnswer(" "); }
+  function procAnswer(p, aspect) {
+    ctxProc = p;
+    ctxService = svcBySlug(p.service) || ctxService;
+    var L = lang === "tl" ? "tl" : "en";
+    var text = p[aspect] ? p[aspect][L] : (info.generic && info.generic[aspect] ? info.generic[aspect][L] : null);
+    var lead = null;
+    if (aspect === "offer") { lead = t("yes_offer")(p.name); text = null; aspect = "what"; }
+    if (!text) { aspect = "what"; text = p.what[L]; }
+    var g = (info.guides || []).filter(function (x) { return x.slug === PROC_GUIDE[p.key]; })[0];
+    var parts = lead ? [el("p", "dh-strong", lead), text] : [el("p", "dh-strong", p.name), text];
+    if (aspect === "duration" || aspect === "recovery" || aspect === "lasts") parts.push(el("p", "dh-note", t("proc_note")));
+    if (g) parts.push(link(g.url, t("read") + g.title));
+    say(parts);
+    var chips = [[t("c_book_this"), book]];
+    var NEXT = { what: p.materials ? ["duration", "materials"] : ["duration", "pain", "recovery"], duration: ["pain", "recovery"], pain: ["duration", "recovery"], recovery: ["avoid", "contact"],
+                 avoid: ["recovery", "contact"], lasts: ["duration", "alternatives"], prepare: ["duration", "pain"], risks: ["alternatives", "recovery"],
+                 alternatives: ["what", "risks"], before: ["prepare", "duration"], contact: ["recovery", "avoid"],
+                 materials: ["lasts", "duration"] }[aspect] || ["duration", "pain"];
+    NEXT.forEach(function (a) {
+      if (chips.length < 3 && (p[a] || (info.generic && info.generic[a]))) chips.push([t("a_" + a), function () { procAnswer(p, a); }]);
+    });
+    if ((info.prices || []).length) chips.push([t("a_price"), function () { procPrice(p); }]);
+    else chips.push([t("c_team"), handoff]);
+    setChips(chips);
+  }
+  function askWhichProc(aspect) {
+    say(t("which_proc"));
+    var common = ["extraction", "cleaning", "filling", "root_canal", "braces", "implant", "crown", "whitening"];
+    setChips((info.procedures || []).filter(function (p) { return common.indexOf(p.key) !== -1; }).slice(0, 6).map(function (p) {
+      return [p.name, function () { procAnswer(p, aspect); }];
+    }));
   }
 
   // Don't give the same answer twice in a row.
@@ -459,17 +655,48 @@
       if (has(q, SERVICE_WORDS[k][1])) { ctxService = svcBySlug(SERVICE_WORDS[k][0]) || ctxService; break; }
     }
     var faq = faqMatch(q);
-    var urgent = has(q, ["emergency", "urgent", "namamaga", "swell", " nana", "abscess", "sobrang sakit", "severe", "toothache", "sakit ng ngipin",
+    if (has(q, ["uncontrolled bleeding", "won't stop bleeding", "wont stop bleeding", "bleeding won't stop", "bleeding wont stop", "bleeding that won",
+                "can't stop the bleeding", "hindi tumitigil ang dugo", "hindi tumitigil ang pagdurugo", "trouble breathing", "hard to breathe", "difficulty breathing",
+                "can't breathe", "cant breathe", "hirap huminga", "trouble swallowing", "hard to swallow", "difficulty swallowing", "hirap lumunok",
+                "serious injury", "serious dental injury", "accident", "naaksidente", "nabangga"]) ||
+        (has(q, ["hirap", "nahihirapan"]) && has(q, ["huminga", "lumunok", "paghinga"]))) return reply("er", er, q);
+    var urgent = has(q, ["emergency", "urgent", "namamaga", "swell", "swollen", " nana", "abscess", "sobrang sakit", "severe", "toothache", "sakit ng ngipin",
                          "masakit ang ngipin", "masakit ngipin", "masakit na ngipin", "hindi makatulog", "can't sleep", "fever", "lagnat"]);
+    var proc = procMatch(q), aspect = aspectOf(q);
+    if (proc) { ctxProc = proc; ctxService = svcBySlug(proc.service) || ctxService; }
+    var severe = has(q, ["swollen", "swell", "namamaga", "fever", "lagnat", "abscess", " nana", "can't sleep", "hindi makatulog", "severe", "sobrang sakit"]);
+    if (faq && ["medication", "toothache_cause", "emergency_offer", "knocked_out", "temporary", "allergy", "material_cost", "material_diff",
+                "materials_safe", "choose_material", "samples", "dont_see", "which_right"].indexOf(faq.key) !== -1 && !severe) return reply("faq:" + faq.key, function () { faqAnswer(faq); }, q);
+    if (urgent && !(faq && faq.key === "extraction_after") && aspect !== "recovery" && aspect !== "contact") return reply("pain", pain, q);
     var comfortQ = /\b(does|will|would|is|do)\b.*\b(hurt|painful)\b/.test(q) || has(q, ["masakit ba", "sasakit ba", "masakit po ba", "painful ba"]);
-    if (comfortQ && !urgent) { var fh = (info.faq || []).filter(function (x) { return x.key === "hurt"; })[0]; if (fh) return reply("faq:hurt", function () { faqAnswer(fh); }, q); }
-    if (urgent && !(faq && faq.key === "extraction_after")) return reply("pain", pain, q);
+    if (comfortQ && !proc && ctxProc) { var cpp = ctxProc; return reply("proc:" + cpp.key + "pain", function () { procAnswer(cpp, "pain"); }, q); }
+    if (comfortQ && !proc) { var fh = (info.faq || []).filter(function (x) { return x.key === "hurt"; })[0]; if (fh) return reply("faq:hurt", function () { faqAnswer(fh); }, q); }
     if (has(q, ["human", "real person", "agent", "receptionist", "talk to", "kausap", "contact me", "call me", "tawagan", "someone call"])) return reply("handoff", handoff, q);
-    if (has(q, ["magkano", "presyo", "price", "cost", "how much", "rate", "fee", "halaga", "budget", "mahal ba", "expensive", "cheap", "mura"]) &&
+    if (has(q, ["magkano", "presyo", "price", "cost", "how much", " rate ", " rates ", " fee ", " fees ", "halaga", "budget", "mahal ba", "expensive", "cheap", " mura"]) &&
         !(faq && faq.key === "discount" && !has(q, ["magkano", "how much", "price", "presyo"]))) {
       return reply("price", function () { priceAnswer(q); }, q);
     }
+    if (has(q, ["weekend", "sunday", "linggo", "saturday", "sabado", "holiday"])) return reply("hours", allHours, q);
+    if (has(q, ["open today", "open now", "open ngayon", "bukas ngayon", "bukas ba kayo", "bukas po ba", "bukas ba", "is the clinic open", "are you open",
+                "is it open", "open ba", "open po ba", "open pa ba", "open right now"])) return reply("opennow", openNow, q);
+    if (has(q, ["available today", "appointments today", "appointment today", "available appointment", "available slot", "slots", "available times",
+                "times are available", "appointment times", "bakante", "may slot", "available ba", "free slot", "open slot", "schedule available"])) return reply("avail", availability, q);
+    if (aspect === "offer") {
+      var all = procMatchAll(q);
+      if (all.length > 1) return reply("offer:" + q, function () {
+        say([el("p", "dh-strong", t("yes_offer")(all.map(function (x) { return x.name; }).join(" & ")))]);
+        setChips(all.slice(0, 3).map(function (x) { return [x.name, function () { procAnswer(x, "what"); }]; }).concat([[t("c_book"), book]]));
+      }, q);
+    }
+    if (proc && aspect) return reply("proc:" + proc.key + aspect, function () { procAnswer(proc, aspect); }, q);
+    if (!proc && aspect && ["what", "offer"].indexOf(aspect) === -1 && (!faq || (!faq.strong && ctxProc))) {
+      // follow-up like "how long does it take?" about the treatment we were just talking about
+      if (ctxProc) { var cp = ctxProc; return reply("proc:" + cp.key + aspect, function () { procAnswer(cp, aspect); }, q); }
+      if (info.generic && info.generic[aspect]) return reply("gen:" + aspect, function () { genericAnswer(aspect); }, q);
+      if (aspect !== "pain") return reply("which:" + aspect, function () { askWhichProc(aspect); }, q);
+    }
     if (faq) return reply("faq:" + faq.key, function () { faqAnswer(faq); }, q);
+    if (proc && proc.key === "tmj") return reply("proc:tmjwhat", function () { procAnswer(proc, "what"); }, q);
     if (has(q, ["pain", "masakit", "sakit", "ache", "hurt", "bleed", "dugo", "infect"])) return reply("pain", pain, q);
     var GUIDE_WORDS = [
       ["veneers-vs-crowns", function () { return has(q, ["veneer"]) && has(q, ["crown", "jacket"]) || has(q, ["difference", "pagkakaiba", " vs "]) && has(q, ["veneer", "crown"]); }],
@@ -484,6 +711,7 @@
     for (var gi = 0; gi < GUIDE_WORDS.length; gi++) {
       if (GUIDE_WORDS[gi][1]()) { var gs = GUIDE_WORDS[gi][0]; return reply("guide:" + gs, function () { guide(gs); }, q); }
     }
+    if (proc) return reply("proc:" + proc.key + "what", function () { procAnswer(proc, "what"); }, q);
     for (var i = 0; i < info.branches.length; i++) {
       var b = info.branches[i];
       if (q.indexOf(" " + b.name.toLowerCase().split(" ")[0] + " ") !== -1 || (b.slug === "sjdm" && has(q, ["san jose", "sjdm"]))) {
@@ -493,8 +721,10 @@
     if (has(q, ["why", "bakit", "legit", "trusted", "reliable", "maganda ba", "okay ba", "ok ba", "magaling", "recommend", "sulit", "worth"])) return reply("why", why, q);
     if (has(q, ["hour", "open", "close", "oras", "bukas", "sarado", "sunday", "linggo", "saturday", "sabado", "holiday", "what time", "anong oras"])) return reply("hours", allHours, q);
     if (has(q, ["book", "appoint", "schedule", "sched", "reserve", "slot", "magpa", "pa-appoint", "available"])) return reply("book", book, q);
-    if (has(q, ["where", "saan", "location", "address", "direction", "map", "branch", "near", "malapit", "located"])) return reply("branches", branchesMenu, q);
-    if (has(q, ["phone", "number", "contact", "call", "tawag", "text ", "viber", "cellphone", "mobile", "landline"])) return reply("contacts", contacts, q);
+    if (has(q, ["where", "saan", "location", "address", "direction", "map", "branch", "near", "malapit", "located", "how do i get", "get there",
+                "paano pumunta", "commute", "waze"])) return reply("branches", branchesMenu, q);
+    if (has(q, ["phone", "number", "contact", "call", "tawag", "text ", "viber", "cellphone", "mobile", "landline", "message you", "messenger",
+                "facebook", "email", "reach you"])) return reply("contacts", contacts, q);
     if (has(q, [" lab", "laborator", "cbct", "scanner", " 3d", "milling", "digital"])) return reply("lab", lab, q);
     var sec = sectionMatch(q);
     if (sec) return reply("sec:" + sec.guide + sec.heading, function () { sectionAnswer(sec); }, q);

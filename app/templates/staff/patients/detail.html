@@ -45,6 +45,13 @@
 <select id="ad" name="dentist_id" style="max-width:240px">{% for d in all_dentists %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}</select><button class="btn btn-secondary btn-sm">Grant access</button></form>{% endif %}
 </div>
 
+{% if quotes is defined %}
+<div class="card" id="quotes"><div class="card-head"><h2>Price quotations</h2>{% if current_user.can('quotes.manage') %}<a class="btn btn-secondary btn-sm" href="{{ url_for('quotes.new', patient_id=p.id) }}">+ New quotation</a>{% endif %}</div>
+<div class="table-wrap"><table><thead><tr><th>No.</th><th>Date</th><th>Dentist</th><th class="num">Estimated total</th><th>Status</th></tr></thead><tbody>
+{% for q in quotes %}<tr><td><a href="{{ url_for('quotes.edit', quote_id=q.id) }}">{{ q.number or 'Draft' }}</a></td><td>{{ (q.issued_at or q.created_at)|date }}</td><td>{{ q.dentist or '—' }}</td><td class="num">{{ q.total_cents|peso }}</td><td>{{ status_badge(q.status) }}</td></tr>
+{% else %}<tr><td colspan="5" class="empty">No quotations yet.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endif %}
+
 {% if invoices is defined %}
 <div class="card" id="billing"><div class="card-head"><h2>Billing</h2>{% if current_user.can('billing.manage') %}<a class="btn btn-secondary btn-sm" href="{{ url_for('billing.invoice_new', patient_id=p.id) }}">+ Invoice</a>{% endif %}</div>
 <p>Outstanding balance: <strong>{{ balance|peso }}</strong> · Account credit: <strong>{{ credit|peso }}</strong></p>

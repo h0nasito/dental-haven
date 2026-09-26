@@ -223,6 +223,9 @@ def detail(patient_id):
     ctx["followups"] = conn.all("SELECT f.*, u.name AS assignee FROM follow_ups f LEFT JOIN users u ON u.id = f.assignee_id "
                                 "WHERE f.patient_id = ? ORDER BY f.status, f.due_at LIMIT 30", (patient_id,)) \
         if g.user.can("followups.view") else []
+    if g.user.can("quotes.view"):
+        ctx["quotes"] = conn.all("SELECT q.*, u.name AS dentist, b.name AS branch FROM quotations q JOIN branches b ON b.id = q.branch_id "
+                                 "LEFT JOIN users u ON u.id = q.dentist_id WHERE q.patient_id = ? ORDER BY q.id DESC LIMIT 20", (patient_id,))
     if g.user.can("billing.view"):
         ctx["invoices"] = conn.all(
             "SELECT i.*, b.name AS branch, (SELECT COALESCE(SUM(CASE WHEN kind='payment' THEN amount_cents ELSE -amount_cents END),0) "

@@ -1,0 +1,80 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, status_badge %}
+{% block page_title %}Quotation{% endblock %}
+{% block content %}
+{% set editable = q.status == 'draft' and current_user.can('quotes.manage') %}
+<div class="page-head"><div>
+{% if q.patient_id %}<a href="{{ url_for('patients.detail', patient_id=q.patient_id) }}">← {{ q.last_name }}, {{ q.first_name }}</a>{% else %}<a href="{{ url_for('quotes.index') }}">← Quotations</a>{% endif %}
+<h1>{{ q.number or 'Draft quotation' }}</h1>
+<p>For <strong>{% if q.patient_id %}{{ q.first_name }} {{ q.last_name }} ({{ q.chart_no }}){% else %}{{ q.client_name }}{% if q.client_contact %} · {{ q.client_contact }}{% endif %}{% endif %}</strong> · {{ q.branch }}{% if q.dentist %} · {{ q.dentist }}{% endif %} · valid until {{ q.valid_until|date }}</p></div>
+<div class="row">{{ status_badge(q.status) }}{% if items %}<a class="btn btn-secondary" href="{{ url_for('quotes.print_view', quote_id=q.id) }}" target="_blank">Print</a>{% endif %}</div></div>
+{% if items|selectattr('sample_price')|list %}<div class="notice" style="margin-bottom:1rem">Some items use <strong>sample prices</strong> from the price list, not Dental Haven's actual prices. Type the real price for those items (or update Administration → Price list) before giving this quotation to a patient.</div>{% endif %}
+{% if q.valid_until and q.valid_until < today and q.status == 'issued' %}<div class="notice" style="margin-bottom:1rem">This quotation expired on {{ q.valid_until|date }}. Make a copy to give updated prices.</div>{% endif %}
+<div class="quote-grid">
+<div>
+<div class="card"><h2>Items</h2>
+<div class="table-wrap"><table><thead><tr><th>Treatment</th><th>Tooth / area</th><th class="num">Qty</th><th class="num">Unit price</th><th class="num">Discount</th><th class="num">Amount</th>{% if editable %}<th></th>{% endif %}</tr></thead><tbody>
+{% for it in items %}<tr><td>{{ it.description }}{% if it.sample_price %} <span class="badge badge-amber">Sample price</span>{% endif %}</td><td>{{ it.tooth or '—' }}</td><td class="num">{{ it.qty }}</td><td class="num">{{ it.unit_price_cents|peso }}</td>
+<td class="num">{{ it.discount_cents|peso if it.discount_cents else '—' }}</td><td class="num">{{ it.amount_cents|peso }}</td>
+{% if editable %}<td><form method="post">{{ csrf() }}<input type="hidden" name="action" value="remove_item"><input type="hidden" name="item_id" value="{{ it.id }}"><button class="btn btn-ghost btn-sm" aria-label="Remove {{ it.description }}">✕</button></form></td>{% endif %}</tr>
+{% else %}<tr><td colspan="7" class="empty">No items yet. Add treatments below.</td></tr>{% endfor %}</tbody>
+<tfoot><tr><td colspan="5">Subtotal</td><td class="num">{{ q.subtotal_cents|peso }}</td></tr>
+{% if q.discount_cents %}<tr><td colspan="5">Discount</td><td class="num">-{{ q.discount_cents|peso }}</td></tr>{% endif %}
+<tr><td colspan="5"><strong>Estimated total</strong></td><td class="num"><strong>{{ q.total_cents|peso }}</strong></td></tr></tfoot></table></div>
+{% if editable %}
+<form method="post" class="mt-1 quote-add">{{ csrf() }}<input type="hidden" name="action" value="add_item">
+<h3>Add a treatment</h3>
+<div class="form-grid">
+<div class="field" style="grid-column:1/-1"><label for="pi">From the price list</label>
+<select id="pi" name="price_item_id" data-quote-price>
+<option value="" data-price="">Other (type below)</option>
+{% for p in prices %}{% if loop.first or p.service != loop.previtem.service %}{% if not loop.first %}</optgroup>{% endif %}<optgroup label="{{ p.service or 'Other' }}">{% endif %}
+<option value="{{ p.id }}" data-price="{{ '%d' % (p.price_from_cents // 100) }}" data-name="{{ p.name }}">{{ p.name }} · {{ 'from ' if not p.price_to_cents }}{{ p.price_from_cents|peso }}{% if p.price_to_cents %} – {{ p.price_to_cents|peso }}{% endif %}{% if p.unit %} {{ p.unit }}{% endif %}{% if p.sample %} (sample){% endif %}</option>
+{% if loop.last %}</optgroup>{% endif %}{% endfor %}
+</select></div>
+<div class="field"><label for="de">Description</label><input id="de" name="description" placeholder="Filled in from the price list"></div>
+<div class="field"><label for="to">Tooth / area</label><input id="to" name="tooth" placeholder="e.g. 36, 11–21, upper arch"></div>
+<div class="field"><label for="qt">Qty</label><input id="qt" name="qty" type="number" min="1" max="99" value="1"></div>
+<div class="field"><label for="up">Unit price (₱)</label><input id="up" name="unit_price" inputmode="decimal" placeholder="From the price list"></div>
+<div class="field"><label for="di">Line discount (₱)</label><input id="di" name="discount" inputmode="decimal" placeholder="0"></div>
+</div>
+<button class="btn btn-secondary">Add item</button>
+</form>
+{% endif %}
+</div>
+</div>
+<div>
+{% if editable %}
+<div class="card"><h2>Details</h2><form method="post">{{ csrf() }}<input type="hidden" name="action" value="details">
+<div class="form-grid">
+<div class="field"><label for="qd">Dentist</label><select id="qd" name="dentist_id"><option value="">—</option>{% for d in dentists %}<option value="{{ d.id }}" {% if q.dentist_id == d.id %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select></div>
+<div class="field"><label for="vu">Valid until</label><input id="vu" name="valid_until" type="date" value="{{ q.valid_until }}" min="{{ today }}"></div>
+<div class="field"><label for="od">Overall discount (₱)</label><input id="od" name="discount" inputmode="decimal" value="{{ '%d' % (q.discount_cents // 100) if q.discount_cents else '' }}"></div>
+</div>
+<div class="field"><label for="nt">Notes for the patient</label><textarea id="nt" name="notes" rows="3" placeholder="e.g. Treatment in 2 phases; phase 1 first.">{{ q.notes }}</textarea></div>
+<button class="btn btn-secondary btn-sm">Save details</button></form></div>
+{% elif q.notes %}<div class="card"><h2>Notes</h2><p class="pre">{{ q.notes }}</p></div>{% endif %}
+
+{% if current_user.can('quotes.manage') %}
+<div class="card"><h2>Next steps</h2>
+{% if q.status == 'draft' %}
+<form method="post">{{ csrf() }}<input type="hidden" name="action" value="issue"><button class="btn" {% if not items %}disabled{% endif %}>Finalise quotation</button>
+<p class="hint">Gives it a number and locks the items so it can be printed and given to the patient.</p></form>
+<form method="post" class="mt-1" data-confirm="Delete this draft quotation?">{{ csrf() }}<input type="hidden" name="action" value="delete"><button class="btn btn-ghost btn-sm">Delete draft</button></form>
+{% elif q.status == 'issued' %}
+<div class="row"><form method="post">{{ csrf() }}<input type="hidden" name="action" value="accepted"><button class="btn">Patient accepted</button></form>
+<form method="post">{{ csrf() }}<input type="hidden" name="action" value="declined"><button class="btn btn-secondary">Patient declined</button></form></div>
+{% endif %}
+{% if q.status == 'accepted' and not q.invoice_id and current_user.can('billing.manage') %}
+<form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="to_invoice"><button class="btn">Create draft invoice</button>
+<p class="hint">Copies the items into a draft invoice for billing.</p></form>{% endif %}
+{% if q.invoice_id %}<p class="mt-1">Billed on <a href="{{ url_for('billing.invoice', invoice_id=q.invoice_id) }}">this invoice</a>.</p>{% endif %}
+<div class="row mt-1">
+{% if q.status in ('issued', 'declined') and not q.invoice_id %}<form method="post">{{ csrf() }}<input type="hidden" name="action" value="reopen"><button class="btn btn-ghost btn-sm">Reopen to edit</button></form>{% endif %}
+<form method="post">{{ csrf() }}<input type="hidden" name="action" value="duplicate"><button class="btn btn-ghost btn-sm">Make a copy</button></form></div>
+</div>
+{% endif %}
+<p class="muted" style="font-size:.85rem">A quotation is an estimate. It doesn't bill the patient or change their balance.</p>
+</div>
+</div>
+{% endblock %}

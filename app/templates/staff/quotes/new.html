@@ -1,0 +1,20 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, field %}
+{% block page_title %}New quotation{% endblock %}
+{% block content %}
+<div class="page-head"><div>{% if patient %}<a href="{{ url_for('patients.detail', patient_id=patient.id) }}">← {{ patient.last_name }}, {{ patient.first_name }}</a>{% else %}<a href="{{ url_for('quotes.index') }}">← Quotations</a>{% endif %}
+<h1>New price quotation</h1><p>{% if patient %}For {{ patient.first_name }} {{ patient.last_name }} ({{ patient.chart_no }}).{% else %}For someone who isn't a patient yet. To quote an existing patient, open their record and use "New quotation" there.{% endif %}</p></div></div>
+<div class="card" style="max-width:720px"><form method="post">{{ csrf() }}
+{% if patient %}<input type="hidden" name="patient_id" value="{{ patient.id }}">{% endif %}{% if appt %}<input type="hidden" name="appointment_id" value="{{ appt.id }}">{% endif %}
+<div class="form-grid">
+<div class="field {% if errors.branch_id %}error{% endif %}"><label for="b">Branch</label><select id="b" name="branch_id">{% for b in branches %}<option value="{{ b.id }}" {% if v.branch_id == b.id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select>{% if errors.branch_id %}<div class="field-error">{{ errors.branch_id }}</div>{% endif %}</div>
+<div class="field"><label for="d">Dentist</label><select id="d" name="dentist_id"><option value="">—</option>{% for d in dentists %}<option value="{{ d.id }}" {% if v.dentist_id == d.id %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select></div>
+{% if not patient %}
+{{ field('client_name', 'Name', v.client_name, errors=errors, required=True) }}
+{{ field('client_contact', 'Mobile or email (optional)', v.client_contact) }}
+{% endif %}
+{{ field('valid_until', 'Valid until', v.valid_until, type='date', errors=errors, hint='Default: 30 days from today.') }}
+</div>
+<div class="form-actions"><button class="btn">Create and add items</button></div>
+</form></div>
+{% endblock %}

@@ -312,6 +312,18 @@ def seed_base(conn):
                                        "created_at": now_str(), "updated_at": now_str()})
         if not conn.scalar("SELECT COUNT(*) FROM laboratories"):
             conn.insert("laboratories", {"name": "DSDL", "address": "Liang, Malolos, Bulacan", "phone": "", "active": 1})
+        # Permissions added after a database was created are granted once to the roles that have them by default;
+        # afterwards the super admin's choices in Role access are kept.
+        from . import settings as _settings2
+        granted = set(_settings2.get("seed.perms_granted", conn) or [])
+        new_perms = {"quotes.view", "quotes.manage"} - granted
+        if new_perms and conn.scalar("SELECT COUNT(*) FROM role_permissions"):
+            for role, perms in ROLE_DEFAULTS.items():
+                for perm in new_perms & set(perms):
+                    if not conn.one("SELECT 1 AS x FROM role_permissions WHERE role = ? AND permission = ?", (role, perm)):
+                        conn.execute("INSERT INTO role_permissions (role, permission) VALUES (?, ?)", (role, perm))
+        if new_perms:
+            _settings2.put("seed.perms_granted", sorted(granted | new_perms), None, conn)
         if not conn.scalar("SELECT COUNT(*) FROM role_permissions"):
             for role, perms in ROLE_DEFAULTS.items():
                 for p in perms:

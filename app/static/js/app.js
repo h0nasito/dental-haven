@@ -132,3 +132,16 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 });
+
+/* Quotations: picking a treatment from the price list fills in its description and starting price. */
+(function () {
+  document.querySelectorAll("select[data-quote-price]").forEach(function (sel) {
+    var form = sel.closest("form");
+    sel.addEventListener("change", function () {
+      var opt = sel.options[sel.selectedIndex];
+      var price = form.querySelector("[name=unit_price]"), desc = form.querySelector("[name=description]");
+      if (opt && opt.dataset.price) { price.value = opt.dataset.price; desc.value = opt.dataset.name || ""; }
+      else { price.value = ""; desc.value = ""; desc.focus(); }
+    });
+  });
+})();

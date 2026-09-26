@@ -493,6 +493,9 @@ def chat_info():
         "id": b["id"], "slug": b["slug"], "name": b["name"].split(" (")[0], "address": "" if (b["address"] or "").startswith("[") else b["address"],
         "phones": [d for d, _ in _phones(b["phone"])], "tel": [t for _, t in _phones(b["phone"])], "hours": _hours_summary(conn, b),
         "map": b["map_url"] or "", "facebook": b["facebook_url"] or "", "url": url_for("public.branch", slug=b["slug"]),
+        "waze": b["waze_url"] or "",
+        "week": [{"wd": r["weekday"], "open": r["open_time"], "close": r["close_time"], "closed": bool(r["closed"])}
+                 for r in conn.all("SELECT * FROM branch_hours WHERE branch_id = ? ORDER BY weekday", (b["id"],))],
     } for b in conn.all("SELECT * FROM branches WHERE active = 1 ORDER BY sort_order")]
     services = [{"id": s["id"], "slug": s["slug"], "name": s["name"], "summary": s["summary"] or "", "url": url_for("public.service", slug=s["slug"])}
                 for s in conn.all("SELECT * FROM services WHERE active = 1 ORDER BY sort_order")]
@@ -525,7 +528,9 @@ def chat_info():
                            "service": p["service"] or "", "sample": bool(p["sample"]) or not show,
                            "kw": [k.strip() for k in (p["keywords"] + "," + p["name"]).lower().split(",") if k.strip()]})
     from ..chat_faq import FAQ
+    from ..chat_procedures import GENERIC, PROCEDURES
     resp = jsonify({"branches": branches, "services": services, "guides": guides, "sections": sections, "faq": FAQ,
+                    "procedures": PROCEDURES, "generic": GENERIC, "slots": url_for("public.book_slots"),
                     "prices": prices, "book": url_for("public.book"),
                     "inquire": url_for("public.inquire"), "privacy": url_for("public.privacy")})
     resp.headers["Cache-Control"] = "public, max-age=300"

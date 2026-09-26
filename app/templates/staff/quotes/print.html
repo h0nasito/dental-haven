@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}{{ q.number or 'Quotation' }}{% endblock %}
+{% block body %}
+<main id="main" class="print-sheet">
+<div class="no-print row between" style="margin-bottom:1rem"><a href="{{ url_for('quotes.edit', quote_id=q.id) }}">← Back</a><span class="muted">Use your browser's Print command (or Save as PDF)</span></div>
+{% if q.status == 'draft' %}<div class="watermark">DRAFT</div>{% endif %}
+<div class="row between" style="flex-wrap:nowrap;align-items:flex-start;gap:2rem"><div style="max-width:58%"><img src="{{ url_for('static', filename='img/logo.png') }}" alt="" width="60" height="40"><h1 class="mb-0">Dental Haven</h1><p class="muted">{{ q.branch }} branch<br>{{ q.branch_address }}<br>{{ q.branch_phone }}</p></div>
+<div style="text-align:right;flex:none"><h2 class="mb-0">Price quotation</h2><p>No. <strong>{{ q.number or 'Draft' }}</strong><br>Date: {{ (q.issued_at or q.created_at)|date }}<br>Valid until: <strong>{{ q.valid_until|date }}</strong></p></div></div>
+<p><strong>Prepared for:</strong> {% if q.patient_id %}{{ q.first_name }} {{ q.last_name }} ({{ q.chart_no }}){% else %}{{ q.client_name }}{% if q.client_contact %} · {{ q.client_contact }}{% endif %}{% endif %}
+{% if q.dentist %}<br><strong>Dentist:</strong> {{ q.dentist }}{% endif %}</p>
+<table><thead><tr><th>Treatment</th><th>Tooth / area</th><th class="num">Qty</th><th class="num">Unit price</th><th class="num">Discount</th><th class="num">Amount</th></tr></thead><tbody>
+{% for it in items %}<tr><td>{{ it.description }}</td><td>{{ it.tooth or '' }}</td><td class="num">{{ it.qty }}</td><td class="num">{{ it.unit_price_cents|peso }}</td><td class="num">{{ it.discount_cents|peso if it.discount_cents else '—' }}</td><td class="num">{{ it.amount_cents|peso }}</td></tr>{% endfor %}</tbody>
+<tfoot><tr><td colspan="5">Subtotal</td><td class="num">{{ q.subtotal_cents|peso }}</td></tr>{% if q.discount_cents %}<tr><td colspan="5">Discount</td><td class="num">-{{ q.discount_cents|peso }}</td></tr>{% endif %}
+<tr><td colspan="5"><strong>Estimated total</strong></td><td class="num"><strong>{{ q.total_cents|peso }}</strong></td></tr></tfoot></table>
+{% if q.notes %}<p class="pre mt-1"><strong>Notes:</strong> {{ q.notes }}</p>{% endif %}
+<div class="mt-1" style="font-size:.85rem">
+<p><strong>Terms</strong></p>
+<ul style="margin-top:.2rem">
+<li>This is an estimate based on today's examination. The final cost may change if the treatment plan changes after further findings; your dentist will explain any change before proceeding.</li>
+<li>Prices are valid until the date shown above.</li>
+<li>This quotation is not an official receipt or a bill.</li>
+</ul></div>
+<div class="row between" style="margin-top:3rem"><div style="border-top:1px solid #999;padding-top:.3rem;min-width:220px">{{ q.dentist or 'Dentist' }}</div><div style="border-top:1px solid #999;padding-top:.3rem;min-width:220px">Patient's signature / date</div></div>
+</main>
+{% endblock %}

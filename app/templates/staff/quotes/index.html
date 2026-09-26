@@ -1,0 +1,14 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import status_badge %}
+{% block page_title %}Quotations{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Price quotations</h1><p>Itemised estimates for patients, priced from the clinic's price list. Start one from a patient's record, or for someone who isn't a patient yet.</p></div>
+{% if current_user.can('quotes.manage') %}<a class="btn" href="{{ url_for('quotes.new') }}">+ New quotation</a>{% endif %}</div>
+<form class="toolbar" method="get"><div class="field"><label for="st">Status</label><select id="st" name="status"><option value="">All</option>{% for k, l in statuses.items() %}<option value="{{ k }}" {% if status == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div><button class="btn btn-secondary">Filter</button></form>
+<div class="card"><div class="table-wrap"><table><thead><tr><th>No.</th><th>For</th><th>Dentist</th><th>Branch</th><th class="num">Total</th><th>Valid until</th><th>Status</th></tr></thead><tbody>
+{% for q in rows %}<tr><td><a href="{{ url_for('quotes.edit', quote_id=q.id) }}">{{ q.number or 'Draft' }}</a></td>
+<td>{% if q.patient_id %}{{ q.last_name }}, {{ q.first_name }}{% else %}{{ q.client_name }} <small class="muted">(not yet a patient)</small>{% endif %}</td>
+<td>{{ q.dentist or '—' }}</td><td>{{ q.branch }}</td><td class="num">{{ q.total_cents|peso }}</td><td>{{ q.valid_until|date if q.valid_until else '—' }}</td>
+<td>{{ status_badge(q.status) }}</td></tr>
+{% else %}<tr><td colspan="7" class="empty">No quotations yet.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

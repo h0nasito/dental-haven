@@ -68,6 +68,7 @@
 <li class="row between"><span>{{ pm_events[m.event] }} · {{ 'SMS' if m.channel == 'sms' else 'Email' }} to {{ m.recipient_masked }}<br><small class="muted">{{ m.created_at|dt }}{% if m.error %} · {{ m.error }}{% endif %}</small></span><span class="badge {% if m.status == 'sent' %}badge-green{% elif m.status == 'failed' %}badge-red{% elif m.status in ('not_set_up','demo') %}badge-amber{% endif %}">{{ pm_status[m.status] }}</span></li>{% endfor %}</ul>
 {% if not patient_messages|selectattr('status', 'equalto', 'sent')|list %}<p class="muted">Nothing reached the patient automatically. Please call or text them.</p>{% endif %}</div>{% endif %}
 
+{% if current_user.can('quotes.manage') %}<p><a class="btn btn-secondary btn-sm" href="{{ url_for('quotes.new', patient_id=a.patient_id, appointment_id=a.id) }}">+ Price quotation for this patient</a></p>{% endif %}
 {% if current_user.can('billing.view') %}
 <div class="card"><div class="card-head"><h2>Billing</h2>{% if current_user.can('billing.manage') %}<a class="btn btn-secondary btn-sm" href="{{ url_for('billing.invoice_new', patient_id=a.patient_id, appointment_id=a.id) }}">+ Invoice</a>{% endif %}</div>
 {% for i in invoices %}<p><a href="{{ url_for('billing.invoice', invoice_id=i.id) }}">{{ i.number or 'Draft' }}</a> · {{ i.total_cents|peso }} {{ status_badge(i.status) }}</p>{% else %}<p class="muted">No invoice yet.</p>{% endfor %}</div>
