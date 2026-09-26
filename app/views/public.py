@@ -530,7 +530,8 @@ def chat_info():
                            "kw": [k.strip() for k in (p["keywords"] + "," + p["name"]).lower().split(",") if k.strip()]})
     from ..chat_faq import FAQ
     from ..chat_procedures import GENERIC, PROCEDURES
-    resp = jsonify({"branches": branches, "services": services, "guides": guides, "sections": sections, "faq": FAQ,
+    from ..chat_lifespan import LIFE, RESTO_WORDS, TOPICS as LIFE_TOPICS
+    resp = jsonify({"life": LIFE, "life_topics": LIFE_TOPICS, "resto": RESTO_WORDS, "branches": branches, "services": services, "guides": guides, "sections": sections, "faq": FAQ,
                     "procedures": PROCEDURES, "generic": GENERIC, "slots": url_for("public.book_slots"),
                     "prices": prices, "book": url_for("public.book"),
                     "inquire": url_for("public.inquire"), "privacy": url_for("public.privacy")})

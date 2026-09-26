@@ -524,7 +524,7 @@
     if (has(q, ["when should i call", "when to call", "when should i contact", "contact the clinic after", "call the clinic after", "call you after",
                 "pain after", "swelling after", "bleeding after", "sumakit pagkatapos", "namaga pagkatapos", "masakit pa rin", "still hurts", "still painful",
                 "kailan tatawag", "kailan ako tatawag"])) return "contact";
-    if (/how long (does|do|will|would) (it|they|this|that|the \w+|\w+) ?(\w+ )?last/.test(q) || has(q, ["tatagal ba", "ilang taon tatagal", "gaano tatagal",
+    if (/how long\b.*\blast(s|ing)?\b/.test(q) || /\b(how durable|durability)\b/.test(q) || has(q, ["tatagal ba", "ilang taon tatagal", "gaano tatagal",
         "gaano katagal tatagal", "last long", "permanent ba", "is it permanent", "lifespan", "how many years"])) return "lasts";
     if (has(q, ["x-ray needed", "xray needed", "need an x-ray", "need x-ray", "need xray", "need a consultation", "consultation needed", "consultation first",
                 "x-ray first", "xray first", "consultation or x-ray", "kailangan ba ng x-ray", "kailangan ba ng xray", "kailangan ba ng konsulta", "need a check-up first",
@@ -551,6 +551,54 @@
                 "paano ginagawa", "what happens", "how does it work", "paano", "meaning", "ibig sabihin", "procedure for", "process"])) return "what";
     return null;
   }
+  // How long dental work lasts / how durable it is (app/chat_lifespan.py).
+  function lastsQ(q) {
+    return (/\blast(s|ing)?\b/.test(q) && !/\b(last (time|visit|week|month|year|night|cleaning|check-?up|appointment)|at last)\b/.test(q)) ||
+      has(q, ["lifespan", "life span", "durable", "durability", "strong", "tibay", "tatagal", "how many years", "ilang taon"]);
+  }
+  function wordsIn(q, ws) {
+    return ws.every(function (w) { w = kwn(w); return w.length <= 3 ? new RegExp("(^|\\s)" + w + "(\\s|$)").test(q) : q.indexOf(w) !== -1; });
+  }
+  function bestKw(q, kws) {
+    var sc = 0;
+    kws.forEach(function (alt) { if (wordsIn(q, alt)) sc = Math.max(sc, alt.join(" ").length + alt.length * 10); });
+    return sc;
+  }
+  function lifeTopic(q) {
+    var best = null, bestSc = 0, about = has(q, info.resto || []), ask = /^(can|could|do|does|will|would|is|are|may|pwede|puwede)\b/.test(q.trim()) || / ba\b/.test(q);
+    (info.life_topics || []).forEach(function (tp) {
+      if (tp.about && !about && !has(q, ["material", "materyales"])) return;
+      if (tp.ask && !ask) return;
+      var sc = bestKw(q, tp.kw);
+      if (sc > bestSc) { bestSc = sc; best = tp; }
+    });
+    return best;
+  }
+  function lifeMatch(q) {
+    var best = null, bestSc = 0;
+    (info.life || []).forEach(function (e) {
+      var sc = bestKw(q, e.kw);
+      if (sc > bestSc) { bestSc = sc; best = e; }
+    });
+    return best;
+  }
+  function lifeAnswer(e) {
+    var L = lang === "tl" ? "tl" : "en";
+    var p = e.proc ? (info.procedures || []).filter(function (x) { return x.key === e.proc; })[0] : null;
+    if (p) { ctxProc = p; ctxService = svcBySlug(p.service) || ctxService; }
+    say([el("p", "dh-strong", e.title), e[L], el("p", "dh-note", t("proc_note"))]);
+    var chips = [[t("c_book_this"), book]];
+    if (p && p.materials) chips.push([t("a_materials"), function () { procAnswer(p, "materials"); }]);
+    if (p && (info.prices || []).length) chips.push([t("a_price"), function () { procPrice(p); }]);
+    else chips.push([t("c_team"), handoff]);
+    setChips(chips);
+  }
+  function lifeTopicAnswer(tp) {
+    var L = lang === "tl" ? "tl" : "en";
+    say([tp[L], tp["pts_" + L] ? list(tp["pts_" + L]) : null, el("p", "dh-note", t("proc_note"))]);
+    after([[t("c_consult"), book], [t("c_team"), handoff]]);
+  }
+
   function procMatchAll(q) {
     var found = [];
     (info.procedures || []).forEach(function (p) {
@@ -691,6 +739,17 @@
     var proc = procMatch(q), aspect = aspectOf(q);
     if (proc) { ctxProc = proc; ctxService = svcBySlug(proc.service) || ctxService; }
     var severe = has(q, ["swollen", "swell", "namamaga", "fever", "lagnat", "abscess", " nana", "can't sleep", "hindi makatulog", "severe", "sobrang sakit"]);
+    if (!severe) {
+      if (proc && (proc.key === "braces" || proc.key === "aligners") && lastsQ(q) && has(q, ["complete", "finish", "done", "matapos", "tapos", "treatment take"])) {
+        var bp = proc; return reply("proc:" + bp.key + "duration", function () { procAnswer(bp, "duration"); }, q);
+      }
+      var ltp = lifeTopic(q);
+      if (ltp) return reply("life:" + ltp.key, function () { lifeTopicAnswer(ltp); }, q);
+      if (lastsQ(q)) {
+        var le = lifeMatch(q);
+        if (le) return reply("life:" + le.key, function () { lifeAnswer(le); }, q);
+      }
+    }
     if (faq && ["medication", "toothache_cause", "emergency_offer", "knocked_out", "temporary", "allergy", "material_cost", "material_diff",
                 "materials_safe", "choose_material", "samples", "dont_see", "which_right"].indexOf(faq.key) !== -1 && !severe) return reply("faq:" + faq.key, function () { faqAnswer(faq); }, q);
     if (urgent && !(faq && faq.key === "extraction_after") && aspect !== "recovery" && aspect !== "contact") return reply("pain", pain, q);

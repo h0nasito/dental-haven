@@ -60,6 +60,23 @@ class TestChat(Base):
 
 
 class TestChatKnowledge(Base):
+    def test_lifespan_answers_complete_and_served(self):
+        from app.chat_lifespan import LIFE, TOPICS
+        from app.chat_procedures import PROCEDURES
+        procs = {p["key"] for p in PROCEDURES}
+        keys = set()
+        for e in LIFE + TOPICS:
+            self.assertNotIn(e["key"], keys)
+            keys.add(e["key"])
+            self.assertTrue(e["en"] and e["tl"] and e["kw"], e["key"])
+            self.assertEqual(len(e.get("pts_en", [])), len(e.get("pts_tl", [])), e["key"])
+            self.assertTrue(all(isinstance(alt, list) and alt for alt in e["kw"]), e["key"])
+        for e in LIFE:
+            self.assertTrue(e["proc"] == "" or e["proc"] in procs, e["key"])
+        d = self.app.test_client().get("/chat/info.json").get_json()
+        self.assertEqual(len(d["life"]), len(LIFE))
+        self.assertEqual(len(d["life_topics"]), len(TOPICS))
+
     def test_procedures_complete_and_served(self):
         from app.chat_procedures import PROCEDURES
         slugs = {r["slug"] for r in self.conn.all("SELECT slug FROM services")}
