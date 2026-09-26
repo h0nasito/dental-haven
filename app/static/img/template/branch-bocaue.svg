@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 750" width="1200" height="750">
-<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0b2e57"/><stop offset="1" stop-color="#0f3d73"/></linearGradient>
+<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2c4560"/><stop offset="1" stop-color="#102542"/></linearGradient>
 <filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="80"/></filter></defs>
-<rect width="1200" height="750" fill="url(#bg)"/><circle cx="950" cy="120" r="300" fill="#5484d6" opacity=".3" filter="url(#soft)"/><circle cx="150" cy="700" r="300" fill="#e3c186" opacity=".18" filter="url(#soft)"/>
-<g fill="none" stroke="#e3c186" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity=".95">
+<rect width="1200" height="750" fill="url(#bg)"/><circle cx="950" cy="120" r="300" fill="#5a616b" opacity=".35" filter="url(#soft)"/><circle cx="150" cy="700" r="300" fill="#c6a15b" opacity=".18" filter="url(#soft)"/>
+<g fill="none" stroke="#c6a15b" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
 <path d="M300 620V330h600v290"/><path d="M270 330h660l-40-90H310z"/><rect x="360" y="400" width="170" height="220" rx="6"/><rect x="600" y="400" width="240" height="140" rx="6"/>
 <path d="M445 400v220"/><path d="M230 620h740"/></g>
-<text x="600" y="300" text-anchor="middle" font-family="Georgia, serif" font-size="46" fill="#ffffff" fill-opacity=".92" letter-spacing="2">DENTAL HAVEN</text></svg>
+<text x="600" y="300" text-anchor="middle" font-family="Georgia, serif" font-size="46" fill="#f6f2e7" letter-spacing="2">DENTAL HAVEN</text></svg>

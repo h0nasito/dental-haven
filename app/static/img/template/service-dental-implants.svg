@@ -1,13 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" width="1200" height="900">
-<defs>
- <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#eef4f1"/><stop offset="1" stop-color="#d6e6de"/></linearGradient>
- <filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="72"/></filter>
- <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse"><path d="M50 0H0V50" fill="none" stroke="#ffffff" stroke-opacity=".12" stroke-width="1"/></pattern>
-</defs>
+<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f6f2e7"/><stop offset="1" stop-color="#e6e0d0"/></linearGradient>
+<filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="72"/></filter>
+<pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse"><path d="M50 0H0V50" fill="none" stroke="#ffffff" stroke-opacity=".35" stroke-width="1"/></pattern></defs>
 <rect width="1200" height="900" fill="url(#bg)"/>
-<circle cx="936.0" cy="198.0" r="336.00000000000006" fill="#b8d6c8" opacity=".55" filter="url(#soft)"/>
-<circle cx="180.0" cy="810.0" r="360.0" fill="#f6faf8" opacity=".45" filter="url(#soft)"/>
+<circle cx="936.0" cy="198.0" r="336.00000000000006" fill="#c6a15b" opacity=".5" filter="url(#soft)"/>
+<circle cx="180.0" cy="810.0" r="360.0" fill="#ffffff" opacity=".45" filter="url(#soft)"/>
 <rect width="1200" height="900" fill="url(#grid)"/>
-
-<g transform="translate(384 234) scale(9)" fill="none" stroke="#c89b55" stroke-width="1.4666666666666668" stroke-linecap="round" stroke-linejoin="round"><path d="M16 6c-3 0-5 2-5 6 0 3 2 5 3 7h20c1-2 3-4 3-7 0-4-2-6-5-6-2 0-3 1-5 1s-3-1-5-1z" transform="translate(0 0)"/><path d="M17 23h14"/><path d="M19 27h10l-1 4H20z"/><path d="M20 33h8M21 37h6M22 41h4"/></g>
+<g transform="translate(384 234) scale(9)" fill="none" stroke="#8a6a2f" stroke-width="1.47" stroke-linecap="round" stroke-linejoin="round"><path d="M16 6c-3 0-5 2-5 6 0 3 2 5 3 7h20c1-2 3-4 3-7 0-4-2-6-5-6-2 0-3 1-5 1s-3-1-5-1z" transform="translate(0 0)"/><path d="M17 23h14"/><path d="M19 27h10l-1 4H20z"/><path d="M20 33h8M21 37h6M22 41h4"/></g>
 </svg>

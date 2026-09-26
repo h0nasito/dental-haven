@@ -1,13 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1800 1000" width="1800" height="1000">
-<defs>
- <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#dfe7f2"/><stop offset="1" stop-color="#8ea6c8"/></linearGradient>
- <filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="108"/></filter>
- <pattern id="grid" width="75" height="75" patternUnits="userSpaceOnUse"><path d="M75 0H0V75" fill="none" stroke="#ffffff" stroke-opacity=".12" stroke-width="1"/></pattern>
-</defs>
+<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e9e3d4"/><stop offset="1" stop-color="#5a616b"/></linearGradient>
+<filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="108"/></filter>
+<pattern id="grid" width="75" height="75" patternUnits="userSpaceOnUse"><path d="M75 0H0V75" fill="none" stroke="#ffffff" stroke-opacity=".10" stroke-width="1"/></pattern></defs>
 <rect width="1800" height="1000" fill="url(#bg)"/>
-<circle cx="1404.0" cy="220.0" r="504.00000000000006" fill="#ffffff" opacity=".55" filter="url(#soft)"/>
-<circle cx="270.0" cy="900.0" r="540.0" fill="#e3c186" opacity=".45" filter="url(#soft)"/>
+<circle cx="1404.0" cy="220.0" r="504.00000000000006" fill="#f6f2e7" opacity=".5" filter="url(#soft)"/>
+<circle cx="270.0" cy="900.0" r="540.0" fill="#c6a15b" opacity=".45" filter="url(#soft)"/>
 <rect width="1800" height="1000" fill="url(#grid)"/>
-
-<g transform="translate(1014 184) scale(14)" fill="none" stroke="#ffffff" stroke-width="0.942857142857143" stroke-linecap="round" stroke-linejoin="round"><path d="M8 22c4 8 10 12 16 12s12-4 16-12"/><path d="M12 24c3 2 7 3 12 3s9-1 12-3"/><path d="M38 6l1.5 3.5L43 11l-3.5 1.5L38 16l-1.5-3.5L33 11l3.5-1.5z" stroke-width="1.6"/><path d="M8 8l1 2.2L11.2 11 9 12l-1 2.2L7 12l-2.2-1L7 10z" stroke-width="1.4"/></g>
+<g transform="translate(1014 184) scale(14)" fill="none" stroke="#f6f2e7" stroke-width="0.94" stroke-linecap="round" stroke-linejoin="round"><path d="M8 22c4 8 10 12 16 12s12-4 16-12"/><path d="M12 24c3 2 7 3 12 3s9-1 12-3"/><path d="M38 6l1.5 3.5L43 11l-3.5 1.5L38 16l-1.5-3.5L33 11l3.5-1.5z" stroke-width="1.6"/><path d="M8 8l1 2.2L11.2 11 9 12l-1 2.2L7 12l-2.2-1L7 10z" stroke-width="1.4"/></g>
 </svg>

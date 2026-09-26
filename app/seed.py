@@ -29,6 +29,9 @@ BRANCHES = [
 ]
 
 # Confirmed by the clinic (Sep 25, 2026). Hours are still to be confirmed.
+# Dental chairs per branch (one dentist per chair, so this many patients can be seen at once).
+BRANCH_CHAIRS = {"malolos": 5, "guiguinto": 3, "bocaue": 2, "sjdm": 2}
+
 BRANCH_DETAILS = {
     "malolos": {
         "address": "76 Paseo del Congreso, Malolos City, Bulacan (former Matt Balloons)",
@@ -168,6 +171,13 @@ def _upsert_content(conn, key, title, body):
         conn.execute("UPDATE site_content SET title = ?, body = ?, updated_at = ? WHERE key = ?", (title, body, now_str(), key))
 
 
+def _top_up_chairs(conn, branch_id, slug):
+    """Add chairs until the branch has its set number. Never removes or re-enables chairs staff switched off."""
+    have = conn.one("SELECT COUNT(*) AS n FROM resources WHERE branch_id = ? AND kind = 'chair'", (branch_id,))["n"]
+    for n in range(have + 1, BRANCH_CHAIRS.get(slug, 2) + 1):
+        conn.insert("resources", {"branch_id": branch_id, "name": f"Chair {n}", "kind": "chair", "active": 1})
+
+
 def seed_base(conn):
     with conn.transaction():
         for i, (slug, name) in enumerate(BRANCHES):
@@ -178,6 +188,7 @@ def seed_base(conn):
                 upd = {k: v for k, v in det.items() if not existing.get(k) or str(existing.get(k)).startswith("[")}
                 if upd:
                     conn.update("branches", existing["id"], upd)
+                _top_up_chairs(conn, existing["id"], slug)
                 continue
             bid = conn.insert("branches", {
                 "slug": slug, "name": name, "address": f"[{name} address to be confirmed]",
@@ -189,8 +200,7 @@ def seed_base(conn):
                 conn.execute("INSERT INTO branch_hours (branch_id, weekday, open_time, close_time, closed) VALUES (?, ?, '09:00', '18:00', ?)",
                              (bid, wd, 1 if wd == 6 else 0))
             conn.execute("INSERT INTO invoice_sequences (branch_id, prefix, next_no) VALUES (?, ?, 1)", (bid, slug[:3].upper()))
-            for n in (1, 2):
-                conn.insert("resources", {"branch_id": bid, "name": f"Chair {n}", "kind": "chair", "active": 1})
+            _top_up_chairs(conn, bid, slug)
         for i, (slug, name, cat, mins, summary, body) in enumerate(SERVICES):
             existing = conn.one("SELECT * FROM services WHERE slug = ?", (slug,))
             if existing and OLD_PLACEHOLDER in (existing["body"] or ""):

@@ -16,7 +16,7 @@
 {% endfor %}
 
 <div class="card" id="photos"><h2>Website photos</h2>
-<p class="muted">Big photos make the website feel like a portfolio. Service photos are added on each service (Administration → Services), and branch photos on each branch (Branches &amp; rooms).</p>
+<p class="muted">Big photos make the website feel like a portfolio. Service photos are added on each service (Administration → Services), and branch photos on each branch (Branches &amp; chairs).</p>
 {% for key, label, hint in photo_keys %}{% set ph = photos.get(key) %}
 <div class="row mt-1" style="align-items:flex-start;gap:1rem;flex-wrap:wrap">
   {% if ph %}<img src="{{ url_for('static', filename=ph.image_path) }}" alt="" style="width:200px;border-radius:10px">{% else %}<div style="position:relative;width:200px"><img src="{{ url_for('static', filename='img/template/' ~ key ~ '.svg') }}" alt="" style="width:200px;border-radius:10px;opacity:.8"><span class="badge badge-amber" style="position:absolute;left:8px;top:8px">Template image</span></div>{% endif %}

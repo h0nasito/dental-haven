@@ -25,7 +25,7 @@
   <div class="field"><label for="f-source">Booking source</label><select id="f-source" name="source">{% for k, l in sources.items() %}<option value="{{ k }}" {% if v.source == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
 </div>
 <div class="field"><label for="f-notes">Internal notes</label><textarea id="f-notes" name="internal_notes" rows="2">{{ v.internal_notes }}</textarea><span class="hint">Staff-only notes. Put clinical details in the patient's clinical notes, not here.</span></div>
-<div class="form-actions"><button class="btn" type="submit">Book appointment</button><span class="hint">We'll check for conflicts with the dentist's other appointments, room bookings, branch hours and the dentist's schedule.</span></div>
+<div class="form-actions"><button class="btn" type="submit">Book appointment</button><span class="hint">We'll check for conflicts with the dentist's other appointments, chairs in use, branch hours and the dentist's schedule.</span></div>
 </form></div>
 {% endif %}
 {% endblock %}

@@ -61,7 +61,7 @@
     <div class="nav-group"><div class="title">Administration</div>
       {% if current_user.can('users.manage') %}{{ nav('admin.users', 'Users', 'admin.user') }}{% endif %}
       {% if current_user.can('roles.manage') %}{{ nav('admin.roles', 'Role access', 'admin.role') }}{% endif %}
-      {% if current_user.can('settings.manage') %}{{ nav('admin.branches', 'Branches & rooms', 'admin.branch') }}
+      {% if current_user.can('settings.manage') %}{{ nav('admin.branches', 'Branches & chairs', 'admin.branch') }}
       {{ nav('admin.services', 'Services', 'admin.service') }}
       {{ nav('admin.schedules', 'Dentist schedules', 'admin.schedule') }}{% endif %}
       {% if current_user.can('content.manage') %}{{ nav('admin.content', 'Website content', 'admin.content') }}{% endif %}

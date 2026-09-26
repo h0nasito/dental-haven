@@ -10,12 +10,13 @@
   <a class="btn btn-secondary btn-sm" href="?view={{ view }}&dentist={{ dentist_id or '' }}">Today</a>
   <a class="btn btn-secondary btn-sm" href="?view={{ view }}&date={{ next }}&dentist={{ dentist_id or '' }}" aria-label="Next">→</a></div>
   <div class="field"><label for="date">Date</label><input id="date" type="date" name="date" value="{{ day.isoformat() }}"></div>
-  <div class="field"><label for="view">View</label><select id="view" name="view"><option value="day" {% if view=='day' %}selected{% endif %}>Day (by dentist)</option><option value="week" {% if view=='week' %}selected{% endif %}>Week</option></select></div>
+  <div class="field"><label for="view">View</label><select id="view" name="view"><option value="day" {% if view=='day' %}selected{% endif %}>Day (by dentist)</option><option value="chairs" {% if view=='chairs' %}selected{% endif %}>Day (by chair)</option><option value="week" {% if view=='week' %}selected{% endif %}>Week</option></select></div>
   {% if not current_user.own_schedule_only %}<div class="field"><label for="dentist">Dentist</label><select id="dentist" name="dentist"><option value="">All dentists</option>{% for d in dentists %}<option value="{{ d.id }}" {% if dentist_id == d.id %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select></div>{% endif %}
   <label class="check" style="margin-bottom:.6rem"><input type="checkbox" name="show_cancelled" value="1" {% if request.args.get('show_cancelled') %}checked{% endif %}> Show cancelled</label>
   <button class="btn btn-secondary" type="submit">Apply</button>
 </form>
-{% if view == 'day' %}
+{% if view in ('day', 'chairs') %}
+  {% if view == 'chairs' %}<p class="muted" style="font-size:.85rem">One dentist per chair: each column is a chair, so you can see at a glance which chairs are free.</p>{% endif %}
   {% if columns %}
   <div class="cal" style="grid-template-columns: 64px repeat({{ columns|length }}, minmax(170px, 1fr)); max-height: 75vh">
     <div class="cal-col-head">&nbsp;</div>
@@ -25,14 +26,14 @@
     <div class="cal-col">{% for h in range(hours[0], hours[1]) %}<div class="cal-slot"></div>{% endfor %}
       {% for a in c.appts %}
       <a class="cal-appt st-{{ a.status }}" style="top:{{ a.top }}px;height:{{ a.height }}px" href="{{ url_for('sched.appointment', appt_id=a.id) }}" title="{{ a.start_at|time }}–{{ a.end_at|time }} {{ a.service }}">
-        <strong>{{ a.start_at|time }}</strong> {{ a.last_name }}, {{ a.first_name[:1] }}.{% if a.alert_flag %} ⚠{% endif %}<br>{{ a.service }}{% if a.resource %} · {{ a.resource }}{% endif %}{% if current_user.scope_branch_ids|length > 1 %} · {{ a.branch }}{% endif %}
+        <strong>{{ a.start_at|time }}</strong> {{ a.last_name }}, {{ a.first_name[:1] }}.{% if a.alert_flag %} ⚠{% endif %}<br>{{ a.service }}{% if view == 'chairs' %}{% if a.dentist %} · {{ a.dentist }}{% endif %}{% elif a.resource %} · {{ a.resource }}{% endif %}{% if current_user.scope_branch_ids|length > 1 %} · {{ a.branch }}{% endif %}
       </a>
       {% endfor %}
     </div>
     {% endfor %}
   </div>
   <p class="muted" style="font-size:.85rem">Colours: <span class="badge badge-amber">Requested</span> <span class="badge badge-teal">Confirmed</span> <span class="badge badge-blue">Checked in</span> <span class="badge badge-green">Completed</span>. ⚠ = patient alert flag.</p>
-  {% else %}<div class="card">{{ empty('No dentists or appointments for this view', ' Add dentist schedules under Administration, or pick another branch.') }}</div>{% endif %}
+  {% else %}<div class="card">{{ empty('No dentists, chairs or appointments for this view', ' Add dentist schedules under Administration, or pick another branch.') }}</div>{% endif %}
 {% else %}
   <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
   {% for d in days %}

@@ -1,13 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" width="1200" height="900">
-<defs>
- <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0e2d57"/><stop offset="1" stop-color="#041628"/></linearGradient>
- <filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="72"/></filter>
- <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse"><path d="M50 0H0V50" fill="none" stroke="#ffffff" stroke-opacity=".12" stroke-width="1"/></pattern>
-</defs>
+<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#253b53"/><stop offset="1" stop-color="#0b1b31"/></linearGradient>
+<filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="72"/></filter>
+<pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse"><path d="M50 0H0V50" fill="none" stroke="#ffffff" stroke-opacity=".10" stroke-width="1"/></pattern></defs>
 <rect width="1200" height="900" fill="url(#bg)"/>
-<circle cx="936.0" cy="198.0" r="336.00000000000006" fill="#5484d6" opacity=".55" filter="url(#soft)"/>
-<circle cx="180.0" cy="810.0" r="360.0" fill="#e3c186" opacity=".45" filter="url(#soft)"/>
+<circle cx="936.0" cy="198.0" r="336.00000000000006" fill="#5a616b" opacity=".5" filter="url(#soft)"/>
+<circle cx="180.0" cy="810.0" r="360.0" fill="#c6a15b" opacity=".45" filter="url(#soft)"/>
 <rect width="1200" height="900" fill="url(#grid)"/>
-
-<g transform="translate(384 234) scale(9)" fill="none" stroke="#e3c186" stroke-width="1.4666666666666668" stroke-linecap="round" stroke-linejoin="round"><circle cx="24" cy="24" r="16"/><circle cx="24" cy="24" r="6"/><path d="M24 4v6M24 38v6M4 24h6M38 24h6M10 10l4 4M34 34l4 4M38 10l-4 4M10 38l4-4"/></g>
+<g transform="translate(384 234) scale(9)" fill="none" stroke="#c6a15b" stroke-width="1.47" stroke-linecap="round" stroke-linejoin="round"><circle cx="24" cy="24" r="16"/><circle cx="24" cy="24" r="6"/><path d="M24 4v6M24 38v6M4 24h6M38 24h6M10 10l4 4M34 34l4 4M38 10l-4 4M10 38l4-4"/></g>
 </svg>
