@@ -1,0 +1,22 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Lab case #{{ c.id }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('labs.index') }}">← Lab cases</a><h1>{{ c.case_type }} · {{ c.last_name }}, {{ c.first_name }}</h1>
+<p>Case #{{ c.id }} · {{ c.lab }} · from {{ c.branch }}</p></div><span class="badge badge-blue">{{ statuses[c.status] }}</span></div>
+<div class="grid grid-2">
+<div class="card"><h2>Details</h2>
+<dl class="kv"><dt>Patient</dt><dd>{% if patient_link %}<a href="{{ url_for('patients.detail', patient_id=c.patient_id) }}">{{ c.last_name }}, {{ c.first_name }}</a>{% else %}{{ c.last_name }}, {{ c.first_name }}{% endif %} <small class="muted">{{ c.chart_no }}</small></dd>
+<dt>Dentist</dt><dd>{{ c.dentist or '—' }}</dd><dt>Teeth</dt><dd>{{ c.teeth or '—' }}</dd><dt>Shade</dt><dd>{{ c.shade or '—' }}</dd><dt>Material</dt><dd>{{ c.material or '—' }}</dd>
+<dt>Sent</dt><dd>{{ c.sent_on|date }}</dd><dt>Due back</dt><dd>{{ c.due_on|date if c.due_on else '—' }}</dd>{% if c.completed_on %}<dt>Delivered</dt><dd>{{ c.completed_on|date }}</dd>{% endif %}
+<dt>Lab fee</dt><dd>{{ c.lab_fee_cents|peso if c.lab_fee_cents is not none else '—' }}</dd><dt>Instructions</dt><dd class="pre">{{ c.instructions or '—' }}</dd></dl></div>
+<div>
+{% if can_update %}<div class="card"><h2>Update status</h2><form method="post">{{ csrf() }}
+<div class="form-grid"><div class="field"><label for="st">Status</label><select id="st" name="status">{% for k, l in statuses.items() %}<option value="{{ k }}" {% if c.status == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+<div class="field"><label for="du">Due back</label><input id="du" type="date" name="due_on" value="{{ c.due_on or '' }}"></div>
+<div class="field"><label for="lf">Lab fee (₱)</label><input id="lf" name="lab_fee" value="{{ (c.lab_fee_cents / 100) if c.lab_fee_cents is not none else '' }}"></div></div>
+<div class="field"><label for="nt">Note</label><input id="nt" name="note" placeholder="e.g. Try-in done, needs shade adjustment"></div>
+<button class="btn">Save</button></form></div>{% endif %}
+<div class="card"><h2>History</h2><ul class="list-plain">{% for e in events %}<li><strong>{{ statuses.get(e.status, e.status) }}</strong>{% if e.note %} — {{ e.note }}{% endif %}<br><small class="muted">{{ e.created_at|dt }} · {{ e.by_name }}</small></li>{% endfor %}</ul></div>
+</div></div>
+{% endblock %}

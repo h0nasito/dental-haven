@@ -1,0 +1,23 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import status_badge %}
+{% block page_title %}Users{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Users</h1><p>Only super admins can create users, change roles or assign branches. Every change is recorded in the audit trail.</p></div>
+  <a class="btn" href="{{ url_for('admin.user_new') }}">+ New user</a></div>
+<div class="card"><div class="table-wrap"><table>
+  <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Branches</th><th>Status</th><th>Last sign-in</th><th></th></tr></thead>
+  <tbody>
+  {% for u in users %}
+    <tr>
+      <td><strong>{{ u.name }}</strong>{% if u.id == current_user.id %} <span class="badge">You</span>{% endif %}</td>
+      <td>{{ u.email }}</td>
+      <td><span class="badge {% if u.role == 'super_admin' %}badge-red{% else %}badge-teal{% endif %}">{{ ROLES[u.role] }}</span></td>
+      <td>{% if u.role == 'super_admin' %}<span class="muted">All branches</span>{% else %}{{ (user_branches.get(u.id) or ['—'])|join(', ') }}{% endif %}</td>
+      <td>{% if u.active %}<span class="badge badge-green">Active</span>{% else %}<span class="badge">Inactive</span>{% endif %}
+          {% if u.must_change_password %}<span class="badge badge-amber">Temp password</span>{% endif %}</td>
+      <td>{{ u.last_login_at|dt }}</td>
+      <td><a class="btn btn-secondary btn-sm" href="{{ url_for('admin.user_edit', user_id=u.id) }}">Edit</a></td>
+    </tr>
+  {% endfor %}
+  </tbody></table></div></div>
+{% endblock %}

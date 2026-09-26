@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}{{ c.title }} · {{ p.last_name }}{% endblock %}
+{% block body %}
+<main id="main" class="print-sheet">
+<div class="no-print row between" style="margin-bottom:1rem"><a href="{{ url_for('patients.detail', patient_id=p.id, tab='rx') }}">← Back</a><span class="muted">Use your browser's Print command</span></div>
+{% with branch=c.branch, branch_address=c.branch_address, branch_phone=c.branch_phone %}{% include "staff/docs/_letterhead.html" %}{% endwith %}
+<p style="text-align:right">{{ c.issued_on|date }}</p>
+<h1 style="text-align:center;text-transform:uppercase;letter-spacing:.08em;font-size:1.3rem;margin:1.5rem 0">{{ c.title }}</h1>
+<p style="margin-bottom:.5rem">To whom it may concern:</p>
+<div class="pre" style="line-height:1.8">{{ c.body }}</div>
+<div class="signature"><div class="sig-line"></div><strong>{{ c.dentist }}</strong><br>
+<small>{% if c.license_no %}PRC Lic. No. {{ c.license_no }}{% endif %}{% if c.ptr_no %} · PTR No. {{ c.ptr_no }}{% endif %}</small></div>
+</main>
+{% endblock %}

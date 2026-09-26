@@ -1,0 +1,43 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, status_badge, empty %}
+{% block page_title %}Expenses{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Expenses</h1><p>{{ start|date }} – {{ end|date }}. New expenses are drafts until someone with "Post Expenses" posts them. Only posted expenses count in reports.</p></div>
+{% if current_user.can('reports.export') and current_user.can('expenses.view') %}<a class="btn btn-secondary btn-sm" href="{{ url_for('expenses.export', **{'from': start.isoformat(), 'to': end.isoformat()}) }}">CSV export</a>{% endif %}</div>
+<div class="grid grid-4" style="margin-bottom:1rem">
+<div class="stat"><div class="label">Posted</div><div class="value">{{ totals.posted|peso }}</div></div>
+<div class="stat warn"><div class="label">Drafts awaiting posting</div><div class="value">{{ totals.draft|peso }}</div></div>
+</div>
+<div class="grid" style="grid-template-columns:minmax(0,2fr) minmax(260px,1fr)">
+<div>
+<form class="toolbar" method="get">
+<div class="field"><label for="from">From</label><input id="from" type="date" name="from" value="{{ start.isoformat() }}"></div>
+<div class="field"><label for="to">To</label><input id="to" type="date" name="to" value="{{ end.isoformat() }}"></div>
+<div class="field"><label for="st">Status</label><select id="st" name="status"><option value="">Any</option>{% for s in ['draft','posted','void'] %}<option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s|label }}</option>{% endfor %}</select></div>
+<div class="field"><label for="cat">Category</label><select id="cat" name="category"><option value="">All</option>{% for c in categories %}<option {% if category == c %}selected{% endif %}>{{ c }}</option>{% endfor %}</select></div>
+<button class="btn btn-secondary">Filter</button></form>
+<div class="card"><div class="table-wrap"><table><thead><tr><th>Date</th><th>Branch</th><th>Category</th><th>Details</th><th class="num">Amount</th><th>Status</th><th></th></tr></thead><tbody>
+{% for e in rows %}<tr {% if e.status == 'void' %}style="opacity:.6"{% endif %}><td>{{ e.expense_date|date }}</td><td>{{ e.branch }}</td><td>{{ e.category }}</td>
+<td>{{ e.description }}{% if e.payee %}<br><small class="muted">Paid to {{ e.payee }}</small>{% endif %}<br><small class="muted">{{ PAYMENT_METHODS.get(e.method, e.method) }}{% if e.reference %} · ref {{ e.reference }}{% endif %} · by {{ e.by_name }}</small>{% if e.void_reason %}<br><small class="muted">Void: {{ e.void_reason }}</small>{% endif %}</td>
+<td class="num">{{ e.amount_cents|peso }}</td><td>{{ status_badge('pending' if e.status == 'draft' else ('approved' if e.status == 'posted' else 'void')) }}</td>
+<td class="row">{% if e.status == 'draft' and current_user.can('expenses.post') %}<form method="post" action="{{ url_for('expenses.post', expense_id=e.id) }}">{{ csrf() }}<button class="btn btn-sm">Post</button></form>{% endif %}
+{% if e.status == 'draft' and (e.created_by == current_user.id or current_user.can('expenses.post')) %}<form method="post" action="{{ url_for('expenses.delete_draft', expense_id=e.id) }}" data-confirm="Delete this draft?">{{ csrf() }}<button class="btn btn-ghost btn-sm">Delete</button></form>{% endif %}
+{% if e.status == 'posted' and current_user.can('expenses.post') %}<details><summary>Void</summary><form method="post" action="{{ url_for('expenses.void', expense_id=e.id) }}">{{ csrf() }}<label class="sr-only" for="vr{{ e.id }}">Reason</label><input id="vr{{ e.id }}" name="reason" placeholder="Reason" required><button class="btn btn-danger btn-sm mt-1">Void</button></form></details>{% endif %}</td></tr>
+{% else %}<tr><td colspan="7">{{ empty('No expenses in this range') }}</td></tr>{% endfor %}</tbody></table></div></div>
+</div>
+<div>
+{% if current_user.can('expenses.add') %}
+<div class="card"><h2>Add expense</h2><form method="post">{{ csrf() }}
+<div class="field"><label for="eb">Branch</label><select id="eb" name="branch_id" required>{% for b in branches %}<option value="{{ b.id }}" {% if current_user.active_branch_id == b.id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select></div>
+<div class="field"><label for="ed">Date</label><input id="ed" type="date" name="expense_date" value="{{ today }}" max="{{ today }}" required></div>
+<div class="field"><label for="ec">Category</label><select id="ec" name="category" required>{% for c in categories %}<option>{{ c }}</option>{% endfor %}</select></div>
+<div class="field"><label for="ea">Amount (₱)</label><input id="ea" name="amount" inputmode="decimal" required></div>
+<div class="field"><label for="edsc">Description</label><input id="edsc" name="description" placeholder="e.g. Composite resin refill"></div>
+<div class="field"><label for="ep">Paid to</label><input id="ep" name="payee"></div>
+<div class="field"><label for="em">Payment method</label><select id="em" name="method">{% for k, l in PAYMENT_METHODS.items() %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></div>
+<div class="field"><label for="er">Receipt / OR no.</label><input id="er" name="reference"></div>
+<button class="btn">Add expense</button></form></div>
+{% endif %}
+<div class="card"><h2>Posted by category</h2>{% if by_cat %}<ul class="list-plain">{% for c, amt in by_cat %}<li class="row between"><span>{{ c }}</span><strong>{{ amt|peso }}</strong></li>{% endfor %}</ul>{% else %}<p class="muted">Nothing posted in this range.</p>{% endif %}</div>
+</div></div>
+{% endblock %}

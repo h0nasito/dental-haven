@@ -1,0 +1,36 @@
+{% extends "public/layout.html" %}
+{% from "macros.html" import csrf, form_errors %}
+{% set consent = content('consent_booking') %}{% set cc = content('consent_contact') %}{% set ct = content('contact') %}
+{% block title %}Ask a question · Dental Haven{% endblock %}
+{% block content %}
+<section class="section"><div class="wrap hero-grid" style="align-items:start">
+<div>
+  <span class="eyebrow">Inquiries</span><h1>Ask us anything</h1>
+  <p class="muted">Questions about treatments, schedules or which branch to visit? Send a message and a receptionist will get back to you.</p>
+  {{ form_errors(errors) }}
+  <form method="post" class="card" novalidate>
+    {{ csrf() }}<input type="hidden" name="started" value="{{ started }}">
+    <div class="hp" aria-hidden="true"><label>Leave this empty <input name="website" tabindex="-1" autocomplete="off"></label></div>
+    <div class="form-grid">
+      <div class="field {% if errors.full_name %}error{% endif %}"><label for="full_name">Full name *</label><input id="full_name" name="full_name" value="{{ v.full_name }}" autocomplete="name" required>{% if errors.full_name %}<div class="field-error">{{ errors.full_name }}</div>{% endif %}</div>
+      <div class="field {% if errors.phone %}error{% endif %}"><label for="phone">Mobile number</label><input id="phone" name="phone" type="tel" value="{{ v.phone }}" autocomplete="tel">{% if errors.phone %}<div class="field-error">{{ errors.phone }}</div>{% endif %}</div>
+      <div class="field {% if errors.email %}error{% endif %}"><label for="email">Email</label><input id="email" name="email" type="email" value="{{ v.email }}" autocomplete="email">{% if errors.email %}<div class="field-error">{{ errors.email }}</div>{% endif %}</div>
+      <div class="field"><label for="branch_id">Branch</label><select id="branch_id" name="branch_id"><option value="">Not sure yet</option>{% for b in branches %}<option value="{{ b.id }}" {% if v.branch_id == b.id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select></div>
+      <div class="field"><label for="service_id">Service of interest</label><select id="service_id" name="service_id"><option value="">Not sure yet</option>{% for s in services %}<option value="{{ s.id }}" {% if v.service_id == s.id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}</select></div>
+    </div>
+    <div class="field {% if errors.message %}error{% endif %}"><label for="message">Your message *</label><textarea id="message" name="message" rows="5" required>{{ v.message }}</textarea>
+      <span class="hint">Please don't share detailed medical information here.</span>{% if errors.message %}<div class="field-error">{{ errors.message }}</div>{% endif %}</div>
+    <div class="field {% if errors.consent_privacy %}error{% endif %}"><label class="check"><input type="checkbox" name="consent_privacy" value="1" {% if v.consent_privacy %}checked{% endif %} required>
+      <span>{{ consent.body or 'I agree that Dental Haven may use these details to respond to my inquiry, as described in the privacy notice.' }} <a href="{{ url_for('public.privacy') }}" target="_blank">Privacy notice</a>. *</span></label>
+      {% if errors.consent_privacy %}<div class="field-error">{{ errors.consent_privacy }}</div>{% endif %}</div>
+    <div class="field"><label class="check"><input type="checkbox" name="consent_contact" value="1" {% if v.consent_contact %}checked{% endif %}><span>{{ cc.body or 'I agree to receive follow-up messages about my inquiry. I can opt out at any time.' }} (optional)</span></label></div>
+    <button class="btn btn-lg" type="submit">Send message</button>
+  </form>
+</div>
+<aside class="hero-card"><h3>{{ ct.title or 'Contact us' }}</h3>{{ ct.body|richtext }}
+  <ul class="list-plain">{% for b in branches %}<li><a href="{{ url_for('public.branch', slug=b.slug) }}"><strong>{{ b.name }}</strong></a><br>
+  <small>{% for disp, tel in b.phone|phones %}<a href="{{ tel }}">{{ disp }}</a>{% if not loop.last %} · {% endif %}{% else %}<span class="muted">Number to follow</span>{% endfor %}</small>
+  {% include "public/_branch_links.html" %}</li>{% endfor %}</ul>
+</aside>
+</div></section>
+{% endblock %}

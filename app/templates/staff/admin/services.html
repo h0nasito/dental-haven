@@ -1,0 +1,26 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Services{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Services</h1><p>Service pages, appointment durations and default invoice prices. Prices are internal and never shown on the public site.</p></div>
+<a class="btn" href="{{ url_for('admin.service_edit') }}">+ New service</a></div>
+<div class="card"><div class="table-wrap"><table>
+<thead><tr><th>Service</th><th>Category</th><th class="num">Default duration</th><th class="num">Default price</th><th>Online booking</th><th>Status</th><th></th></tr></thead><tbody>
+{% for s in services %}<tr><td><strong>{{ s.name }}</strong><br><small class="muted">/services/{{ s.slug }}</small></td><td>{{ s.category }}</td>
+<td class="num">{{ s.default_duration_min }} min</td><td class="num">{{ s.default_price_cents|peso if s.default_price_cents is not none else '—' }}</td>
+<td>{{ 'Yes' if s.bookable_online else 'No' }}</td><td>{% if s.active %}<span class="badge badge-green">Active</span>{% else %}<span class="badge">Inactive</span>{% endif %}</td>
+<td><a class="btn btn-secondary btn-sm" href="{{ url_for('admin.service_edit', service_id=s.id) }}">Edit</a></td></tr>{% endfor %}
+</tbody></table></div></div>
+<div class="card"><h2>Duration overrides</h2>
+<p class="muted">Set a different duration for a particular branch or dentist. When several rules match, the most specific one wins: dentist + branch, then dentist, then branch, then the service default.</p>
+<div class="table-wrap"><table><thead><tr><th>Service</th><th>Branch</th><th>Dentist</th><th class="num">Minutes</th><th></th></tr></thead><tbody>
+{% for o in overrides %}<tr><td>{{ o.service }}</td><td>{{ o.branch or 'Any' }}</td><td>{{ o.dentist or 'Any' }}</td><td class="num">{{ o.minutes }}</td>
+<td><form method="post" action="{{ url_for('admin.duration_override') }}">{{ csrf() }}<input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="{{ o.id }}"><button class="btn btn-ghost btn-sm">Remove</button></form></td></tr>
+{% else %}<tr><td colspan="5" class="empty">No overrides — service defaults apply.</td></tr>{% endfor %}</tbody></table></div>
+<form method="post" action="{{ url_for('admin.duration_override') }}" class="toolbar mt-1">{{ csrf() }}
+<div class="field"><label for="os">Service</label><select id="os" name="service_id" required><option value="">Choose…</option>{% for s in services %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}</select></div>
+<div class="field"><label for="ob">Branch</label><select id="ob" name="branch_id"><option value="">Any</option>{% for b in branches %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}</select></div>
+<div class="field"><label for="od">Dentist</label><select id="od" name="dentist_id"><option value="">Any</option>{% for d in dentists %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}</select></div>
+<div class="field"><label for="om">Minutes</label><input id="om" type="number" name="minutes" min="5" max="480" step="5" required></div>
+<button class="btn btn-secondary">Add override</button></form></div>
+{% endblock %}

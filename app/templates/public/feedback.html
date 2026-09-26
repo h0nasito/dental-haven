@@ -1,0 +1,10 @@
+{% extends "public/layout.html" %}
+{% block title %}Patient feedback · Dental Haven{% endblock %}
+{% block content %}
+<section class="hero" style="padding:3rem 0 2rem"><div class="wrap"><span class="eyebrow">Patient feedback</span><h1>In our patients' words</h1>
+<p class="lead">Shared with each patient's permission, in their own words.</p></div></section>
+<section class="section" style="padding-top:1.5rem"><div class="wrap">
+{% if items %}<div class="grid grid-3">{% for t in items %}<blockquote class="quote">“{{ t.quote }}”<footer>— {{ t.attribution or 'Dental Haven patient' }}</footer></blockquote>{% endfor %}</div>
+{% else %}<p class="muted">We'll share patient feedback here once patients have given permission. You can also see reviews on our <a href="https://www.facebook.com/dentalhavenmalolos" target="_blank" rel="noopener">Facebook page</a>.</p>{% endif %}
+</div></section>
+{% endblock %}

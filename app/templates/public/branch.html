@@ -1,0 +1,18 @@
+{% extends "public/layout.html" %}
+{% block title %}{{ b.name }} branch · Dental Haven{% endblock %}
+{% block content %}
+<section class="hero" style="padding:3rem 0 2rem"><div class="wrap"><span class="eyebrow">Branch</span><h1>Dental Haven {{ b.name }}</h1>
+<div class="lead">{{ b.intro|richtext }}</div></div></section>
+<section class="section" style="padding-top:1.5rem"><div class="wrap grid grid-2">
+  <div class="card"><h2>Visit us</h2>
+    <dl class="kv"><dt>Address</dt><dd class="{% if '[' in b.address %}placeholder{% endif %}">{{ b.address or 'To be confirmed' }}</dd>
+    <dt>Contact numbers</dt><dd>{% for disp, tel in b.phone|phones %}<a href="{{ tel }}">{{ disp }}</a>{% if not loop.last %}<br>{% endif %}{% else %}<span class="placeholder">To be confirmed</span>{% endfor %}</dd>
+    {% if b.email %}<dt>Email</dt><dd>{{ b.email }}</dd>{% endif %}
+    <dt>Hours</dt><dd class="pre">{{ b.hours_text or 'To be confirmed' }}</dd></dl>
+    {% include "public/_branch_links.html" %}
+    <div class="row mt-1"><a class="btn" href="{{ url_for('public.book', branch=b.id) }}">Request an appointment</a>
+    <a class="btn btn-secondary" href="{{ url_for('public.inquire', branch=b.id) }}">Ask a question</a></div></div>
+  <div class="card"><h2>Services at this branch</h2><ul class="list-plain">{% for s in site_services %}<li><a href="{{ url_for('public.service', slug=s.slug) }}">{{ s.name }}</a></li>{% endfor %}</ul>
+  <p class="muted">Specialist availability varies by day. Mention the service you need and we'll match you with the right dentist.</p></div>
+</div></section>
+{% endblock %}

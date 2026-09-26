@@ -1,0 +1,9 @@
+{% extends "public/layout.html" %}
+{% block title %}Message received · Dental Haven{% endblock %}
+{% block content %}
+<section class="section"><div class="wrap" style="max-width:640px"><div class="card" style="text-align:center;padding:2rem">
+<div class="svc-icon" style="margin:0 auto 1rem">✓</div><h1>Message received</h1>
+<p>Thank you for reaching out. A Dental Haven receptionist will reply during clinic hours.</p>
+<div class="row" style="justify-content:center"><a class="btn" href="{{ url_for('public.book') }}">Request an appointment</a><a class="btn btn-secondary" href="{{ url_for('public.home') }}">Home</a></div>
+</div></div></section>
+{% endblock %}

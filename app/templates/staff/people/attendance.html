@@ -1,0 +1,33 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, status_badge, empty %}
+{% block page_title %}Attendance{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>{{ 'Attendance (DTR)' if manage else 'My attendance' }}</h1><p>{{ start|date }} – {{ end|date }}. Exceptions are flagged automatically against branch hours. Every correction needs a reason and is recorded in the audit trail.</p></div></div>
+<form class="toolbar" method="get">
+<div class="field"><label for="from">From</label><input id="from" type="date" name="from" value="{{ start.isoformat() }}"></div>
+<div class="field"><label for="to">To</label><input id="to" type="date" name="to" value="{{ end.isoformat() }}"></div>
+<div class="field"><label for="st">Status</label><select id="st" name="status"><option value="">Any</option>{% for s in ['ok','exception','corrected','excused'] %}<option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s|label }}</option>{% endfor %}</select></div>
+{% if manage %}<div class="field"><label for="em">Employee</label><select id="em" name="employee"><option value="">Everyone</option>{% for e in emps %}<option value="{{ e.id }}" {% if emp == e.id %}selected{% endif %}>{{ e.full_name }}</option>{% endfor %}</select></div>{% endif %}
+<button class="btn btn-secondary">Filter</button></form>
+<div class="card"><div class="table-wrap"><table>
+<thead><tr><th>Date</th>{% if manage %}<th>Employee</th>{% endif %}<th>Branch</th><th>In</th><th>Out</th><th class="num">Hours</th><th>Status</th><th>Notes</th>{% if manage %}<th></th>{% endif %}</tr></thead><tbody>
+{% for r in rows %}<tr><td>{{ r.work_date|date }}</td>{% if manage %}<td>{{ r.full_name }}</td>{% endif %}<td>{{ r.branch }}</td><td>{{ r.time_in or '—' }}</td><td>{{ r.time_out or '—' }}</td><td class="num">{{ '%.2f'|format(r.minutes / 60) }}</td>
+<td>{{ status_badge(r.status) }}{% if r.source == 'import' %} <span class="badge">import</span>{% endif %}</td><td><small>{{ r.exception_note }}{% if r.correction_reason %}<br>Correction: {{ r.correction_reason }} ({{ r.corrected_by_name }}){% endif %}</small></td>
+{% if manage %}<td><a class="btn btn-secondary btn-sm" href="{{ url_for('people.attendance_correct', rec_id=r.id) }}">Correct</a></td>{% endif %}</tr>
+{% else %}<tr><td colspan="9">{{ empty('No time records in this range') }}</td></tr>{% endfor %}</tbody></table></div></div>
+{% if manage %}
+<div class="grid grid-2">
+<div class="card"><h2>Record time</h2><form method="post" action="{{ url_for('people.attendance_record') }}">{{ csrf() }}
+<div class="form-grid"><div class="field"><label for="re">Employee</label><select id="re" name="employee_id" required>{% for e in emps %}<option value="{{ e.id }}">{{ e.full_name }}</option>{% endfor %}</select></div>
+<div class="field"><label for="rb">Branch</label><select id="rb" name="branch_id"><option value="">Employee's primary</option>{% for b in branches %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}</select></div>
+<div class="field"><label for="rd">Date</label><input id="rd" type="date" name="work_date" value="{{ today }}" max="{{ today }}" required></div>
+<div class="field"><label for="ri">Time in</label><input id="ri" type="time" name="time_in"></div>
+<div class="field"><label for="ro">Time out</label><input id="ro" type="time" name="time_out"></div></div>
+<button class="btn btn-secondary">Save record</button></form></div>
+<div class="card"><h2>Import DTR (CSV)</h2>
+<p class="muted" style="font-size:.9rem">Columns: <code>employee</code> (name or email), <code>date</code> (YYYY-MM-DD), <code>time_in</code>, <code>time_out</code> (HH:MM), and an optional <code>branch</code>. Existing dates are skipped, not overwritten.</p>
+<form method="post" action="{{ url_for('people.attendance_import') }}" enctype="multipart/form-data" class="row">{{ csrf() }}<label class="sr-only" for="csv">CSV file</label><input id="csv" type="file" name="file" accept=".csv,text/csv" required><button class="btn btn-secondary">Import</button></form>
+<p class="hint">Biometric exports vary. Save yours as CSV with these column names. Direct device integration is not configured.</p></div>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,18 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, field, textarea, select %}
+{% block page_title %}New follow-up{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('leads.followups') }}">← Follow-ups</a><h1>New follow-up</h1>
+{% if patient %}<p>For patient {{ patient.last_name }}, {{ patient.first_name }}</p>{% elif lead %}<p>For lead {{ lead.full_name }}</p>{% endif %}</div></div>
+<form method="post" class="card" style="max-width:760px">{{ csrf() }}
+{% if patient %}<input type="hidden" name="patient_id" value="{{ patient.id }}">{% endif %}{% if lead %}<input type="hidden" name="lead_id" value="{{ lead.id }}">{% endif %}
+<div class="form-grid">
+{{ select('kind', 'Type', FOLLOWUP_KINDS.items()|list, v.kind, errors=errors) }}
+{{ field('title', 'Task', v.title, errors=errors, required=True) }}
+{{ field('due_at', 'Due', v.due_at|replace(' ', 'T'), type='datetime-local', errors=errors, required=True) }}
+{{ select('assignee_id', 'Assign to', staff|opts, v.assignee_id, blank='Unassigned') }}
+{{ select('branch_id', 'Branch', branches|opts, v.branch_id, errors=errors, required=True) }}
+</div>
+{{ textarea('notes', 'Notes', v.notes, rows=3) }}
+<button class="btn">Create follow-up</button></form>
+{% endblock %}

@@ -1,0 +1,23 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import status_badge, empty %}
+{% block page_title %}Appointments{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Appointments</h1><p>{{ pg.total }} appointment{{ '' if pg.total == 1 else 's' }} from {{ d_from|date }} to {{ d_to|date }}</p></div>
+{% if current_user.can('appointments.manage') %}<a class="btn" href="{{ url_for('sched.appointment_new') }}">+ New appointment</a>{% endif %}</div>
+<form class="toolbar" method="get">
+  <div class="field"><label for="from">From</label><input id="from" type="date" name="from" value="{{ d_from.isoformat() }}"></div>
+  <div class="field"><label for="to">To</label><input id="to" type="date" name="to" value="{{ d_to.isoformat() }}"></div>
+  <div class="field"><label for="status">Status</label><select id="status" name="status"><option value="">Any</option>{% for k, l in APPT_STATUSES.items() %}<option value="{{ k }}" {% if status == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+  {% if not current_user.own_schedule_only %}<div class="field"><label for="dentist">Dentist</label><select id="dentist" name="dentist"><option value="">Any</option>{% for d in dentists %}<option value="{{ d.id }}" {% if dentist_id == d.id %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select></div>{% endif %}
+  <div class="field"><label for="source">Source</label><select id="source" name="source"><option value="">Any</option>{% for k, l in SOURCES.items() %}<option value="{{ k }}" {% if source == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+  <button class="btn btn-secondary" type="submit">Filter</button>
+</form>
+<div class="card"><div class="table-wrap"><table>
+<thead><tr><th>When</th><th>Patient</th><th>Service</th><th>Dentist</th><th>Branch</th><th>Source</th><th>Status</th></tr></thead><tbody>
+{% for a in rows %}<tr><td><a href="{{ url_for('sched.appointment', appt_id=a.id) }}">{{ a.start_at|dt }}</a></td><td>{{ a.last_name }}, {{ a.first_name }}{% if a.alert_flag %} <span class="badge badge-red">⚠</span>{% endif %}<br><small class="muted">{{ a.chart_no }}</small></td>
+<td>{{ a.service }}</td><td>{{ a.dentist or '—' }}</td><td>{{ a.branch }}</td><td>{{ SOURCES.get(a.source, a.source) }}</td><td>{{ status_badge(a.status) }}</td></tr>
+{% else %}<tr><td colspan="7">{{ empty('No appointments match these filters') }}</td></tr>{% endfor %}
+</tbody></table></div>
+{% if pg.pages > 1 %}<div class="row mt-1">{% if pg.page > 1 %}<a class="btn btn-secondary btn-sm" href="?{{ request.query_string.decode()|replace('page=' ~ pg.page, '') }}&page={{ pg.page - 1 }}">← Previous</a>{% endif %}<span class="muted">Page {{ pg.page }} of {{ pg.pages }}</span>{% if pg.page < pg.pages %}<a class="btn btn-secondary btn-sm" href="?{{ request.query_string.decode()|replace('page=' ~ pg.page, '') }}&page={{ pg.page + 1 }}">Next →</a>{% endif %}</div>{% endif %}
+</div>
+{% endblock %}

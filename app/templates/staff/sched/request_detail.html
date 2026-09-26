@@ -1,0 +1,32 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, status_badge, form_errors %}
+{% block page_title %}Booking request{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('sched.requests') }}">← Booking requests</a><h1>{{ r.full_name }}</h1><p>Ref <code>{{ r.ref_code }}</code> · received {{ r.created_at|dt }}</p></div>{{ status_badge(r.status) }}</div>
+<div class="grid grid-2">
+<div class="card"><h2>Request</h2>
+<dl class="kv"><dt>Service</dt><dd>{{ r.service }}</dd><dt>Branch</dt><dd>{{ r.branch }}</dd><dt>Preferred time</dt><dd>{{ r.preferred_start|dt }}</dd>
+<dt>Preferred dentist</dt><dd>{{ r.dentist or 'No preference' }}</dd><dt>Mobile</dt><dd>{{ r.phone }}</dd><dt>Email</dt><dd>{{ r.email or '—' }}</dd>
+<dt>Message</dt><dd class="pre">{{ r.message or '—' }}</dd><dt>Privacy consent</dt><dd>{{ 'Yes' if r.consent_privacy else 'No' }}</dd><dt>Reminder consent</dt><dd>{{ 'Yes' if r.consent_contact else 'No' }}</dd></dl>
+{% if r.status == 'declined' %}<p class="notice mt-1">Declined: {{ r.decline_reason }}</p>{% endif %}
+{% if r.appointment_id %}<p class="mt-1"><a class="btn btn-secondary btn-sm" href="{{ url_for('sched.appointment', appt_id=r.appointment_id) }}">View appointment</a></p>{% endif %}
+</div>
+{% if r.status == 'pending' and current_user.can('bookings.manage') %}
+<div class="card"><h2>Confirm</h2>
+{{ form_errors(errors) }}
+<form method="post">{{ csrf() }}<input type="hidden" name="action" value="confirm">
+<fieldset><legend>Patient record</legend>
+{% for p in matches %}<label class="check"><input type="radio" name="patient_id" value="{{ p.id }}" {% if loop.first %}checked{% endif %}> <span><strong>{{ p.last_name }}, {{ p.first_name }}</strong> · {{ p.chart_no }} · {{ p.phone|contact }}{% if p.birth_date %} · born {{ p.birth_date|date }}{% endif %}</span></label>{% endfor %}
+{% if current_user.can('patients.manage') %}<label class="check"><input type="radio" name="patient_id" value="" {% if not matches %}checked{% endif %}> <span>Register as a new patient using the request details</span></label>{% endif %}
+{% if matches %}<p class="hint">These possible matches share the same phone number, email or name. Check the details with the patient before linking the request to an existing record.</p>{% endif %}
+</fieldset>
+{% include "staff/sched/_slot_fields.html" %}
+<div class="field"><label for="n">Internal notes</label><textarea id="n" name="internal_notes" rows="2">{{ v.internal_notes }}</textarea></div>
+<button class="btn">Confirm and book</button>
+</form>
+<details class="mt-1"><summary>Decline request</summary>
+<form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="decline"><div class="field"><label for="dr">Reason (internal)</label><input id="dr" name="decline_reason" required placeholder="e.g. Fully booked — offered another day by phone"></div><button class="btn btn-danger">Decline</button></form></details>
+</div>
+{% endif %}
+</div>
+{% endblock %}

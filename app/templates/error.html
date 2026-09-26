@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}{{ code }} · Dental Haven{% endblock %}
+{% block body %}
+<div class="auth-wrap"><div class="card auth-card" style="text-align:center">
+  <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Dental Haven" width="72" height="49" style="margin:0 auto 1rem">
+  <h1>{{ {400:'Request problem',403:'No access',404:'Page not found',413:'File too large',500:'Something went wrong'}.get(code, 'Error') }}</h1>
+  <p class="muted">{{ message }}</p>
+  <div class="form-actions" style="justify-content:center">
+    
+    {% if current_user %}<a class="btn" href="{{ url_for('dash.home') }}">Staff dashboard</a>{% else %}<a class="btn" href="{{ url_for('public.home') }}">Home</a>{% endif %}
+  </div>
+</div></div>
+{% endblock %}

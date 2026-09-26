@@ -1,0 +1,62 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import status_badge, empty %}
+{% block page_title %}Dashboard{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Good {{ 'morning' if now.hour < 12 else ('afternoon' if now.hour < 18 else 'evening') }}, {{ current_user.name.split(' ')[0] if current_user.role != 'dentist' else current_user.name }}</h1>
+<p>{{ now|date }} · {% if current_user.active_branch_id %}{% for b in nav_branches if b.id == current_user.active_branch_id %}{{ b.name }}{% endfor %}{% else %}All your branches{% endif %}</p></div>
+{% if current_user.can('appointments.manage') %}<a class="btn" href="{{ url_for('sched.appointment_new') }}">+ New appointment</a>{% endif %}</div>
+
+<div class="grid grid-4" style="margin-bottom:1rem">
+  {% if d.today_appts is defined %}<a class="stat" href="{{ url_for('sched.calendar') }}"><div class="label">{{ 'My appointments today' if current_user.role == 'dentist' else 'Appointments today' }}</div><div class="value">{{ d.today_appts|rejectattr('status','in',['cancelled'])|list|length }}</div><div class="sub">{{ d.upcoming_count }} more in the next 7 days</div></a>{% endif %}
+  {% if d.pending_requests is defined %}<a class="stat {% if d.pending_requests %}warn{% endif %}" href="{{ url_for('sched.requests') }}"><div class="label">Booking requests to confirm</div><div class="value">{{ d.pending_requests }}</div><div class="sub">Online requests awaiting staff</div></a>{% endif %}
+  {% if d.new_leads is defined %}<a class="stat" href="{{ url_for('leads.index') }}"><div class="label">New leads</div><div class="value">{{ d.new_leads }}</div><div class="sub">{{ d.leads30 }} leads in 30 days{% if d.conversion is not none %} · {{ d.conversion }}% booked/converted{% endif %}</div></a>{% endif %}
+  {% if d.overdue is defined %}<a class="stat {% if d.overdue %}danger{% endif %}" href="{{ url_for('leads.followups') }}"><div class="label">Overdue follow-ups</div><div class="value">{{ d.overdue }}</div><div class="sub">{{ d.due_today }} due later today</div></a>{% endif %}
+  {% if d.reviews is defined %}<a class="stat {% if d.reviews %}warn{% endif %}" href="{{ url_for('reportcards.index') }}"><div class="label">Report cards to review</div><div class="value">{{ d.reviews }}</div><div class="sub">A dentist must review them before they go to patients</div></a>{% endif %}
+  {% if d.att_exceptions is defined %}<a class="stat {% if d.att_exceptions %}warn{% endif %}" href="{{ url_for('people.attendance', status='exception') }}"><div class="label">Attendance exceptions</div><div class="value">{{ d.att_exceptions }}</div><div class="sub">To review before payroll</div></a>{% endif %}
+</div>
+
+<div class="grid grid-2">
+{% if d.today_appts is defined %}
+<div class="card"><div class="card-head"><h2>Today's schedule</h2><a class="btn btn-ghost btn-sm" href="{{ url_for('sched.calendar') }}">Calendar →</a></div>
+{% if d.today_appts %}<div class="table-wrap"><table><thead><tr><th>Time</th><th>Patient</th><th>Service</th><th>{{ 'Branch' if current_user.role == 'dentist' else 'Dentist' }}</th><th>Status</th></tr></thead><tbody>
+{% for a in d.today_appts %}<tr><td>{{ a.start_at|time }}</td><td><a href="{{ url_for('sched.appointment', appt_id=a.id) }}">{{ a.last_name }}, {{ a.first_name }}</a>{% if a.alert_flag %} <span class="badge badge-red" title="Alert: {{ a.alert_flag }}">⚠ Alert</span>{% endif %}</td>
+<td>{{ a.service }}</td><td>{{ a.branch if current_user.role == 'dentist' else (a.dentist or '—') }}</td><td>{{ status_badge(a.status) }}</td></tr>{% endfor %}
+</tbody></table></div>{% else %}{{ empty('No appointments today', ' Enjoy the quiet — or check upcoming days in the calendar.') }}{% endif %}</div>
+{% endif %}
+
+{% if d.sales_rows is defined %}
+<div class="card"><div class="card-head"><h2>This month by branch</h2><a class="btn btn-ghost btn-sm" href="{{ url_for('billing.sales') }}">Full report →</a></div>
+<p class="muted" style="font-size:.85rem">Sales = invoices issued. Collections = payments received minus refunds. The two are tracked separately.</p>
+<div class="bars">{% for r in d.sales_rows %}
+<div class="bar-row"><span>{{ r.branch }}<br><small class="muted">Sales</small></span><div class="bar-track"><div class="bar-fill" style="width:{{ (100 * r.sales / d.sales_max)|round(1) }}%"></div></div><span class="num">{{ r.sales|peso }}</span></div>
+<div class="bar-row"><span><small class="muted">Collections</small></span><div class="bar-track"><div class="bar-fill alt" style="width:{{ (100 * [r.collections,0]|max / d.sales_max)|round(1) }}%"></div></div><span class="num">{{ r.collections|peso }}</span></div>
+{% endfor %}</div></div>
+{% endif %}
+
+{% if d.visits30 is defined %}
+<div class="card"><h2>Last 30 days</h2>
+<dl class="kv"><dt>Completed visits</dt><dd>{{ d.visits30 }}</dd><dt>No-shows</dt><dd>{{ d.noshow30 }}</dd></dl>
+<h3 class="mt-1">Top services</h3>
+{% if d.top_services %}<ul class="list-plain">{% for s in d.top_services %}<li class="row between"><span>{{ s.name }}</span><strong>{{ s.n }}</strong></li>{% endfor %}</ul>{% else %}<p class="muted">No completed visits yet.</p>{% endif %}</div>
+{% endif %}
+
+{% if d.birthdays is defined %}
+<div class="card"><h2>🎂 Birthdays this week</h2>
+{% if d.birthdays %}<ul class="list-plain">{% for b in d.birthdays %}<li class="row between"><a href="{{ url_for('patients.detail', patient_id=b.id) }}">{{ b.last_name }}, {{ b.first_name }}</a>
+<span class="muted">{{ 'Today' if b.days_away == 0 else ('Tomorrow' if b.days_away == 1 else b.birth_date[5:]|replace('-', '/')) }} · turns {{ b.turning }}</span></li>{% endfor %}</ul>
+{% else %}<p class="muted">No patient birthdays in the next 7 days.</p>{% endif %}</div>
+{% endif %}
+
+{% if d.balances is defined %}
+<div class="card"><div class="card-head"><h2>Patients with balance</h2>{% if current_user.can('reports.sales') %}<a class="btn btn-ghost btn-sm" href="{{ url_for('billing.sales') }}#outstanding">All balances →</a>{% endif %}</div>
+{% if d.balances %}<ul class="list-plain">{% for b in d.balances %}<li class="row between"><a href="{{ url_for('patients.detail', patient_id=b.id) }}">{{ b.last_name }}, {{ b.first_name }}</a><strong>{{ b.balance|peso }}</strong></li>{% endfor %}</ul>
+{% else %}<p class="muted">No outstanding balances.</p>{% endif %}</div>
+{% endif %}
+
+{% if d.payroll_open is defined %}
+<div class="card"><div class="card-head"><h2>Payroll periods in progress</h2><a class="btn btn-ghost btn-sm" href="{{ url_for('people.payroll') }}">Payroll →</a></div>
+{% if d.payroll_open %}<ul class="list-plain">{% for p in d.payroll_open %}<li class="row between"><a href="{{ url_for('people.payroll_period', period_id=p.id) }}">{{ p.name }}</a>{{ status_badge(p.status) }}</li>{% endfor %}</ul>
+{% else %}<p class="muted">No open payroll periods.</p>{% endif %}</div>
+{% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Dental Haven · Happiest your teeth will ever be{% endblock %}</title>
+  <meta name="description" content="{% block description %}Dental Haven: general and preventive care, cosmetic and restorative dentistry, prosthodontics, implants and orthodontics, with an in-house digital dental laboratory. Branches in Malolos, Guiguinto, Bocaue and San Jose del Monte, Bulacan.{% endblock %}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  <link rel="icon" href="{{ url_for('static', filename='img/favicon.png') }}" type="image/png">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}">
+  <meta name="theme-color" content="#06213f">
+  {% if demo_mode %}<meta name="robots" content="noindex, nofollow">{% endif %}
+  {% block head %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+<a class="skip-link" href="#main">Skip to content</a>
+{% if demo_mode %}<div class="demo-banner" role="note"><strong>Demo site:</strong> all patients and records are fictional, and the data resets whenever the site restarts. Don't enter real patient information.</div>{% endif %}
+{% block body %}{% endblock %}
+<script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
+</body>
+</html>

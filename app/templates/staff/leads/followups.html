@@ -1,0 +1,16 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import status_badge, empty %}
+{% block page_title %}Follow-ups{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Follow-ups</h1><p>{{ counts.overdue }} overdue · {{ counts.today }} due later today</p></div>
+{% if current_user.can('followups.manage') %}<a class="btn" href="{{ url_for('leads.followup_new') }}">+ Follow-up</a>{% endif %}</div>
+<div class="tabs">{% for s, l in [('due','Due & overdue'),('upcoming','Upcoming'),('done','Completed')] %}<a class="{% if view == s %}active{% endif %}" href="?view={{ s }}{% if request.args.get('mine') %}&mine=1{% endif %}">{{ l }}</a>{% endfor %}
+<a class="{% if request.args.get('mine') %}active{% endif %}" href="?view={{ view }}{% if not request.args.get('mine') %}&mine=1{% endif %}">{{ 'All' if request.args.get('mine') else 'Assigned to me' }}</a></div>
+<div class="card"><div class="table-wrap"><table>
+<thead><tr><th>Due</th><th>Task</th><th>Who</th><th>Type</th><th>Assignee</th><th>Status</th></tr></thead><tbody>
+{% for f in rows %}<tr><td>{% if f.status == 'open' and f.due_at < now_s %}<strong style="color:var(--red-700)">{{ f.due_at|dt }}</strong><br><span class="badge badge-red">Overdue</span>{% else %}{{ f.due_at|dt }}{% endif %}</td>
+<td><a href="{{ url_for('leads.followup_detail', fu_id=f.id) }}">{{ f.title }}</a>{% if f.outcome %}<br><small class="muted">{{ f.outcome }}</small>{% endif %}</td>
+<td>{% if f.first_name %}{{ f.last_name }}, {{ f.first_name }}{% if f.alert_flag %} ⚠{% endif %}{% elif f.lead_name %}Lead: {{ f.lead_name }}{% else %}—{% endif %}</td>
+<td>{{ FOLLOWUP_KINDS.get(f.kind, f.kind) }}</td><td>{{ f.assignee or 'Unassigned' }}</td><td>{{ status_badge(f.status) }}</td></tr>
+{% else %}<tr><td colspan="6">{{ empty('Nothing here', ' No follow-ups in this view.') }}</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

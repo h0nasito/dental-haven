@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Report card · {{ r.last_name }}{% endblock %}
+{% block body %}
+<main id="main" class="print-sheet">
+<div class="no-print row between" style="margin-bottom:1rem"><a href="{{ url_for('reportcards.detail', rc_id=r.id) }}">← Back</a>{% if r.status == 'approved' %}<span class="muted">Use your browser's Print command</span>{% endif %}</div>
+{% if r.status != 'approved' %}<div class="watermark">DRAFT: NOT REVIEWED BY A DENTIST. DO NOT GIVE TO THE PATIENT.</div>{% endif %}
+<div class="row between"><div><h1 class="mb-0">Dental Haven</h1><p class="muted">Patient report card</p></div><div style="text-align:right"><p class="mb-0"><strong>{{ r.first_name }} {{ r.last_name }}</strong><br>{{ r.chart_no }}<br>{{ r.period_from|date }} – {{ r.period_to|date }}</p></div></div>
+<hr style="border:0;border-top:1px solid var(--line);margin:1rem 0">
+{% include "staff/reportcards/_content.html" %}
+{% if r.status == 'approved' %}<p class="mt-1">Reviewed by <strong>{{ r.reviewed_by_name }}</strong> on {{ r.reviewed_at|date }}.</p>{% endif %}
+<p class="muted" style="font-size:.85rem">If you have questions about this summary, please contact your Dental Haven branch{% if r.branch %} ({{ r.branch }}){% endif %}.</p>
+</main>
+{% endblock %}

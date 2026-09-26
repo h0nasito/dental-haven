@@ -1,0 +1,41 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Templates{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Response &amp; reminder templates</h1><p>Shared wording so every receptionist gives consistent replies. Placeholders are filled in automatically.</p></div></div>
+<div class="card"><strong>Placeholders:</strong> {% for k, l in placeholders.items() %}<code>{{ '{{' }}{{ k }}{{ '}}' }}</code> <small class="muted">{{ l }}</small>{% if not loop.last %} · {% endif %}{% endfor %}
+<p class="hint mt-1">Don't put health details, prices or promises in templates until the clinic approves them. Reminder texts are shown on patients' phones, so keep them short.</p></div>
+{% set purposes = {'lead_reply':'Inquiry replies','booking_ack':'Booking confirmations','appointment_reminder':'Appointment reminders','follow_up':'Follow-ups'} %}
+{% for p, plabel in purposes.items() %}
+<h2 class="mt-1">{{ plabel }}</h2>
+<div class="grid grid-2">
+{% for t in rows if t.purpose == p %}
+<div class="card" id="t{{ t.id }}"><div class="card-head"><h3>{{ t.name }}</h3>{% if not t.active %}<span class="badge">Inactive</span>{% endif %}</div>
+<div class="template-box" id="pv-{{ t.id }}">{{ t.preview }}</div><button type="button" class="btn btn-ghost btn-sm" data-copy="pv-{{ t.id }}">Copy example</button>
+{% if current_user.can('templates.manage') %}
+<details class="mt-1"><summary>Edit</summary><form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="template_id" value="{{ t.id }}"><input type="hidden" name="purpose" value="{{ t.purpose }}">
+<div class="field"><label for="n{{ t.id }}">Name</label><input id="n{{ t.id }}" name="name" value="{{ t.name }}"></div>
+<div class="field"><label for="b{{ t.id }}">Text</label><textarea id="b{{ t.id }}" name="body" rows="5">{{ t.body }}</textarea></div>
+<label class="check"><input type="checkbox" name="active" value="1" {% if t.active %}checked{% endif %}> Active</label>
+<button class="btn btn-secondary btn-sm">Save</button>{% if t.updated_at %} <small class="muted">Last edited {{ t.updated_at|dt }}{% if t.editor %} by {{ t.editor }}{% endif %}</small>{% endif %}</form></details>{% endif %}
+</div>
+{% endfor %}
+</div>
+{% endfor %}
+{% if current_user.can('templates.manage') %}
+<div class="card mt-1"><h2>New template</h2><form method="post">{{ csrf() }}
+<div class="form-grid"><div class="field"><label for="nn">Name</label><input id="nn" name="name" required></div>
+<div class="field"><label for="np">Purpose</label><select id="np" name="purpose">{% for p, l in purposes.items() %}<option value="{{ p }}">{{ l }}</option>{% endfor %}</select></div></div>
+<div class="field"><label for="nb">Text</label><textarea id="nb" name="body" rows="4" required></textarea></div><button class="btn btn-secondary">Create</button></form></div>
+
+<div class="card" id="rules"><h2>Reminder timing</h2>
+{% for r in rules %}<form method="post" class="toolbar" style="border-bottom:1px solid var(--line-2);padding-bottom:.75rem">{{ csrf() }}<input type="hidden" name="action" value="rule"><input type="hidden" name="rule_id" value="{{ r.id }}">
+<div class="field"><span class="label"><strong>{{ r.name }}</strong></span></div>
+<div class="field"><label for="oh{{ r.id }}">Hours before</label><input id="oh{{ r.id }}" type="number" name="offset_hours" min="1" max="336" value="{{ -r.offset_minutes // 60 }}"></div>
+<div class="field"><label for="ch{{ r.id }}">Channel</label><select id="ch{{ r.id }}" name="channel">{% for k, l in CHANNELS.items() %}<option value="{{ k }}" {% if r.channel == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+<div class="field"><label for="tp{{ r.id }}">Template</label><select id="tp{{ r.id }}" name="template_id">{% for t in rows if t.purpose == 'appointment_reminder' %}<option value="{{ t.id }}" {% if r.template_id == t.id %}selected{% endif %}>{{ t.name }}</option>{% endfor %}</select></div>
+<label class="check" style="margin-bottom:.6rem"><input type="checkbox" name="active" value="1" {% if r.active %}checked{% endif %}> Active</label>
+<button class="btn btn-secondary btn-sm">Save</button></form>{% endfor %}
+<p class="hint">Changes apply to reminders created from now on. Reminders already in the outbox keep their original timing.</p></div>
+{% endif %}
+{% endblock %}

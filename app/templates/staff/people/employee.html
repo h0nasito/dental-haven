@@ -1,0 +1,29 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, select %}
+{% block page_title %}{{ e.full_name }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('people.employees') }}">← Employees</a><h1>{{ e.full_name }}</h1><p>{{ e.position }} · {{ e.branch }}</p></div>
+<a class="btn btn-secondary" href="{{ url_for('people.attendance', employee=e.id) }}">View attendance</a></div>
+<div class="grid grid-2">
+{% if current_user.can('attendance.manage') %}
+<div class="card"><h2>Details</h2><form method="post">{{ csrf() }}<input type="hidden" name="action" value="details">
+<div class="field"><label for="po">Position</label><input id="po" name="position" value="{{ e.position }}"></div>
+{{ select('primary_branch_id', 'Primary branch', branches|opts, e.primary_branch_id) }}
+{{ select('employment_type', 'Type', [('regular','Regular'),('probationary','Probationary'),('associate','Associate dentist'),('part_time','Part-time'),('contractual','Contractual')], e.employment_type) }}
+<label class="check"><input type="checkbox" name="active" value="1" {% if e.active %}checked{% endif %}> Active</label>
+<button class="btn btn-secondary mt-1">Save</button></form></div>
+{% endif %}
+{% if current_user.can('compensation.manage') %}
+<div class="card"><h2>Compensation settings</h2>
+<p class="notice">Restricted. Enter only amounts the clinic has confirmed. These are inputs for a draft review, not a payroll run.</p>
+<form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="compensation">
+<div class="form-grid">{{ select('basis', 'Pay basis', BASIS_LABELS.items()|list, 'daily') }}
+<div class="field"><label for="rt">Rate (₱)</label><input id="rt" name="rate" inputmode="decimal" placeholder="per day / hour / month"></div>
+<div class="field"><label for="pc">Percentage (%)</label><input id="pc" name="percentage" inputmode="decimal" placeholder="for production split"></div>
+<div class="field"><label for="ef">Effective from</label><input id="ef" type="date" name="effective_from"></div></div>
+<div class="field"><label for="nt">Notes</label><input id="nt" name="notes" placeholder="e.g. Rate per signed contract dated …"></div>
+<button class="btn btn-secondary">Add setting</button></form>
+<h3 class="mt-1">History</h3><ul class="list-plain">{% for c in comps %}<li><strong>{{ BASIS_LABELS[c.basis] }}</strong>{% if c.rate_cents is not none %} · {{ c.rate_cents|peso }}{% endif %}{% if c.percentage_bp %} · {{ c.percentage_bp / 100 }}%{% endif %} · from {{ c.effective_from|date }}<br><small class="muted">{{ c.notes }} · set by {{ c.by_name }} {{ c.created_at|dt }}</small></li>{% else %}<li class="muted">No compensation settings yet.</li>{% endfor %}</ul></div>
+{% endif %}
+</div>
+{% endblock %}

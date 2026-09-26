@@ -1,0 +1,5 @@
+<h2>Summary</h2><p class="pre">{{ r.summary }}</p>
+{% if r.snap.visits %}<h3>Visits</h3><table><thead><tr><th>Date</th><th>Service</th><th>Dentist</th><th>Branch</th></tr></thead><tbody>{% for v in r.snap.visits %}<tr><td>{{ v.start_at|date }}</td><td>{{ v.service }}</td><td>{{ v.dentist or '—' }}</td><td>{{ v.branch }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+{% if r.snap.procedures %}<h3 class="mt-1">Treatment completed</h3><ul>{% for pr in r.snap.procedures %}<li>{{ pr.performed_at|date }} — {{ pr.description }}{% if pr.tooth %} (tooth {{ pr.tooth }}){% endif %}</li>{% endfor %}</ul>{% endif %}
+{% if r.snap.planned %}<h3 class="mt-1">Planned next steps</h3><ul>{% for pl in r.snap.planned %}<li>{{ pl.description }}{% if pl.tooth %} (tooth {{ pl.tooth }}){% endif %}</li>{% endfor %}</ul>{% endif %}
+<h2 class="mt-1">Recommendations</h2><p class="pre">{{ r.recommendations }}</p>

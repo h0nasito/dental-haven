@@ -1,0 +1,12 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, select %}
+{% block page_title %}New invoice{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('patients.detail', patient_id=patient.id) }}">← {{ patient.last_name }}, {{ patient.first_name }}</a><h1>New invoice</h1></div></div>
+<form method="post" class="card" style="max-width:560px">{{ csrf() }}<input type="hidden" name="patient_id" value="{{ patient.id }}">{% if appt %}<input type="hidden" name="appointment_id" value="{{ appt.id }}">{% endif %}
+<p>Patient: <strong>{{ patient.last_name }}, {{ patient.first_name }}</strong> ({{ patient.chart_no }})</p>
+{% if appt %}<p>Visit: {{ appt.start_at|dt }} · {{ appt.service }}. The service line and its default price are added for you.</p>{% endif %}
+{{ select('branch_id', 'Branch (sales are counted here)', branches|opts, branch_id, required=True) }}
+<button class="btn">Create draft invoice</button>
+<p class="hint">Drafts can still be edited. An invoice number is assigned when you issue it.</p></form>
+{% endblock %}

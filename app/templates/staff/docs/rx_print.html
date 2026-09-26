@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Prescription · {{ p.last_name }}{% endblock %}
+{% block body %}
+<main id="main" class="print-sheet rx-sheet">
+<div class="no-print row between" style="margin-bottom:1rem"><a href="{{ url_for('patients.detail', patient_id=p.id, tab='rx') }}">← Back</a><span class="muted">Use your browser's Print command</span></div>
+{% with branch=rx.branch, branch_address=rx.branch_address, branch_phone=rx.branch_phone %}{% include "staff/docs/_letterhead.html" %}{% endwith %}
+<div class="row between rx-patient"><div><strong>Patient:</strong> {{ p.first_name }} {{ p.middle_name or '' }} {{ p.last_name }}<br><strong>Age:</strong> {{ age }}{% if p.sex %} · <strong>Sex:</strong> {{ p.sex|label }}{% endif %}</div>
+<div style="text-align:right"><strong>Date:</strong> {{ rx.prescribed_on|date }}</div></div>
+<div class="rx-symbol">℞</div>
+<ol class="rx-items">{% for it in items %}<li><strong>{{ it.medicine }}</strong>{% if it.dosage %} {{ it.dosage }}{% endif %}{% if it.quantity %} <span class="muted">{{ it.quantity }}</span>{% endif %}
+{% if it.instructions %}<div>Sig: {{ it.instructions }}</div>{% endif %}</li>{% endfor %}</ol>
+{% if rx.notes %}<p class="pre">{{ rx.notes }}</p>{% endif %}
+<div class="signature"><div class="sig-line"></div><strong>{{ rx.prescriber }}</strong><br>
+<small>{% if rx.license_no %}PRC Lic. No. {{ rx.license_no }}{% endif %}{% if rx.ptr_no %} · PTR No. {{ rx.ptr_no }}{% endif %}{% if rx.s2_no %} · S2 No. {{ rx.s2_no }}{% endif %}</small></div>
+</main>
+{% endblock %}

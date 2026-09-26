@@ -1,0 +1,51 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Website content{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Website content</h1><p>Edit the text on the public site. Branch details are edited under Branches, and service pages under Services.</p></div>
+<a class="btn btn-secondary" href="{{ url_for('public.home') }}" target="_blank" rel="noopener">View site ↗</a></div>
+<div class="notice" style="margin-bottom:1rem">Placeholder text is marked "[to be confirmed]". Replace it only with copy Dental Haven has approved. Don't copy content from Facebook automatically, and don't add prices, credentials or claims until the clinic confirms them.</div>
+{% for key, label in keys %}{% set item = items.get(key) %}
+<div class="card" id="c-{{ key }}"><h3>{{ label }}</h3>
+<form method="post">{{ csrf() }}<input type="hidden" name="key" value="{{ key }}">
+<div class="field"><label for="t-{{ key }}">Heading</label><input id="t-{{ key }}" name="title" value="{{ item.title if item else '' }}"></div>
+<div class="field"><label for="b-{{ key }}">Text</label><textarea id="b-{{ key }}" name="body" rows="{{ 12 if key == 'privacy_notice' else 5 }}">{{ item.body if item else '' }}</textarea>
+<span class="hint">Plain text. A blank line starts a new paragraph. Lines starting with "## " become headings.</span></div>
+<div class="row"><button class="btn btn-secondary btn-sm">Save</button>{% if item and item.updated_at %}<small class="muted">Last updated {{ item.updated_at|dt }}</small>{% endif %}</div>
+</form></div>
+{% endfor %}
+
+<div class="card" id="gallery"><h2>Gallery</h2>
+<p class="muted">Only upload images Dental Haven owns or has written permission to use. Patient photos need the patient's written consent. New items start unpublished.</p>
+<div class="table-wrap"><table><thead><tr><th>Image</th><th>Title</th><th>Authorisation</th><th>Status</th><th></th></tr></thead><tbody>
+{% for gi in gallery %}<tr><td>{% if gi.image_path %}<img src="{{ url_for('static', filename=gi.image_path) }}" alt="" style="width:80px;border-radius:6px">{% else %}<span class="muted">No image</span>{% endif %}</td>
+<td>{{ gi.title }}<br><small class="muted">{{ gi.caption }}</small>{% if gi.category %}<br><span class="badge">{{ category_labels.get(gi.category, gi.category) }}</span>{% endif %}{% if gi.before_image_path %} <span class="badge badge-blue">Before/after</span>{% endif %}</td><td><small>{{ gi.authorization_note }}</small></td>
+<td>{% if gi.published %}<span class="badge badge-green">Published</span>{% else %}<span class="badge">Hidden</span>{% endif %}</td>
+<td class="row"><form method="post" action="{{ url_for('admin.gallery_save') }}">{{ csrf() }}<input type="hidden" name="id" value="{{ gi.id }}"><input type="hidden" name="action" value="toggle"><button class="btn btn-secondary btn-sm">{{ 'Unpublish' if gi.published else 'Publish' }}</button></form>
+<form method="post" action="{{ url_for('admin.gallery_save') }}" data-confirm="Delete this gallery item?">{{ csrf() }}<input type="hidden" name="id" value="{{ gi.id }}"><input type="hidden" name="action" value="delete"><button class="btn btn-danger btn-sm">Delete</button></form></td></tr>
+{% else %}<tr><td colspan="5" class="empty">No gallery items yet.</td></tr>{% endfor %}</tbody></table></div>
+<form method="post" action="{{ url_for('admin.gallery_save') }}" enctype="multipart/form-data" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="add">
+<div class="form-grid"><div class="field"><label for="gt">Title</label><input id="gt" name="title" required></div>
+<div class="field"><label for="gc">Caption</label><input id="gc" name="caption"></div>
+<div class="field"><label for="gcat">Category (for the portfolio filters)</label><select id="gcat" name="category"><option value="">— None —</option>{% for k, label in categories %}<option value="{{ k }}">{{ label }}</option>{% endfor %}</select></div>
+<div class="field"><label for="gi">Photo (the result / "after") — JPG, PNG or WebP</label><input id="gi" type="file" name="image" accept="image/png,image/jpeg,image/webp"></div>
+<div class="field"><label for="gb">"Before" photo (optional)</label><input id="gb" type="file" name="before_image" accept="image/png,image/jpeg,image/webp"><span class="hint">Add one to show a before/after slider. Use the same angle and framing as the "after" photo.</span></div>
+<div class="field"><label for="ga">Authorisation record</label><input id="ga" name="authorization_note" placeholder="e.g. Clinic-owned photo; patient consent form #123 on file" required></div></div>
+<label class="check"><input type="checkbox" name="authorized" value="1" required> I confirm Dental Haven is authorised to publish this image.</label>
+<button class="btn btn-secondary mt-1">Add gallery item</button></form></div>
+
+<div class="card" id="testimonials"><h2>Patient feedback</h2>
+<p class="muted">Use the patient's own words, only with their written consent. Never write or edit feedback on a patient's behalf. Each entry needs approval before it can be published.</p>
+<ul class="list-plain">{% for t in testimonials %}<li><blockquote class="mb-0">“{{ t.quote }}”</blockquote><small>— {{ t.attribution or 'Anonymous' }} · Consent: {{ t.consent_note }}</small>
+<div class="row mt-1">{% if t.approved %}<span class="badge badge-green">Approved</span>{% else %}<span class="badge badge-amber">Pending approval</span>{% endif %}
+{% if t.published %}<span class="badge badge-teal">Published</span>{% endif %}
+{% if not t.approved %}<form method="post" action="{{ url_for('admin.testimonial_save') }}">{{ csrf() }}<input type="hidden" name="id" value="{{ t.id }}"><input type="hidden" name="action" value="approve"><button class="btn btn-secondary btn-sm">Approve</button></form>{% endif %}
+<form method="post" action="{{ url_for('admin.testimonial_save') }}">{{ csrf() }}<input type="hidden" name="id" value="{{ t.id }}"><input type="hidden" name="action" value="toggle"><button class="btn btn-secondary btn-sm">{{ 'Unpublish' if t.published else 'Publish' }}</button></form>
+<form method="post" action="{{ url_for('admin.testimonial_save') }}" data-confirm="Delete this feedback?">{{ csrf() }}<input type="hidden" name="id" value="{{ t.id }}"><input type="hidden" name="action" value="delete"><button class="btn btn-danger btn-sm">Delete</button></form></div></li>
+{% else %}<li class="muted">No feedback entries yet. The public page shows a friendly placeholder until approved feedback is published.</li>{% endfor %}</ul>
+<form method="post" action="{{ url_for('admin.testimonial_save') }}" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="add">
+<div class="field"><label for="tq">Patient's words (verbatim)</label><textarea id="tq" name="quote" rows="3" required></textarea></div>
+<div class="form-grid"><div class="field"><label for="ta">Attribution (as the patient agreed)</label><input id="ta" name="attribution" placeholder="e.g. Maria S., Malolos"></div>
+<div class="field"><label for="tc">Consent record</label><input id="tc" name="consent_note" placeholder="e.g. Signed consent 2026-09-01, file #45" required></div></div>
+<button class="btn btn-secondary">Add feedback</button></form></div>
+{% endblock %}

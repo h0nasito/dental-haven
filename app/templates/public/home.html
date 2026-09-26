@@ -1,0 +1,239 @@
+{% extends "public/layout.html" %}
+{% set hero = content('home_hero') %}{% set labc = content('lab') %}{% set about = content('home_about') %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/landing.css') }}">{% endblock %}
+{% block body_class %}landing{% endblock %}
+
+{% macro icon(name) -%}
+<svg viewBox="0 0 48 48" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+{%- if name == 'general-dentistry' -%}
+<path d="M16 8c-5 0-8 4-8 9 0 6 3 9 4 15 1 5 2 9 5 9 3 0 3-5 4-9 1-3 2-4 3-4s2 1 3 4c1 4 1 9 4 9 3 0 4-4 5-9 1-6 4-9 4-15 0-5-3-9-8-9-3 0-5 2-8 2s-5-2-8-2z"/><path d="M33 4l1.2 2.8L37 8l-2.8 1.2L33 12l-1.2-2.8L29 8l2.8-1.2z" stroke-width="1.6"/>
+{%- elif name == 'aesthetic-dentistry' -%}
+<path d="M8 22c4 8 10 12 16 12s12-4 16-12"/><path d="M12 24c3 2 7 3 12 3s9-1 12-3"/><path d="M38 6l1.5 3.5L43 11l-3.5 1.5L38 16l-1.5-3.5L33 11l3.5-1.5z" stroke-width="1.6"/><path d="M8 8l1 2.2L11.2 11 9 12l-1 2.2L7 12l-2.2-1L7 10z" stroke-width="1.4"/>
+{%- elif name == 'prosthodontics' -%}
+<path d="M6 20c0-6 8-10 18-10s18 4 18 10"/><path d="M6 20v4c0 3 3 5 6 5h24c3 0 6-2 6-5v-4"/><path d="M12 20v9M18 20v9M24 20v9M30 20v9M36 20v9"/><path d="M10 34c4 3 9 4 14 4s10-1 14-4"/>
+{%- elif name == 'dental-implants' -%}
+<path d="M16 6c-3 0-5 2-5 6 0 3 2 5 3 7h20c1-2 3-4 3-7 0-4-2-6-5-6-2 0-3 1-5 1s-3-1-5-1z" transform="translate(0 0)"/><path d="M17 23h14"/><path d="M19 27h10l-1 4H20z"/><path d="M20 33h8M21 37h6M22 41h4"/>
+{%- elif name == 'orthodontics' -%}
+<rect x="6" y="18" width="8" height="10" rx="2"/><rect x="20" y="18" width="8" height="10" rx="2"/><rect x="34" y="18" width="8" height="10" rx="2"/><path d="M4 23h40"/><path d="M8 18v-3M40 18v-3M24 18v-3"/>
+{%- elif name == 'scan' -%}
+<rect x="18" y="4" width="12" height="28" rx="4"/><path d="M22 32v8a2 2 0 004 0v-8"/><path d="M8 12c-3 3-3 9 0 12M40 12c3 3 3 9 0 12M13 15c-1.5 1.5-1.5 4.5 0 6M35 15c1.5 1.5 1.5 4.5 0 6"/>
+{%- elif name == 'design' -%}
+<rect x="4" y="8" width="40" height="26" rx="3"/><path d="M18 40h12M24 34v6"/><path d="M17 26c0-6 3-11 7-11s7 5 7 11"/><path d="M14 26h20" stroke-dasharray="2 3"/>
+{%- elif name == 'print' -%}
+<path d="M10 6h28v6H10z"/><path d="M8 12h32v10H8z"/><path d="M24 22v6"/><path d="M18 34h12l2 8H16z"/><path d="M14 28h20" stroke-dasharray="2 3"/>
+{%- elif name == 'mill' -%}
+<circle cx="24" cy="24" r="16"/><circle cx="24" cy="24" r="6"/><path d="M24 4v6M24 38v6M4 24h6M38 24h6M10 10l4 4M34 34l4 4M38 10l-4 4M10 38l4-4"/>
+{%- elif name == 'xray' -%}
+<rect x="4" y="8" width="40" height="30" rx="4"/><path d="M12 30c2-8 4-12 6-12s2 6 6 6 4-6 6-6 4 4 6 12"/><path d="M18 42h12"/>
+{%- elif name == 'fit' -%}
+<path d="M24 42s-16-9-16-22a9 9 0 0116-6 9 9 0 0116 6c0 13-16 22-16 22z"/><path d="M17 22l5 5 9-10"/>
+{%- else -%}
+<circle cx="24" cy="24" r="16"/>
+{%- endif -%}
+</svg>
+{%- endmacro %}
+
+{% block content %}
+{# ---------------------------------------------------------------- HERO #}
+<section class="lp-hero" id="top">
+  <div class="lp-hero-bg" aria-hidden="true"></div>
+  <div class="wrap lp-hero-grid">
+    <div class="lp-hero-copy reveal">
+      <span class="lp-kicker">Dental Haven · Bulacan</span>
+      <h1>{{ hero.title or 'Happiest your teeth will ever be' }}</h1>
+      <div class="lp-lead">{{ hero.body|richtext }}</div>
+      <div class="lp-cta-row">
+        <a class="lp-btn lp-btn-gold" href="{{ url_for('public.book') }}">Book an appointment</a>
+        <a class="lp-btn lp-btn-glass" href="#work">See our work</a>
+      </div>
+      <ul class="lp-branch-chips" aria-label="Branches">
+        {% for b in site_branches %}<li><a href="#branches">{{ b.name.split(' (')[0] }}</a></li>{% endfor %}
+      </ul>
+    </div>
+    <div class="lp-hero-visual reveal" aria-hidden="{{ 'false' if works else 'true' }}">
+      {% set shots = works[:3] %}
+      {% if shots|length >= 3 %}
+        <div class="lp-stack">
+          {% for w in shots %}<figure class="lp-shot s{{ loop.index }}"><img src="{{ url_for('static', filename=w.image_path) }}" alt="{{ w.title }}"></figure>{% endfor %}
+        </div>
+      {% else %}
+        <div class="lp-orbit">
+          <div class="lp-orbit-ring r1"></div><div class="lp-orbit-ring r2"></div>
+          <svg class="lp-tooth" viewBox="0 0 200 220" fill="none">
+            <defs>
+              <linearGradient id="tg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#c9d8f2"/></linearGradient>
+              <pattern id="mesh" width="12" height="12" patternUnits="userSpaceOnUse"><path d="M12 0H0V12" stroke="rgba(6,33,63,.14)" stroke-width="1"/></pattern>
+              <clipPath id="tc"><path d="M62 18c-26 0-44 20-44 48 0 30 16 46 22 76 5 28 10 60 28 60 16 0 16-30 22-50 4-14 6-20 10-20s6 6 10 20c6 20 6 50 22 50 18 0 23-32 28-60 6-30 22-46 22-76 0-28-18-48-44-48-16 0-24 10-38 10S78 18 62 18z"/></clipPath>
+            </defs>
+            <path d="M62 18c-26 0-44 20-44 48 0 30 16 46 22 76 5 28 10 60 28 60 16 0 16-30 22-50 4-14 6-20 10-20s6 6 10 20c6 20 6 50 22 50 18 0 23-32 28-60 6-30 22-46 22-76 0-28-18-48-44-48-16 0-24 10-38 10S78 18 62 18z" fill="url(#tg)"/>
+            <g clip-path="url(#tc)"><rect width="200" height="220" fill="url(#mesh)"/><rect class="lp-scanline" x="0" y="0" width="200" height="6" fill="rgba(232,199,143,.9)"/></g>
+          </svg>
+          <span class="lp-tag t1">Scan</span><span class="lp-tag t2">Design</span><span class="lp-tag t3">Mill &amp; print</span>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="wrap">
+    <ul class="lp-facts reveal">
+      <li><strong>4</strong><span>branches across Bulacan</span></li>
+      <li><strong>{{ site_services|length }}</strong><span>areas of dental care</span></li>
+      <li><strong>In-house</strong><span>digital dental laboratory</span></li>
+      <li><strong>CBCT</strong><span>&amp; panoramic imaging</span></li>
+    </ul>
+  </div>
+</section>
+
+{# ---------------------------------------------------------------- PORTFOLIO #}
+<section class="lp-section lp-work" id="work">
+  <div class="wrap">
+    <header class="lp-head reveal">
+      <span class="lp-eyebrow">Our work</span>
+      <h2>Smiles crafted by our dentists and our lab</h2>
+      <p>Real results from Dental Haven: restorations, implants and smile makeovers, many designed and made in our own digital laboratory.</p>
+    </header>
+    {% if works %}
+      {% if filters|length > 1 %}
+      <div class="lp-filters reveal" role="group" aria-label="Filter our work">
+        <button type="button" class="is-active" data-filter="all" aria-pressed="true">All work</button>
+        {% for k, label in filters %}<button type="button" data-filter="{{ k }}" aria-pressed="false">{{ label }}</button>{% endfor %}
+      </div>
+      {% endif %}
+      <div class="lp-gallery">
+        {% for w in works %}
+        <figure class="lp-case reveal{% if loop.first %} is-feature{% endif %}{% if w.before_image_path %} has-ba{% endif %}" data-cat="{{ w.category or 'other' }}">
+          {% if w.before_image_path %}
+          <div class="ba" style="--pos:50%">
+            <img class="ba-after" src="{{ url_for('static', filename=w.image_path) }}" alt="{{ w.title }}: after" loading="lazy">
+            <div class="ba-before"><img src="{{ url_for('static', filename=w.before_image_path) }}" alt="{{ w.title }}: before" loading="lazy"></div>
+            <span class="ba-label l">Before</span><span class="ba-label r">After</span>
+            <span class="ba-handle" aria-hidden="true"></span>
+            <input class="ba-range" type="range" min="0" max="100" value="50" aria-label="Compare before and after: {{ w.title }}">
+          </div>
+          {% else %}
+          <button type="button" class="lp-case-open" data-full="{{ url_for('static', filename=w.image_path) }}" data-title="{{ w.title }}" data-caption="{{ w.caption }}">
+            <img src="{{ url_for('static', filename=w.image_path) }}" alt="{{ w.title }}" loading="lazy">
+          </button>
+          {% endif %}
+          <figcaption>
+            {% if w.category %}<span class="lp-case-cat">{{ category_labels.get(w.category, '') }}</span>{% endif %}
+            <strong>{{ w.title }}</strong>{% if w.caption %}<span>{{ w.caption }}</span>{% endif %}
+          </figcaption>
+        </figure>
+        {% endfor %}
+      </div>
+      <p class="lp-center reveal"><a class="lp-link" href="{{ url_for('public.gallery') }}">View the full gallery →</a></p>
+    {% else %}
+      <div class="lp-gallery is-empty">
+        {% for label, key in [('Smile makeovers', 'aesthetic-dentistry'), ('Zirconia restorations', 'prosthodontics'), ('Dental implants', 'dental-implants'), ('Composite veneers', 'aesthetic-dentistry'), ('Dentures', 'prosthodontics'), ('Braces & clear aligners', 'orthodontics')] %}
+        <figure class="lp-case lp-case-soon reveal{% if loop.first %} is-feature{% endif %}">
+          <div class="lp-soon-art">{{ icon(key) }}</div>
+          <figcaption><strong>{{ label }}</strong><span>Case photos coming soon</span></figcaption>
+        </figure>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+</section>
+
+{# ---------------------------------------------------------------- SERVICES #}
+<section class="lp-section lp-services" id="services">
+  <div class="wrap">
+    <header class="lp-head reveal">
+      <span class="lp-eyebrow">Main services</span>
+      <h2>Everything your smile needs, under one roof</h2>
+      <p>From your first check-up to full-mouth rehabilitation, planned around you.</p>
+    </header>
+    <div class="lp-svc-grid">
+      {% for s in site_services %}
+      <a class="lp-svc reveal" href="{{ url_for('public.service', slug=s.slug) }}">
+        <span class="lp-svc-icon">{{ icon(s.slug) }}</span>
+        <h3>{{ s.name }}</h3>
+        <ul>{% for it in s.summary|items %}<li>{{ it }}</li>{% endfor %}</ul>
+        <span class="lp-svc-more">Learn more <span aria-hidden="true">→</span></span>
+      </a>
+      {% endfor %}
+      <a class="lp-svc lp-svc-cta reveal" href="{{ url_for('public.book') }}">
+        <h3>Not sure what you need?</h3>
+        <p>Book a consultation and our dentists will explain your options before any treatment.</p>
+        <span class="lp-btn lp-btn-gold">Book a consultation</span>
+      </a>
+    </div>
+  </div>
+</section>
+
+{# ---------------------------------------------------------------- DIGITAL LAB #}
+<section class="lp-section lp-lab" id="lab">
+  <div class="lp-lab-bg" aria-hidden="true"></div>
+  <div class="wrap">
+    <div class="lp-lab-grid">
+      <div class="reveal">
+        <span class="lp-eyebrow light">Digital dentistry &amp; in-house laboratory</span>
+        <h2>{{ labc.title or 'Digital Solutions Dental Laboratory' }}</h2>
+        <div class="lp-lab-copy">{{ labc.body|richtext }}</div>
+      </div>
+      <ul class="lp-tech reveal" aria-label="Technology">
+        <li>{{ icon('scan') }}<div><strong>Intraoral scanners</strong><span>Digital impressions of your teeth</span></div></li>
+        <li>{{ icon('design') }}<div><strong>exocad design systems</strong><span>Restorations designed on screen</span></div></li>
+        <li>{{ icon('print') }}<div><strong>3D printers</strong><span>3D-printed appliances</span></div></li>
+        <li>{{ icon('mill') }}<div><strong>Milling machines</strong><span>Custom crowns, bridges and restorations</span></div></li>
+        <li>{{ icon('xray') }}<div><strong>CBCT &amp; panoramic X-rays</strong><span>In-house diagnostic imaging</span></div></li>
+      </ul>
+    </div>
+    <ol class="lp-flow reveal" aria-label="How a restoration is made">
+      <li><span class="n">01</span>{{ icon('scan') }}<strong>Scan</strong><span>Intraoral scan and imaging</span></li>
+      <li><span class="n">02</span>{{ icon('design') }}<strong>Design</strong><span>Digitally designed in exocad</span></li>
+      <li><span class="n">03</span>{{ icon('mill') }}<strong>Make</strong><span>Milled or 3D-printed in our lab</span></li>
+      <li><span class="n">04</span>{{ icon('fit') }}<strong>Fit</strong><span>Fitted by your dentist</span></li>
+    </ol>
+  </div>
+</section>
+
+{# ---------------------------------------------------------------- BRANCHES #}
+<section class="lp-section lp-branches" id="branches">
+  <div class="wrap">
+    <header class="lp-head reveal">
+      <span class="lp-eyebrow">Visit us</span>
+      <h2>Four branches across Bulacan</h2>
+      <p>Choose the branch nearest you. Every branch is backed by the same digital lab.</p>
+    </header>
+    <div class="lp-branch-grid">
+      {% for b in site_branches %}
+      <article class="lp-branch reveal">
+        <h3>{{ b.name }}</h3>
+        <p class="lp-branch-addr">{{ b.address }}</p>
+        <p class="lp-branch-tel">{% for disp, tel in b.phone|phones %}<a href="{{ tel }}">{{ disp }}</a>{% endfor %}</p>
+        {% include "public/_branch_links.html" %}
+        <a class="lp-btn lp-btn-navy lp-btn-sm" href="{{ url_for('public.book', branch=b.id) }}">Book at {{ b.name.split(' (')[0] }}</a>
+      </article>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+{% if testimonials %}
+<section class="lp-section lp-quotes">
+  <div class="wrap">
+    <header class="lp-head reveal"><span class="lp-eyebrow">Patient feedback</span><h2>In our patients' words</h2></header>
+    <div class="lp-quote-grid">{% for t in testimonials %}<blockquote class="lp-quote reveal">“{{ t.quote }}”<footer>{{ t.attribution or 'Dental Haven patient' }}</footer></blockquote>{% endfor %}</div>
+  </div>
+</section>
+{% endif %}
+
+{# ---------------------------------------------------------------- FINAL CTA #}
+<section class="lp-final">
+  <div class="wrap lp-final-inner reveal">
+    <img src="{{ url_for('static', filename='img/logo-white.png') }}" alt="" width="72" height="48">
+    <h2>Your happiest smile starts here</h2>
+    <p>Request a time online and our team will call or message you to confirm.</p>
+    <div class="lp-cta-row center">
+      <a class="lp-btn lp-btn-gold" href="{{ url_for('public.book') }}">Book an appointment</a>
+      <a class="lp-btn lp-btn-glass" href="{{ url_for('public.inquire') }}">Send us a message</a>
+    </div>
+  </div>
+</section>
+
+<dialog class="lp-lightbox" id="lightbox" aria-label="Photo">
+  <form method="dialog"><button class="lp-lightbox-close" aria-label="Close">×</button></form>
+  <img alt=""><p></p>
+</dialog>
+{% endblock %}

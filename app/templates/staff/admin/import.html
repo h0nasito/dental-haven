@@ -1,0 +1,33 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, status_badge %}
+{% block page_title %}Import from MyMedsPH{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Import from MyMedsPH</h1><p>Upload your MyMedsPH export to add or update patients, visit history, treatment plans, notes and billing history.</p></div></div>
+<div class="grid grid-2">
+<div class="card"><h2>1. Upload the export</h2>
+{% if demo %}<div class="flash flash-warning">Importing is switched off on the demo site. It's public and resets itself, so real patient records must not go here. Use the import on your paid (live) site.</div>{% endif %}
+<form method="post" enctype="multipart/form-data" {% if demo %}hidden{% endif %}>{{ csrf() }}
+<div class="field"><label for="files">MyMedsPH export (.zip, or the CSV files inside it)</label>
+<input id="files" type="file" name="files" accept=".zip,.csv,application/zip,text/csv" multiple required>
+<span class="hint">In MyMedsPH, export your patient records, then upload the downloaded file here as it is. Nothing is saved until you review the preview and confirm.</span></div>
+<div class="field"><label for="branch">File new patients under branch</label>
+<select id="branch" name="branch_id" required><option value="">Choose…</option>{% for b in branches %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}</select>
+<span class="hint">The export doesn't say which branch each patient belongs to. Patients who were already imported keep their branch, and you can change any patient's branch on their profile.</span></div>
+<button class="btn">Check file &amp; preview</button>
+</form></div>
+<div class="card"><h2>How updating works</h2>
+<ul class="list-plain">
+<li><strong>Safe to repeat.</strong> Patients are matched by their MyMedsPH patient ID. Import a newer export any time: new patients are added, and records already imported are skipped.</li>
+<li><strong>Contact details are refreshed</strong> from the file (name, mobile, email, address), but a blank value never erases what's already here.</li>
+<li><strong>Health history is only filled when it's empty</strong>, so edits your dentists made here are kept.</li>
+<li><strong>Old bills are history only.</strong> They appear on each patient's record, but not in Sales &amp; collections, so new reports start fresh.</li>
+<li><strong>Privacy consent</strong> isn't in the MyMedsPH export, so imported patients show "Needs consent" and get no reminders until you record their consent.</li>
+<li>The uploaded file is deleted after the import. It isn't stored on the server.</li>
+</ul></div>
+</div>
+<div class="card"><h2>Previous imports</h2>
+<div class="table-wrap"><table><thead><tr><th>When</th><th>By</th><th>Branch</th><th>Status</th><th class="num">New patients</th><th class="num">Updated</th><th class="num">Visits</th><th class="num">Bill lines</th><th class="num">Row errors</th></tr></thead><tbody>
+{% for r in runs %}<tr><td>{{ r.started_at|dt }}</td><td>{{ r.by_name }}</td><td>{{ r.branch }}</td><td>{{ status_badge(r.status) }}</td>
+<td class="num">{{ r.s.patients_new or 0 }}</td><td class="num">{{ r.s.patients_updated or 0 }}</td><td class="num">{{ r.s.procedures or 0 }}</td><td class="num">{{ r.s.bills or 0 }}</td><td class="num">{{ r.s.rows_with_errors or 0 }}</td></tr>
+{% else %}<tr><td colspan="9" class="empty">No imports yet.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

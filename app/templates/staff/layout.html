@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% from "macros.html" import flashes, csrf %}
+{% block title %}{% block page_title %}Staff{% endblock %} · Dental Haven Staff{% endblock %}
+{% block body %}
+<input type="checkbox" id="menu-toggle" class="menu-toggle sr-only" aria-hidden="true">
+<label for="menu-toggle" class="menu-backdrop" aria-hidden="true"></label>
+<div class="shell">
+  <nav class="sidebar" aria-label="Staff navigation">
+    <label for="menu-toggle" class="menu-close" aria-label="Close menu">✕</label>
+    <a class="brand" href="{{ url_for('dash.home') }}"><img class="brand-logo" src="{{ url_for('static', filename='img/logo-white.png') }}" alt="" width="40" height="27"> Dental Haven</a>
+    {% set ep = request.endpoint or '' %}
+    {% macro nav(endpoint, label, prefix=None, count=None) -%}
+      <a class="nav {% if (prefix and ep.startswith(prefix)) or ep == endpoint %}active{% endif %}" href="{{ url_for(endpoint) }}">
+        <span>{{ label }}</span>{% if count %}<span class="count">{{ count }}</span>{% endif %}</a>
+    {%- endmacro %}
+    <div class="nav-group">
+      {{ nav('dash.home', 'Dashboard') }}
+      {% if current_user.can('bookings.manage') or current_user.can('bookings.view') or current_user.can('leads.view') or current_user.can('followups.view') %}
+        {{ nav('dash.queue', 'Work queue', count=nav_counts.queue) }}
+      {% endif %}
+    </div>
+    {% if current_user.can('appointments.view') %}
+    <div class="nav-group"><div class="title">Scheduling</div>
+      {{ nav('sched.calendar', 'Calendar', 'sched.calendar') }}
+      {{ nav('sched.appointments', 'Appointments', 'sched.appointment') }}
+      {% if current_user.can('bookings.manage') or current_user.can('bookings.view') %}{{ nav('sched.requests', 'Online bookings', 'sched.request', nav_counts.requests) }}{% endif %}
+      {% if current_user.can('calendar.events') or current_user.can('settings.manage') %}{{ nav('sched.schedules', 'Dentist schedules', 'sched.schedules') }}{% endif %}
+    </div>
+    {% endif %}
+    {% if current_user.can('patients.view') %}
+    <div class="nav-group"><div class="title">Patients</div>
+      {{ nav('patients.index', 'Patients', 'patients.') }}
+      {% if current_user.can('reportcards.generate') or current_user.can('reportcards.review') %}{{ nav('reportcards.index', 'Report cards', 'reportcards.', nav_counts.reviews) }}{% endif %}
+    </div>
+    {% endif %}
+    {% if nav_lab %}<div class="nav-group"><div class="title">Laboratory</div>{{ nav('labs.index', 'Lab cases', 'labs.') }}</div>{% endif %}
+    {% if current_user.can('leads.view') or current_user.can('followups.view') or current_user.can('reminders.view') %}
+    <div class="nav-group"><div class="title">Front desk</div>
+      {% if current_user.can('leads.view') %}{{ nav('leads.index', 'Leads', 'leads.lead') }}{% endif %}
+      {% if current_user.can('followups.view') %}{{ nav('leads.followups', 'Follow-ups', 'leads.followup', nav_counts.overdue) }}{% endif %}
+      {% if current_user.can('reminders.view') %}{{ nav('leads.reminders', 'Reminders', 'leads.reminder') }}{% endif %}
+      {% if current_user.can('templates.manage') or current_user.can('leads.view') %}{{ nav('leads.templates', 'Response templates', 'leads.template') }}{% endif %}
+    </div>
+    {% endif %}
+    {% if current_user.can('billing.view') or current_user.can('reports.sales') or current_user.can('reports.operations') or current_user.can('expenses.view') or current_user.can('expenses.add') %}
+    <div class="nav-group"><div class="title">Billing &amp; reports</div>
+      {% if current_user.can('billing.view') %}{{ nav('billing.invoices', 'Invoices', 'billing.invoice') }}{% endif %}
+      {% if current_user.can('reports.sales') %}{{ nav('billing.sales', 'Sales & collections', 'billing.sales') }}{% endif %}
+      {% if current_user.can('reports.operations') %}{{ nav('billing.operations', 'Operations report', 'billing.operations') }}{% endif %}
+      {% if current_user.can('expenses.view') or current_user.can('expenses.add') %}{{ nav('expenses.index', 'Expenses', 'expenses.') }}{% endif %}
+    </div>
+    {% endif %}
+    {% if current_user.can('attendance.view') or current_user.can('payroll.prepare') or current_user.can('compensation.manage') %}
+    <div class="nav-group"><div class="title">Staff &amp; payroll</div>
+      {% if current_user.can('attendance.view') %}{{ nav('people.attendance', 'Attendance (DTR)', 'people.attendance') }}{% endif %}
+      {% if current_user.can('compensation.manage') or current_user.can('attendance.manage') %}{{ nav('people.employees', 'Employees', 'people.employee') }}{% endif %}
+      {% if current_user.can('payroll.prepare') or current_user.can('payroll.approve') %}{{ nav('people.payroll', 'Payroll review', 'people.payroll') }}{% endif %}
+    </div>
+    {% endif %}
+    {% if current_user.can('settings.manage') or current_user.can('content.manage') or current_user.is_super_admin %}
+    <div class="nav-group"><div class="title">Administration</div>
+      {% if current_user.can('users.manage') %}{{ nav('admin.users', 'Users', 'admin.user') }}{% endif %}
+      {% if current_user.can('roles.manage') %}{{ nav('admin.roles', 'Role access', 'admin.role') }}{% endif %}
+      {% if current_user.can('settings.manage') %}{{ nav('admin.branches', 'Branches & rooms', 'admin.branch') }}
+      {{ nav('admin.services', 'Services', 'admin.service') }}
+      {{ nav('admin.schedules', 'Dentist schedules', 'admin.schedule') }}{% endif %}
+      {% if current_user.can('content.manage') %}{{ nav('admin.content', 'Website content', 'admin.content') }}{% endif %}
+      {% if current_user.can('system.settings') %}{{ nav('admin.system', 'System settings', 'admin.system') }}{% endif %}
+      {% if current_user.can('system.settings') %}{{ nav('admin.import_data', 'Import from MyMedsPH', 'admin.import') }}{% endif %}
+      {% if current_user.can('audit.view') %}{{ nav('admin.audit_log', 'Audit trail', 'admin.audit') }}{% endif %}
+    </div>
+    {% endif %}
+    <div class="nav-group">
+      <a class="nav" href="{{ url_for('public.home') }}" target="_blank" rel="noopener">View public site ↗</a>
+    </div>
+  </nav>
+  <div class="main">
+    <header class="topbar">
+      <label for="menu-toggle" class="btn btn-secondary btn-sm menu-btn" aria-label="Open menu">☰ Menu</label>
+      <form method="post" action="{{ url_for('dash.switch_branch') }}">
+        {{ csrf() }}
+        <input type="hidden" name="next" value="{{ request.full_path if request.method == 'GET' else url_for('dash.home') }}">
+        <label for="branch-switch" class="sr-only">Branch</label>
+        <select id="branch-switch" name="branch_id" data-autosubmit>
+          {% if current_user.branch_ids|length > 1 %}<option value="">All my branches ({{ current_user.branch_ids|length }})</option>{% endif %}
+          {% for b in nav_branches %}
+            <option value="{{ b.id }}" {% if current_user.active_branch_id == b.id %}selected{% endif %}>{{ b.name }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn btn-secondary btn-sm js-hide" type="submit">Switch</button>
+      </form>
+      <div class="spacer"></div>
+      <div class="who hide-sm"><strong>{{ current_user.name }}</strong><br><small>{{ ROLES[current_user.role] }}</small></div>
+      <a class="btn btn-ghost btn-sm" href="{{ url_for('auth.change_password') }}">Password</a>
+      <form method="post" action="{{ url_for('auth.logout') }}">{{ csrf() }}<button class="btn btn-secondary btn-sm" type="submit">Sign out</button></form>
+    </header>
+    <main id="main" class="content">
+      {{ flashes() }}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+{% endblock %}

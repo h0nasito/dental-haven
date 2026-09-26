@@ -1,0 +1,9 @@
+{% extends "public/layout.html" %}
+{% set pn = content('privacy_notice') %}
+{% block title %}Privacy notice · Dental Haven{% endblock %}
+{% block content %}
+<section class="section"><div class="wrap prose">
+<h1>{{ pn.title or 'Privacy notice' }}</h1>
+{{ pn.body|richtext }}
+</div></section>
+{% endblock %}

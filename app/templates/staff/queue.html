@@ -1,0 +1,31 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import empty %}
+{% block page_title %}Work queue{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Work queue</h1><p>Everything waiting on the front desk in one place: booking requests, new inquiries, and follow-ups due today or overdue.</p></div>
+<div class="row">{% if current_user.can('leads.manage') %}<a class="btn btn-secondary" href="{{ url_for('leads.lead_new') }}">+ Log inquiry</a>{% endif %}
+{% if q.reminders_due is defined and q.reminders_due %}<a class="btn btn-secondary" href="{{ url_for('leads.reminders') }}">{{ q.reminders_due }} reminders to send</a>{% endif %}</div></div>
+<div class="grid grid-3">
+{% if q.requests is defined %}
+<section class="card queue-col"><h3>Booking requests <span class="badge badge-amber">{{ q.requests|length }}</span></h3>
+{% for r in q.requests %}<div class="item {% if r.preferred_start < now_s %}overdue{% else %}due{% endif %}"><a href="{{ url_for('sched.request_detail', req_id=r.id) }}"><strong>{{ r.full_name }}</strong></a>
+<div class="meta">{{ r.service }} · {{ r.branch }}<br>Wants {{ r.preferred_start|dt }} · ref {{ r.ref_code }}</div></div>
+{% else %}{{ empty('All caught up', ' No pending requests.') }}{% endfor %}</section>
+{% endif %}
+{% if q.new_leads is defined %}
+<section class="card queue-col"><h3>New inquiries <span class="badge badge-amber">{{ q.new_leads|length }}</span></h3>
+{% for l in q.new_leads %}<div class="item due"><a href="{{ url_for('leads.lead_detail', lead_id=l.id) }}"><strong>{{ l.full_name }}</strong></a>
+<div class="meta">{{ LEAD_SOURCES.get(l.source, l.source|label) }} · {{ l.branch or 'No branch' }}{% if l.service %} · {{ l.service }}{% endif %}<br>Received {{ l.created_at|dt }}</div></div>
+{% else %}{{ empty('No new inquiries') }}{% endfor %}
+{% if q.lead_followups %}<h3 class="mt-1">Leads to call back</h3>
+{% for l in q.lead_followups %}<div class="item {% if l.next_follow_up_at < now_s %}overdue{% else %}due{% endif %}"><a href="{{ url_for('leads.lead_detail', lead_id=l.id) }}"><strong>{{ l.full_name }}</strong></a><div class="meta">{{ l.status|label }} · follow up {{ l.next_follow_up_at|dt }}</div></div>{% endfor %}{% endif %}
+</section>
+{% endif %}
+{% if q.followups is defined %}
+<section class="card queue-col"><h3>Follow-ups due <span class="badge {% if q.followups %}badge-red{% endif %}">{{ q.followups|length }}</span></h3>
+{% for f in q.followups %}<div class="item {% if f.due_at < now_s %}overdue{% else %}due{% endif %}"><a href="{{ url_for('leads.followup_detail', fu_id=f.id) }}"><strong>{{ f.title }}</strong></a>
+<div class="meta">{% if f.first_name %}{{ f.last_name }}, {{ f.first_name }}{% elif f.lead_name %}Lead: {{ f.lead_name }}{% endif %} · due {{ f.due_at|dt }}{% if f.due_at < now_s %} <strong style="color:var(--red-700)">overdue</strong>{% endif %}<br>{{ f.assignee or 'Unassigned' }}</div></div>
+{% else %}{{ empty('Nothing due', ' Great work.') }}{% endfor %}</section>
+{% endif %}
+</div>
+{% endblock %}

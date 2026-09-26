@@ -1,0 +1,15 @@
+{% extends "public/layout.html" %}
+{% block title %}{{ s.name }} · Dental Haven{% endblock %}
+{% block description %}{{ s.summary }}{% endblock %}
+{% block content %}
+<section class="hero" style="padding:3rem 0 2rem"><div class="wrap">
+  <span class="eyebrow">{{ s.category }}</span><h1>{{ s.name }}</h1><p class="lead">{{ s.summary }}</p>
+</div></section>
+<section class="section" style="padding-top:1.5rem"><div class="wrap hero-grid" style="align-items:start">
+  <div class="prose">{{ s.body|richtext }}
+    <p class="notice">Every treatment starts with a consultation and exam. Your dentist will explain your options and the cost before any work begins.</p></div>
+  <aside class="hero-card"><h3>Book this service</h3><p class="muted">Pick a branch and preferred time. Our team will confirm with you.</p>
+    <a class="btn" style="width:100%" href="{{ url_for('public.book', service=s.id) }}">Request an appointment</a>
+    <a class="btn btn-secondary mt-1" style="width:100%" href="{{ url_for('public.inquire', service=s.id) }}">Ask a question first</a></aside>
+</div></section>
+{% endblock %}

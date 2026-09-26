@@ -1,0 +1,13 @@
+{% extends "staff/layout.html" %}
+{% block page_title %}Branches{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Branches &amp; rooms</h1><p>The address, hours, phone number and map link on each public branch page all come from here.</p></div></div>
+<div class="grid grid-2">
+{% for b in branches %}
+<div class="card"><div class="card-head"><h3>{{ b.name }}</h3>{% if not b.active %}<span class="badge">Inactive</span>{% endif %}</div>
+<dl class="kv"><dt>Address</dt><dd>{{ b.address or '—' }}</dd><dt>Phone</dt><dd>{{ b.phone or '—' }}</dd><dt>Hours</dt><dd class="pre">{{ b.hours_text or '—' }}</dd></dl>
+<div class="form-actions mt-1">{% if current_user.is_super_admin or b.id in current_user.branch_ids %}<a class="btn btn-secondary btn-sm" href="{{ url_for('admin.branch_edit', branch_id=b.id) }}">Edit details, hours &amp; rooms</a>{% endif %}
+<a class="btn btn-ghost btn-sm" href="{{ url_for('public.branch', slug=b.slug) }}" target="_blank" rel="noopener">View page ↗</a></div></div>
+{% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,25 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import status_badge, empty %}
+{% block page_title %}Leads{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Lead inbox</h1><p>Inquiries from the website, and messages, calls and walk-ins that staff log here. The Facebook page isn't connected, so log Facebook inquiries manually.</p></div>
+{% if current_user.can('leads.manage') %}<a class="btn" href="{{ url_for('leads.lead_new') }}">+ Log inquiry</a>{% endif %}</div>
+<div class="tabs">{% for s, l in [('open','Open'),('new','New'),('booked','Booked'),('converted','Converted'),('lost','Lost'),('all','All')] %}<a class="{% if status == s %}active{% endif %}" href="?status={{ s }}&source={{ source or '' }}&owner={{ owner or '' }}">{{ l }}</a>{% endfor %}</div>
+<form class="toolbar" method="get"><input type="hidden" name="status" value="{{ status }}">
+<div class="field"><label for="source">Source</label><select id="source" name="source"><option value="">All sources</option>{% for k, l in LEAD_SOURCES.items() %}<option value="{{ k }}" {% if source == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+<div class="field"><label for="owner">Owner</label><select id="owner" name="owner"><option value="">Anyone</option><option value="me" {% if owner == 'me' %}selected{% endif %}>Mine</option><option value="none" {% if owner == 'none' %}selected{% endif %}>Unassigned</option></select></div>
+<button class="btn btn-secondary">Filter</button></form>
+<div class="grid" style="grid-template-columns:minmax(0,3fr) minmax(240px,1fr)">
+<div class="card"><div class="table-wrap"><table>
+<thead><tr><th>Name</th><th>Source</th><th>Interest</th><th>Branch</th><th>Owner</th><th>Next follow-up</th><th>Status</th></tr></thead><tbody>
+{% for l in rows %}<tr><td><a href="{{ url_for('leads.lead_detail', lead_id=l.id) }}"><strong>{{ l.full_name }}</strong></a><br><small class="muted">{{ l.created_at|dt }}</small></td>
+<td>{{ LEAD_SOURCES.get(l.source, l.source) }}</td><td>{{ l.service or '—' }}</td><td>{{ l.branch or '—' }}</td><td>{{ l.owner or 'Unassigned' }}</td>
+<td>{% if l.next_follow_up_at %}<span {% if l.next_follow_up_at < now_s %}style="color:var(--red-700);font-weight:700"{% endif %}>{{ l.next_follow_up_at|dt }}</span>{% else %}—{% endif %}</td><td>{{ status_badge(l.status) }}</td></tr>
+{% else %}<tr><td colspan="7">{{ empty('No leads here', ' New website inquiries show up here automatically. Log calls and Facebook messages with "Log inquiry".') }}</td></tr>{% endfor %}
+</tbody></table></div></div>
+<div class="card"><h3>Last 30 days by source</h3>
+{% if stats %}<table><thead><tr><th>Source</th><th class="num">Leads</th><th class="num">Booked</th></tr></thead><tbody>
+{% for s in stats %}<tr><td>{{ LEAD_SOURCES.get(s.source, s.source) }}</td><td class="num">{{ s.total }}</td><td class="num">{{ s.won }} <small class="muted">({{ (100 * s.won / s.total)|round|int }}%)</small></td></tr>{% endfor %}</tbody></table>
+{% else %}<p class="muted">No leads yet.</p>{% endif %}</div>
+</div>
+{% endblock %}

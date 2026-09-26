@@ -1,0 +1,43 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, field, textarea %}
+{% block page_title %}{{ b.name }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('admin.branches') }}">← Branches</a><h1>{{ b.name }}</h1></div></div>
+<div class="grid grid-2">
+<div class="card"><h2>Public details</h2>
+<p class="notice">Only publish details the clinic has confirmed. Leave text marked "[to be confirmed]" until you have the final version.</p>
+<form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="section" value="details">
+  {{ field('name', 'Branch name', b.name, errors=errors, required=True) }}
+  {{ textarea('address', 'Address', b.address, errors=errors, rows=2) }}
+  {{ field('phone', 'Contact numbers', b.phone, hint='Separate several numbers with /') }}
+  {{ field('email', 'Email', b.email, type='email') }}
+  {{ field('map_url', 'Google Maps link', b.map_url, errors=errors, hint='Must start with https://') }}
+  {{ field('waze_url', 'Waze link', b.waze_url, errors=errors, hint='e.g. https://waze.com/ul?q=Dental%20Haven%20Malolos') }}
+  {{ field('facebook_url', 'Facebook page', b.facebook_url, errors=errors) }}
+  {{ textarea('hours_text', 'Hours as shown to the public', b.hours_text, rows=3, hint='Operating hours for booking are set below.') }}
+  {{ textarea('intro', 'Short intro for the branch page', b.intro, rows=3) }}
+  <button class="btn" type="submit">Save details</button>
+</form></div>
+<div>
+<div class="card"><h2>Operating hours for booking</h2>
+{% if errors.hours %}<div class="flash flash-error">{{ errors.hours }}</div>{% endif %}
+<form method="post">{{ csrf() }}<input type="hidden" name="section" value="hours">
+<div class="table-wrap"><table><thead><tr><th>Day</th><th>Opens</th><th>Closes</th><th>Closed</th></tr></thead><tbody>
+{% for wd in range(7) %}{% set h = hours.get(wd) %}
+<tr><td>{{ WEEKDAYS[wd] }}</td>
+<td><label class="sr-only" for="o{{wd}}">Opens</label><input id="o{{wd}}" type="time" name="open_{{ wd }}" value="{{ h.open_time if h else '09:00' }}"></td>
+<td><label class="sr-only" for="c{{wd}}">Closes</label><input id="c{{wd}}" type="time" name="close_{{ wd }}" value="{{ h.close_time if h else '18:00' }}"></td>
+<td><label class="sr-only" for="x{{wd}}">Closed</label><input id="x{{wd}}" type="checkbox" name="closed_{{ wd }}" value="1" {% if h and h.closed %}checked{% endif %}></td></tr>
+{% endfor %}</tbody></table></div>
+<button class="btn mt-1" type="submit">Save hours</button></form></div>
+<div class="card"><h2>Rooms / chairs / equipment</h2>
+<p class="muted">Two appointments can't use the same room at the same time. When staff don't pick a room, the system assigns a free one.</p>
+<ul class="list-plain">{% for r in resources %}<li class="row between"><span>{{ r.name }} <span class="badge">{{ r.kind }}</span> {% if not r.active %}<span class="badge">inactive</span>{% endif %}</span>
+<form method="post" class="inline-form">{{ csrf() }}<input type="hidden" name="section" value="resource_toggle"><input type="hidden" name="resource_id" value="{{ r.id }}"><button class="btn btn-ghost btn-sm">{{ 'Deactivate' if r.active else 'Activate' }}</button></form></li>
+{% else %}<li class="muted">No rooms yet. Without rooms, only dentist conflicts are checked.</li>{% endfor %}</ul>
+<form method="post" class="row mt-1">{{ csrf() }}<input type="hidden" name="section" value="resource_add">
+<label class="sr-only" for="rn">Name</label><input id="rn" name="name" placeholder="e.g. Operatory 3" style="max-width:200px">
+<label class="sr-only" for="rk">Type</label><select id="rk" name="kind" style="max-width:140px"><option value="chair">Chair</option><option value="room">Room</option><option value="equipment">Equipment</option></select>
+<button class="btn btn-secondary">Add</button></form></div>
+</div></div>
+{% endblock %}

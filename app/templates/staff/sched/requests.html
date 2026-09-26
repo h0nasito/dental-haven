@@ -1,0 +1,13 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import status_badge, empty %}
+{% block page_title %}Booking requests{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Online booking requests</h1><p>Patients don't receive a confirmation until staff confirm the request here, unless auto-confirm is switched on.</p></div></div>
+<div class="tabs">{% for s, l in [('pending','Pending'),('confirmed','Confirmed'),('declined','Declined')] %}<a href="?status={{ s }}" class="{% if status == s %}active{% endif %}">{{ l }}</a>{% endfor %}</div>
+<div class="card"><div class="table-wrap"><table>
+<thead><tr><th>Preferred time</th><th>Name</th><th>Service</th><th>Branch</th><th>Preferred dentist</th><th>Received</th><th>Ref</th><th></th></tr></thead><tbody>
+{% for r in rows %}<tr><td>{{ r.preferred_start|dt }}</td><td><strong>{{ r.full_name }}</strong></td><td>{{ r.service }}</td><td>{{ r.branch }}</td><td>{{ r.dentist or 'No preference' }}</td><td>{{ r.created_at|dt }}</td><td><code>{{ r.ref_code }}</code></td>
+<td><a class="btn btn-sm {% if status != 'pending' %}btn-secondary{% endif %}" href="{{ url_for('sched.request_detail', req_id=r.id) }}">{{ 'Review' if status == 'pending' else 'View' }}</a></td></tr>
+{% else %}<tr><td colspan="8">{{ empty('No ' ~ status ~ ' requests') }}</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% endblock %}

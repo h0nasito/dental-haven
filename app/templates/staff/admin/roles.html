@@ -1,0 +1,48 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Role access{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Role access</h1><p>Choose what each role can do. Super admins always have full access. Access under "Super admin only" can't be given to any other role.</p></div></div>
+<form method="post" class="card">
+  {{ csrf() }}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Permission</th>{% for r in roles %}<th class="num">{{ ROLES[r] }}</th>{% endfor %}<th class="num">Super admin</th></tr></thead>
+    <tbody>
+    {% for group, perms in groups.items() %}
+      <tr><td colspan="{{ roles|length + 2 }}"><strong>{{ group }}</strong></td></tr>
+      {% for p in perms %}
+      <tr>
+        <td>{{ p.label }} {% if p.sensitive %}<span class="badge badge-amber" title="Sensitive data or financial impact">Sensitive</span>{% endif %}<br><small class="muted">{{ p.key }}</small></td>
+        {% for r in roles %}
+          <td class="num">
+            {% if p.key in locked %}<span class="muted" title="Super admin only">—</span>
+            {% else %}
+            <label class="sr-only" for="g-{{ r }}-{{ p.key }}">{{ ROLES[r] }}: {{ p.label }}</label>
+            <input id="g-{{ r }}-{{ p.key }}" type="checkbox" name="grant" value="{{ r }}:{{ p.key }}" {% if p.key in current[r] %}checked{% endif %}>
+            {% if (p.key in current[r]) != (p.key in defaults[r]) %}<span class="badge badge-blue" title="Differs from recommended default">changed</span>{% endif %}
+            {% endif %}
+          </td>
+        {% endfor %}
+        <td class="num">✓</td>
+      </tr>
+      {% endfor %}
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <div class="notice mt-1">Clinical permissions are off by default for Staff and Receptionists: they see only a patient's alert flag. If you grant clinical access, those roles can read medical and dental history.</div>
+  <div class="form-actions mt-1"><button class="btn" type="submit">Save role access</button></div>
+</form>
+<div class="grid grid-2">
+<div class="card"><h3>Reset to recommended defaults</h3>
+  {% for r in roles %}
+  <form method="post" action="{{ url_for('admin.roles_reset') }}" class="inline-form" data-confirm="Reset {{ ROLES[r] }} to the recommended defaults?">{{ csrf() }}<input type="hidden" name="role" value="{{ r }}"><button class="btn btn-secondary btn-sm" type="submit">Reset {{ ROLES[r] }}</button></form>
+  {% endfor %}
+</div>
+<div class="card"><h3>Recent access changes</h3>
+  {% if history %}<ul class="list-plain">{% for h in history %}<li>{{ h.summary }}
+    {% if h.d.granted %}<br><small>Granted: {{ h.d.granted|join(', ') }}</small>{% endif %}
+    {% if h.d.revoked %}<br><small>Revoked: {{ h.d.revoked|join(', ') }}</small>{% endif %}
+    <br><small class="muted">{{ h.at|dt }} by {{ h.actor }}</small></li>{% endfor %}</ul>
+  {% else %}<p class="muted">No changes yet.</p>{% endif %}
+</div></div>
+{% endblock %}

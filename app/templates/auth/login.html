@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf, flashes %}
+{% block title %}Staff sign in · Dental Haven{% endblock %}
+{% block body %}
+<main id="main" class="auth-wrap">
+  <div class="auth-card">
+    <a href="{{ url_for('public.home') }}" class="site-brand" style="margin-bottom:1.2rem"><img class="brand-logo" src="{{ url_for('static', filename='img/logo.png') }}" alt="" width="46" height="31"><span>Dental Haven<small>Staff portal</small></span></a>
+    <div class="card">
+      <h1>Sign in</h1>
+      <p class="muted">For Dental Haven staff only. Accounts are created by a super admin.</p>
+      {{ flashes() }}
+      {% if error %}<div class="flash flash-error" role="alert">{{ error }}</div>{% endif %}
+      <form method="post" novalidate>
+        {{ csrf() }}
+        <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="username" value="{{ email }}" required autofocus></div>
+        <div class="field"><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required></div>
+        <button class="btn" type="submit" style="width:100%">Sign in</button>
+      </form>
+    </div>
+    <p class="muted" style="font-size:.85rem">Forgot your password? Ask a super admin to reset it. Access is logged.</p>
+  </div>
+</main>
+{% endblock %}

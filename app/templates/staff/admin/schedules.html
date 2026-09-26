@@ -1,0 +1,22 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Dentist schedules{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Associate dentist schedules</h1><p>Weekly hours for each dentist at each branch. Appointments with a dentist can only be booked inside these hours. A dentist with no schedule can be booked any time the branch is open.</p></div></div>
+<div class="card"><h2>Add schedule block</h2>
+<form method="post" class="toolbar">{{ csrf() }}
+<div class="field"><label for="sd">Dentist</label><select id="sd" name="dentist_id" required><option value="">Choose…</option>{% for d in dentists %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}</select></div>
+<div class="field"><label for="sb">Branch</label><select id="sb" name="branch_id" required><option value="">Choose…</option>{% for b in branches %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}</select></div>
+<fieldset style="margin:0"><legend>Days</legend><div class="row">{% for wd in range(7) %}<label class="check"><input type="checkbox" name="weekday" value="{{ wd }}"> {{ WEEKDAYS[wd][:3] }}</label>{% endfor %}</div></fieldset>
+<div class="field"><label for="st">From</label><input id="st" type="time" name="start_time" value="09:00" required></div>
+<div class="field"><label for="se">To</label><input id="se" type="time" name="end_time" value="17:00" required></div>
+<button class="btn">Add</button></form></div>
+<div class="grid grid-2">
+{% for dentist, blocks in by_dentist.items() %}
+<div class="card"><h3>{{ dentist }}</h3><ul class="list-plain">
+{% for s in blocks %}<li class="row between"><span><strong>{{ WEEKDAYS[s.weekday] }}</strong> {{ s.start_time }}–{{ s.end_time }} · {{ s.branch }}</span>
+<form method="post" class="inline-form">{{ csrf() }}<input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="{{ s.id }}"><button class="btn btn-ghost btn-sm">Remove</button></form></li>{% endfor %}
+</ul></div>
+{% else %}<div class="card empty"><strong>No schedules yet</strong>Add weekly hours above.</div>{% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,30 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, status_badge, select %}
+{% block page_title %}Follow-up{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('leads.followups') }}">← Follow-ups</a><h1>{{ f.title }}</h1>
+<p>{{ FOLLOWUP_KINDS.get(f.kind, f.kind) }} · due {{ f.due_at|dt }}{% if f.status == 'open' and f.due_at < now_s %} · <strong style="color:var(--red-700)">overdue</strong>{% endif %}</p></div>{{ status_badge(f.status) }}</div>
+<div class="grid grid-2">
+<div class="card"><h2>Who</h2>
+{% if f.patient_id %}<p><a href="{{ url_for('patients.detail', patient_id=f.patient_id) }}"><strong>{{ f.last_name }}, {{ f.first_name }}</strong></a> · {{ f.patient_phone|contact }}</p>
+{% if f.alert_flag %}<p class="alert-flag">⚠ {{ f.alert_flag }}</p>{% endif %}
+{% if patient %}<p class="muted">Contact preferences: {% if patient.opt_out_all %}<strong>opted out of messages. Call only if it's essential to their care.</strong>{% else %}{{ ['SMS' if patient.contact_sms, 'Email' if patient.contact_email, 'Messenger' if patient.contact_messenger]|select|join(', ') or 'no message channels' }}{% endif %}</p>{% endif %}
+{% elif f.lead_id %}<p><a href="{{ url_for('leads.lead_detail', lead_id=f.lead_id) }}"><strong>Lead: {{ f.lead_name }}</strong></a> · {{ f.lead_phone or '—' }}</p>{% endif %}
+<dl class="kv"><dt>Branch</dt><dd>{{ f.branch or '—' }}</dd><dt>Assignee</dt><dd>{{ f.assignee or 'Unassigned' }}</dd>{% if f.notes %}<dt>Notes</dt><dd class="pre">{{ f.notes }}</dd>{% endif %}
+{% if f.outcome %}<dt>Outcome</dt><dd class="pre">{{ f.outcome }}</dd>{% endif %}</dl>
+{% if f.status == 'open' and current_user.can('followups.manage') %}
+<form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="complete">
+<div class="field"><label for="o">Outcome</label><textarea id="o" name="outcome" rows="2" required placeholder="e.g. Called; patient feels fine, booked review Oct 12"></textarea></div>
+<div class="field" style="max-width:260px"><label for="nd">Schedule another in (days)</label><input id="nd" type="number" name="next_days" min="1" max="730"></div>
+<button class="btn">Mark done</button></form>
+<details class="mt-1"><summary>Reschedule / reassign</summary><form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="reschedule">
+<div class="form-grid"><div class="field"><label for="d">Due</label><input id="d" type="datetime-local" name="due_at" value="{{ f.due_at|replace(' ', 'T') }}"></div>
+{{ select('assignee_id', 'Assign to', staff|opts, f.assignee_id, blank='Unassigned') }}</div><button class="btn btn-secondary btn-sm">Save</button></form>
+<form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="cancel"><input type="hidden" name="outcome" value="Cancelled — no longer needed"><button class="btn btn-danger btn-sm">Cancel task</button></form></details>
+{% endif %}
+</div>
+<div class="card"><h2>Message templates</h2><p class="muted" style="font-size:.9rem">Copy, personalise and send from the clinic phone or page. Check the patient's contact preferences first.</p>
+{% for r in rendered %}<details {% if loop.first %}open{% endif %}><summary><strong>{{ r.t.name }}</strong></summary><div class="template-box mt-1" id="tpl-{{ r.t.id }}">{{ r.text }}</div><button type="button" class="btn btn-ghost btn-sm" data-copy="tpl-{{ r.t.id }}">Copy</button></details>
+{% else %}<p class="muted">No follow-up templates.</p>{% endfor %}</div>
+</div>
+{% endblock %}

@@ -1,0 +1,23 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Employees{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Employees</h1><p>Staff and associate dentists for attendance and payroll review. Adding an employee here doesn't create a login.</p></div></div>
+<div class="card"><div class="table-wrap"><table>
+<thead><tr><th>Name</th><th>Position</th><th>Branch</th><th>Type</th><th>Login</th>{% if current_user.can('compensation.manage') %}<th>Current pay basis</th>{% endif %}<th>Status</th><th></th></tr></thead><tbody>
+{% for e in rows %}<tr><td><strong>{{ e.full_name }}</strong></td><td>{{ e.position }}</td><td>{{ e.branch or '—' }}</td><td>{{ e.employment_type|label }}</td>
+<td>{% if e.email %}{{ ROLES[e.role] }}{% else %}<span class="muted">No login</span>{% endif %}</td>
+{% if current_user.can('compensation.manage') %}<td>{% if e.comp %}{{ BASIS_LABELS[e.comp.basis] }}{% if e.comp.rate_cents is not none %} · {{ e.comp.rate_cents|peso }}{% endif %}{% if e.comp.percentage_bp %} · {{ e.comp.percentage_bp / 100 }}%{% endif %}{% else %}<span class="badge badge-amber">Not set</span>{% endif %}</td>{% endif %}
+<td>{% if e.active %}<span class="badge badge-green">Active</span>{% else %}<span class="badge">Inactive</span>{% endif %}</td>
+<td><a class="btn btn-secondary btn-sm" href="{{ url_for('people.employee', emp_id=e.id) }}">Open</a></td></tr>{% endfor %}
+</tbody></table></div></div>
+{% if current_user.can('attendance.manage') %}
+<div class="card" style="max-width:760px"><h2>Add employee (no login)</h2>
+<form method="post" class="form-grid">{{ csrf() }}
+<div class="field"><label for="fn">Full name</label><input id="fn" name="full_name" required></div>
+<div class="field"><label for="po">Position</label><input id="po" name="position" placeholder="e.g. Dental assistant"></div>
+<div class="field"><label for="br">Branch</label><select id="br" name="primary_branch_id">{% for b in branches %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}</select></div>
+<div class="field"><label for="et">Type</label><select id="et" name="employment_type"><option value="regular">Regular</option><option value="probationary">Probationary</option><option value="associate">Associate dentist</option><option value="part_time">Part-time</option><option value="contractual">Contractual</option></select></div>
+<div><button class="btn btn-secondary">Add</button></div></form></div>
+{% endif %}
+{% endblock %}

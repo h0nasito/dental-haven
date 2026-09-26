@@ -1,0 +1,21 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, empty %}
+{% block page_title %}Patients{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Patients</h1><p>{% if current_user.role == 'dentist' %}Patients assigned to you{% else %}Patients in {{ 'the selected branch' if current_user.active_branch_id else 'your branches' }}{% endif %} · {{ pg.total }} record{{ '' if pg.total == 1 else 's' }}</p></div>
+{% if current_user.can('patients.manage') %}<a class="btn" href="{{ url_for('patients.new') }}">+ Register patient</a>{% endif %}</div>
+<form method="post" class="toolbar">{{ csrf() }}
+<div class="field grow"><label for="q">Search</label><input id="q" type="search" name="q" value="{{ q }}" placeholder="Name, mobile, email or chart number"></div>
+<button class="btn btn-secondary" type="submit">Search</button>{% if q %}<a class="btn btn-ghost" href="{{ url_for('patients.index') }}">Clear</a>{% endif %}
+</form>
+<p class="hint" style="margin-top:-.5rem">We send searches privately, so patient names don't appear in web addresses or browser history.</p>
+<div class="card"><div class="table-wrap"><table>
+<thead><tr><th>Patient</th><th>Chart no.</th><th>Mobile</th><th>Preferred branch</th><th>Last visit</th><th>Next visit</th><th>Consent</th></tr></thead><tbody>
+{% for p in rows %}<tr><td><a href="{{ url_for('patients.detail', patient_id=p.id) }}"><strong>{{ p.last_name }}, {{ p.first_name }}</strong></a>{% if p.alert_flag %} <span class="badge badge-red" title="{{ p.alert_flag }}">⚠ Alert</span>{% endif %}{% if p.is_demo %} <span class="badge">Demo</span>{% endif %}</td>
+<td>{{ p.chart_no }}</td><td>{{ p.phone|contact }}</td><td>{{ p.branch or '—' }}</td><td>{{ p.last_visit|date }}</td><td>{{ p.next_visit|dt if p.next_visit else '—' }}</td>
+<td>{% if p.consent_privacy %}<span class="badge badge-green">Privacy ✓</span>{% else %}<span class="badge badge-amber">Needs consent</span>{% endif %}{% if p.opt_out_all %} <span class="badge">Opted out</span>{% endif %}</td></tr>
+{% else %}<tr><td colspan="7">{{ empty('No patients found', ' Try a different search, or register a new patient.' if current_user.can('patients.manage') else '') }}</td></tr>{% endfor %}
+</tbody></table></div>
+{% if pg.pages > 1 and not q %}<div class="row mt-1">{% if pg.page > 1 %}<a class="btn btn-secondary btn-sm" href="?page={{ pg.page - 1 }}">← Previous</a>{% endif %}<span class="muted">Page {{ pg.page }} of {{ pg.pages }}</span>{% if pg.page < pg.pages %}<a class="btn btn-secondary btn-sm" href="?page={{ pg.page + 1 }}">Next →</a>{% endif %}</div>{% endif %}
+</div>
+{% endblock %}

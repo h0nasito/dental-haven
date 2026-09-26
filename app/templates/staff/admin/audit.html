@@ -1,0 +1,23 @@
+{% extends "staff/layout.html" %}
+{% block page_title %}Audit trail{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Audit trail</h1><p>Who changed what and when: users, access, patient records, billing, attendance, payroll and settings.</p></div></div>
+<form class="toolbar" method="get">
+  <div class="field"><label for="e">Record type</label><select id="e" name="entity"><option value="">All</option>{% for e in entities %}<option {% if request.args.get('entity') == e %}selected{% endif %}>{{ e }}</option>{% endfor %}</select></div>
+  <div class="field"><label for="a">Action</label><select id="a" name="action"><option value="">All</option>{% for a in actions %}<option {% if request.args.get('action') == a %}selected{% endif %}>{{ a }}</option>{% endfor %}</select></div>
+  <button class="btn btn-secondary" type="submit">Filter</button>
+</form>
+<div class="card"><div class="table-wrap"><table>
+<thead><tr><th>When</th><th>Who</th><th>Action</th><th>Record</th><th>Summary</th><th>Details</th></tr></thead>
+<tbody>
+{% for r in rows %}
+<tr><td>{{ r.at|dt }}</td><td>{{ r.actor or 'system' }}</td><td><span class="badge">{{ r.action }}</span></td>
+<td>{{ r.entity_type }}{% if r.entity_id %} #{{ r.entity_id }}{% endif %}</td><td>{{ r.summary }}</td>
+<td>{% if r.details and r.details != '{}' %}<details><summary>View</summary><pre class="pre" style="font-size:.8rem;max-width:420px">{{ r.details }}</pre></details>{% endif %}</td></tr>
+{% else %}<tr><td colspan="6" class="empty">No audit entries match.</td></tr>{% endfor %}
+</tbody></table></div>
+{% if pg.pages > 1 %}<div class="row mt-1">{% if pg.page > 1 %}<a class="btn btn-secondary btn-sm" href="?page={{ pg.page - 1 }}&entity={{ request.args.get('entity','') }}&action={{ request.args.get('action','') }}">← Newer</a>{% endif %}
+<span class="muted">Page {{ pg.page }} of {{ pg.pages }}</span>
+{% if pg.page < pg.pages %}<a class="btn btn-secondary btn-sm" href="?page={{ pg.page + 1 }}&entity={{ request.args.get('entity','') }}&action={{ request.args.get('action','') }}">Older →</a>{% endif %}</div>{% endif %}
+</div>
+{% endblock %}

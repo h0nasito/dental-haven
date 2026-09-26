@@ -1,0 +1,11 @@
+{% extends "staff/layout.html" %}
+{% block page_title %}Dentist schedules{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Dentist schedules</h1><p>Which dentist is at which branch on each day{% if current_user.active_branch_id %}, for the selected branch{% endif %}.</p></div>
+{% if current_user.can('settings.manage') %}<a class="btn btn-secondary" href="{{ url_for('admin.schedules') }}">Edit schedules</a>{% endif %}</div>
+<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
+{% for wd in range(7) %}<div class="card" style="padding:.9rem"><h3 style="font-size:1rem">{{ WEEKDAYS[wd] }}</h3>
+{% for s in by_day[wd] %}<div class="item"><strong>{{ s.dentist }}</strong><div class="meta">{{ s.branch }} · {{ s.start_time }}–{{ s.end_time }}</div></div>
+{% else %}<p class="muted" style="font-size:.85rem">No dentist scheduled</p>{% endfor %}</div>{% endfor %}
+</div>
+{% endblock %}

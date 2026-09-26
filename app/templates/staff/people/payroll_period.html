@@ -1,0 +1,38 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, status_badge %}
+{% block page_title %}{{ p.name }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('people.payroll') }}">← Payroll review</a><h1>{{ p.name }}</h1><p>{{ p.start_date|date }} – {{ p.end_date|date }} · {{ p.branch or 'All branches' }}</p></div>
+<div class="row">{{ status_badge(p.status) }}<a class="btn btn-secondary btn-sm" href="{{ url_for('people.payroll_export', period_id=p.id) }}">Export CSV</a></div></div>
+{% if p.status != 'approved' %}<div class="watermark">DRAFT, NOT FINAL PAYROLL{% if not rules_confirmed %}: these amounts are unconfirmed estimates{% endif %}</div>
+{% else %}<div class="flash flash-success">Approved by {{ p.approver }} on {{ p.approved_at|dt }}. This is a summary only. Payments are made outside this system.</div>{% endif %}
+<div class="card"><div class="table-wrap"><table>
+<thead><tr><th>Employee</th><th class="num">Days</th><th class="num">Hours</th><th class="num">Late (min)</th><th class="num">Undertime (min)</th><th class="num">Open exceptions</th><th>Pay basis</th>
+{% if show_money %}<th class="num">Rate</th><th class="num">Estimate</th><th class="num">Adjustment</th>{% endif %}</tr></thead><tbody>
+{% for l in lines %}<tr><td><strong>{{ l.full_name }}</strong><br><small class="muted">{{ l.position }}</small></td><td class="num">{{ l.days_present }}</td><td class="num">{{ '%.2f'|format(l.minutes_worked / 60) }}</td>
+<td class="num">{{ l.late_minutes }}</td><td class="num">{{ l.undertime_minutes }}</td><td class="num">{% if l.open_exceptions %}<a href="{{ url_for('people.attendance', employee=l.employee_id, status='exception', **{'from': p.start_date, 'to': p.end_date}) }}" style="color:var(--red-700);font-weight:700">{{ l.open_exceptions }}</a>{% else %}0{% endif %}</td>
+<td>{{ BASIS_LABELS.get(l.basis, l.basis) }}</td>
+{% if show_money %}<td class="num">{{ l.rate_cents|peso if l.rate_cents is not none else '—' }}{% if l.percentage_bp %}<br><small>{{ l.percentage_bp / 100 }}%</small>{% endif %}</td>
+<td class="num">{% if l.estimate_cents is not none %}{{ l.estimate_cents|peso }}{% if not rules_confirmed %}<br><small class="muted">unconfirmed</small>{% endif %}{% else %}<small class="muted">needs pay rule</small>{% endif %}</td>
+<td class="num">{% if p.status == 'draft' and current_user.can('payroll.prepare') %}<details><summary>{{ l.adjustment_cents|peso if l.adjustment_cents else 'Add' }}</summary><form method="post">{{ csrf() }}<input type="hidden" name="action" value="adjust"><input type="hidden" name="line_id" value="{{ l.id }}">
+<label class="sr-only" for="aj{{ l.id }}">Amount</label><input id="aj{{ l.id }}" name="adjustment" value="{{ (l.adjustment_cents / 100) if l.adjustment_cents else '' }}" placeholder="e.g. -250"><label class="sr-only" for="an{{ l.id }}">Reason</label><input id="an{{ l.id }}" name="adjustment_note" value="{{ l.adjustment_note }}" placeholder="Reason"><button class="btn btn-secondary btn-sm mt-1">Save</button></form></details>
+{% else %}{{ l.adjustment_cents|peso if l.adjustment_cents else '—' }}{% if l.adjustment_note %}<br><small class="muted">{{ l.adjustment_note }}</small>{% endif %}{% endif %}</td>{% endif %}</tr>
+{% else %}<tr><td colspan="10" class="empty">No employees in scope.</td></tr>{% endfor %}</tbody></table></div>
+{% if not show_money %}<p class="hint">Rates and estimates are hidden because you don't have access to compensation.</p>{% endif %}
+<p class="hint">Hours are time-out minus time-in. No break deduction, overtime, holiday premium, night differential, commission or statutory deduction is applied until the clinic confirms its rules.</p></div>
+<div class="grid grid-2">
+<div class="card"><h2>Workflow</h2>
+<p>Prepared by {{ p.creator }}{% if p.submitter %} · submitted by {{ p.submitter }} {{ p.submitted_at|dt }}{% endif %}</p>
+<div class="row">
+{% if p.status == 'draft' and current_user.can('payroll.prepare') %}
+<form method="post">{{ csrf() }}<input type="hidden" name="action" value="rebuild"><button class="btn btn-secondary">Recalculate from DTR</button></form>
+<form method="post" data-confirm="Submit this summary for approval?">{{ csrf() }}<input type="hidden" name="action" value="submit"><button class="btn">Submit for approval</button></form>{% endif %}
+{% if p.status == 'submitted' and current_user.can('payroll.approve') %}
+<form method="post" data-confirm="Approve this payroll summary? This does not send any payment.">{{ csrf() }}<input type="hidden" name="action" value="approve"><button class="btn" {% if not rules_confirmed %}disabled title="Pay rules not confirmed"{% endif %}>Approve summary</button></form>{% endif %}
+{% if p.status == 'submitted' %}<form method="post">{{ csrf() }}<input type="hidden" name="action" value="return"><button class="btn btn-secondary">Return to draft</button></form>{% endif %}
+{% if p.status in ['draft','submitted'] and current_user.can('payroll.prepare') %}<form method="post" data-confirm="Cancel this period?">{{ csrf() }}<input type="hidden" name="action" value="cancel"><button class="btn btn-danger">Cancel</button></form>{% endif %}
+</div>
+<p class="hint mt-1">To approve, the pay rules must be confirmed, every attendance exception resolved, and the approver must be someone other than the person who submitted.</p></div>
+<div class="card"><h2>History</h2><ul class="list-plain">{% for h in history %}<li>{{ h.summary }}<br><small class="muted">{{ h.at|dt }} · {{ h.actor }}</small></li>{% endfor %}</ul></div>
+</div>
+{% endblock %}

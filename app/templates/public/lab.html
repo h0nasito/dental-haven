@@ -1,0 +1,10 @@
+{% extends "public/layout.html" %}
+{% set labc = content('lab') %}
+{% block title %}Digital dental laboratory · Dental Haven{% endblock %}
+{% block content %}
+<section class="hero" style="padding:3rem 0 2rem"><div class="wrap"><span class="eyebrow">In-house</span><h1>{{ labc.title or 'Our digital dental laboratory' }}</h1></div></section>
+<section class="section" style="padding-top:1.5rem"><div class="wrap hero-grid" style="align-items:start">
+  <div class="prose">{{ labc.body|richtext }}</div>
+  <div class="grid"><div class="placeholder-img">Lab photo (authorised images only)</div><div class="placeholder-img">Sample restoration photo (with consent)</div></div>
+</div></section>
+{% endblock %}

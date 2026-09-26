@@ -1,0 +1,23 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Prescription{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('patients.detail', patient_id=p.id, tab='rx') }}">← {{ p.last_name }}, {{ p.first_name }}</a>
+<h1>{{ 'Edit prescription' if rx else 'New prescription' }}</h1>{% if p.alert_flag %}<p class="alert-flag mt-1">⚠ {{ p.alert_flag }}</p>{% endif %}</div></div>
+<form method="post" class="card" style="max-width:980px">{{ csrf() }}
+{% if errors %}<div class="flash flash-error"><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
+<div class="form-grid">
+<div class="field"><label for="pr">Prescribing dentist</label><select id="pr" name="prescriber_id" required><option value="">Choose…</option>{% for d in choices %}<option value="{{ d.id }}" {% if v.prescriber_id == d.id %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select></div>
+<div class="field"><label for="dt">Date</label><input id="dt" type="date" name="prescribed_on" value="{{ v.prescribed_on }}" required></div>
+</div>
+<div class="table-wrap"><table><thead><tr><th>Medicine (generic / brand)</th><th>Dosage</th><th>Quantity</th><th>Instructions (Sig.)</th></tr></thead><tbody>
+{% for i in range(max_lines) %}{% set it = v["items"][i] if i < v["items"]|length else {} %}
+<tr><td><label class="sr-only" for="m{{i}}">Medicine</label><input id="m{{i}}" name="medicine_{{ i }}" value="{{ it.medicine or '' }}" {% if i == 0 %}required{% endif %} placeholder="{{ 'e.g. Amoxicillin 500 mg capsule' if i == 0 else '' }}"></td>
+<td><label class="sr-only" for="d{{i}}">Dosage</label><input id="d{{i}}" name="dosage_{{ i }}" value="{{ it.dosage or '' }}" placeholder="{{ '500 mg' if i == 0 else '' }}"></td>
+<td><label class="sr-only" for="q{{i}}">Quantity</label><input id="q{{i}}" name="quantity_{{ i }}" value="{{ it.quantity or '' }}" placeholder="{{ '#21' if i == 0 else '' }}"></td>
+<td><label class="sr-only" for="s{{i}}">Instructions</label><input id="s{{i}}" name="instructions_{{ i }}" value="{{ it.instructions or '' }}" placeholder="{{ '1 cap every 8 hours for 7 days' if i == 0 else '' }}"></td></tr>
+{% endfor %}</tbody></table></div>
+<div class="field mt-1"><label for="n">Notes</label><textarea id="n" name="notes" rows="2">{{ v.notes }}</textarea></div>
+<p class="hint">Check the patient's allergies and medications before prescribing.</p>
+<button class="btn">Save &amp; print</button></form>
+{% endblock %}

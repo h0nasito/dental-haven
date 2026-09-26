@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block body %}
+<header class="site-header">
+  <div class="wrap">
+    <a class="site-brand" href="{{ url_for('public.home') }}"><img class="brand-logo" src="{{ url_for('static', filename='img/logo.png') }}" alt="" width="46" height="31"><span>Dental Haven</span></a>
+    <input type="checkbox" id="nav-toggle" class="nav-toggle sr-only">
+    <label for="nav-toggle" class="btn btn-secondary btn-sm nav-toggle-btn">Menu</label>
+    <nav class="site-nav" aria-label="Main">
+      <a href="{{ url_for('public.home') }}#work">Our work</a>
+      <a href="{{ url_for('public.home') }}#services">Services</a>
+      <a href="{{ url_for('public.home') }}#lab">Digital lab</a>
+      <a href="{{ url_for('public.home') }}#branches">Branches</a>
+      <a href="{{ url_for('public.inquire') }}">Contact</a>
+      <a class="btn" href="{{ url_for('public.book') }}">Book now</a>
+    </nav>
+  </div>
+</header>
+<main id="main">
+{% block content %}{% endblock %}
+</main>
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="cols">
+      <div><img class="footer-logo" src="{{ url_for('static', filename='img/logo-white.png') }}" alt="" width="64" height="43"><h4>Dental Haven</h4><p class="tagline-sm">Happiest your teeth will ever be.</p><p>General &amp; preventive, cosmetic &amp; restorative, prosthodontics, implants &amp; surgery and orthodontics, with our in-house Digital Solutions Dental Laboratory.</p>
+</div>
+      <div><h4>Branches</h4><ul class="list-plain">{% for b in site_branches %}<li style="border-color:rgba(255,255,255,.08)"><a href="{{ url_for('public.branch', slug=b.slug) }}">{{ b.name }}</a></li>{% endfor %}</ul></div>
+      <div><h4>Services</h4><ul class="list-plain">{% for s in site_services %}<li style="border-color:rgba(255,255,255,.08)"><a href="{{ url_for('public.service', slug=s.slug) }}">{{ s.name }}</a></li>{% endfor %}</ul></div>
+      <div><h4>Patients</h4><ul class="list-plain">
+        <li style="border-color:rgba(255,255,255,.08)"><a href="{{ url_for('public.book') }}">Request an appointment</a></li>
+        <li style="border-color:rgba(255,255,255,.08)"><a href="{{ url_for('public.inquire') }}">Send an inquiry</a></li>
+        <li style="border-color:rgba(255,255,255,.08)"><a href="{{ url_for('public.feedback') }}">Patient feedback</a></li>
+        <li style="border-color:rgba(255,255,255,.08)"><a href="{{ url_for('public.privacy') }}">Privacy notice</a></li></ul></div>
+    </div>
+    <div class="fine row between"><span>© Dental Haven. Website content is being finalised with the clinic.</span><a href="{{ url_for('auth.login') }}">Staff sign in</a></div>
+  </div>
+</footer>
+{% endblock %}

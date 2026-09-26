@@ -1,0 +1,12 @@
+{% extends "staff/layout.html" %}
+{% block page_title %}Temporary password{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>{{ 'Password reset' if reset else 'User created' }}</h1></div></div>
+<div class="card" style="max-width:620px">
+  <p>Give this temporary password to <strong>{{ email }}</strong> in person or through a private channel. It is shown only once. They must set a new password when they first sign in.</p>
+  <div class="template-box" id="temp-pw" style="font-family:monospace;font-size:1.2rem">{{ temp }}</div>
+  <div class="form-actions"><button class="btn btn-secondary" type="button" data-copy="temp-pw">Copy</button>
+  <a class="btn" href="{{ url_for('admin.users') }}">Done</a></div>
+  <p class="hint">Do not send passwords together with the sign-in address in the same message.</p>
+</div>
+{% endblock %}

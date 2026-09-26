@@ -1,0 +1,47 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}System settings{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>System settings</h1><p>Only super admins can change these. Every change is recorded in the audit trail.</p></div></div>
+<div class="card"><div class="card-head"><h2>Backups</h2>
+<form method="post" action="{{ url_for('admin.download_backup') }}">{{ csrf() }}<button class="btn btn-secondary btn-sm">Download full backup</button></form></div>
+<p class="mb-0">Downloads a zip with the whole database (patients, appointments, billing, users) and all uploaded files. Download one every week and keep it somewhere safe and private, such as an encrypted drive. <strong>It contains all patient records.</strong> Each download is recorded in the audit trail.</p></div>
+<div class="card"><div class="card-head"><h2>Dentist appointment emails</h2>
+{% if mail.state == 'on' %}<form method="post" action="{{ url_for('admin.email_test') }}">{{ csrf() }}<button class="btn btn-secondary btn-sm">Send me a test email</button></form>{% endif %}</div>
+{% if mail.state == 'demo' %}<p><span class="badge badge-amber">Off on the demo site</span> The demo never sends emails. Each appointment page shows which emails <em>would</em> have been sent.</p>
+{% else %}<p>Dentists get an email when one of their appointments is approved or booked, rescheduled or cancelled. It's sent from the Gmail of the appointment's branch.</p>
+<div class="table-wrap"><table><thead><tr><th>Branch</th><th>Sends from</th></tr></thead><tbody>
+{% for m in mail.senders %}<tr><td>{{ m.branch }}</td><td>{% if m.sender %}<span class="badge badge-green">On</span> {{ m.sender }}{% else %}<span class="badge badge-amber">Not set up</span> <small class="muted">add <code>{{ m.env }}</code> and <code>{{ m.env|replace('_USERNAME', '_PASSWORD') }}</code></small>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div>
+<p class="hint">Set these in the server's environment settings (Render → Environment), then restart. The password is a Gmail app password, not the normal Gmail password. See docs/INTEGRATIONS.md.</p>{% endif %}
+</div>
+<form method="post">{{ csrf() }}
+{% set groups = [('Online booking','booking.'),('Invoicing','invoice.'),('Messaging','messaging.'),('Payroll','payroll.'),('Privacy','privacy.')] %}
+<div class="grid grid-2">
+{% for title, prefix in groups %}
+<div class="card"><h2>{{ title }}</h2>
+{% for key, label in labels.items() if key.startswith(prefix) %}
+  {% if key in bool_keys %}
+    <label class="check"><input type="checkbox" name="{{ key }}" value="1" {% if s[key] %}checked{% endif %}> {{ label }}</label>
+  {% elif key == 'messaging.provider' %}
+    <div class="field"><label for="{{ key }}">{{ label }}</label><select id="{{ key }}" name="{{ key }}"><option value="manual" selected>Manual (preview and copy; staff send from the clinic phone)</option></select>
+    <span class="hint">No SMS, email or Messenger provider is set up. See docs/INTEGRATIONS.md.</span></div>
+  {% else %}
+    <div class="field {% if errors.get(key) %}error{% endif %}"><label for="{{ key }}">{{ label }}</label>
+    <input id="{{ key }}" name="{{ key }}" value="{{ s[key] if s[key] is not none else '' }}" {% if key in int_keys %}type="number" min="0"{% endif %}>
+    {% if errors.get(key) %}<div class="field-error">{{ errors.get(key) }}</div>{% endif %}</div>
+  {% endif %}
+{% endfor %}
+{% if prefix == 'invoice.' %}
+  <h3 class="mt-1">Invoice prefixes by branch</h3>
+  {% for sq in seqs %}<div class="field"><label for="prefix_{{ sq.id }}">{{ sq.name }}</label><input id="prefix_{{ sq.id }}" name="prefix_{{ sq.id }}" value="{{ sq.prefix or '' }}" maxlength="10"><span class="hint">Next number: {{ sq.next_no or 1 }}</span></div>{% endfor %}
+  <p class="notice">Tax is off by default. Confirm VAT/non-VAT registration and official receipt requirements with the clinic's accountant before turning it on.</p>
+{% endif %}
+{% if prefix == 'payroll.' %}<p class="notice">Until pay rules are confirmed, payroll figures are labelled "unconfirmed estimate" and can't be approved.</p>{% endif %}
+{% if prefix == 'booking.' %}<p class="hint">With auto-confirm off, every online request waits for staff confirmation, and patients are told the time is only a request.</p>{% endif %}
+</div>
+{% endfor %}
+</div>
+<button class="btn" type="submit">Save settings</button>
+</form>
+{% endblock %}

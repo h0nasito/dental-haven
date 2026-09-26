@@ -1,0 +1,4 @@
+<div class="letterhead">
+  <img src="{{ url_for('static', filename='img/logo.png') }}" alt="" width="70" height="47">
+  <div><div class="lh-name">Dental Haven {{ branch or '' }}</div><div class="lh-sub">{{ branch_address or '' }}{% if branch_phone %} · {{ branch_phone }}{% endif %}</div></div>
+</div>

@@ -1,0 +1,52 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, status_badge, select %}
+{% block page_title %}{{ lead.full_name }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('leads.index') }}">← Leads</a><h1>{{ lead.full_name }}</h1>
+<p>{{ LEAD_SOURCES.get(lead.source, lead.source) }} · received {{ lead.created_at|dt }}</p></div>{{ status_badge(lead.status) }}</div>
+<div class="grid grid-2">
+<div>
+<div class="card"><h2>Details</h2>
+<dl class="kv"><dt>Mobile</dt><dd>{{ lead.phone or '—' }}</dd><dt>Email</dt><dd>{{ lead.email or '—' }}</dd><dt>Branch</dt><dd>{{ lead.branch or '—' }}</dd>
+<dt>Interest</dt><dd>{{ lead.service or '—' }}</dd><dt>Owner</dt><dd>{{ lead.owner or 'Unassigned' }}</dd><dt>Contact consent</dt><dd>{{ 'Yes' if lead.consent_contact else 'Not given' }}</dd>
+<dt>Message</dt><dd class="pre">{{ lead.message or '—' }}</dd>{% if lead.patient_id %}<dt>Patient</dt><dd><a href="{{ url_for('patients.detail', patient_id=lead.patient_id) }}">Open patient record</a></dd>{% endif %}</dl></div>
+
+{% if current_user.can('leads.manage') %}
+<div class="card"><h2>Update</h2>
+<form method="post">{{ csrf() }}<input type="hidden" name="action" value="update">
+<div class="form-grid">
+{{ select('status', 'Status', LEAD_STATUSES.items()|list, lead.status) }}
+{{ select('owner_id', 'Owner', staff|opts, lead.owner_id, blank='Unassigned') }}
+{{ select('branch_id', 'Branch', branches|opts, lead.branch_id, blank='Not specified') }}
+{{ select('service_id', 'Interest', services|opts, lead.service_id, blank='Not specified') }}
+<div class="field"><label for="nf">Next follow-up</label><input id="nf" type="datetime-local" name="next_follow_up_at" value="{{ (lead.next_follow_up_at or '')|replace(' ', 'T') }}"></div>
+<div class="field"><label for="lr">Lost reason (if lost)</label><input id="lr" name="lost_reason" value="{{ lead.lost_reason }}"></div>
+</div><button class="btn btn-secondary">Save</button></form></div>
+
+{% if not lead.patient_id and current_user.can('patients.manage') %}
+<div class="card"><h2>Convert to patient</h2>
+<form method="post">{{ csrf() }}<input type="hidden" name="action" value="convert">
+{% for m in matches %}<label class="check"><input type="radio" name="patient_id" value="{{ m.id }}" {% if loop.first %}checked{% endif %}> Link to existing: {{ m.last_name }}, {{ m.first_name }} ({{ m.chart_no }}, {{ m.phone }})</label>{% endfor %}
+<label class="check"><input type="radio" name="patient_id" value="" {% if not matches %}checked{% endif %}> Create a new patient record</label>
+<button class="btn mt-1">Convert{% if current_user.can('appointments.manage') %} &amp; book{% endif %}</button></form>
+<p class="hint">Record the patient's privacy consent at their first visit.</p></div>
+{% endif %}
+{% endif %}
+</div>
+<div>
+<div class="card"><h2>Suggested replies</h2><p class="muted" style="font-size:.9rem">Copy a template and send it from the clinic's Facebook page, phone or email, then log what you sent below. Nothing is sent from this system.</p>
+{% for r in rendered %}<details {% if loop.first %}open{% endif %}><summary><strong>{{ r.t.name }}</strong></summary>
+<div class="template-box mt-1" id="tpl-{{ r.t.id }}">{{ r.text }}</div><button type="button" class="btn btn-ghost btn-sm" data-copy="tpl-{{ r.t.id }}">Copy</button></details>
+{% else %}<p class="muted">No reply templates yet. {% if current_user.can('templates.manage') %}<a href="{{ url_for('leads.templates') }}">Add one</a>.{% endif %}</p>{% endfor %}</div>
+
+<div class="card"><h2>Activity</h2>
+{% if current_user.can('leads.manage') %}
+<form method="post" class="mb-0">{{ csrf() }}<input type="hidden" name="action" value="activity">
+<div class="form-grid"><div class="field"><label for="k">Type</label><select id="k" name="kind"><option value="reply">Replied (message)</option><option value="call">Called</option><option value="note">Note</option></select></div></div>
+<div class="field"><label for="b">What happened</label><textarea id="b" name="body" rows="2" required placeholder="e.g. Sent price range template via Messenger; will visit Sat"></textarea></div>
+<button class="btn btn-secondary btn-sm">Log activity</button></form>{% endif %}
+<ul class="list-plain mt-1">{% for a in activities %}<li><span class="badge">{{ a.kind }}</span> {{ a.body }}<br><small class="muted">{{ a.created_at|dt }} · {{ a.user or 'System' }}</small></li>{% endfor %}</ul>
+{% if current_user.can('followups.manage') %}<a class="btn btn-ghost btn-sm" href="{{ url_for('leads.followup_new', lead_id=lead.id) }}">+ Create follow-up task</a>{% endif %}
+</div>
+</div></div>
+{% endblock %}

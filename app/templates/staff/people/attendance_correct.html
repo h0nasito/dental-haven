@@ -1,0 +1,18 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, status_badge %}
+{% block page_title %}Correct time record{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('people.attendance') }}">← Attendance</a><h1>{{ r.full_name }} · {{ r.work_date|date }}</h1></div>{{ status_badge(r.status) }}</div>
+{% if locked %}<div class="flash flash-warning">This date is in an approved payroll period and can't be changed.</div>{% endif %}
+<div class="grid grid-2">
+<div class="card"><h2>Correction</h2>
+<p>Current: in <strong>{{ r.time_in or '—' }}</strong>, out <strong>{{ r.time_out or '—' }}</strong>{% if r.exception_note %}<br><small class="muted">{{ r.exception_note }}</small>{% endif %}</p>
+<form method="post">{{ csrf() }}
+<div class="form-grid"><div class="field"><label for="ti">Time in</label><input id="ti" type="time" name="time_in" value="{{ r.time_in or '' }}"></div>
+<div class="field"><label for="to">Time out</label><input id="to" type="time" name="time_out" value="{{ r.time_out or '' }}"></div></div>
+<div class="field"><label for="rs">Reason (required)</label><input id="rs" name="reason" required placeholder="e.g. Forgot to clock out; confirmed with branch head"></div>
+<div class="row"><button class="btn" name="action" value="correct" {% if locked %}disabled{% endif %}>Save correction</button>
+<button class="btn btn-secondary" name="action" value="excuse" {% if locked %}disabled{% endif %}>Mark exception as excused</button></div></form></div>
+<div class="card"><h2>History</h2><ul class="list-plain">{% for h in history %}<li>{{ h.summary }}<br><small class="muted">{{ h.at|dt }} · {{ h.actor }}</small>{% if h.details != '{}' %}<pre class="pre" style="font-size:.78rem">{{ h.details }}</pre>{% endif %}</li>{% else %}<li class="muted">No corrections yet.</li>{% endfor %}</ul></div>
+</div>
+{% endblock %}

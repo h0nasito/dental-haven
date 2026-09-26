@@ -1,0 +1,10 @@
+{% extends "public/layout.html" %}
+{% block title %}Gallery · Dental Haven{% endblock %}
+{% block content %}
+<section class="hero" style="padding:3rem 0 2rem"><div class="wrap"><span class="eyebrow">Gallery</span><h1>Our clinics and laboratory work</h1>
+<p class="lead">We only show images Dental Haven owns or has permission to use. Patient photos are shared only with the patient's written consent.</p></div></section>
+<section class="section" style="padding-top:1.5rem"><div class="wrap">
+{% if items %}<div class="grid grid-3">{% for i in items %}<figure class="card" style="margin:0"><img src="{{ url_for('static', filename=i.image_path) }}" alt="{{ i.title }}" style="border-radius:10px;aspect-ratio:4/3;object-fit:cover;width:100%"><figcaption class="mt-1"><strong>{{ i.title }}</strong><br><small class="muted">{{ i.caption }}</small></figcaption></figure>{% endfor %}</div>
+{% else %}<div class="grid grid-3"><div class="placeholder-img">Clinic photos coming soon</div><div class="placeholder-img">Laboratory photos coming soon</div><div class="placeholder-img">Case photos shared with patient consent</div></div>{% endif %}
+</div></section>
+{% endblock %}

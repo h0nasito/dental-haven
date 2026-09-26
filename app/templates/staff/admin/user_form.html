@@ -1,0 +1,61 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, field %}
+{% block page_title %}{{ 'New user' if is_new else 'Edit user' }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('admin.users') }}">← Users</a><h1>{{ 'New user' if is_new else v.name }}</h1>
+{% if is_new %}<p>New users get a temporary password and must change it at first sign-in. Pick the least access they need.</p>{% endif %}</div></div>
+<div class="grid grid-2">
+<div class="card">
+<form method="post">
+  {{ csrf() }}
+  {{ field('name', 'Full name', v.name, errors=errors, required=True) }}
+  {{ field('email', 'Email (used to sign in)', v.email, type='email', errors=errors, required=True) }}
+  <div class="field {% if errors.role %}error{% endif %}">
+    <label for="f-role">Role *</label>
+    <select id="f-role" name="role" required {% if not is_new and user.id == current_user.id %}disabled{% endif %}>
+      <option value="">Choose a role…</option>
+      {% for key, label in ROLES.items() %}<option value="{{ key }}" {% if v.role == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    {% if not is_new and user.id == current_user.id %}<input type="hidden" name="role" value="{{ v.role }}"><span class="hint">You cannot change your own role.</span>{% endif %}
+    <span class="hint">Dentist: own schedule and assigned patients' clinical records. Staff: operations and billing for their branches. Receptionist: inquiries, bookings, registration and follow-ups. Super admin: everything.</span>
+    {% if errors.role %}<div class="field-error">{{ errors.role }}</div>{% endif %}
+  </div>
+  <fieldset class="{% if errors.branches %}error{% endif %}"><legend>Branches</legend>
+    <p class="hint">Users only see patients, bookings and reports for these branches. Super admins always see all branches.</p>
+    {% for b in branches %}<label class="check"><input type="checkbox" name="branches" value="{{ b.id }}" {% if b.id in v.branches %}checked{% endif %}> {{ b.name }}</label>{% endfor %}
+    {% if errors.branches %}<div class="field-error">{{ errors.branches }}</div>{% endif %}
+  </fieldset>
+  {% if labs %}<fieldset><legend>Authorized laboratories</legend>
+    <p class="hint">Lab staff only see the lab cases sent to the laboratories ticked here.</p>
+    {% for l in labs %}<label class="check"><input type="checkbox" name="labs" value="{{ l.id }}" {% if l.id in v.labs %}checked{% endif %}> {{ l.name }} <small class="muted">{{ l.address }}</small></label>{% endfor %}
+  </fieldset>{% endif %}
+  <fieldset><legend>For dentists: appointment emails</legend>
+    <label class="check"><input type="checkbox" name="notify_email" value="1" {% if v.notify_email %}checked{% endif %}> Email this dentist about their appointments</label>
+    <p class="hint">Sent to the email above when one of their appointments is approved or booked, rescheduled or cancelled. The email shows the day, time, branch, patient name and procedure.</p>
+  </fieldset>
+  <fieldset><legend>For dentists: printed on prescriptions and certificates</legend>
+    <div class="form-grid">{{ field('license_no', 'PRC license no.', v.license_no) }}{{ field('ptr_no', 'PTR no.', v.ptr_no) }}{{ field('s2_no', 'S2 no. (if any)', v.s2_no) }}</div>
+  </fieldset>
+  {% if is_new %}
+    <label class="check"><input type="checkbox" name="is_employee" value="1" {% if v.is_employee %}checked{% endif %}> Also add to the employee list (attendance and payroll)</label>
+    {{ field('position', 'Position (optional)', v.position, hint='e.g. Associate dentist, Dental assistant, Front desk') }}
+  {% else %}
+    <label class="check"><input type="checkbox" name="active" value="1" {% if v.active %}checked{% endif %} {% if user.id == current_user.id %}disabled{% endif %}> Active (can sign in)</label>
+    {% if user.id == current_user.id %}<input type="hidden" name="active" value="1">{% endif %}
+    {% if errors.active %}<div class="field-error">{{ errors.active }}</div>{% endif %}
+  {% endif %}
+  <div class="form-actions"><button class="btn" type="submit">{{ 'Create user' if is_new else 'Save changes' }}</button>
+  <a class="btn btn-secondary" href="{{ url_for('admin.users') }}">Cancel</a></div>
+</form>
+</div>
+{% if not is_new %}
+<div>
+  <div class="card"><h3>Password</h3><p class="muted">Generates a new temporary password and signs the user out everywhere.</p>
+    <form method="post" action="{{ url_for('admin.user_reset_password', user_id=user.id) }}" data-confirm="Reset this user's password?">{{ csrf() }}<button class="btn btn-secondary" type="submit">Reset password</button></form></div>
+  <div class="card"><h3>History</h3>
+    {% if history %}<ul class="list-plain">{% for h in history %}<li><strong>{{ h.action|label }}</strong> — {{ h.summary }}<br><small>{{ h.at|dt }} by {{ h.actor or 'system' }}</small></li>{% endfor %}</ul>
+    {% else %}<p class="muted">No changes recorded.</p>{% endif %}</div>
+</div>
+{% endif %}
+</div>
+{% endblock %}

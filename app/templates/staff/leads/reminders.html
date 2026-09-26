@@ -1,0 +1,23 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, status_badge, empty %}
+{% block page_title %}Reminders{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Reminder outbox</h1><p>Reminders are queued automatically from the reminder rules when an appointment is confirmed. <strong>Nothing is sent automatically.</strong> Staff copy each message, send it from the clinic phone or email, and record the result here.</p></div>
+{% if current_user.can('reminders.send') %}<form method="post" action="{{ url_for('leads.reminders_generate') }}">{{ csrf() }}<button class="btn btn-secondary">Check for missing reminders</button></form>{% endif %}</div>
+<div class="flash flash-info">Provider: <strong>Manual</strong>. No SMS, email or Messenger integration is set up, so nothing is sent from this system. See docs/INTEGRATIONS.md.</div>
+<div class="tabs">{% for s, l in [('due','Due now'),('scheduled','Scheduled'),('sent','Sent / failed'),('skipped','Skipped')] %}<a class="{% if view == s %}active{% endif %}" href="?view={{ s }}">{{ l }}</a>{% endfor %}</div>
+<div class="card"><div class="table-wrap"><table>
+<thead><tr><th>Send at</th><th>Patient</th><th>Channel</th><th>Appointment</th><th>Message</th><th>Status</th><th></th></tr></thead><tbody>
+{% for r in rows %}<tr><td>{{ r.scheduled_for|dt }}</td><td>{{ r.last_name }}, {{ r.first_name }}<br><small class="muted">{{ (r.phone if r.channel == 'sms' else r.email)|contact }}</small></td>
+<td>{{ CHANNELS.get(r.channel, r.channel) }}</td><td>{% if r.appointment_id %}<a href="{{ url_for('sched.appointment', appt_id=r.appointment_id) }}">{{ r.start_at|dt }}</a>{% endif %}<br><small class="muted">{{ r.branch }}</small></td>
+<td style="max-width:340px">{% if r.rendered_body %}<div class="template-box" id="rm-{{ r.id }}" style="font-size:.85rem">{{ r.rendered_body }}</div>{% else %}<span class="muted">{{ r.status|label }}</span>{% endif %}{% if r.result_note %}<small class="muted">{{ r.result_note }}</small>{% endif %}</td>
+<td>{{ status_badge(r.status) }}{% if r.sent_at %}<br><small class="muted">{{ r.sent_at|dt }}</small>{% endif %}</td>
+<td>{% if r.status == 'pending' and current_user.can('reminders.send') %}<div class="row">
+<button type="button" class="btn btn-ghost btn-sm" data-copy="rm-{{ r.id }}">Copy</button>
+<form method="post" action="{{ url_for('leads.reminder_update', rem_id=r.id) }}">{{ csrf() }}<input type="hidden" name="action" value="sent"><button class="btn btn-sm">Mark sent</button></form>
+<form method="post" action="{{ url_for('leads.reminder_update', rem_id=r.id) }}">{{ csrf() }}<input type="hidden" name="action" value="failed"><button class="btn btn-secondary btn-sm">Failed</button></form>
+<form method="post" action="{{ url_for('leads.reminder_update', rem_id=r.id) }}">{{ csrf() }}<input type="hidden" name="action" value="skip"><button class="btn btn-ghost btn-sm">Skip</button></form></div>{% endif %}</td></tr>
+{% else %}<tr><td colspan="7">{{ empty('No reminders in this view') }}</td></tr>{% endfor %}</tbody></table></div></div>
+<div class="card"><h3>Active reminder rules</h3><ul class="list-plain">{% for r in rules %}<li>{{ r.name }} — {{ (-r.offset_minutes // 60) }} hours before, via {{ CHANNELS.get(r.channel, r.channel) }}, template "{{ r.template }}" {% if not r.active %}<span class="badge">off</span>{% endif %}</li>{% endfor %}</ul>
+<p class="hint">Reminders are skipped for patients who opted out or didn't consent to that channel. Send times that fall in quiet hours move to the next morning. Change the timing and templates under Response templates.</p></div>
+{% endblock %}

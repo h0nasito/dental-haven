@@ -1,0 +1,18 @@
+{% extends "public/layout.html" %}
+{% block title %}Request received · Dental Haven{% endblock %}
+{% block content %}
+<section class="section"><div class="wrap" style="max-width:640px">
+<div class="card" style="text-align:center;padding:2rem">
+  <div class="svc-icon" style="margin:0 auto 1rem">✓</div>
+  {% if info and info.confirmed %}
+    <h1>Your appointment is confirmed</h1>
+    <p>Reference: <strong>{{ info.ref }}</strong></p>
+    <p class="muted">We'll send a reminder before your visit if you agreed to reminders. To change or cancel, please call the branch.</p>
+  {% else %}
+    <h1>Request received</h1>
+    {% if info %}<p>Reference: <strong>{{ info.ref }}</strong></p>{% endif %}
+    <p>Thank you. <strong>This is not yet a confirmed appointment.</strong> Our team will contact you to confirm your schedule, usually within clinic hours.</p>
+  {% endif %}
+  <div class="row" style="justify-content:center"><a class="btn btn-secondary" href="{{ url_for('public.home') }}">Back to home</a></div>
+</div></div></section>
+{% endblock %}

@@ -1,0 +1,30 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import status_badge %}
+{% block page_title %}Operations report{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Operations report</h1><p>{{ start|date }} – {{ end|date }} · visits, bookings, lead conversion and service mix.</p></div>
+{% if current_user.can('reports.export') %}<a class="btn btn-secondary btn-sm" href="{{ url_for('billing.export', kind='appointments', **{'from': start.isoformat(), 'to': end.isoformat(), 'branch': branch or ''}) }}">CSV: Appointments</a>{% endif %}</div>
+<form class="toolbar" method="get">
+<div class="field"><label for="from">From</label><input id="from" type="date" name="from" value="{{ start.isoformat() }}"></div>
+<div class="field"><label for="to">To</label><input id="to" type="date" name="to" value="{{ end.isoformat() }}"></div>
+<div class="field"><label for="branch">Branch</label><select id="branch" name="branch"><option value="">{{ 'Selected branch' if current_user.active_branch_id else 'All my branches' }}</option>{% for b in branches %}<option value="{{ b.id }}" {% if branch == b.id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select></div>
+<button class="btn btn-secondary">Apply</button></form>
+<div class="grid grid-4" style="margin-bottom:1rem">
+{% set total = by_status|sum(attribute='n') %}{% set comp = (by_status|selectattr('status','equalto','completed')|map(attribute='n')|list or [0])[0] %}{% set ns = (by_status|selectattr('status','equalto','no_show')|map(attribute='n')|list or [0])[0] %}
+<div class="stat"><div class="label">Appointments</div><div class="value">{{ total }}</div></div>
+<div class="stat"><div class="label">Completed visits</div><div class="value">{{ comp }}</div></div>
+<div class="stat {% if ns %}warn{% endif %}"><div class="label">No-show rate</div><div class="value">{{ ((100 * ns / total)|round(1)) if total else 0 }}%</div></div>
+<div class="stat"><div class="label">New patients</div><div class="value">{{ new_patients }}</div></div>
+</div>
+<div class="grid grid-2">
+<div class="card"><h2>By branch</h2><table><thead><tr><th>Branch</th><th class="num">Appointments</th><th class="num">Completed</th><th class="num">Patients seen</th></tr></thead><tbody>
+{% for r in by_branch %}<tr><td>{{ r.branch }}</td><td class="num">{{ r.n }}</td><td class="num">{{ r.completed or 0 }}</td><td class="num">{{ r.patients }}</td></tr>{% endfor %}</tbody></table></div>
+<div class="card"><h2>By status</h2><ul class="list-plain">{% for r in by_status %}<li class="row between">{{ status_badge(r.status) }}<strong>{{ r.n }}</strong></li>{% else %}<li class="muted">No appointments.</li>{% endfor %}</ul></div>
+<div class="card"><h2>By service</h2><table><thead><tr><th>Service</th><th class="num">Booked</th><th class="num">Completed</th></tr></thead><tbody>{% for r in by_service %}<tr><td>{{ r.service }}</td><td class="num">{{ r.n }}</td><td class="num">{{ r.completed }}</td></tr>{% endfor %}</tbody></table></div>
+<div class="card"><h2>By dentist</h2><table><thead><tr><th>Dentist</th><th class="num">Booked</th><th class="num">Completed</th><th class="num">No-shows</th></tr></thead><tbody>{% for r in by_dentist %}<tr><td>{{ r.dentist }}</td><td class="num">{{ r.n }}</td><td class="num">{{ r.completed }}</td><td class="num">{{ r.no_show }}</td></tr>{% endfor %}</tbody></table></div>
+<div class="card"><h2>Booking sources</h2><ul class="list-plain">{% for r in by_source %}<li class="row between"><span>{{ SOURCES.get(r.source, r.source) }}</span><strong>{{ r.n }}</strong></li>{% endfor %}</ul>
+<h3 class="mt-1">Online requests</h3><ul class="list-plain">{% for r in requests_ %}<li class="row between">{{ status_badge(r.status) }}<strong>{{ r.n }}</strong></li>{% else %}<li class="muted">None.</li>{% endfor %}</ul></div>
+<div class="card"><h2>Lead conversion</h2><table><thead><tr><th>Source</th><th class="num">Leads</th><th class="num">Booked / converted</th><th class="num">Rate</th></tr></thead><tbody>
+{% for r in leads %}<tr><td>{{ LEAD_SOURCES.get(r.source, r.source) }}</td><td class="num">{{ r.n }}</td><td class="num">{{ r.won }}</td><td class="num">{{ ((100 * r.won / r.n)|round|int) if r.n else 0 }}%</td></tr>{% else %}<tr><td colspan="4" class="empty">No leads in range.</td></tr>{% endfor %}</tbody></table></div>
+</div>
+{% endblock %}

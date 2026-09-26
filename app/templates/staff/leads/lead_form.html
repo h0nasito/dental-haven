@@ -1,0 +1,21 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, field, textarea, select %}
+{% block page_title %}Log inquiry{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('leads.index') }}">← Leads</a><h1>Log an inquiry</h1><p>For Facebook or Messenger messages, phone calls and walk-ins. Record only what the person shared with you.</p></div></div>
+<form method="post" class="card" style="max-width:860px">{{ csrf() }}
+<div class="form-grid">
+{{ field('full_name', 'Name', v.full_name, errors=errors, required=True) }}
+{{ select('source', 'Source', LEAD_SOURCES.items()|list, v.source, errors=errors, required=True) }}
+{{ field('phone', 'Mobile', v.phone, type='tel') }}
+{{ field('email', 'Email', v.email, type='email') }}
+{{ select('branch_id', 'Branch', branches|opts, v.branch_id, errors=errors, blank='Not specified') }}
+{{ select('service_id', 'Service of interest', services|opts, v.service_id, blank='Not specified') }}
+{{ select('owner_id', 'Owner (who follows up)', staff|opts, v.owner_id, blank='Unassigned') }}
+{{ field('next_follow_up_at', 'Next follow-up', v.next_follow_up_at, type='datetime-local', errors=errors) }}
+</div>
+{{ textarea('message', 'Their message / what they asked', v.message, rows=4, hint="Summarise it. Don't paste screenshots or health details that aren't needed.") }}
+<label class="check"><input type="checkbox" name="consent_contact" value="1" {% if v.consent_contact %}checked{% endif %}> The person agreed to be contacted for follow-up</label>
+<div class="form-actions mt-1"><button class="btn" type="submit">Save inquiry</button></div>
+</form>
+{% endblock %}

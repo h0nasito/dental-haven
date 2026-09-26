@@ -1,0 +1,16 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import empty %}
+{% block page_title %}Lab cases{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Lab cases</h1><p>{% if lab_user %}Cases sent to your laboratory by the branches.{% else %}Crowns, bridges, dentures and other work sent to the laboratory.{% endif %}</p></div>
+{% if current_user.can('lab.manage') %}<a class="btn" href="{{ url_for('labs.new') }}">+ New lab case</a>{% endif %}</div>
+<div class="tabs"><a class="{% if status == 'open' %}active{% endif %}" href="?status=open">Open</a>
+{% for k, l in statuses.items() %}<a class="{% if status == k %}active{% endif %}" href="?status={{ k }}">{{ l }}{% if counts.get(k) %} ({{ counts[k] }}){% endif %}</a>{% endfor %}</div>
+<div class="card"><div class="table-wrap"><table><thead><tr><th>Due</th><th>Patient</th><th>Case</th><th>Teeth / shade</th><th>Branch · dentist</th><th>Lab</th><th>Status</th></tr></thead><tbody>
+{% for c in rows %}<tr><td>{% if c.due_on %}{% if c.due_on < today and c.status in ['sent','received','in_progress','remake'] %}<strong style="color:var(--red-700)">{{ c.due_on|date }}</strong><br><span class="badge badge-red">Overdue</span>{% else %}{{ c.due_on|date }}{% endif %}{% else %}—{% endif %}</td>
+<td><a href="{{ url_for('labs.case', case_id=c.id) }}"><strong>{{ c.last_name }}, {{ c.first_name }}</strong></a><br><small class="muted">{{ c.chart_no }} · sent {{ c.sent_on|date }}</small></td>
+<td>{{ c.case_type }}{% if c.material %}<br><small class="muted">{{ c.material }}</small>{% endif %}</td><td>{{ c.teeth or '—' }}{% if c.shade %}<br><small class="muted">Shade {{ c.shade }}</small>{% endif %}</td>
+<td>{{ c.branch }}<br><small class="muted">{{ c.dentist or '—' }}</small></td><td>{{ c.lab }}</td>
+<td><span class="badge {% if c.status in ['ready','delivered'] %}badge-green{% elif c.status == 'remake' %}badge-red{% elif c.status == 'cancelled' %}{% else %}badge-blue{% endif %}">{{ statuses[c.status] }}</span></td></tr>
+{% else %}<tr><td colspan="7">{{ empty('No lab cases here') }}</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

@@ -1,0 +1,10 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import status_badge, empty %}
+{% block page_title %}Report cards{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Patient report cards</h1><p>Plain-language summaries of visits, completed treatment and next steps. To start one, open the patient and choose "Report card". A dentist must approve each card before it can be printed for the patient.</p></div></div>
+<div class="card"><div class="table-wrap"><table><thead><tr><th>Patient</th><th>Period</th><th>Reviewer</th><th>Generated</th><th>Status</th><th></th></tr></thead><tbody>
+{% for r in rows %}<tr><td>{{ r.last_name }}, {{ r.first_name }}<br><small class="muted">{{ r.chart_no }}</small></td><td>{{ r.period_from|date }} – {{ r.period_to|date }}</td><td>{{ r.reviewer }}</td><td>{{ r.generated_at|dt }}<br><small class="muted">{{ r.generated_by_name }}</small></td>
+<td>{{ status_badge(r.status) }}</td><td><a class="btn btn-sm {% if r.status != 'pending_review' %}btn-secondary{% endif %}" href="{{ url_for('reportcards.detail', rc_id=r.id) }}">{{ 'Review' if r.status == 'pending_review' and current_user.id == r.reviewer_id else 'Open' }}</a></td></tr>
+{% else %}<tr><td colspan="6">{{ empty('No report cards yet') }}</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

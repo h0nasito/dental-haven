@@ -1,0 +1,70 @@
+{% macro csrf() %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endmacro %}
+
+{% macro field(name, label, value='', type='text', errors=None, required=False, hint='', attrs='', cls='') %}
+<div class="field {{ cls }} {% if errors and errors.get(name) %}error{% endif %}">
+  <label for="f-{{ name }}">{{ label }}{% if required %} <span aria-hidden="true">*</span>{% endif %}</label>
+  <input id="f-{{ name }}" name="{{ name }}" type="{{ type }}" value="{{ value if value is not none else '' }}" {% if required %}required{% endif %} {{ attrs|safe }}
+    {% if hint %}aria-describedby="h-{{ name }}"{% endif %}>
+  {% if hint %}<span class="hint" id="h-{{ name }}">{{ hint }}</span>{% endif %}
+  {% if errors and errors.get(name) %}<div class="field-error" role="alert">{{ errors.get(name) }}</div>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro textarea(name, label, value='', errors=None, required=False, hint='', rows=4, cls='') %}
+<div class="field {{ cls }} {% if errors and errors.get(name) %}error{% endif %}">
+  <label for="f-{{ name }}">{{ label }}{% if required %} <span aria-hidden="true">*</span>{% endif %}</label>
+  <textarea id="f-{{ name }}" name="{{ name }}" rows="{{ rows }}" {% if required %}required{% endif %}>{{ value or '' }}</textarea>
+  {% if hint %}<span class="hint">{{ hint }}</span>{% endif %}
+  {% if errors and errors.get(name) %}<div class="field-error" role="alert">{{ errors.get(name) }}</div>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro select(name, label, options, value=None, errors=None, required=False, blank=None, hint='', cls='') %}
+<div class="field {{ cls }} {% if errors and errors.get(name) %}error{% endif %}">
+  <label for="f-{{ name }}">{{ label }}{% if required %} <span aria-hidden="true">*</span>{% endif %}</label>
+  <select id="f-{{ name }}" name="{{ name }}" {% if required %}required{% endif %}>
+    {% if blank is not none %}<option value="">{{ blank }}</option>{% endif %}
+    {% for opt_value, opt_label in options %}
+      <option value="{{ opt_value }}" {% if value is not none and opt_value|string == value|string %}selected{% endif %}>{{ opt_label }}</option>
+    {% endfor %}
+  </select>
+  {% if hint %}<span class="hint">{{ hint }}</span>{% endif %}
+  {% if errors and errors.get(name) %}<div class="field-error" role="alert">{{ errors.get(name) }}</div>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro checkbox(name, label, checked=False, hint='') %}
+<div class="field">
+  <label class="check"><input type="checkbox" name="{{ name }}" value="1" {% if checked %}checked{% endif %}> <span>{{ label }}{% if hint %}<span class="hint">{{ hint }}</span>{% endif %}</span></label>
+</div>
+{% endmacro %}
+
+{% macro status_badge(status) -%}
+{%- set cls = {
+  'requested':'amber','pending':'amber','new':'amber','draft':'amber','pending_review':'amber','open':'amber','exception':'amber','submitted':'blue',
+  'confirmed':'teal','contacted':'blue','qualified':'blue','booked':'teal','presented':'blue','accepted':'teal','in_progress':'blue','scheduled':'blue','issued':'blue',
+  'checked_in':'blue','completed':'green','converted':'green','done':'green','approved':'green','paid':'green','ok':'green','sent_manual':'green','sent_provider':'green','valid':'green','corrected':'blue','excused':'blue',
+  'cancelled':'','no_show':'red','declined':'red','lost':'','void':'red','failed':'red','revoked':'red','changes_requested':'red','overdue':'red','partial':'amber','unpaid':'red',
+  'skipped_opt_out':'','skipped_no_consent':''
+}.get(status, '') -%}
+<span class="badge {% if cls %}badge-{{ cls }}{% endif %}">{{ APPT_STATUSES.get(status, status|label) }}</span>
+{%- endmacro %}
+
+{% macro empty(title, text='') %}
+<div class="empty"><strong>{{ title }}</strong>{{ text }}</div>
+{% endmacro %}
+
+{% macro flashes() %}
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for category, message in messages %}
+    <div class="flash flash-{{ category if category in ['success','error','info','warning'] else 'info' }}" role="status">{{ message }}</div>
+  {% endfor %}
+{% endwith %}
+{% endmacro %}
+
+{% macro form_errors(errors) %}
+{% if errors and errors.get('_form') %}
+<div class="flash flash-error" role="alert"><strong>Please fix the following:</strong>
+  <ul>{% for e in errors.get('_form') %}<li>{{ e }}</li>{% endfor %}</ul></div>
+{% endif %}
+{% endmacro %}

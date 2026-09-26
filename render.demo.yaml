@@ -1,0 +1,23 @@
+# One-click DEMO deployment on Render (free plan). Data is synthetic and resets on each restart.
+services:
+  - type: web
+    name: dental-haven-demo
+    runtime: python
+    plan: free
+    region: singapore
+    buildCommand: pip install -r requirements.txt
+    startCommand: bash start-demo.sh
+    healthCheckPath: /
+    envVars:
+      - key: APP_ENV
+        value: demo
+      - key: SECRET_KEY
+        generateValue: true
+      - key: TRUST_PROXY
+        value: "1"
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: CLINIC_TIMEZONE
+        value: Asia/Manila
+      - key: DEMO_PASSWORD
+        sync: false        # Render asks you to type this when you create the service

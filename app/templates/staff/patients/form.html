@@ -1,0 +1,39 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, field, textarea, select, form_errors %}
+{% block page_title %}{{ 'Edit patient' if p else 'Register patient' }}{% endblock %}
+{% block content %}
+<div class="page-head"><div>{% if p %}<a href="{{ url_for('patients.detail', patient_id=p.id) }}">← {{ p.last_name }}, {{ p.first_name }}</a>{% else %}<a href="{{ url_for('patients.index') }}">← Patients</a>{% endif %}
+<h1>{{ 'Edit profile' if p else 'Register patient' }}</h1></div></div>
+<form method="post" class="card" style="max-width:960px">{{ csrf() }}
+{{ form_errors(errors) }}
+{% if errors._dup %}<label class="check"><input type="checkbox" name="confirm_duplicate" value="1"> This is a different person — register anyway</label>{% endif %}
+<fieldset><legend>Personal details</legend><div class="form-grid">
+{{ field('first_name', 'First name', v.first_name, errors=errors, required=True) }}
+{{ field('middle_name', 'Middle name', v.middle_name) }}
+{{ field('last_name', 'Last name', v.last_name, errors=errors, required=True) }}
+{{ field('birth_date', 'Date of birth', v.birth_date, type='date', errors=errors) }}
+{{ select('sex', 'Sex', [('female','Female'),('male','Male'),('other','Other / prefer not to say')], v.sex, blank='—') }}
+{% if current_user.can('patients.contact') or not p %}{{ field('phone', 'Mobile number', v.phone, type='tel', errors=errors) }}
+{{ field('email', 'Email', v.email, type='email', errors=errors) }}{% endif %}
+{{ field('occupation', 'Occupation', v.occupation) }}
+{{ select('civil_status', 'Civil status', [('single','Single'),('married','Married'),('widowed','Widowed'),('separated','Separated')], v.civil_status, blank='—') }}
+{% if current_user.can('patients.contact') or not p %}{{ field('emergency_contact', 'Emergency contact person', v.emergency_contact) }}
+{{ field('emergency_phone', 'Emergency contact number', v.emergency_phone, type='tel') }}{% endif %}
+{{ select('preferred_branch_id', 'Preferred branch', branches|opts, v.preferred_branch_id, errors=errors, required=True) }}
+</div>
+{% if current_user.can('patients.contact') or not p %}{{ textarea('address', 'Address', v.address, rows=2) }}{% endif %}</fieldset>
+<fieldset><legend>Consent &amp; communication preferences</legend>
+<label class="check"><input type="checkbox" name="consent_privacy" value="1" {% if v.consent_privacy %}checked{% endif %}> <span>Patient has agreed to the privacy notice (collection and use of personal and health information for their care)</span></label>
+{% if p and p.consent_privacy_at %}<p class="hint">Recorded {{ p.consent_privacy_at|dt }}</p>{% endif %}
+<div class="form-grid mt-1">
+<div><label class="check"><input type="checkbox" name="contact_sms" value="1" {% if v.contact_sms %}checked{% endif %}> OK to send SMS reminders</label>{% if errors.contact_sms %}<div class="field-error">{{ errors.contact_sms }}</div>{% endif %}
+<label class="check"><input type="checkbox" name="contact_email" value="1" {% if v.contact_email %}checked{% endif %}> OK to send email reminders</label>{% if errors.contact_email %}<div class="field-error">{{ errors.contact_email }}</div>{% endif %}
+<label class="check"><input type="checkbox" name="contact_messenger" value="1" {% if v.contact_messenger %}checked{% endif %}> OK to contact via Messenger</label></div>
+<div><label class="check"><input type="checkbox" name="consent_marketing" value="1" {% if v.consent_marketing %}checked{% endif %}> OK to receive promotions/newsletters</label>
+<label class="check"><input type="checkbox" name="opt_out_all" value="1" {% if v.opt_out_all %}checked{% endif %}> <strong>Opted out of all non-essential messages</strong></label>
+{{ select('preferred_channel', 'Preferred channel', [('sms','SMS'),('call','Phone call'),('email','Email'),('messenger','Messenger')], v.preferred_channel, blank='No preference') }}</div>
+</div></fieldset>
+{{ textarea('admin_notes', 'Front-desk notes (non-clinical)', v.admin_notes, rows=2, hint='e.g. prefers Saturday mornings. Put clinical details in the clinical record, not here.') }}
+<div class="form-actions"><button class="btn" type="submit">{{ 'Save profile' if p else 'Register patient' }}</button></div>
+</form>
+{% endblock %}

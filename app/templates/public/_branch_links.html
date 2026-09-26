@@ -1,0 +1,7 @@
+{# Quick-action links for a branch `b`: call, directions, Facebook. #}
+<div class="branch-links">
+  {% for disp, tel in (b.phone|phones)[:1] %}<a class="chip" href="{{ tel }}">📞 Call</a>{% endfor %}
+  {% if b.waze_url %}<a class="chip" href="{{ b.waze_url }}" target="_blank" rel="noopener">Waze</a>{% endif %}
+  {% if b.map_url %}<a class="chip" href="{{ b.map_url }}" target="_blank" rel="noopener">Google Maps</a>{% endif %}
+  {% if b.facebook_url %}<a class="chip" href="{{ b.facebook_url }}" target="_blank" rel="noopener">Facebook</a>{% endif %}
+</div>

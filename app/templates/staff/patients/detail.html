@@ -1,0 +1,268 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, status_badge, empty %}
+{% block page_title %}{{ p.last_name }}, {{ p.first_name }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('patients.index') }}">← Patients</a>
+<h1>{{ p.last_name }}, {{ p.first_name }}{% if p.middle_name %} {{ p.middle_name }}{% endif %} {% if p.is_demo %}<span class="badge">Demo record</span>{% endif %}</h1>
+<p>{{ p.chart_no }}{% if p.legacy_id %} · MyMedsPH #{{ p.legacy_id }}{% endif %}{% if p.birth_date %} · born {{ p.birth_date|date }}{% endif %} · {{ p.preferred_branch or 'No preferred branch' }}</p>
+{% if p.alert_flag %}<p class="alert-flag mt-1">⚠ Alert: {{ p.alert_flag }}</p>{% endif %}
+{% if not p.active %}<div class="flash flash-warning mt-1">This patient was deleted and is hidden from lists.
+{% if current_user.can('users.manage') %}<form method="post" action="{{ url_for('patients.restore_patient', patient_id=p.id) }}" class="inline-form">{{ csrf() }}<button class="btn btn-secondary btn-sm">Restore</button></form>{% endif %}</div>{% endif %}</div>
+<div class="row">
+{% if current_user.can('appointments.manage') %}<a class="btn" href="{{ url_for('sched.appointment_new', patient_id=p.id) }}">Book appointment</a>{% endif %}
+{% if current_user.can('patients.manage') %}<a class="btn btn-secondary" href="{{ url_for('patients.edit', patient_id=p.id) }}">Edit profile</a>{% endif %}
+{% if current_user.can('reportcards.generate') and clinical %}<a class="btn btn-secondary" href="{{ url_for('reportcards.new', patient_id=p.id) }}">Report card</a>{% endif %}
+</div></div>
+
+<nav class="tabs" aria-label="Patient sections">
+  <a href="?tab=overview" class="{% if tab == 'overview' %}active{% endif %}">Overview</a>
+  {% if clinical %}<a href="?tab=clinical" class="{% if tab == 'clinical' %}active{% endif %}">Clinical record</a>{% endif %}
+  {% if clinical %}<a href="?tab=chart" class="{% if tab == 'chart' %}active{% endif %}">Dental chart</a>{% endif %}
+  {% if clinical %}<a href="?tab=rx" class="{% if tab == 'rx' %}active{% endif %}">Prescriptions &amp; certificates</a>{% endif %}
+  <a href="?tab=documents" class="{% if tab == 'documents' %}active{% endif %}">Documents ({{ documents|length }})</a>
+  {% if clinical or current_user.is_super_admin %}<a href="?tab=changes" class="{% if tab == 'changes' %}active{% endif %}">Change log</a>{% endif %}
+</nav>
+
+{% if tab == 'overview' %}
+<div class="grid grid-2">
+<div>
+<div class="card"><h2>Contact &amp; consent</h2>
+<dl class="kv"><dt>Mobile</dt><dd>{{ p.phone|contact }}</dd><dt>Email</dt><dd>{{ p.email|contact }}</dd><dt>Address</dt><dd>{{ p.address|contact }}</dd>
+<dt>Privacy consent</dt><dd>{% if p.consent_privacy %}<span class="badge badge-green">Given</span> <small class="muted">{{ p.consent_privacy_at|dt }}</small>{% else %}<span class="badge badge-amber">Not recorded</span>{% endif %}</dd>
+<dt>May contact by</dt><dd>{% if p.opt_out_all %}<span class="badge">Opted out of all messages</span>{% else %}{% set ch = [] %}{% if p.contact_sms %}{% set _ = ch.append('SMS') %}{% endif %}{% if p.contact_email %}{% set _ = ch.append('Email') %}{% endif %}{% if p.contact_messenger %}{% set _ = ch.append('Messenger') %}{% endif %}{{ ch|join(', ') or 'No channels allowed' }}{% endif %}</dd>
+{% if p.occupation %}<dt>Occupation</dt><dd>{{ p.occupation }}</dd>{% endif %}
+{% if p.civil_status %}<dt>Civil status</dt><dd>{{ p.civil_status|label }}</dd>{% endif %}
+{% if p.emergency_contact or p.emergency_phone %}<dt>Emergency contact</dt><dd>{{ p.emergency_contact }} {{ p.emergency_phone|contact }}</dd>{% endif %}
+<dt>Preferred channel</dt><dd>{{ p.preferred_channel|label or '—' }}</dd><dt>Promotions</dt><dd>{{ 'Yes' if p.consent_marketing else 'No' }}</dd>
+{% if p.admin_notes %}<dt>Front-desk notes</dt><dd class="pre">{{ p.admin_notes }}</dd>{% endif %}</dl></div>
+
+<div class="card"><h2>Care team</h2>
+<p class="muted" style="font-size:.9rem">Dentists can open this patient's clinical record only if they're assigned here. Booking an appointment with a dentist assigns them automatically.</p>
+<ul class="list-plain">{% for d in assigned %}<li class="row between"><span>{{ d.name }}</span>
+{% if current_user.can('users.manage') %}<form method="post" action="{{ url_for('patients.assign', patient_id=p.id) }}">{{ csrf() }}<input type="hidden" name="dentist_id" value="{{ d.id }}"><input type="hidden" name="action" value="remove"><button class="btn btn-ghost btn-sm">Remove access</button></form>{% endif %}</li>
+{% else %}<li class="muted">No dentist assigned yet.</li>{% endfor %}</ul>
+{% if current_user.can('users.manage') %}<form method="post" action="{{ url_for('patients.assign', patient_id=p.id) }}" class="row mt-1">{{ csrf() }}<label class="sr-only" for="ad">Dentist</label>
+<select id="ad" name="dentist_id" style="max-width:240px">{% for d in all_dentists %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}</select><button class="btn btn-secondary btn-sm">Grant access</button></form>{% endif %}
+</div>
+
+{% if invoices is defined %}
+<div class="card" id="billing"><div class="card-head"><h2>Billing</h2>{% if current_user.can('billing.manage') %}<a class="btn btn-secondary btn-sm" href="{{ url_for('billing.invoice_new', patient_id=p.id) }}">+ Invoice</a>{% endif %}</div>
+<p>Outstanding balance: <strong>{{ balance|peso }}</strong> · Account credit: <strong>{{ credit|peso }}</strong></p>
+{% if current_user.can('payments.add') or (current_user.can('billing.void') and credit > 0) %}
+<details><summary>Record deposit / account credit</summary>
+<form method="post" action="{{ url_for('billing.patient_credit', patient_id=p.id) }}" class="mt-1">{{ csrf() }}
+<div class="form-grid">
+<div class="field"><label for="cr-kind">Type</label><select id="cr-kind" name="action">{% if current_user.can('payments.add') %}<option value="deposit">Deposit (advance payment)</option>{% endif %}{% if current_user.can('billing.void') and credit > 0 %}<option value="refund">Refund credit to patient</option>{% endif %}</select></div>
+<div class="field"><label for="cr-amt">Amount (₱)</label><input id="cr-amt" name="amount" inputmode="decimal" required></div>
+<div class="field"><label for="cr-m">Method</label><select id="cr-m" name="method">{% for k, l in PAYMENT_METHODS.items() %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></div>
+<div class="field"><label for="cr-b">Branch</label><select id="cr-b" name="branch_id">{% for b in my_branches %}<option value="{{ b.id }}" {% if b.id == p.preferred_branch_id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select></div>
+<div class="field"><label for="cr-ref">Reference no.</label><input id="cr-ref" name="reference"></div>
+<div class="field"><label for="cr-n">Note / reason</label><input id="cr-n" name="notes"></div></div>
+<button class="btn btn-secondary btn-sm">Save</button>
+<p class="hint">Deposits count as collections on the day they're received. When the credit is applied to a bill, it isn't counted again.</p></form></details>
+{% endif %}
+{% if credit_rows %}<details><summary>Account credit history</summary><ul class="list-plain">{% for c in credit_rows %}<li class="row between"><span>{{ c.entry_date|date }} · {{ c.kind|label }}{% if c.notes %} · <small class="muted">{{ c.notes }}</small>{% endif %}{% if c.status == 'void' %} <span class="badge">void</span>{% endif %}</span><strong>{{ ('-' if c.kind != 'deposit' else '') }}{{ c.amount_cents|peso }}</strong></li>{% endfor %}</ul></details>{% endif %}
+<div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Date</th><th>Branch</th><th class="num">Total</th><th class="num">Paid</th><th>Status</th></tr></thead><tbody>
+{% for i in invoices %}<tr><td><a href="{{ url_for('billing.invoice', invoice_id=i.id) }}">{{ i.number or 'Draft' }}</a></td><td>{{ i.issued_at|date }}</td><td>{{ i.branch }}</td><td class="num">{{ i.total_cents|peso }}</td><td class="num">{{ i.paid|peso }}</td><td>{{ status_badge(i.status) }}</td></tr>
+{% else %}<tr><td colspan="6" class="empty">No invoices.</td></tr>{% endfor %}</tbody></table></div>
+{% if legacy_bills %}
+<details class="mt-1"><summary><strong>Previous bills from MyMedsPH</strong> — {{ legacy_total.n }} lines, {{ legacy_total.total|peso }} <small class="muted">(history only, not in sales reports)</small></summary>
+<div class="table-wrap mt-1"><table><thead><tr><th>Date</th><th>Service</th><th class="num">Qty</th><th class="num">Discount</th><th class="num">Total</th></tr></thead><tbody>
+{% for lb in legacy_bills %}<tr><td>{{ lb.bill_date|date }}</td><td>{{ lb.service or lb.item }}{% if lb.remarks %}<br><small class="muted">{{ lb.remarks }}</small>{% endif %}</td><td class="num">{{ lb.qty }}</td><td class="num">{{ lb.discount_cents|peso if lb.discount_cents else '—' }}</td><td class="num">{{ lb.total_cents|peso }}</td></tr>{% endfor %}
+</tbody></table></div>{% if legacy_total.n > legacy_bills|length %}<p class="muted">Showing the latest {{ legacy_bills|length }}.</p>{% endif %}</details>
+{% endif %}</div>
+{% endif %}
+</div>
+<div>
+<div class="card"><h2>Visits</h2>
+<div class="table-wrap"><table><thead><tr><th>When</th><th>Service</th><th>Dentist</th><th>Status</th></tr></thead><tbody>
+{% for a in appointments %}<tr><td><a href="{{ url_for('sched.appointment', appt_id=a.id) }}">{{ a.start_at|dt }}</a><br><small class="muted">{{ a.branch }}</small></td><td>{{ a.service }}</td><td>{{ a.dentist or '—' }}</td><td>{{ status_badge(a.status) }}</td></tr>
+{% else %}<tr><td colspan="4" class="empty">No visits yet.</td></tr>{% endfor %}</tbody></table></div></div>
+
+{% if lab_cases is defined %}
+<div class="card"><div class="card-head"><h2>Lab cases</h2>{% if current_user.can('lab.manage') %}<a class="btn btn-secondary btn-sm" href="{{ url_for('labs.new', patient_id=p.id) }}">+ Lab case</a>{% endif %}</div>
+<ul class="list-plain">{% for c in lab_cases %}<li class="row between"><a href="{{ url_for('labs.case', case_id=c.id) }}">{{ c.case_type }}{% if c.teeth %} · {{ c.teeth }}{% endif %}</a><small class="muted">{{ c.lab }} · {{ c.status|label }}</small></li>{% else %}<li class="muted">No lab cases.</li>{% endfor %}</ul></div>
+{% endif %}
+{% if current_user.can('followups.view') %}
+<div class="card"><div class="card-head"><h2>Follow-ups</h2>{% if current_user.can('followups.manage') %}<a class="btn btn-secondary btn-sm" href="{{ url_for('leads.followup_new', patient_id=p.id) }}">+ Follow-up</a>{% endif %}</div>
+<ul class="list-plain">{% for f in followups %}<li class="row between"><span><a href="{{ url_for('leads.followup_detail', fu_id=f.id) }}">{{ f.title }}</a><br><small class="muted">Due {{ f.due_at|dt }} · {{ f.assignee or 'Unassigned' }}</small></span>{{ status_badge(f.status) }}</li>
+{% else %}<li class="muted">No follow-ups.</li>{% endfor %}</ul></div>
+{% endif %}
+{% if current_user.can('patients.delete') and p.active %}
+<details class="card"><summary><strong>Delete patient</strong></summary>
+<form method="post" action="{{ url_for('patients.delete_patient', patient_id=p.id) }}" class="mt-1" data-confirm="Delete this patient? They will be hidden from all lists.">{{ csrf() }}
+<div class="field"><label for="dreason">Reason</label><input id="dreason" name="reason" required placeholder="e.g. Duplicate record of DH-000123"></div>
+<button class="btn btn-danger">Delete patient</button>
+<p class="hint">The patient disappears from lists and reminders. Records are archived, not erased, because clinics must keep them, and a super admin can restore them.</p></form></details>
+{% endif %}
+{% if not clinical %}<div class="notice">Clinical history, notes and treatment plans are only visible to authorised clinical staff. You can see the alert flag above.</div>{% endif %}
+</div>
+</div>
+{% endif %}
+
+{% if tab == 'clinical' and clinical %}
+<div class="grid grid-2">
+<div>
+<div class="card"><div class="card-head"><h2>Medical &amp; dental history</h2>{% if history.updated_at %}<small class="muted">Updated {{ history.updated_at|dt }} by {{ history.updated_by_name }}</small>{% endif %}</div>
+{% if current_user.can('clinical.edit') %}
+<form method="post" action="{{ url_for('patients.history', patient_id=p.id) }}">{{ csrf() }}
+<div class="field"><label for="al">Alert flag (shown to front desk)</label><input id="al" name="alert_flag" value="{{ p.alert_flag }}" maxlength="120" placeholder="e.g. Penicillin allergy; on blood thinners"><span class="hint">Keep it short. Front-desk staff see this flag but not the full history.</span></div>
+<div class="field"><label for="al2">Allergies</label><textarea id="al2" name="allergies" rows="2">{{ history.allergies }}</textarea></div>
+<div class="field"><label for="md">Medications</label><textarea id="md" name="medications" rows="2">{{ history.medications }}</textarea></div>
+<div class="field"><label for="mc">Medical conditions</label><textarea id="mc" name="medical_conditions" rows="3">{{ history.medical_conditions }}</textarea></div>
+<div class="field"><label for="dh">Dental history</label><textarea id="dh" name="dental_history" rows="3">{{ history.dental_history }}</textarea></div>
+<div class="field"><label for="on">Other notes</label><textarea id="on" name="other_notes" rows="2">{{ history.other_notes }}</textarea></div>
+<button class="btn btn-secondary">Save history</button></form>
+{% else %}
+<dl class="kv"><dt>Allergies</dt><dd class="pre">{{ history.allergies or '—' }}</dd><dt>Medications</dt><dd class="pre">{{ history.medications or '—' }}</dd>
+<dt>Conditions</dt><dd class="pre">{{ history.medical_conditions or '—' }}</dd><dt>Dental history</dt><dd class="pre">{{ history.dental_history or '—' }}</dd><dt>Other</dt><dd class="pre">{{ history.other_notes or '—' }}</dd></dl>
+{% endif %}</div>
+
+<div class="card" id="plans"><h2>Treatment plans</h2>
+{% for plan in plans %}
+<div class="item"><div class="row between"><strong>{{ plan.title }}</strong>{{ status_badge(plan.status) }}</div>
+<div class="meta">{{ plan.dentist or '—' }} · created {{ plan.created_at|date }}</div>{% if plan.notes %}<p class="pre" style="margin:.4rem 0">{{ plan.notes }}</p>{% endif %}
+<table class="mt-1"><thead><tr><th>#</th><th>Item</th><th>Tooth</th><th class="num">Estimate</th><th>Status</th></tr></thead><tbody>
+{% for it in plan["items"] %}<tr><td>{{ it.seq }}</td><td>{{ it.description }}{% if it.service %}<br><small class="muted">{{ it.service }}</small>{% endif %}</td><td>{{ it.tooth or '—' }}</td><td class="num">{{ it.estimate_cents|peso if it.estimate_cents is not none else '—' }}</td>
+<td>{% if current_user.can('plans.edit') %}<form method="post" action="{{ url_for('patients.plans', patient_id=p.id) }}">{{ csrf() }}<input type="hidden" name="action" value="item_status"><input type="hidden" name="plan_id" value="{{ plan.id }}"><input type="hidden" name="item_id" value="{{ it.id }}">
+<label class="sr-only" for="is{{ it.id }}">Status</label><select id="is{{ it.id }}" name="status" data-autosubmit>{% for s in item_statuses %}<option value="{{ s }}" {% if it.status == s %}selected{% endif %}>{{ s|label }}</option>{% endfor %}</select><button class="btn btn-ghost btn-sm js-hide">Save</button></form>{% else %}{{ status_badge(it.status) }}{% endif %}
+{% if current_user.can('plans.generate') and it.status != 'done' %}<form method="post" action="{{ url_for('patients.plans', patient_id=p.id) }}">{{ csrf() }}<input type="hidden" name="action" value="generate"><input type="hidden" name="plan_id" value="{{ plan.id }}"><input type="hidden" name="item_id" value="{{ it.id }}"><button class="btn btn-ghost btn-sm" title="Record this item as done in the progress notes">Generate progress note</button></form>{% endif %}</td></tr>
+{% else %}<tr><td colspan="5" class="muted">No items yet.</td></tr>{% endfor %}</tbody></table>
+{% if current_user.can('plans.edit') %}
+<details class="mt-1"><summary>Add item / change plan status</summary>
+<form method="post" action="{{ url_for('patients.plans', patient_id=p.id) }}" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="add_item"><input type="hidden" name="plan_id" value="{{ plan.id }}">
+<div class="form-grid"><div class="field"><label for="pd{{ plan.id }}">Description</label><input id="pd{{ plan.id }}" name="description" required></div>
+<div class="field"><label for="ps{{ plan.id }}">Service</label><select id="ps{{ plan.id }}" name="service_id"><option value="">—</option>{% for s in services %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}</select></div>
+<div class="field"><label for="pt{{ plan.id }}">Tooth / area</label><input id="pt{{ plan.id }}" name="tooth" placeholder="e.g. 36"></div>
+<div class="field"><label for="pe{{ plan.id }}">Estimate (₱)</label><input id="pe{{ plan.id }}" name="estimate" inputmode="decimal"></div></div>
+<button class="btn btn-secondary btn-sm">Add item</button></form>
+<form method="post" action="{{ url_for('patients.plans', patient_id=p.id) }}" class="row mt-1">{{ csrf() }}<input type="hidden" name="action" value="plan_status"><input type="hidden" name="plan_id" value="{{ plan.id }}">
+<label for="pst{{ plan.id }}">Plan status</label><select id="pst{{ plan.id }}" name="status" style="max-width:200px">{% for s in plan_statuses %}<option value="{{ s }}" {% if plan.status == s %}selected{% endif %}>{{ s|label }}</option>{% endfor %}</select><button class="btn btn-secondary btn-sm">Update</button></form>
+</details>{% endif %}
+{% if current_user.can('plans.delete') %}<form method="post" action="{{ url_for('patients.plans', patient_id=p.id) }}" class="mt-1" data-confirm="Delete this treatment plan?">{{ csrf() }}<input type="hidden" name="action" value="delete"><input type="hidden" name="plan_id" value="{{ plan.id }}"><button class="btn btn-danger btn-sm">Delete treatment plan</button></form>{% endif %}
+</div>
+{% else %}<p class="muted">No treatment plans.</p>{% endfor %}
+{% if current_user.can('plans.add') %}
+<form method="post" action="{{ url_for('patients.plans', patient_id=p.id) }}" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="create">
+<div class="form-grid"><div class="field"><label for="nt">New plan title</label><input id="nt" name="title" placeholder="e.g. Full-arch rehabilitation"></div>
+{% if current_user.role != 'dentist' %}<div class="field"><label for="ndn">Dentist</label><select id="ndn" name="dentist_id"><option value="">—</option>{% for d in all_dentists %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}</select></div>{% endif %}</div>
+<div class="field"><label for="nn">Notes</label><textarea id="nn" name="notes" rows="2"></textarea></div>
+<button class="btn btn-secondary btn-sm">Create plan</button></form>{% endif %}
+</div>
+</div>
+
+<div>
+<div class="card"><h2>Clinical notes</h2>
+{% if current_user.can('progress.add') %}
+<form method="post" action="{{ url_for('patients.add_note', patient_id=p.id) }}">{{ csrf() }}
+<div class="field"><label for="nb">New note</label><textarea id="nb" name="body" rows="4" required></textarea></div>
+<div class="form-grid"><div class="field"><label for="na">Linked visit</label><select id="na" name="appointment_id"><option value="">None</option>{% for a in recent_appts %}<option value="{{ a.id }}">{{ a.start_at|dt }} · {{ a.service }}</option>{% endfor %}</select></div>
+<div class="field"><label for="am">Amends note #</label><input id="am" name="amends" type="number" min="1" placeholder="Optional"></div></div>
+<button class="btn btn-secondary btn-sm">Add note</button></form>{% endif %}
+<ul class="list-plain mt-1">{% for n in notes %}<li><div class="row between"><strong>#{{ n.id }} · {{ n.author }}</strong><small class="muted">{{ n.created_at|dt }}{% if n.appt_at %} · visit {{ n.appt_at|date }}{% endif %}</small></div>
+{% if n.amended %}<span class="badge badge-blue">Amendment</span>{% endif %}<p class="pre mb-0">{{ n.body }}</p></li>{% else %}<li class="muted">No clinical notes yet.</li>{% endfor %}</ul></div>
+
+<div class="card"><h2>Progress notes</h2>
+{% if current_user.can('progress.add') %}
+<details><summary>Add new progress note</summary>
+<form method="post" action="{{ url_for('patients.add_procedure', patient_id=p.id) }}" class="mt-1">{{ csrf() }}
+<div class="form-grid"><div class="field"><label for="prd">Description</label><input id="prd" name="description" required></div>
+<div class="field"><label for="prs">Service</label><select id="prs" name="service_id"><option value="">—</option>{% for s in services %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}</select></div>
+<div class="field"><label for="prt">Tooth / area</label><input id="prt" name="tooth"></div>
+<div class="field"><label for="prv">Visit</label><select id="prv" name="appointment_id"><option value="">—</option>{% for a in recent_appts %}<option value="{{ a.id }}">{{ a.start_at|dt }}</option>{% endfor %}</select></div>
+<div class="field"><label for="prdt">Date performed</label><input id="prdt" type="date" name="performed_at"></div>
+<div class="field"><label for="prst">Status</label><select id="prst" name="status"><option value="completed">Completed</option><option value="planned">Planned</option></select></div></div>
+<button class="btn btn-secondary btn-sm">Save procedure</button></form></details>{% endif %}
+<div class="table-wrap mt-1"><table><thead><tr><th>Date</th><th>Progress note</th><th>Tooth</th><th>By</th><th>Status</th>{% if current_user.can('progress.actions') %}<th></th>{% endif %}</tr></thead><tbody>
+{% for pr in procedures %}<tr><td>{{ (pr.performed_at or pr.created_at)|date }}</td><td>{{ pr.description }}{% if pr.service %}<br><small class="muted">{{ pr.service }}</small>{% endif %}</td><td>{{ pr.tooth or '—' }}</td><td>{{ pr.dentist or '—' }}</td><td>{{ status_badge(pr.status) }}</td>
+{% if current_user.can('progress.actions') %}<td><details><summary>Actions</summary><form method="post" action="{{ url_for('patients.procedure_action', patient_id=p.id, proc_id=pr.id) }}" class="mt-1">{{ csrf() }}
+<label class="sr-only" for="ed{{ pr.id }}">Description</label><input id="ed{{ pr.id }}" name="description" value="{{ pr.description }}">
+<label class="sr-only" for="et{{ pr.id }}">Tooth</label><input id="et{{ pr.id }}" name="tooth" value="{{ pr.tooth }}" placeholder="Tooth" class="mt-1">
+<label class="sr-only" for="edt{{ pr.id }}">Date</label><input id="edt{{ pr.id }}" type="date" name="performed_at" value="{{ (pr.performed_at or '')[:10] }}" class="mt-1">
+<div class="row mt-1"><button class="btn btn-secondary btn-sm" name="action" value="edit">Save</button><button class="btn btn-danger btn-sm" name="action" value="delete" formnovalidate>Delete</button></div></form></details></td>{% endif %}</tr>
+{% else %}<tr><td colspan="6" class="empty">No progress notes recorded.</td></tr>{% endfor %}</tbody></table></div></div>
+</div>
+</div>
+{% endif %}
+
+{% if tab == 'chart' and clinical %}
+<div class="card">
+<div class="card-head"><h2>Dental chart</h2>
+<div class="tabs" style="margin:0;border:0"><a class="{% if dentition == 'adult' %}active{% endif %}" href="?tab=chart&dentition=adult">Adult (permanent)</a><a class="{% if dentition == 'child' %}active{% endif %}" href="?tab=chart&dentition=child">Child (primary)</a></div></div>
+<p class="hint">Click a tooth to see its history{% if current_user.can('chart.edit') %} or record a finding/treatment{% endif %}. Numbering is FDI (e.g. 36 = lower left first molar). The chart is shown from the patient's front: their right is on your left.</p>
+<div class="dchart">
+{% for row_name in ['upper', 'lower'] %}
+<div class="dchart-row {{ row_name }}">
+{% for t in chart_rows[row_name] %}{% set e = chart_latest.get(t|string) %}
+<a class="tooth {{ conditions[e.condition][2] if e else '' }} {% if sel_tooth == t|string %}selected{% endif %}" href="?tab=chart&dentition={{ dentition }}&tooth={{ t }}"
+   title="Tooth {{ t }}{% if e %}: {{ conditions[e.condition][0] }}{% if e.surfaces %} ({{ e.surfaces }}){% endif %}{% endif %}">
+<span class="tooth-no">{{ t }}</span><span class="tooth-body" aria-hidden="true">{{ conditions[e.condition][1] if e else '' }}</span>
+<span class="sr-only">{% if e %}{{ conditions[e.condition][0] }}{% else %}no finding{% endif %}</span></a>
+{% if loop.index == (chart_rows[row_name]|length // 2) %}<span class="midline" aria-hidden="true"></span>{% endif %}
+{% endfor %}</div>
+{% endfor %}
+</div>
+<div class="legend">{% for code, (label, tag, cls) in conditions.items() %}<span class="legend-item"><span class="tooth mini {{ cls }}"><span class="tooth-body">{{ tag }}</span></span>{{ label }}</span>{% endfor %}</div>
+</div>
+<div class="grid grid-2">
+<div class="card">{% if sel_tooth %}<h2>Tooth {{ sel_tooth }}</h2>
+{% if sel_entries %}<ul class="list-plain">{% for e in sel_entries %}<li class="row between"><span><strong>{{ conditions[e.condition][0] }}</strong>{% if e.surfaces %} · {{ e.surfaces }}{% endif %}{% if e.note %}<br><small>{{ e.note }}</small>{% endif %}<br><small class="muted">{{ e.recorded_on|date }} · {{ e.by_name }}</small></span>
+{% if current_user.can('chart.delete') %}<form method="post" action="{{ url_for('chart.delete', patient_id=p.id) }}" data-confirm="Delete this chart entry?">{{ csrf() }}<input type="hidden" name="entry_id" value="{{ e.id }}"><button class="btn btn-ghost btn-sm">Delete</button></form>{% endif %}</li>{% endfor %}</ul>
+{% else %}<p class="muted">Nothing recorded for this tooth yet.</p>{% endif %}
+{% else %}<h2>Chart history</h2><ul class="list-plain">{% for e in chart_entries[:30] %}<li><strong>{{ e.tooth }}</strong> · {{ conditions[e.condition][0] }}{% if e.surfaces %} ({{ e.surfaces }}){% endif %} <small class="muted">{{ e.recorded_on|date }} · {{ e.by_name }}</small></li>{% else %}<li class="muted">No chart entries yet.</li>{% endfor %}</ul>{% endif %}
+{% if current_user.can('chart.delete') and chart_entries %}<form method="post" action="{{ url_for('chart.delete', patient_id=p.id) }}" class="mt-1" data-confirm="Delete the whole dental chart for this patient?">{{ csrf() }}<input type="hidden" name="scope" value="all"><button class="btn btn-danger btn-sm">Delete patient chart</button></form>{% endif %}
+</div>
+{% if current_user.can('chart.edit') %}
+<div class="card"><h2>Record on chart</h2>
+<form method="post" action="{{ url_for('chart.add_entry', patient_id=p.id) }}">{{ csrf() }}<input type="hidden" name="dentition" value="{{ dentition }}">
+<div class="field"><label for="ct">Tooth</label><select id="ct" name="tooth" required>{% for row_name in ['upper','lower'] %}{% for t in chart_rows[row_name] %}<option value="{{ t }}" {% if sel_tooth == t|string %}selected{% endif %}>{{ t }}</option>{% endfor %}{% endfor %}</select></div>
+<div class="field"><label for="cc">Finding / treatment</label><select id="cc" name="condition">{% for code, (label, tag, cls) in conditions.items() %}<option value="{{ code }}">{{ label }}</option>{% endfor %}</select></div>
+<fieldset style="margin-bottom:.8rem"><legend>Surfaces (optional)</legend><div class="row">{% for k, l in surfaces.items() %}<label class="check"><input type="checkbox" name="surface_{{ k }}" value="1"> {{ k }} <small class="muted">{{ l }}</small></label>{% endfor %}</div></fieldset>
+<div class="form-grid"><div class="field"><label for="cd">Date</label><input id="cd" type="date" name="recorded_on" value="{{ today_iso }}" max="{{ today_iso }}"></div>
+<div class="field"><label for="cn">Note</label><input id="cn" name="note"></div></div>
+<button class="btn">Save to chart</button></form></div>
+{% endif %}
+</div>
+{% endif %}
+
+{% if tab == 'rx' and clinical %}
+<div class="grid grid-2">
+<div class="card"><div class="card-head"><h2>Prescriptions</h2>{% if current_user.can('rx.create') %}<a class="btn btn-secondary btn-sm" href="{{ url_for('docs.rx_new', patient_id=p.id) }}">+ New prescription</a>{% endif %}</div>
+<ul class="list-plain">{% for r in prescriptions %}<li><div class="row between"><strong>{{ r.prescribed_on|date }}</strong><small class="muted">{{ r.prescriber }}</small></div>
+<div>{{ r.meds }}</div><div class="row mt-1"><a class="btn btn-ghost btn-sm" href="{{ url_for('docs.rx_print', rx_id=r.id) }}" target="_blank">Print</a>
+{% if current_user.can('rx.edit') %}<a class="btn btn-ghost btn-sm" href="{{ url_for('docs.rx_edit', rx_id=r.id) }}">Edit</a>{% endif %}
+{% if current_user.can('rx.delete') %}<form method="post" action="{{ url_for('docs.rx_delete', rx_id=r.id) }}" data-confirm="Delete this prescription?">{{ csrf() }}<button class="btn btn-danger btn-sm">Delete</button></form>{% endif %}</div></li>
+{% else %}<li class="muted">No prescriptions.</li>{% endfor %}</ul></div>
+<div class="card"><div class="card-head"><h2>Certificates</h2>{% if current_user.can('cert.create') %}<a class="btn btn-secondary btn-sm" href="{{ url_for('docs.cert_new', patient_id=p.id) }}">+ New certificate</a>{% endif %}</div>
+<ul class="list-plain">{% for c in certificates %}<li><div class="row between"><strong>{{ c.title }}</strong><small class="muted">{{ c.issued_on|date }} · {{ c.dentist }}</small></div>
+<div class="row mt-1"><a class="btn btn-ghost btn-sm" href="{{ url_for('docs.cert_print', cert_id=c.id) }}" target="_blank">Print</a>
+{% if current_user.can('cert.edit') %}<a class="btn btn-ghost btn-sm" href="{{ url_for('docs.cert_edit', cert_id=c.id) }}">Edit</a>{% endif %}
+{% if current_user.can('cert.delete') %}<form method="post" action="{{ url_for('docs.cert_delete', cert_id=c.id) }}" data-confirm="Delete this certificate?">{{ csrf() }}<button class="btn btn-danger btn-sm">Delete</button></form>{% endif %}</div></li>
+{% else %}<li class="muted">No certificates.</li>{% endfor %}</ul></div>
+</div>
+{% endif %}
+
+{% if tab == 'documents' %}
+<div class="card"><h2>Documents</h2>
+{% if not clinical %}<p class="notice">You can see non-clinical documents only, such as consent forms and IDs.</p>{% endif %}
+<div class="table-wrap"><table><thead><tr><th>Document</th><th>Type</th><th>Size</th><th>Uploaded</th><th></th></tr></thead><tbody>
+{% for d in documents %}<tr><td>{{ d.original_name }}</td><td>{{ doc_categories[d.category][0] if d.category in doc_categories else d.category }}</td><td>{{ (d.size_bytes / 1024)|round(0)|int }} KB</td><td>{{ d.uploaded_at|dt }}<br><small class="muted">{{ d.uploader }}</small></td>
+<td class="row"><a class="btn btn-secondary btn-sm" href="{{ url_for('patients.document', patient_id=p.id, doc_id=d.id) }}" target="_blank" rel="noopener">Open</a><a class="btn btn-ghost btn-sm" href="{{ url_for('patients.document', patient_id=p.id, doc_id=d.id, download=1) }}">Download</a>
+{% if current_user.can('documents.delete') %}<form method="post" action="{{ url_for('patients.document_delete', patient_id=p.id, doc_id=d.id) }}" data-confirm="Delete this attachment permanently?">{{ csrf() }}<button class="btn btn-danger btn-sm">Delete</button></form>{% endif %}</td></tr>
+{% else %}<tr><td colspan="5">{{ empty('No documents') }}</td></tr>{% endfor %}</tbody></table></div>
+{% if current_user.can('documents.upload') %}
+<form method="post" action="{{ url_for('patients.upload', patient_id=p.id) }}" enctype="multipart/form-data" class="toolbar mt-1">{{ csrf() }}
+<div class="field"><label for="dc">Type</label><select id="dc" name="category">{% for k, (lab, is_cl) in doc_categories.items() if clinical or not is_cl %}<option value="{{ k }}">{{ lab }}</option>{% endfor %}</select></div>
+<div class="field grow"><label for="df">File (PDF, JPG, PNG or WebP, up to 10 MB)</label><input id="df" type="file" name="file" accept="application/pdf,image/jpeg,image/png,image/webp" required></div>
+<button class="btn btn-secondary">Upload</button></form>
+<p class="hint">Files are stored privately under random names, and only authorised staff can open them. Each time someone opens a file, it's logged.</p>{% endif %}
+</div>
+{% endif %}
+
+{% if tab == 'changes' %}
+<div class="card"><h2>Change log</h2><p class="muted">Every change to this patient's profile or clinical record, with who made it and when.</p>
+<ul class="list-plain">{% for c in changes %}<li><strong>{{ c.summary }}</strong><br><small class="muted">{{ c.at|dt }} · {{ c.actor or 'Online form' }} · {{ c.action }}</small>
+{% if current_user.is_super_admin and c.details and c.details != '{}' %}<details><summary>Details</summary><pre class="pre" style="font-size:.8rem">{{ c.details }}</pre></details>{% endif %}</li>
+{% else %}<li class="muted">No changes recorded.</li>{% endfor %}</ul></div>
+{% endif %}
+{% endblock %}

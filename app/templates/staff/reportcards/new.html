@@ -1,0 +1,17 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}New report card{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('patients.detail', patient_id=p.id) }}">← {{ p.last_name }}, {{ p.first_name }}</a><h1>New report card</h1></div></div>
+<div class="grid grid-2">
+<form method="post" class="card">{{ csrf() }}
+<div class="form-grid"><div class="field"><label for="f">From</label><input id="f" type="date" name="from" value="{{ start.isoformat() }}"></div>
+<div class="field"><label for="t">To</label><input id="t" type="date" name="to" value="{{ end.isoformat() }}"></div></div>
+{% if current_user.role != 'dentist' %}<div class="field"><label for="rv">Reviewing dentist</label><select id="rv" name="reviewer_id">{% for d in reviewers %}<option value="{{ d.id }}">{{ d.name }}</option>{% else %}<option value="">No assigned dentist</option>{% endfor %}</select>
+<span class="hint">Only a dentist assigned to this patient can review and approve.</span></div>{% else %}<p>You'll be the reviewer.</p>{% endif %}
+<button class="btn">Generate draft for review</button></form>
+<div class="card"><h2>What will be included</h2>
+<dl class="kv"><dt>Completed visits</dt><dd>{{ preview.visits|length }}</dd><dt>Procedures</dt><dd>{{ preview.procedures|length }}</dd><dt>Planned treatment items</dt><dd>{{ preview.planned|length }}</dd><dt>Open follow-ups</dt><dd>{{ preview.followups|length }}</dd></dl>
+<p class="hint mt-1">The draft is written in plain language from these records. The dentist edits and approves the wording.</p></div>
+</div>
+{% endblock %}

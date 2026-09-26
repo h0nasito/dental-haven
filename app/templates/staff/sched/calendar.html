@@ -1,0 +1,45 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import status_badge, empty %}
+{% block page_title %}Calendar{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>{{ 'My schedule' if current_user.role == 'dentist' else 'Calendar' }}</h1>
+<p>{% if view == 'week' %}Week of {{ day|date }}{% else %}{{ day.strftime('%A') }}, {{ day|date }}{% endif %}</p></div>
+{% if current_user.can('appointments.manage') %}<a class="btn" href="{{ url_for('sched.appointment_new', date=day.isoformat()) }}">+ New appointment</a>{% endif %}</div>
+<form class="toolbar" method="get">
+  <div class="row"><a class="btn btn-secondary btn-sm" href="?view={{ view }}&date={{ prev }}&dentist={{ dentist_id or '' }}" aria-label="Previous">←</a>
+  <a class="btn btn-secondary btn-sm" href="?view={{ view }}&dentist={{ dentist_id or '' }}">Today</a>
+  <a class="btn btn-secondary btn-sm" href="?view={{ view }}&date={{ next }}&dentist={{ dentist_id or '' }}" aria-label="Next">→</a></div>
+  <div class="field"><label for="date">Date</label><input id="date" type="date" name="date" value="{{ day.isoformat() }}"></div>
+  <div class="field"><label for="view">View</label><select id="view" name="view"><option value="day" {% if view=='day' %}selected{% endif %}>Day (by dentist)</option><option value="week" {% if view=='week' %}selected{% endif %}>Week</option></select></div>
+  {% if not current_user.own_schedule_only %}<div class="field"><label for="dentist">Dentist</label><select id="dentist" name="dentist"><option value="">All dentists</option>{% for d in dentists %}<option value="{{ d.id }}" {% if dentist_id == d.id %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select></div>{% endif %}
+  <label class="check" style="margin-bottom:.6rem"><input type="checkbox" name="show_cancelled" value="1" {% if request.args.get('show_cancelled') %}checked{% endif %}> Show cancelled</label>
+  <button class="btn btn-secondary" type="submit">Apply</button>
+</form>
+{% if view == 'day' %}
+  {% if columns %}
+  <div class="cal" style="grid-template-columns: 64px repeat({{ columns|length }}, minmax(170px, 1fr)); max-height: 75vh">
+    <div class="cal-col-head">&nbsp;</div>
+    {% for c in columns %}<div class="cal-col-head">{{ c.name }}</div>{% endfor %}
+    <div class="cal-times">{% for h in range(hours[0], hours[1]) %}<div class="cal-time">{{ ('%d %s' % ((h - 1) % 12 + 1, 'AM' if h < 12 else 'PM')) }}</div>{% endfor %}</div>
+    {% for c in columns %}
+    <div class="cal-col">{% for h in range(hours[0], hours[1]) %}<div class="cal-slot"></div>{% endfor %}
+      {% for a in c.appts %}
+      <a class="cal-appt st-{{ a.status }}" style="top:{{ a.top }}px;height:{{ a.height }}px" href="{{ url_for('sched.appointment', appt_id=a.id) }}" title="{{ a.start_at|time }}–{{ a.end_at|time }} {{ a.service }}">
+        <strong>{{ a.start_at|time }}</strong> {{ a.last_name }}, {{ a.first_name[:1] }}.{% if a.alert_flag %} ⚠{% endif %}<br>{{ a.service }}{% if a.resource %} · {{ a.resource }}{% endif %}{% if current_user.scope_branch_ids|length > 1 %} · {{ a.branch }}{% endif %}
+      </a>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+  <p class="muted" style="font-size:.85rem">Colours: <span class="badge badge-amber">Requested</span> <span class="badge badge-teal">Confirmed</span> <span class="badge badge-blue">Checked in</span> <span class="badge badge-green">Completed</span>. ⚠ = patient alert flag.</p>
+  {% else %}<div class="card">{{ empty('No dentists or appointments for this view', ' Add dentist schedules under Administration, or pick another branch.') }}</div>{% endif %}
+{% else %}
+  <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
+  {% for d in days %}
+    <div class="card" style="padding:.8rem"><h3 style="font-size:.95rem">{{ d.date.strftime('%a %b %d') }}</h3>
+    {% for a in d.appts %}<a class="item" style="display:block;text-decoration:none;color:inherit" href="{{ url_for('sched.appointment', appt_id=a.id) }}"><strong>{{ a.start_at|time }}</strong> {{ status_badge(a.status) }}<div class="meta">{{ a.last_name }}, {{ a.first_name }}<br>{{ a.service }} · {{ a.dentist or 'No dentist' }}</div></a>
+    {% else %}<p class="muted" style="font-size:.85rem">No appointments</p>{% endfor %}</div>
+  {% endfor %}
+  </div>
+{% endif %}
+{% endblock %}

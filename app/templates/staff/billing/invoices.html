@@ -1,0 +1,16 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import status_badge, empty %}
+{% block page_title %}Invoices{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Invoices</h1><p>To create an invoice, open the patient or appointment first.</p></div></div>
+<form class="toolbar" method="get">
+<div class="field"><label for="from">Issued from</label><input id="from" type="date" name="from" value="{{ start.isoformat() }}"></div>
+<div class="field"><label for="to">To</label><input id="to" type="date" name="to" value="{{ end.isoformat() }}"></div>
+<div class="field"><label for="status">Status</label><select id="status" name="status"><option value="">Any</option>{% for s in ['draft','issued','void'] %}<option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s|label }}</option>{% endfor %}</select></div>
+<button class="btn btn-secondary">Filter</button></form>
+<div class="card"><div class="table-wrap"><table>
+<thead><tr><th>Invoice</th><th>Issued</th><th>Patient</th><th>Branch</th><th class="num">Total</th><th class="num">Paid</th><th class="num">Balance</th><th>Status</th></tr></thead><tbody>
+{% for i in rows %}<tr><td><a href="{{ url_for('billing.invoice', invoice_id=i.id) }}">{{ i.number or 'Draft #' ~ i.id }}</a></td><td>{{ i.issued_at|date }}</td><td>{{ i.last_name }}, {{ i.first_name }}</td><td>{{ i.branch }}</td>
+<td class="num">{{ i.total_cents|peso }}</td><td class="num">{{ i.paid|peso }}</td><td class="num">{{ (i.total_cents - i.paid)|peso if i.status == 'issued' else '—' }}</td><td>{{ status_badge(i.state) }}</td></tr>
+{% else %}<tr><td colspan="8">{{ empty('No invoices in this range') }}</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

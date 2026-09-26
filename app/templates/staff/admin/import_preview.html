@@ -1,0 +1,25 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Import preview{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('admin.import_data') }}">← Import</a><h1>Check before importing</h1><p>{{ filename }} · new patients go to <strong>{{ branch.name }}</strong>. Nothing has been saved yet.</p></div></div>
+<div class="grid grid-4" style="margin-bottom:1rem">
+<div class="stat"><div class="label">New patients</div><div class="value">{{ s.patients_new }}</div></div>
+<div class="stat"><div class="label">Patients to update</div><div class="value">{{ s.patients_updated }}</div><div class="sub">{{ s.patients_unchanged }} already up to date</div></div>
+<div class="stat"><div class="label">Visit records</div><div class="value">{{ s.procedures }}</div><div class="sub">{{ s.followups }} upcoming follow-ups</div></div>
+<div class="stat"><div class="label">Bill lines (history)</div><div class="value">{{ s.bills }}</div></div>
+<div class="stat"><div class="label">Treatment plan items</div><div class="value">{{ s.plan_items }}</div></div>
+<div class="stat"><div class="label">Notes, prescriptions, certificates</div><div class="value">{{ s.notes }}</div></div>
+<div class="stat"><div class="label">Already imported (skipped)</div><div class="value">{{ s.skipped_existing }}</div></div>
+<div class="stat {% if s.rows_with_errors %}warn{% endif %}"><div class="label">Rows with problems</div><div class="value">{{ s.rows_with_errors }}</div><div class="sub">These rows are skipped</div></div>
+</div>
+<div class="grid grid-2">
+<div class="card"><h2>Files found</h2><ul class="list-plain">{% for kind, f in s.files.items() %}<li class="row between"><span>{{ kind|label }} <small class="muted">{{ f.file }}</small></span><strong>{{ f.rows }} rows</strong></li>{% endfor %}</ul></div>
+<div class="card"><h2>Problems</h2>{% if s.errors %}<ul class="list-plain">{% for e in s.errors %}<li><small>{{ e }}</small></li>{% endfor %}</ul>
+{% if s.rows_with_errors > s.errors|length %}<p class="muted">…and {{ s.rows_with_errors - s.errors|length }} more.</p>{% endif %}{% else %}<p class="muted">No problems found.</p>{% endif %}</div>
+</div>
+<form method="post" action="{{ url_for('admin.import_confirm') }}" class="row" data-confirm="Import these records now?">{{ csrf() }}<input type="hidden" name="token" value="{{ token }}">
+<button class="btn btn-lg" name="action" value="confirm">Import now</button>
+<button class="btn btn-secondary btn-lg" name="action" value="cancel" formnovalidate>Cancel</button></form>
+<p class="hint mt-1">Large exports can take a minute or two. Keep this page open until it finishes.</p>
+{% endblock %}

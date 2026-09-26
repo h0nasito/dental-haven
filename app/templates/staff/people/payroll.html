@@ -1,0 +1,19 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, status_badge, empty %}
+{% block page_title %}Payroll review{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Payroll review</h1><p>Draft summaries built from attendance, for review and approval. <strong>This system doesn't pay anyone or make bank transfers.</strong></p></div></div>
+{% if not rules_confirmed %}<div class="flash flash-warning">The clinic's pay rules (overtime, holidays, commissions, dentist percentage splits and deductions) aren't confirmed yet. Figures are labelled <em>unconfirmed estimate</em>, and summaries can't be approved until a super admin confirms the rules in System settings.</div>{% endif %}
+<div class="grid grid-2">
+<div class="card"><h2>Periods</h2><ul class="list-plain">{% for p in periods %}<li class="row between"><span><a href="{{ url_for('people.payroll_period', period_id=p.id) }}"><strong>{{ p.name }}</strong></a><br><small class="muted">{{ p.branch or 'All branches' }} · created by {{ p.creator }}</small></span>{{ status_badge(p.status) }}</li>
+{% else %}<li>{{ empty('No payroll periods yet') }}</li>{% endfor %}</ul></div>
+{% if current_user.can('payroll.prepare') %}
+<div class="card"><h2>New draft period</h2><form method="post">{{ csrf() }}
+<div class="field"><label for="nm">Name</label><input id="nm" name="name" placeholder="e.g. Sept 16–30 cut-off"></div>
+<div class="form-grid"><div class="field"><label for="sd">Start</label><input id="sd" type="date" name="start_date" value="{{ default_start }}" required></div>
+<div class="field"><label for="ed">End</label><input id="ed" type="date" name="end_date" value="{{ default_end }}" required></div></div>
+<div class="field"><label for="br">Branch</label><select id="br" name="branch_id">{% if current_user.is_super_admin %}<option value="">All branches</option>{% endif %}{% for b in branches %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}</select></div>
+<button class="btn">Create draft</button></form></div>
+{% endif %}
+</div>
+{% endblock %}

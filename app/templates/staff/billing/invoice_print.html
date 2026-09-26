@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ inv.number or 'Invoice' }}{% endblock %}
+{% block body %}
+<main id="main" class="print-sheet">
+<div class="no-print row between" style="margin-bottom:1rem"><a href="{{ url_for('billing.invoice', invoice_id=inv.id) }}">← Back</a><span class="muted">Use your browser's Print command</span></div>
+{% if inv.status == 'void' %}<div class="watermark">VOID — {{ inv.void_reason }}</div>{% endif %}
+<div class="row between"><div><h1 class="mb-0">Dental Haven</h1><p class="muted">{{ inv.branch }} branch<br>{{ inv.branch_address }}<br>{{ inv.branch_phone }}</p></div>
+<div style="text-align:right"><h2 class="mb-0">Statement of account</h2><p>No. <strong>{{ inv.number }}</strong><br>Date: {{ inv.issued_at|date }}</p></div></div>
+<p><strong>Patient:</strong> {{ inv.last_name }}, {{ inv.first_name }} ({{ inv.chart_no }})</p>
+<table><thead><tr><th>Description</th><th class="num">Qty</th><th class="num">Unit price</th><th class="num">Discount</th><th class="num">Amount</th></tr></thead><tbody>
+{% for it in items %}<tr><td>{{ it.description }}</td><td class="num">{{ it.qty }}</td><td class="num">{{ it.unit_price_cents|peso }}</td><td class="num">{{ it.discount_cents|peso if it.discount_cents else '—' }}</td><td class="num">{{ it.amount_cents|peso }}</td></tr>{% endfor %}</tbody>
+<tfoot><tr><td colspan="4">Subtotal</td><td class="num">{{ inv.subtotal_cents|peso }}</td></tr>{% if inv.discount_cents %}<tr><td colspan="4">Discount</td><td class="num">-{{ inv.discount_cents|peso }}</td></tr>{% endif %}
+{% if tax_enabled %}<tr><td colspan="4">{{ tax_label }}{% if tax_inclusive %} (included){% endif %}</td><td class="num">{{ inv.tax_cents|peso }}</td></tr>{% endif %}
+<tr><td colspan="4">Total</td><td class="num">{{ inv.total_cents|peso }}</td></tr><tr><td colspan="4">Paid</td><td class="num">{{ paid|peso }}</td></tr><tr><td colspan="4">Balance due</td><td class="num">{{ balance|peso }}</td></tr></tfoot></table>
+<p class="muted mt-1" style="font-size:.85rem">This statement is not an official receipt. Official receipt/invoice requirements are to be confirmed with the clinic's accountant.</p>
+</main>
+{% endblock %}

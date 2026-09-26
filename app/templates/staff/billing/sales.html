@@ -1,0 +1,30 @@
+{% extends "staff/layout.html" %}
+{% block page_title %}Sales & collections{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Sales &amp; collections</h1><p>{{ start|date }} – {{ end|date }}. Voided invoices: {{ totals.voids }} (not counted). <strong>Sales</strong> means invoices issued in this period. <strong>Collections</strong> means payments received in this period, minus refunds, whenever the invoice was issued.</p></div>
+{% if current_user.can('reports.export') %}<div class="row">{% for k, l in [('sales','Summary'),('services','Services'),('payments','Payments'),('outstanding','Balances')] %}<a class="btn btn-secondary btn-sm" href="{{ url_for('billing.export', kind=k, **{'from': start.isoformat(), 'to': end.isoformat(), 'branch': branch or ''}) }}">CSV: {{ l }}</a>{% endfor %}</div>{% endif %}</div>
+<form class="toolbar" method="get">
+<div class="field"><label for="from">From</label><input id="from" type="date" name="from" value="{{ start.isoformat() }}"></div>
+<div class="field"><label for="to">To</label><input id="to" type="date" name="to" value="{{ end.isoformat() }}"></div>
+<div class="field"><label for="branch">Branch</label><select id="branch" name="branch"><option value="">{{ 'Selected branch' if current_user.active_branch_id else 'All my branches' }}</option>{% for b in branches %}<option value="{{ b.id }}" {% if branch == b.id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select></div>
+<button class="btn btn-secondary">Apply</button></form>
+<div class="grid grid-4" style="margin-bottom:1rem">
+<div class="stat"><div class="label">Sales (invoiced)</div><div class="value">{{ totals.sales|peso }}</div><div class="sub">{{ totals.invoices }} invoices · {{ totals.discounts|peso }} discounts</div></div>
+<div class="stat"><div class="label">Net collections</div><div class="value">{{ totals.collections|peso }}</div><div class="sub">{{ totals.received|peso }} received (incl. {{ totals.deposits|peso }} deposits) · {{ totals.refunded|peso }} refunded</div></div>
+<div class="stat warn"><div class="label">Outstanding balances</div><div class="value">{{ outstanding_total|peso }}</div><div class="sub">{{ outstanding|length }} open invoices (all dates)</div></div>
+<div class="stat"><div class="label">Posted expenses</div><div class="value">{{ totals.expenses|peso }}</div><div class="sub">Collections less expenses: {{ totals.net_cash|peso }}</div></div>
+</div>
+<div class="card"><h2>By branch</h2><div class="table-wrap"><table><thead><tr><th>Branch</th><th class="num">Invoices</th><th class="num">Sales</th><th class="num">Discounts</th>{% if totals.tax %}<th class="num">Tax</th>{% endif %}<th class="num">Received</th><th class="num">Refunds</th><th class="num">Net collections</th><th class="num">Expenses</th><th class="num">Less expenses</th><th class="num">Voids</th></tr></thead><tbody>
+{% for r in by_branch %}<tr><td>{{ r.branch }}</td><td class="num">{{ r.invoices }}</td><td class="num">{{ r.sales|peso }}</td><td class="num">{{ r.discounts|peso }}</td>{% if totals.tax %}<td class="num">{{ r.tax|peso }}</td>{% endif %}<td class="num">{{ r.received|peso }}</td><td class="num">{{ r.refunded|peso }}</td><td class="num">{{ r.collections|peso }}</td><td class="num">{{ r.expenses|peso }}</td><td class="num">{{ r.net_cash|peso }}</td><td class="num">{{ r.voids }}</td></tr>{% endfor %}</tbody>
+<tfoot><tr><td>Total</td><td class="num">{{ totals.invoices }}</td><td class="num">{{ totals.sales|peso }}</td><td class="num">{{ totals.discounts|peso }}</td>{% if totals.tax %}<td class="num">{{ totals.tax|peso }}</td>{% endif %}<td class="num">{{ totals.received|peso }}</td><td class="num">{{ totals.refunded|peso }}</td><td class="num">{{ totals.collections|peso }}</td><td class="num">{{ totals.expenses|peso }}</td><td class="num">{{ totals.net_cash|peso }}</td><td class="num">{{ totals.voids }}</td></tr></tfoot></table></div></div>
+<div class="grid grid-2">
+<div class="card"><h2>Sales by service</h2>{% set smax = (services_rows|map(attribute='amount')|max) if services_rows else 1 %}
+<div class="bars">{% for s in services_rows %}<div class="bar-row"><span>{{ s.service }}</span><div class="bar-track"><div class="bar-fill" style="width:{{ (100 * s.amount / smax)|round(1) }}%"></div></div><span class="num">{{ s.amount|peso }}</span></div>{% else %}<p class="muted">No sales in this range.</p>{% endfor %}</div></div>
+<div class="card"><h2>Collections by method</h2><table><thead><tr><th>Method</th><th class="num">Transactions</th><th class="num">Net amount</th></tr></thead><tbody>
+{% for m in methods %}<tr><td>{{ PAYMENT_LABELS.get(m.method, m.method) }}</td><td class="num">{{ m.n }}</td><td class="num">{{ m.amount|peso }}</td></tr>{% else %}<tr><td colspan="3" class="empty">No payments in this range.</td></tr>{% endfor %}</tbody></table></div>
+</div>
+<div class="card"><h2>Daily sales</h2>{% if daily %}<div class="bars">{% for d in daily %}<div class="bar-row"><span>{{ d.d|date }}</span><div class="bar-track"><div class="bar-fill" style="width:{{ (100 * d.sales / max_daily)|round(1) }}%"></div></div><span class="num">{{ d.sales|peso }}</span></div>{% endfor %}</div>{% else %}<p class="muted">No sales in this range.</p>{% endif %}</div>
+<div class="card" id="outstanding"><h2>Outstanding balances</h2><div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Issued</th><th>Patient</th><th>Branch</th><th class="num">Balance</th><th class="num">Age</th></tr></thead><tbody>
+{% for r in outstanding[:50] %}<tr><td><a href="{{ url_for('billing.invoice', invoice_id=r.id) }}">{{ r.number }}</a></td><td>{{ r.issued_at|date }}</td><td>{{ r.last_name }}, {{ r.first_name }}</td><td>{{ r.branch }}</td><td class="num">{{ r.balance|peso }}</td><td class="num">{{ r.age_days }} d</td></tr>
+{% else %}<tr><td colspan="6" class="empty">No outstanding balances.</td></tr>{% endfor %}</tbody></table></div>{% if outstanding|length > 50 %}<p class="muted">Showing 50 of {{ outstanding|length }}. Export CSV for the full list.</p>{% endif %}</div>
+{% endblock %}
