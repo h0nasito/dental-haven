@@ -44,7 +44,8 @@ For a real installation, run `init-db`, then `seed-base`, then `create-superadmi
 | Only super admins create users, assign roles or change access | Administration → Users / Role access; locked permissions; audit trail |
 | A patient request never shows a confirmation that hasn't been approved | `/book` → booking request **pending** → staff confirm (auto-confirm setting is off by default) |
 | Confirm, reschedule, cancel and complete without conflicts | Appointment page. Checks cover dentist (across all branches), room/chair, branch hours and the dentist's schedule, inside a locked transaction |
-| Patient profiles, history, notes and plans, by role | Patient page tabs: Overview, Clinical record, Documents, Change log |
+| Patient profiles, history, notes and plans, by role | Patient page: header card (ID, gender, birthday, last visit, alert, balance, credits) and tabs Profile, Progress Notes (grouped by date + dentist, with tooth # and price from the bill), Treatment Plan, Charts, Bills & Payment, Prescriptions, Certificates, Uploads, Remarks, Diagnosis, Change log |
+| Payments signed by the patient | Bills & Payment → ⋯ → Add payment: several payment lines (split cash/GCash etc.), OR/reference, remarks, on-screen patient signature (or a reason if they can't sign); signatures are private files shown on the printed statement |
 | One work queue for inquiries and follow-ups | Work queue: booking requests, new leads, lead call-backs, follow-ups due |
 | Invoices and payments feed sales and collections reports | Invoices → Sales & collections (branch and date filters, CSV export) |
 | Attendance review and draft payroll | Attendance (DTR) with exceptions, corrections and CSV import → Payroll review (draft → submit → approve) |

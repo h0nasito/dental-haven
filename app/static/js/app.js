@@ -190,3 +190,75 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   });
 })();
+
+/* Add payment: several payment lines, live summary, and the patient's signature pad. */
+(function () {
+  function peso(c) { return '₱' + (c / 100).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function cents(v) { var n = parseFloat(String(v || '').replace(/[^0-9.]/g, '')); return isNaN(n) ? 0 : Math.round(n * 100); }
+  document.querySelectorAll('form[data-payform]').forEach(function (form) {
+    var total = parseInt(form.dataset.total, 10) || 0, paid = parseInt(form.dataset.paid, 10) || 0;
+    var list = form.querySelector('[data-pay-lines]');
+    function update() {
+      var now = 0;
+      form.querySelectorAll('[data-pay-amt]').forEach(function (i) { now += cents(i.value); });
+      form.querySelector('[data-pay-now]').textContent = peso(now);
+      form.querySelector('[data-pay-left]').textContent = peso(Math.max(0, total - paid - now));
+    }
+    form.addEventListener('input', update);
+    form.querySelector('[data-pay-add]').addEventListener('click', function () {
+      var first = list.querySelector('[data-pay-line]');
+      var line = first.cloneNode(true);
+      line.querySelector('[data-pay-amt]').value = '';
+      list.appendChild(line);
+      line.querySelector('select').focus();
+      update();
+    });
+    list.addEventListener('click', function (e) {
+      var del = e.target.closest('[data-pay-del]');
+      if (!del) return;
+      var lines = list.querySelectorAll('[data-pay-line]');
+      if (lines.length > 1) del.closest('[data-pay-line]').remove(); else lines[0].querySelector('[data-pay-amt]').value = '';
+      update();
+    });
+    // Signature pad
+    var canvas = form.querySelector('[data-sigpad]'), out = form.querySelector('[data-sig-out]');
+    var ctx = canvas.getContext('2d'), drawing = false, drawn = false, last = null;
+    ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#111';
+    function pos(e) {
+      var r = canvas.getBoundingClientRect();
+      return { x: (e.clientX - r.left) * canvas.width / r.width, y: (e.clientY - r.top) * canvas.height / r.height };
+    }
+    canvas.addEventListener('pointerdown', function (e) { drawing = true; last = pos(e); canvas.setPointerCapture(e.pointerId); e.preventDefault(); });
+    canvas.addEventListener('pointermove', function (e) {
+      if (!drawing) return;
+      var p = pos(e);
+      ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+      last = p; drawn = true; e.preventDefault();
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (ev) { canvas.addEventListener(ev, function () { drawing = false; }); });
+    form.querySelector('[data-sig-clear]').addEventListener('click', function () { ctx.clearRect(0, 0, canvas.width, canvas.height); drawn = false; out.value = ''; });
+    form.addEventListener('submit', function (e) {
+      out.value = drawn ? canvas.toDataURL('image/png') : '';
+      var reason = form.querySelector('[name=not_signed_reason]');
+      if (!drawn && !(reason && reason.value.trim())) {
+        e.preventDefault();
+        alert('Please ask the patient to sign, or open "Patient can’t sign" and give the reason.');
+      }
+    });
+    update();
+  });
+})();
+
+/* Dialogs opened by a button: <button data-open="dialog-id">. Row "⋯" menus close when you click elsewhere. */
+(function () {
+  document.addEventListener('click', function (e) {
+    var opener = e.target.closest('[data-open]');
+    if (opener) {
+      var d = document.getElementById(opener.getAttribute('data-open'));
+      if (d && d.showModal) { e.preventDefault(); d.showModal(); }
+    }
+    var closer = e.target.closest('[data-close]');
+    if (closer) { var dlg = closer.closest('dialog'); if (dlg) dlg.close(); }
+    document.querySelectorAll('details.kebab[open]').forEach(function (k) { if (!k.contains(e.target)) k.open = false; });
+  });
+})();

@@ -61,7 +61,7 @@ class TestQuotes(Base):
         self.assertEqual((inv["status"], inv["total_cents"], inv["patient_id"]), ("draft", 3100000, patient["id"]))
         self.assertIn("(tooth 36)", self.q("SELECT description FROM invoice_items WHERE invoice_id = ? LIMIT 1", (inv_id,))["description"])
         # patient page lists it
-        self.assertIn(q["number"], s.get(f"/staff/patients/{patient['id']}").data.decode())
+        self.assertIn(q["number"], s.get(f"/staff/patients/{patient['id']}?tab=billing").data.decode())
 
     def test_non_patient_copy_delete_and_access(self):
         c = self.login("reception.malolos")

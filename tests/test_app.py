@@ -126,7 +126,7 @@ class TestAccessControl(Base):
         mine = self.q("SELECT patient_id AS id FROM patient_assignments WHERE dentist_id = ? LIMIT 1", (d["id"],))
         c = self.login("dentist.sjdm")
         self.assertIn(c.get(f"/staff/patients/{other['id']}?tab=clinical").status_code, (403, 404))
-        r = c.get(f"/staff/patients/{mine['id']}?tab=clinical")
+        r = c.get(f"/staff/patients/{mine['id']}?tab=profile")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"Synthetic demo history", r.data)
 

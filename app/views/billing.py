@@ -141,7 +141,9 @@ def invoice_print(invoice_id):
     inv = _load_invoice(invoice_id)
     items = conn.all("SELECT * FROM invoice_items WHERE invoice_id = ? ORDER BY id", (invoice_id,))
     paid = paid_amount(conn, invoice_id)
-    return render_template("staff/billing/invoice_print.html", inv=inv, items=items, paid=paid,
+    pays = conn.all("SELECT p.*, s.stored_name AS sig, s.not_signed_reason FROM payments p LEFT JOIN payment_signatures s ON s.id = p.signature_id "
+                    "WHERE p.invoice_id = ? AND p.status = 'valid' ORDER BY p.received_at, p.id", (invoice_id,))
+    return render_template("staff/billing/invoice_print.html", inv=inv, items=items, paid=paid, pays=pays,
                            balance=inv["total_cents"] - paid, tax_label=settings.get("invoice.tax_label"),
                            tax_enabled=settings.get("invoice.tax_enabled"), tax_inclusive=settings.get("invoice.tax_inclusive"))
 
@@ -199,6 +201,7 @@ def invoice_edit(invoice_id):
                 amount = line_amount(qty, unit, disc)
                 extra = _commission_fields(conn, inv, request.form)
                 conn.insert("invoice_items", {"invoice_id": invoice_id, "service_id": svc_id, "description": desc, "qty": qty,
+                                              "tooth": clean(request.form.get("tooth"), 40),
                                               "unit_price_cents": unit, "discount_cents": min(disc, qty * unit), "amount_cents": amount, **extra})
                 audit.record("invoice_item_added", "invoice", invoice_id, f"Added {desc} {peso(amount)}", branch_id=inv["branch_id"])
         elif action == "commission":
@@ -242,7 +245,7 @@ def invoice_edit(invoice_id):
     return redirect(url_for("billing.invoice", invoice_id=invoice_id))
 
 
-PAYMENT_ACTION_PERMS = {"payment": "payments.add", "refund": "billing.void", "void_payment": "billing.void",
+PAYMENT_ACTION_PERMS = {"payment": "payments.add", "multi": "payments.add", "refund": "billing.void", "void_payment": "billing.void",
                         "apply_credit": "credit.apply"}
 
 
@@ -285,6 +288,10 @@ def payment(invoice_id):
                              f"{'Payment' if action == 'payment' else 'Refund'} {peso(amount)} via {PAYMENT_METHODS[method]}",
                              {"payment_id": pid, "reason": note}, inv["branch_id"])
                 flash("Payment recorded." if action == "payment" else "Refund recorded.", "success")
+        elif action == "multi":
+            err = _multi_payment(conn, inv, paid)
+            if err:
+                flash(err, "error")
         elif action == "apply_credit":
             amount = parse_money(request.form.get("amount"))
             available = credit_balance(conn, inv["patient_id"])
@@ -316,7 +323,66 @@ def payment(invoice_id):
                 audit.record("payment_voided", "invoice", invoice_id, f"Voided {p['kind']} {peso(p['amount_cents'])}",
                              {"payment_id": pay_id, "reason": reason}, inv["branch_id"])
                 flash("Payment voided.", "success")
+    if request.form.get("return_to") == "patient":
+        return redirect(url_for("patients.detail", patient_id=inv["patient_id"], tab="billing"))
     return redirect(url_for("billing.invoice", invoice_id=invoice_id))
+
+
+def _multi_payment(conn, inv, paid):
+    """Several payment lines (e.g. part cash, part GCash) saved together with the patient's signature."""
+    from ..uploads import save_signature
+    methods, amounts = request.form.getlist("method"), request.form.getlist("amount")
+    lines = []
+    for m, a in zip(methods, amounts):
+        if not (a or "").strip():
+            continue
+        amt = parse_money(a)
+        if not amt or amt <= 0 or m not in PAYMENT_METHODS or m == CREDIT_METHOD:
+            return "Each payment line needs a payment type and an amount like 1500 or 1500.00."
+        lines.append((m, amt))
+    if not lines:
+        return "Add at least one payment line with an amount."
+    total = sum(a for _m, a in lines)
+    if total > inv["total_cents"] - paid:
+        return f"That's more than the balance ({peso(inv['total_cents'] - paid)})."
+    received = parse_date(request.form.get("received_at")) or today()
+    if received > today():
+        return "The payment date can't be in the future."
+    reason = clean(request.form.get("not_signed_reason"), 200)
+    stored = ""
+    data_url = request.form.get("signature") or ""
+    if data_url:
+        stored, err = save_signature(data_url)
+        if err:
+            return err
+    elif not reason:
+        return "Ask the patient to sign, or tick 'Patient can't sign' and give the reason."
+    sig_id = conn.insert("payment_signatures", {"invoice_id": inv["id"], "patient_id": inv["patient_id"], "stored_name": stored,
+                                                "not_signed_reason": "" if stored else reason, "captured_by": g.user.id,
+                                                "created_at": now_str()})
+    ref, note = clean(request.form.get("reference"), 80), clean(request.form.get("notes"), 300)
+    for m, amt in lines:
+        pid = conn.insert("payments", {"invoice_id": inv["id"], "branch_id": inv["branch_id"], "kind": "payment", "amount_cents": amt,
+                                       "method": m, "reference": ref, "received_at": received.isoformat(), "received_by": g.user.id,
+                                       "status": "valid", "notes": note, "signature_id": sig_id, "created_at": now_str()})
+        audit.record("payment_recorded", "invoice", inv["id"], f"Payment {peso(amt)} via {PAYMENT_METHODS[m]}",
+                     {"payment_id": pid, "signed": bool(stored)}, inv["branch_id"])
+    flash(f"Payment of {peso(total)} recorded" + (" with the patient's signature." if stored else "."), "success")
+    return None
+
+
+@bp.route("/invoices/<int:invoice_id>/signatures/<int:sig_id>")
+@require("billing.view")
+def signature(invoice_id, sig_id):
+    from flask import send_file
+    from ..uploads import document_path
+    _load_invoice(invoice_id)
+    s = get_db().one("SELECT * FROM payment_signatures WHERE id = ? AND invoice_id = ?", (sig_id, invoice_id))
+    if not s or not s["stored_name"]:
+        abort(404)
+    resp = send_file(document_path(s["stored_name"]), mimetype="image/png", max_age=0)
+    resp.headers["Cache-Control"] = "private, no-store"
+    return resp
 
 
 @bp.route("/invoices/<int:invoice_id>/void", methods=["POST"])

@@ -8,10 +8,15 @@
 <div style="text-align:right"><h2 class="mb-0">Statement of account</h2><p>No. <strong>{{ inv.number }}</strong><br>Date: {{ inv.issued_at|date }}</p></div></div>
 <p><strong>Patient:</strong> {{ inv.last_name }}, {{ inv.first_name }} ({{ inv.chart_no }})</p>
 <table><thead><tr><th>Description</th><th class="num">Qty</th><th class="num">Unit price</th><th class="num">Discount</th><th class="num">Amount</th></tr></thead><tbody>
-{% for it in items %}<tr><td>{{ it.description }}</td><td class="num">{{ it.qty }}</td><td class="num">{{ it.unit_price_cents|peso }}</td><td class="num">{{ it.discount_cents|peso if it.discount_cents else '—' }}</td><td class="num">{{ it.amount_cents|peso }}</td></tr>{% endfor %}</tbody>
+{% for it in items %}<tr><td>{{ it.description }}{% if it.tooth %} (#{{ it.tooth }}){% endif %}</td><td class="num">{{ it.qty }}</td><td class="num">{{ it.unit_price_cents|peso }}</td><td class="num">{{ it.discount_cents|peso if it.discount_cents else '—' }}</td><td class="num">{{ it.amount_cents|peso }}</td></tr>{% endfor %}</tbody>
 <tfoot><tr><td colspan="4">Subtotal</td><td class="num">{{ inv.subtotal_cents|peso }}</td></tr>{% if inv.discount_cents %}<tr><td colspan="4">Discount</td><td class="num">-{{ inv.discount_cents|peso }}</td></tr>{% endif %}
 {% if tax_enabled %}<tr><td colspan="4">{{ tax_label }}{% if tax_inclusive %} (included){% endif %}</td><td class="num">{{ inv.tax_cents|peso }}</td></tr>{% endif %}
 <tr><td colspan="4">Total</td><td class="num">{{ inv.total_cents|peso }}</td></tr><tr><td colspan="4">Paid</td><td class="num">{{ paid|peso }}</td></tr><tr><td colspan="4">Balance due</td><td class="num">{{ balance|peso }}</td></tr></tfoot></table>
+{% if pays %}<h3 class="mt-1">Payments received</h3>
+<table><thead><tr><th>Date</th><th>Type</th><th>Reference / OR</th><th class="num">Amount</th><th>Patient signature</th></tr></thead><tbody>
+{% for py in pays %}<tr><td>{{ py.received_at|date }}</td><td>{{ PAYMENT_LABELS.get(py.method, py.method) }}{% if py.kind == 'refund' %} (refund){% endif %}</td><td>{{ py.reference or '—' }}</td><td class="num">{{ py.amount_cents|peso }}</td>
+<td>{% if py.sig and (loop.first or loop.previtem.signature_id != py.signature_id) %}<img class="sig-img" src="{{ url_for('billing.signature', invoice_id=inv.id, sig_id=py.signature_id) }}" alt="Patient signature">{% elif py.sig %}<small class="muted">(same signature)</small>{% elif py.not_signed_reason %}<small class="muted">Not signed: {{ py.not_signed_reason }}</small>{% else %}—{% endif %}</td></tr>{% endfor %}
+</tbody></table>{% endif %}
 <p class="muted mt-1" style="font-size:.85rem">This statement is not an official receipt. Official receipt/invoice requirements are to be confirmed with the clinic's accountant.</p>
 </main>
 {% endblock %}

@@ -91,3 +91,22 @@ def save_private_image(file_storage, subfolder: str):
     name = f"{secrets.token_hex(16)}.{kind}"
     (folder / name).write_bytes(data)
     return f"{subfolder}/{name}", None
+
+
+def save_signature(data_url: str):
+    """A patient signature drawn on screen (PNG data URL). Kept privately, like patient documents. Returns (stored name, error)."""
+    import base64
+    prefix = "data:image/png;base64,"
+    if not data_url.startswith(prefix) or len(data_url) > 700_000:
+        return None, "The signature couldn't be read. Please ask the patient to sign again."
+    try:
+        data = base64.b64decode(data_url[len(prefix):], validate=True)
+    except ValueError:
+        return None, "The signature couldn't be read. Please ask the patient to sign again."
+    if not data.startswith(SIGNATURES["png"][0]) or len(data) < 60:
+        return None, "The signature couldn't be read. Please ask the patient to sign again."
+    folder = Path(current_app.config["UPLOAD_DIR"]) / "signatures"
+    folder.mkdir(parents=True, exist_ok=True)
+    name = f"signatures/{secrets.token_hex(16)}.png"
+    (Path(current_app.config["UPLOAD_DIR"]) / name).write_bytes(data)
+    return name, None

@@ -2,7 +2,7 @@
 {% from "macros.html" import csrf %}
 {% block page_title %}Certificate{% endblock %}
 {% block content %}
-<div class="page-head"><div><a href="{{ url_for('patients.detail', patient_id=p.id, tab='rx') }}">← {{ p.last_name }}, {{ p.first_name }}</a>
+<div class="page-head"><div><a href="{{ url_for('patients.detail', patient_id=p.id, tab='certs') }}">← {{ p.last_name }}, {{ p.first_name }}</a>
 <h1>{{ 'Edit certificate' if c else 'New certificate' }}</h1></div></div>
 {% if not c %}<div class="tabs">{% for k, (t, _) in kinds.items() %}<a class="{% if v.kind == k %}active{% endif %}" href="?kind={{ k }}">{{ t }}</a>{% endfor %}</div>{% endif %}
 <form method="post" class="card" style="max-width:860px">{{ csrf() }}<input type="hidden" name="kind" value="{{ v.kind }}">

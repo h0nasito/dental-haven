@@ -116,7 +116,7 @@ class TestMyMedsImport(Base):
         # imported bills stay out of the new invoices/sales
         self.assertIsNone(self.q("SELECT id FROM invoices WHERE patient_id = ?", (p["id"],)))
         # patient page shows history for billing users
-        page = self.login("staff.bocaue").get(f"/staff/patients/{p['id']}")
+        page = self.login("staff.bocaue").get(f"/staff/patients/{p['id']}?tab=billing")
         self.assertIn(b"Previous bills from MyMedsPH", page.data)
         # staff edits history in Dental Haven; re-import with a changed mobile must not duplicate or overwrite it
         self.conn.execute("UPDATE patient_history SET allergies = 'Penicillin, latex (confirmed)' WHERE patient_id = ?", (p["id"],))

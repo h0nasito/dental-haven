@@ -226,7 +226,7 @@ def cert_delete(cert_id):
     conn.execute("UPDATE certificates SET deleted = 1, updated_at = ? WHERE id = ?", (now_str(), cert_id))
     audit.record("certificate_deleted", "patient", c["patient_id"], f"Deleted certificate #{cert_id}")
     flash("Certificate deleted.", "success")
-    return redirect(url_for("patients.detail", patient_id=c["patient_id"], tab="rx"))
+    return redirect(url_for("patients.detail", patient_id=c["patient_id"], tab="certs"))
 
 
 @bp.route("/certificates/<int:cert_id>/print")

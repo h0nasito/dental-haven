@@ -1,0 +1,33 @@
+{% from "macros.html" import csrf %}
+{% macro pay_form(inv, balance, paid, today, patient_name, return_to='') %}
+<form method="post" action="{{ url_for('billing.payment', invoice_id=inv.id) }}" class="payform" data-payform data-total="{{ inv.total_cents }}" data-paid="{{ paid }}">
+{{ csrf() }}<input type="hidden" name="action" value="multi">{% if return_to %}<input type="hidden" name="return_to" value="{{ return_to }}">{% endif %}
+<div class="pay-top"><div><span class="pay-lbl">Patient</span><div>{{ patient_name }}</div></div><div><span class="pay-lbl">Bill date</span><div>{{ (inv.issued_at or inv.created_at)|date }} · {{ inv.number or 'Draft' }}</div></div></div>
+<fieldset class="pay-box"><legend>Payment lines</legend>
+<div class="pay-lines" data-pay-lines>
+<div class="pay-line" data-pay-line><div class="field"><label>Payment type</label><select name="method" aria-label="Payment type">{% for k, l in PAYMENT_METHODS.items() %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></div>
+<div class="field"><label>Amount (₱)</label><input name="amount" inputmode="decimal" value="{{ '%.2f'|format(balance / 100) }}" data-pay-amt aria-label="Amount"></div>
+<button type="button" class="btn btn-ghost btn-sm" data-pay-del title="Remove line" aria-label="Remove line">🗑</button></div>
+</div>
+<button type="button" class="btn btn-ghost btn-sm" data-pay-add>+ Add payment line</button>
+<p class="hint">Split payments (e.g. part cash, part GCash) go on separate lines.</p></fieldset>
+<div class="pay-grid">
+<div>
+<div class="form-grid">
+<div class="field"><label>Payment date</label><input type="date" name="received_at" aria-label="Payment date" value="{{ today }}" max="{{ today }}"></div>
+<div class="field"><label>Reference / OR / check #</label><input name="reference" aria-label="Reference, OR or check number" maxlength="80"></div>
+<div class="field"><label>Remarks / check details</label><input name="notes" aria-label="Remarks" maxlength="300"></div></div>
+<fieldset class="pay-box"><legend>Patient signature</legend>
+<div class="sigpad"><canvas data-sigpad width="600" height="180" aria-label="Signature pad: the patient signs here with a finger, stylus or mouse"></canvas>
+<input type="hidden" name="signature" data-sig-out></div>
+<div class="row between"><small class="muted">Patient signs above to acknowledge the payment.</small><button type="button" class="btn btn-ghost btn-sm" data-sig-clear>Clear</button></div>
+<details class="mt-1"><summary><small>Patient can't sign</small></summary><div class="field mt-1"><label>Reason</label><input name="not_signed_reason" aria-label="Reason the patient can't sign" maxlength="200" placeholder="e.g. Paid by parent via GCash, not in clinic"></div></details>
+</fieldset>
+</div>
+<div class="pay-summary"><h3>Payment summary</h3>
+<dl><dt>Total bill</dt><dd>{{ inv.total_cents|peso }}</dd><dt>Total paid</dt><dd class="c-green">{{ paid|peso }}</dd>
+<dt>To pay now</dt><dd class="c-green" data-pay-now>{{ balance|peso }}</dd><dt>Running balance</dt><dd class="c-amber" data-pay-left>₱0.00</dd></dl></div>
+</div>
+<div class="row mt-1" style="justify-content:flex-end"><button class="btn">Save payment</button></div>
+</form>
+{% endmacro %}

@@ -198,14 +198,83 @@ def edit(patient_id):
 # Detail
 # ---------------------------------------------------------------------------
 
+def _age(birth):
+    from ..util import parse_date
+    b = parse_date(birth) if birth else None
+    if not b:
+        return None
+    t = today()
+    return t.year - b.year - ((t.month, t.day) < (b.month, b.day))
+
+
+def progress_groups(conn, patient_id, procedures, notes):
+    """Progress notes grouped like a visit log: one row per date + dentist, with the procedures done (priced from the
+    invoice line with the same dentist, date and service or description), other billed lines, and clinical notes."""
+    groups = {}
+
+    def grp(day, dentist, branch=""):
+        key = (day or "", dentist or "")
+        gr = groups.setdefault(key, {"date": day, "dentist": dentist, "branches": set(), "lines": [], "notes": [], "invoices": {}, "procs": []})
+        if branch:
+            gr["branches"].add(branch)
+        return gr
+
+    items = conn.all("SELECT ii.*, COALESCE(ii.done_on, substr(i.issued_at, 1, 10), substr(i.created_at, 1, 10)) AS day, i.number, i.id AS inv_id, i.status AS inv_status, u.name AS dentist, b.name AS branch FROM invoice_items ii "
+                     "JOIN invoices i ON i.id = ii.invoice_id LEFT JOIN users u ON u.id = ii.dentist_id JOIN branches b ON b.id = i.branch_id "
+                     "WHERE i.patient_id = ? AND i.status != 'void'", (patient_id,))
+    pool = {}
+    for it in items:
+        it = dict(it)
+        pool.setdefault((it["day"] or "", it["dentist"] or ""), []).append(it)
+    branch_names = {b["id"]: b["name"] for b in conn.all("SELECT id, name FROM branches")}
+    for pr in procedures:
+        if pr["status"] != "completed":
+            continue
+        day = (pr["performed_at"] or pr["created_at"])[:10]
+        gr = grp(day, pr["dentist"], branch_names.get(pr["branch_id"], ""))
+        price, inv = None, None
+        for it in pool.get((day, pr["dentist"] or ""), []):
+            same = (pr["service_id"] and it["service_id"] == pr["service_id"]) or it["description"].strip().lower() == pr["description"].strip().lower()
+            if same and not it.get("_used"):
+                it["_used"] = True
+                price, inv = it["amount_cents"], it
+                break
+        if inv:
+            gr["invoices"][inv["inv_id"]] = inv["number"] or "Draft invoice"
+            gr["branches"].add(inv["branch"])
+        gr["lines"].append({"text": pr["description"], "tooth": pr["tooth"], "price": price, "proc": pr})
+        gr["procs"].append(pr)
+    for (day, dentist), its in pool.items():
+        for it in its:
+            if it.get("_used"):
+                continue
+            gr = grp(day, dentist, it["branch"])
+            gr["lines"].append({"text": it["description"], "tooth": "", "price": it["amount_cents"], "proc": None})
+            gr["invoices"][it["inv_id"]] = it["number"] or "Draft invoice"
+    for n in notes:
+        day = (n["appt_at"] or n["created_at"])[:10]
+        grp(day, n["author"])["notes"].append(n)
+    docs = {}
+    for d in conn.all("SELECT substr(uploaded_at, 1, 10) AS day, COUNT(*) AS n FROM patient_documents WHERE patient_id = ? GROUP BY day", (patient_id,)):
+        docs[d["day"]] = d["n"]
+    out = sorted(groups.values(), key=lambda x: (x["date"] or "", x["dentist"] or ""), reverse=True)
+    for gr in out:
+        gr["attachments"] = docs.get(gr["date"], 0)
+        gr["branch"] = ", ".join(sorted(b for b in gr["branches"] if b))
+    return out
+
+
 @bp.route("/<int:patient_id>")
 @require("patients.view")
 def detail(patient_id):
     conn = get_db()
     p = _load(patient_id)
-    tab = request.args.get("tab", "overview")
+    tab = request.args.get("tab", "profile")
+    tab = {"overview": "profile", "clinical": "notes"}.get(tab, tab)
+    if tab not in ("profile", "notes", "plans", "chart", "billing", "rx", "certs", "documents", "remarks", "diagnosis", "lab", "changes"):
+        tab = "profile"
     clinical = can_see_clinical(conn, g.user, patient_id)
-    if tab == "clinical" and not clinical:
+    if tab in ("notes", "plans", "chart", "rx", "certs", "diagnosis") and not clinical:
         abort(403)
     ctx = {"p": p, "tab": tab, "clinical": clinical}
     appt_where = "a.patient_id = ?"
@@ -229,8 +298,13 @@ def detail(patient_id):
     if g.user.can("billing.view"):
         ctx["invoices"] = conn.all(
             "SELECT i.*, b.name AS branch, (SELECT COALESCE(SUM(CASE WHEN kind='payment' THEN amount_cents ELSE -amount_cents END),0) "
-            "FROM payments WHERE invoice_id = i.id AND status = 'valid') AS paid FROM invoices i JOIN branches b ON b.id = i.branch_id "
-            "WHERE i.patient_id = ? ORDER BY i.created_at DESC", (patient_id,))
+            "FROM payments WHERE invoice_id = i.id AND status = 'valid') AS paid, u.name AS created_by_name FROM invoices i "
+            "JOIN branches b ON b.id = i.branch_id LEFT JOIN users u ON u.id = i.created_by "
+            "WHERE i.patient_id = ? ORDER BY COALESCE(i.issued_at, substr(i.created_at, 1, 10)) DESC, i.id DESC", (patient_id,))
+        if tab == "billing":
+            for inv in ctx["invoices"]:
+                inv["lines"] = ", ".join(it["description"] + (f"(#{it['tooth']})" if it["tooth"] else "")
+                                         for it in conn.all("SELECT description, tooth FROM invoice_items WHERE invoice_id = ? ORDER BY id", (inv["id"],)))
         ctx["balance"] = sum((i["total_cents"] - i["paid"]) for i in ctx["invoices"] if i["status"] == "issued")
         from ..billing import credit_balance
         ctx["credit"] = credit_balance(conn, patient_id)
@@ -267,7 +341,9 @@ def detail(patient_id):
     if g.user.can("lab.view") or g.user.is_super_admin:
         ctx["lab_cases"] = conn.all("SELECT c.*, l.name AS lab FROM lab_cases c JOIN laboratories l ON l.id = c.lab_id "
                                     "WHERE c.patient_id = ? ORDER BY c.id DESC LIMIT 10", (patient_id,))
-    if clinical and tab == "rx":
+    if clinical and tab == "notes":
+        ctx["pn_groups"] = progress_groups(conn, patient_id, ctx["procedures"], ctx["notes"])
+    if clinical and tab in ("rx", "certs"):
         ctx["prescriptions"] = conn.all(
             "SELECT r.*, u.name AS prescriber FROM prescriptions r LEFT JOIN users u ON u.id = r.prescriber_id "
             "WHERE r.patient_id = ? AND r.deleted = 0 ORDER BY r.prescribed_on DESC, r.id DESC", (patient_id,))
@@ -279,11 +355,21 @@ def detail(patient_id):
     doc_where = "d.patient_id = ?" + ("" if clinical else " AND d.clinical = 0")
     ctx["documents"] = conn.all(f"SELECT d.*, u.name AS uploader FROM patient_documents d LEFT JOIN users u ON u.id = d.uploaded_by "
                                 f"WHERE {doc_where} ORDER BY d.uploaded_at DESC", (patient_id,))
+    if tab == "remarks":
+        ctx["remarks"] = conn.all("SELECT r.*, u.name AS author FROM patient_remarks r LEFT JOIN users u ON u.id = r.author_id "
+                                  "WHERE r.patient_id = ? AND r.deleted = 0 ORDER BY r.id DESC", (patient_id,))
+    if clinical and tab == "diagnosis":
+        ctx["diagnoses"] = conn.all("SELECT d.*, u.name AS dentist FROM patient_diagnoses d LEFT JOIN users u ON u.id = d.dentist_id "
+                                    "WHERE d.patient_id = ? ORDER BY d.status, d.diagnosed_on DESC, d.id DESC", (patient_id,))
     if tab == "changes":
         if not (clinical or g.user.is_super_admin):
             abort(403)
         ctx["changes"] = conn.all("SELECT a.*, u.name AS actor FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id "
                                   "WHERE a.entity_type = 'patient' AND a.entity_id = ? ORDER BY a.id DESC LIMIT 200", (patient_id,))
+    done = [a for a in ctx["appointments"] if a["status"] in ("checked_in", "completed")]
+    ctx["last_visit"] = done[0] if done else None
+    ctx["age"] = _age(p["birth_date"])
+    ctx["today_iso"] = ctx.get("today_iso") or today().isoformat()
     ctx.update(services=services(), doc_categories=DOC_CATEGORIES, plan_statuses=PLAN_STATUSES, item_statuses=ITEM_STATUSES,
                all_dentists=dentists(), recent_appts=[a for a in ctx["appointments"] if a["status"] in ("checked_in", "completed")][:10])
     return render_template("staff/patients/detail.html", **ctx)
@@ -340,6 +426,64 @@ def add_note(patient_id):
                      {"note_id": nid})
         flash("Clinical note added. Notes can't be edited; add an amendment to correct one.", "success")
     return redirect(url_for("patients.detail", patient_id=patient_id, tab="clinical"))
+
+
+@bp.route("/<int:patient_id>/remarks", methods=["POST"])
+@require("patients.view")
+def remarks(patient_id):
+    """Front-desk remarks (e.g. 'prefers text messages', 'bring HMO card'). Not for clinical findings."""
+    conn = get_db()
+    _load(patient_id)
+    if request.form.get("action") == "delete":
+        rid = to_int(request.form.get("remark_id"))
+        r = conn.one("SELECT * FROM patient_remarks WHERE id = ? AND patient_id = ? AND deleted = 0", (rid, patient_id))
+        if not r or not (r["author_id"] == g.user.id or g.user.can("patients.manage")):
+            abort(403)
+        conn.execute("UPDATE patient_remarks SET deleted = 1 WHERE id = ?", (rid,))
+        audit.record("patient_remark_deleted", "patient", patient_id, "Removed a remark", {"remark_id": rid})
+        flash("Remark removed.", "success")
+    else:
+        body = clean(request.form.get("body"), 1000)
+        if not body:
+            flash("Write the remark first.", "error")
+        else:
+            rid = conn.insert("patient_remarks", {"patient_id": patient_id, "body": body, "author_id": g.user.id, "created_at": now_str()})
+            audit.record("patient_remark_added", "patient", patient_id, "Added a remark", {"remark_id": rid})
+            flash("Remark added.", "success")
+    return redirect(url_for("patients.detail", patient_id=patient_id, tab="remarks"))
+
+
+@bp.route("/<int:patient_id>/diagnoses", methods=["POST"])
+@require("progress.add")
+def diagnoses(patient_id):
+    conn = get_db()
+    _load(patient_id)
+    _require_clinical(patient_id, edit=True, perm="progress.add")
+    action = request.form.get("action", "add")
+    if action in ("resolve", "reopen"):
+        did = to_int(request.form.get("diagnosis_id"))
+        if not conn.one("SELECT id FROM patient_diagnoses WHERE id = ? AND patient_id = ?", (did, patient_id)):
+            abort(404)
+        st = "resolved" if action == "resolve" else "active"
+        conn.execute("UPDATE patient_diagnoses SET status = ?, updated_at = ? WHERE id = ?", (st, now_str(), did))
+        audit.record("diagnosis_updated", "patient", patient_id, f"Diagnosis marked {st}", {"diagnosis_id": did})
+        flash(f"Diagnosis marked {st}.", "success")
+    else:
+        diag = clean(request.form.get("diagnosis"), 200)
+        day = parse_date(request.form.get("diagnosed_on")) or today()
+        dentist_id = to_int(request.form.get("dentist_id")) or (g.user.id if g.user.role == "dentist" else None)
+        if not diag:
+            flash("Enter the diagnosis.", "error")
+        elif day > today():
+            flash("The date can't be in the future.", "error")
+        else:
+            did = conn.insert("patient_diagnoses", {"patient_id": patient_id, "diagnosed_on": day.isoformat(),
+                                                    "tooth": clean(request.form.get("tooth"), 40), "diagnosis": diag,
+                                                    "notes": clean(request.form.get("notes"), 2000), "dentist_id": dentist_id,
+                                                    "created_by": g.user.id, "created_at": now_str()})
+            audit.record("diagnosis_added", "patient", patient_id, "Added a diagnosis", {"diagnosis_id": did})
+            flash("Diagnosis added.", "success")
+    return redirect(url_for("patients.detail", patient_id=patient_id, tab="diagnosis"))
 
 
 @bp.route("/<int:patient_id>/procedures", methods=["POST"])
@@ -442,7 +586,7 @@ def plans(patient_id):
                     audit.record("progress_generated", "patient", patient_id, f"Progress note from plan item: {item['description'][:60]}",
                                  {"procedure_id": prid, "plan_item_id": item_id})
                 flash("Progress note added and the plan item marked done.", "success")
-    return redirect(url_for("patients.detail", patient_id=patient_id, tab="clinical") + "#plans")
+    return redirect(url_for("patients.detail", patient_id=patient_id, tab="plans"))
 
 
 # ---------------------------------------------------------------------------
