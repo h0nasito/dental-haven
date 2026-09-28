@@ -1,0 +1,14 @@
+{# Technician commission card. Needs: comm_entries, comm_techs, comm_field ('work_id' or 'case_id'), comm_id, comm_delivered #}
+{% if current_user.is_super_admin or current_user.can('lab.commission') %}
+<div class="card mt-1"><h2>Technician commission</h2>
+<p class="hint">Counts in the technician's payroll for the cutoff when this work leaves the lab (Delivered){% if comm_delivered %}: delivered {{ comm_delivered|date }}{% else %}. Not delivered yet{% endif %}.</p>
+{% if comm_entries %}<ul class="list-plain">{% for c in comm_entries %}<li><strong>{{ c.full_name }}</strong> · {{ c.amount_cents|peso }}{% if c.note %} · {{ c.note }}{% endif %}<br><small class="muted">added by {{ c.by_name }} {{ c.created_at|dt }}</small>
+<form method="post" action="{{ url_for('lab_works.commission') }}" style="display:inline" data-confirm="Remove this commission?">{{ csrf() }}<input type="hidden" name="{{ comm_field }}" value="{{ comm_id }}"><input type="hidden" name="action" value="remove"><input type="hidden" name="commission_id" value="{{ c.id }}"><button class="btn btn-ghost btn-sm">Remove</button></form></li>{% endfor %}</ul>{% endif %}
+{% if comm_techs %}<form method="post" action="{{ url_for('lab_works.commission') }}" class="form-grid">{{ csrf() }}<input type="hidden" name="{{ comm_field }}" value="{{ comm_id }}">
+<div class="field"><label for="ct">Technician</label><select id="ct" name="employee_id">{% for t in comm_techs %}<option value="{{ t.id }}">{{ t.full_name }}</option>{% endfor %}</select></div>
+<div class="field"><label for="ca">Commission (₱)</label><input id="ca" name="amount" inputmode="decimal" required></div>
+<div class="field span-2"><label for="cn">Note <span class="hint">Optional</span></label><input id="cn" name="note" maxlength="200" placeholder="e.g. Crown x2, design + milling"></div>
+<div class="form-actions"><button class="btn btn-secondary btn-sm">Add commission</button></div></form>
+{% else %}<p class="muted">No technicians yet. Set an employee's position to Technician (Employees) or create a Staff – Technician account.</p>{% endif %}
+</div>
+{% endif %}

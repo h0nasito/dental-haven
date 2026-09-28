@@ -261,7 +261,9 @@ def work(work_id):
     events = conn.all("SELECT e.*, u.name AS by_name FROM lab_work_events e LEFT JOIN users u ON u.id = e.user_id WHERE e.work_id = ? ORDER BY e.id DESC",
                       (w["id"],))
     lab = conn.one("SELECT * FROM laboratories WHERE id = ?", (w["lab_id"],))
+    from ..lab_commission import entries, technicians
     return render_template("staff/lab_works/work.html", w=w, events=events, statuses=STATUSES, arches=ARCHES, lab=lab, lab_display=lab_display,
+                           comm_entries=entries(conn, work_id=w["id"]), comm_techs=technicians(conn),
                            can_bill=g.user.is_super_admin or g.user.can("lab.billing"), today=today().isoformat())
 
 
@@ -554,3 +556,108 @@ def receipt_print(payment_id):
     by = conn.one("SELECT name FROM users WHERE id = ?", (p["received_by"],))
     return render_template("staff/lab_works/receipt_print.html", p=p, inv=inv, lab=_lab_header(conn, inv["lab_id"]), methods=METHODS,
                            by=by["name"] if by else "", balance=inv["total_cents"] - inv["paid_cents"])
+
+
+# ---------------------------------------------------------------------------
+# Technician commissions (manual), on outside works and branch lab cases
+# ---------------------------------------------------------------------------
+
+@bp.route("/commission", methods=["POST"])
+@login_required
+def commission():
+    from ..lab_commission import technicians
+    conn = get_db()
+    if not (g.user.is_super_admin or g.user.can("lab.commission")):
+        abort(403)
+    work_id, case_id = to_int(request.form.get("work_id")), to_int(request.form.get("case_id"))
+    if work_id:
+        item = conn.one("SELECT id, lab_id, number AS ref FROM lab_works WHERE id = ?", (work_id,))
+        back = url_for("lab_works.work", work_id=work_id)
+    elif case_id:
+        item = conn.one("SELECT id, lab_id, '#' || id AS ref FROM lab_cases WHERE id = ?", (case_id,))
+        back = url_for("labs.case", case_id=case_id)
+    else:
+        abort(400)
+    if not item or (not g.user.is_super_admin and item["lab_id"] not in _lab_ids()):
+        abort(404)
+    if request.form.get("action") == "remove":
+        c = conn.one("SELECT * FROM lab_commissions WHERE id = ? AND (work_id = ? OR case_id = ?)",
+                     (to_int(request.form.get("commission_id")), work_id or 0, case_id or 0))
+        if c:
+            conn.execute("DELETE FROM lab_commissions WHERE id = ?", (c["id"],))
+            audit.record("lab_commission_removed", "lab_commission", c["id"], f"Removed technician commission on {item['ref']}",
+                         {"amount_cents": c["amount_cents"], "employee_id": c["employee_id"]})
+            flash("Commission removed.", "success")
+        return redirect(back)
+    emp_id = to_int(request.form.get("employee_id"))
+    amt = parse_money(request.form.get("amount"))
+    if not any(t["id"] == emp_id for t in technicians(conn)):
+        flash("Choose the technician.", "error")
+    elif amt is None or amt <= 0:
+        flash("Enter the commission amount, like 150 or 1,200.", "error")
+    else:
+        cid = conn.insert("lab_commissions", {"employee_id": emp_id, "work_id": work_id, "case_id": case_id, "amount_cents": amt,
+                                              "note": clean(request.form.get("note"), 200), "created_by": g.user.id, "created_at": now_str()})
+        audit.record("lab_commission_added", "lab_commission", cid, f"Technician commission ₱{amt / 100:,.2f} on {item['ref']}",
+                     {"employee_id": emp_id})
+        flash("Commission added. It counts in payroll when the work is delivered.", "success")
+    return redirect(back)
+
+
+# ---------------------------------------------------------------------------
+# Collection report
+# ---------------------------------------------------------------------------
+
+@bp.route("/collections")
+@login_required
+def collections():
+    _need("lab.billing")
+    conn = get_db()
+    ids = _lab_ids()
+    end = parse_date(request.args.get("to")) or today()
+    start = parse_date(request.args.get("from")) or end.replace(day=1)
+    if start > end:
+        start, end = end, start
+    client = to_int(request.args.get("client"))
+    where, args = [f"i.lab_id IN ({_in(ids)})", "p.status = 'ok'", "p.received_on BETWEEN ? AND ?"], [*ids, start.isoformat(), end.isoformat()]
+    if client:
+        where.append("i.client_id = ?")
+        args.append(client)
+    rows = conn.all("SELECT p.*, i.number AS invoice_number, i.clinic_name, i.client_id, u.name AS by_name FROM lab_payments p "
+                    "JOIN lab_invoices i ON i.id = p.invoice_id LEFT JOIN users u ON u.id = p.received_by "
+                    f"WHERE {' AND '.join(where)} ORDER BY p.received_on, p.id", args)
+    if request.args.get("format") == "csv":
+        buf = io.StringIO()
+        wr = csv.writer(buf)
+        wr.writerow(["Date", "Receipt", "Invoice", "Dental clinic", "Method", "Reference", "Amount (PHP)", "Received by"])
+        safe = lambda x: ("'" + x) if isinstance(x, str) and x[:1] in ("=", "+", "-", "@") else x  # noqa: E731
+        for r in rows:
+            wr.writerow([safe(x) for x in (r["received_on"], r["receipt_no"], r["invoice_number"], r["clinic_name"], METHODS.get(r["method"], r["method"]),
+                                            r["reference"], r["amount_cents"] / 100, r["by_name"] or "")])
+        wr.writerow(["", "", "", "", "", "Total", sum(r["amount_cents"] for r in rows) / 100, ""])
+        audit.record("lab_collections_exported", "lab_invoice", None, f"Exported lab collections {start} to {end}")
+        return Response("\ufeff" + buf.getvalue(), mimetype="text/csv",
+                        headers={"Content-Disposition": f'attachment; filename="lab-collections-{start}-to-{end}.csv"', "Cache-Control": "no-store"})
+    by_method, by_clinic, by_day = {}, {}, {}
+    for r in rows:
+        by_method[r["method"]] = by_method.get(r["method"], 0) + r["amount_cents"]
+        by_clinic[r["clinic_name"]] = by_clinic.get(r["clinic_name"], 0) + r["amount_cents"]
+        by_day[r["received_on"]] = by_day.get(r["received_on"], 0) + r["amount_cents"]
+    invoiced = conn.scalar(f"SELECT COALESCE(SUM(total_cents), 0) FROM lab_invoices WHERE lab_id IN ({_in(ids)}) AND status = 'issued' "
+                           "AND issued_on BETWEEN ? AND ?" + (" AND client_id = ?" if client else ""),
+                           [*ids, start.isoformat(), end.isoformat()] + ([client] if client else [])) or 0
+    # Outstanding balances as of today, with age from the invoice's due date
+    open_rows = conn.all(f"SELECT * FROM lab_invoices WHERE lab_id IN ({_in(ids)}) AND status = 'issued' AND total_cents > paid_cents"
+                         + (" AND client_id = ?" if client else "") + " ORDER BY clinic_name, issued_on", [*ids] + ([client] if client else []))
+    t = today().isoformat()
+    outstanding = {}
+    for i in open_rows:
+        bal = i["total_cents"] - i["paid_cents"]
+        o = outstanding.setdefault(i["clinic_name"], {"client_id": i["client_id"], "current": 0, "overdue": 0, "invoices": 0})
+        o["invoices"] += 1
+        o["overdue" if i["due_on"] and i["due_on"] < t else "current"] += bal
+    clients = conn.all(f"SELECT id, clinic_name FROM lab_clients WHERE lab_id IN ({_in(ids)}) ORDER BY clinic_name", ids)
+    return render_template("staff/lab_works/collections.html", rows=rows, start=start, end=end, client=client, clients=clients, methods=METHODS,
+                           by_method=sorted(by_method.items(), key=lambda x: -x[1]), by_clinic=sorted(by_clinic.items(), key=lambda x: -x[1]),
+                           by_day=sorted(by_day.items()), total=sum(r["amount_cents"] for r in rows), invoiced=invoiced,
+                           outstanding=sorted(outstanding.items()), out_total=sum(o["current"] + o["overdue"] for o in outstanding.values()))

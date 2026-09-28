@@ -182,5 +182,7 @@ def case(case_id):
         return redirect(url_for("labs.case", case_id=case_id))
     events = conn.all("SELECT e.*, u.name AS by_name FROM lab_case_events e LEFT JOIN users u ON u.id = e.user_id WHERE e.case_id = ? ORDER BY e.id DESC",
                       (case_id,))
+    from ..lab_commission import entries, technicians
     return render_template("staff/labs/case.html", c=c, events=events, statuses=STATUSES, can_update=can_update,
+                           comm_entries=entries(conn, case_id=c["id"]), comm_techs=technicians(conn),
                            patient_link=can_see_patient(conn, g.user, c["patient_id"]))

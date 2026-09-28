@@ -140,3 +140,26 @@ class TestLabWorks(Base):
             self.assertIsNone(self.q("SELECT invoice_id FROM lab_works WHERE id = ?", (w1["id"],))["invoice_id"])
         finally:
             self.revoke()
+
+    def test_collection_report(self):
+        self.grant("lab.works", "lab.billing")
+        try:
+            c = self.tech(1)
+            w = self.new_work(c, clinic_name="Collections Clinic", units="1", price="5000")
+            c.post("/staff/lab/invoices/new", data={"client": w["client_id"], f"w_{w['id']}": "1"})
+            inv = self.q("SELECT * FROM lab_invoices ORDER BY id DESC LIMIT 1")
+            base = f"/staff/lab/invoices/{inv['id']}"
+            c.post(base, data={"action": "issue"})
+            day = self.q("SELECT issued_on FROM lab_invoices WHERE id = ?", (inv["id"],))["issued_on"]
+            c.post(base, data={"action": "pay", "amount": "2000", "method": "cash", "received_on": day})
+            c.post(base, data={"action": "pay", "amount": "1000", "method": "gcash", "reference": "GC9", "received_on": day})
+            page = c.get("/staff/lab/collections", query_string={"from": day, "to": day, "client": w["client_id"]}).data.decode()
+            for part in ("Lab collection report", "₱3,000.00", "Cash", "GCash", "Collections Clinic", "₱2,000.00"):
+                self.assertIn(part, page)
+            csv_text = c.get("/staff/lab/collections", query_string={"from": day, "to": day, "client": w["client_id"], "format": "csv"}).data.decode("utf-8-sig")
+            self.assertIn("Receipt,Invoice", csv_text)
+            self.assertIn("Total,3000.0", csv_text)
+            self.revoke(); self.grant("lab.works")
+            self.assertEqual(self.tech(1).get("/staff/lab/collections").status_code, 403)
+        finally:
+            self.revoke()

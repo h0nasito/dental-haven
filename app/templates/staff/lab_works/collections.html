@@ -1,0 +1,35 @@
+{% extends "staff/layout.html" %}
+{% block page_title %}Lab collection report{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Lab collection report</h1><p>Payments received from dental clinics for laboratory work, {{ start|date }} – {{ end|date }}.</p></div>
+<a class="btn btn-secondary" href="{{ url_for('lab_works.collections', format='csv', client=client or '', **{'from': start.isoformat(), 'to': end.isoformat()}) }}">Export CSV</a></div>
+{% set active = 'collections' %}{% include "staff/lab_works/_nav.html" %}
+<form class="toolbar" method="get">
+<div class="field"><label for="cf">From</label><input id="cf" type="date" name="from" value="{{ start.isoformat() }}"></div>
+<div class="field"><label for="ct">To</label><input id="ct" type="date" name="to" value="{{ end.isoformat() }}"></div>
+<div class="field"><label for="cc">Clinic</label><select id="cc" name="client"><option value="">All clinics</option>{% for c in clients %}<option value="{{ c.id }}" {% if client == c.id %}selected{% endif %}>{{ c.clinic_name }}</option>{% endfor %}</select></div>
+<button class="btn btn-secondary">Show</button></form>
+<div class="grid grid-4" style="margin-bottom:1rem">
+<div class="stat"><div class="label">Collected</div><div class="value">{{ total|peso }}</div><div class="sub">{{ rows|length }} receipt{{ 's' if rows|length != 1 }}</div></div>
+<div class="stat"><div class="label">Invoiced in this period</div><div class="value">{{ invoiced|peso }}</div><div class="sub">Issued invoices</div></div>
+<div class="stat {{ 'warn' if out_total else '' }}"><div class="label">Outstanding today</div><div class="value">{{ out_total|peso }}</div><div class="sub">Unpaid balances, all dates</div></div>
+<div class="stat"><div class="label">Clinics that paid</div><div class="value">{{ by_clinic|length }}</div></div>
+</div>
+<div class="grid grid-2">
+<div class="card"><h2>By payment method</h2>{% if by_method %}<table><tbody>{% for m, amt in by_method %}<tr><td>{{ methods.get(m, m) }}</td><td class="num">{{ amt|peso }}</td></tr>{% endfor %}</tbody>
+<tfoot><tr><td><strong>Total</strong></td><td class="num"><strong>{{ total|peso }}</strong></td></tr></tfoot></table>{% else %}<p class="muted">No payments in this period.</p>{% endif %}</div>
+<div class="card"><h2>By clinic</h2>{% if by_clinic %}<table><tbody>{% for c, amt in by_clinic %}<tr><td>{{ c }}</td><td class="num">{{ amt|peso }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="muted">No payments in this period.</p>{% endif %}</div>
+</div>
+{% if by_day %}<div class="card mt-1"><h2>By day</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th class="num">Collected</th></tr></thead><tbody>
+{% for d, amt in by_day %}<tr><td>{{ d|date }}</td><td class="num">{{ amt|peso }}</td></tr>{% endfor %}</tbody></table></div></div>{% endif %}
+<div class="card mt-1"><h2>Receipts</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Receipt</th><th>Invoice</th><th>Dental clinic</th><th>Method</th><th class="num">Amount</th><th>Received by</th></tr></thead><tbody>
+{% for r in rows %}<tr><td>{{ r.received_on|date }}</td><td><a href="{{ url_for('lab_works.receipt_print', payment_id=r.id) }}" target="_blank">{{ r.receipt_no }}</a></td>
+<td><a href="{{ url_for('lab_works.invoice', invoice_id=r.invoice_id) }}">{{ r.invoice_number }}</a></td><td>{{ r.clinic_name }}</td>
+<td>{{ methods.get(r.method, r.method) }}{% if r.reference %}<br><small class="muted">{{ r.reference }}</small>{% endif %}</td><td class="num">{{ r.amount_cents|peso }}</td><td>{{ r.by_name or '—' }}</td></tr>
+{% else %}<tr><td colspan="7" class="empty">No payments received in this period.</td></tr>{% endfor %}</tbody></table></div>
+<p class="hint">Voided receipts are left out. Acknowledgment receipts are not BIR official receipts.</p></div>
+<div class="card mt-1"><h2>Outstanding balances</h2>{% if outstanding %}<div class="table-wrap"><table><thead><tr><th>Dental clinic</th><th class="num">Unpaid invoices</th><th class="num">Not yet due</th><th class="num">Past due</th><th class="num">Total</th></tr></thead><tbody>
+{% for c, o in outstanding %}<tr><td><a href="{{ url_for('lab_works.invoices', show='open') }}">{{ c }}</a></td><td class="num">{{ o.invoices }}</td><td class="num">{{ o.current|peso if o.current else '—' }}</td>
+<td class="num">{% if o.overdue %}<span class="text-danger">{{ o.overdue|peso }}</span>{% else %}—{% endif %}</td><td class="num"><strong>{{ (o.current + o.overdue)|peso }}</strong></td></tr>{% endfor %}</tbody></table></div>
+{% else %}<p class="muted">No unpaid lab invoices.</p>{% endif %}</div>
+{% endblock %}

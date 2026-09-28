@@ -1,7 +1,9 @@
 """Attendance exception detection and draft payroll summaries.
 
-IMPORTANT: The clinic's rules for overtime, holidays, night differential and statutory deductions
-have NOT been provided. This module aggregates attendance and shows *estimates*: rate x days or hours
+Clinic-confirmed rules: cutoffs 1-15 and 16-end of month; late = ₱1 per minute (staff); overtime paid only when a
+supervisor approves it, at daily rate / 8 x 1.25 per hour; regular holiday worked = double pay, special non-working
+day worked = +30%; unworked regular holiday = 1 day (setting). Night differential and statutory deductions
+(SSS, PhilHealth, Pag-IBIG, tax) are NOT computed. This module aggregates attendance and shows *estimates*: rate x days or hours
 for staff, and for dentists daily rate x days present + commission (clinic-confirmed basis: amount billed
 for each completed procedure, less its share of the invoice discount and the lab fee, x commission %).
 Nothing here pays anyone or produces final payroll.
@@ -87,6 +89,32 @@ def commission_items(conn, user_id: int, start: str, end: str, branch_id=None, d
     return out
 
 
+OT_MULTIPLIER = 1.25          # clinic rule: hourly OT rate = daily rate / 8 x 1.25
+HOLIDAY_WORKED = {"regular": 2.0, "special": 1.3}   # regular holiday worked = double pay; special non-working = +30%
+
+
+def staff_daily_pay(conn, recs, rate_cents: int, start: str, end: str) -> dict:
+    """Daily-rate staff: basic pay, holiday pay, approved overtime and late deduction for the period."""
+    holidays = {h["day"]: h["kind"] for h in conn.all("SELECT day, kind FROM holidays WHERE day BETWEEN ? AND ?", (start, end))}
+    basic = holiday = 0
+    worked_days = set()
+    for r in recs:
+        if r["time_in"] and r["time_out"] and r["status"] in ("ok", "corrected", "exception"):
+            worked_days.add(r["work_date"])
+            basic += rate_cents
+            kind = holidays.get(r["work_date"])
+            if kind:
+                holiday += round(rate_cents * (HOLIDAY_WORKED[kind] - 1))
+    if settings.get("payroll.pay_unworked_regular_holiday", conn):
+        holiday += sum(rate_cents for d, k in holidays.items() if k == "regular" and d not in worked_days)
+    ot_minutes = sum(r["ot_approved_minutes"] or 0 for r in recs if r["status"] != "excused")
+    ot_pay = round(ot_minutes / 60 * rate_cents / 8 * OT_MULTIPLIER)
+    late_minutes = sum(r["late_minutes"] or 0 for r in recs if r["status"] != "excused")
+    late = late_minutes * int(settings.get("payroll.late_peso_per_minute", conn) or 0) * 100
+    return {"basic_pay_cents": basic, "holiday_pay_cents": holiday, "ot_minutes": ot_minutes, "ot_pay_cents": ot_pay,
+            "late_deduction_cents": late, "late_minutes": late_minutes, "estimate_cents": basic + holiday + ot_pay - late}
+
+
 def build_lines(conn, period) -> list[dict]:
     where = "e.active = 1"
     params: list = []
@@ -100,13 +128,11 @@ def build_lines(conn, period) -> list[dict]:
                         (e["id"], period["start_date"], period["end_date"]))
         days = sum(1 for r in recs if r["time_in"] and r["time_out"] and r["status"] in ("ok", "corrected", "exception"))
         minutes = sum(worked_minutes(r) for r in recs if r["status"] != "excused")
-        late = 0
+        late = sum(r["late_minutes"] or 0 for r in recs if r["status"] != "excused")
         undertime = 0
         for r in recs:
             if r["status"] == "exception" and r["exception_note"]:
                 for part in r["exception_note"].split("; "):
-                    if part.startswith("late "):
-                        late += int(part.split(" ")[1])
                     if part.startswith("left "):
                         undertime += int(part.split(" ")[1])
         open_exc = sum(1 for r in recs if r["status"] == "exception")
@@ -118,24 +144,39 @@ def build_lines(conn, period) -> list[dict]:
                                      rates["commission_bp"] if rates else 0, svc)
             daily_pay = days * rates["daily_rate_cents"] if rates else None
             commission = sum(i["commission_cents"] for i in items) if rates else None
+            late_min = sum(r["late_minutes"] or 0 for r in recs if r["status"] != "excused")
+            late_ded = late_min * int(settings.get("payroll.late_peso_per_minute", conn) or 0) * 100 \
+                if settings.get("payroll.late_applies_dentists", conn) else 0
             lines.append({"employee_id": e["id"], "days_present": days, "minutes_worked": minutes, "late_minutes": late,
                           "undertime_minutes": undertime, "open_exceptions": open_exc, "kind": "dentist",
                           "basis": "daily_commission" if rates else "unset", "rate_cents": rates["daily_rate_cents"] if rates else None,
                           "percentage_bp": rates["commission_bp"] if rates else None, "daily_pay_cents": daily_pay,
                           "commission_cents": commission, "commission_base_cents": sum(i["base_cents"] for i in items),
-                          "commission_items": len(items), "estimate_cents": (daily_pay + commission) if rates else None})
+                          "commission_items": len(items), "late_deduction_cents": late_ded if rates else None,
+                          "estimate_cents": (daily_pay + commission - late_ded) if rates else None})
             continue
+        is_tech = e["position"] == "Technician" or bool(user and conn.one("SELECT 1 AS x FROM users WHERE id = ? AND access_role = 'technician'", (user["id"],)))
         comp = current_compensation(conn, e["id"], period["end_date"])
         basis = comp["basis"] if comp else "unset"
         rate = comp["rate_cents"] if comp else None
         estimate = None
+        extra = {}
         if rate is not None and basis == "daily":
-            estimate = days * rate
+            extra = staff_daily_pay(conn, recs, rate, period["start_date"], period["end_date"])
+            estimate = extra.pop("estimate_cents")
+            late = extra.pop("late_minutes")
         elif rate is not None and basis == "hourly":
             estimate = round(minutes / 60 * rate)
         lines.append({"employee_id": e["id"], "days_present": days, "minutes_worked": minutes, "late_minutes": late,
                       "undertime_minutes": undertime, "open_exceptions": open_exc, "basis": basis, "rate_cents": rate,
-                      "percentage_bp": comp["percentage_bp"] if comp else None, "estimate_cents": estimate, "kind": "staff"})
+                      "percentage_bp": comp["percentage_bp"] if comp else None, "estimate_cents": estimate, "kind": "staff", **extra})
+        if is_tech:
+            from .lab_commission import for_period
+            items = for_period(conn, e["id"], period["start_date"], period["end_date"])
+            comm = sum(i["amount_cents"] for i in items)
+            lines[-1].update({"commission_cents": comm, "commission_items": len(items)})
+            if lines[-1]["estimate_cents"] is not None:
+                lines[-1]["estimate_cents"] += comm
     return lines
 
 

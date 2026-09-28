@@ -1,0 +1,11 @@
+{% extends "staff/layout.html" %}
+{% block page_title %}Commission · {{ e.full_name }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('people.payroll_period', period_id=p.id) }}">← {{ p.name }}</a><h1>{{ e.full_name }}: technician commission</h1>
+<p>Lab works delivered {{ p.start_date|date }} – {{ p.end_date|date }}. Commissions are added by hand on each work or case.</p></div></div>
+<div class="card"><div class="table-wrap"><table><thead><tr><th>Delivered</th><th>Work / case</th><th>Type of case</th><th>From</th><th>Note</th>{% if show_money %}<th class="num">Commission</th>{% endif %}</tr></thead><tbody>
+{% for i in items %}<tr><td>{{ i.out_on|date }}</td><td>{% if i.src == 'work' %}<a href="{{ url_for('lab_works.work', work_id=i.work_id) }}">{{ i.ref }}</a>{% else %}<a href="{{ url_for('labs.case', case_id=i.case_id) }}">Branch case {{ i.ref }}</a>{% endif %}</td>
+<td>{{ i.case_type }}</td><td>{{ i.source_name }}</td><td>{{ i.note }}</td>{% if show_money %}<td class="num">{{ i.amount_cents|peso }}</td>{% endif %}</tr>
+{% else %}<tr><td colspan="6" class="empty">No commissions on works delivered in this cutoff.</td></tr>{% endfor %}</tbody>
+{% if show_money and items %}<tfoot><tr><td colspan="5">Total</td><td class="num"><strong>{{ items|sum(attribute='amount_cents')|peso }}</strong></td></tr></tfoot>{% endif %}</table></div></div>
+{% endblock %}

@@ -38,7 +38,8 @@
   </fieldset>
   {% if is_new %}
     <label class="check"><input type="checkbox" name="is_employee" value="1" {% if v.is_employee %}checked{% endif %}> Also add to the employee list (attendance and payroll)</label>
-    {{ field('position', 'Position (optional)', v.position, hint='e.g. Associate dentist, Dental assistant, Front desk') }}
+    <div class="field"><label for="f-position">Position</label><select id="f-position" name="position"><option value="">Same as the access role</option>
+      {% for pos in POSITIONS %}<option {% if v.position == pos %}selected{% endif %}>{{ pos }}</option>{% endfor %}</select></div>
   {% else %}
     <label class="check"><input type="checkbox" name="active" value="1" {% if v.active %}checked{% endif %} {% if user.id == current_user.id %}disabled{% endif %}> Active (can sign in)</label>
     {% if user.id == current_user.id %}<input type="hidden" name="active" value="1">{% endif %}

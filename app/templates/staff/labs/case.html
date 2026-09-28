@@ -19,4 +19,5 @@
 <button class="btn">Save</button></form></div>{% endif %}
 <div class="card"><h2>History</h2><ul class="list-plain">{% for e in events %}<li><strong>{{ statuses.get(e.status, e.status) }}</strong>{% if e.note %} — {{ e.note }}{% endif %}<br><small class="muted">{{ e.created_at|dt }} · {{ e.by_name }}</small></li>{% endfor %}</ul></div>
 </div></div>
+{% if comm_entries is defined %}{% set comm_field, comm_id, comm_delivered = 'case_id', c.id, (c.completed_on if c.status == 'delivered' else None) %}{% include "staff/lab_works/_commission.html" %}{% endif %}
 {% endblock %}

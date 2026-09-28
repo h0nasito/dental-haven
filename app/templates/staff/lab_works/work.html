@@ -36,4 +36,5 @@
 <h2 class="mt-1">History</h2>
 <ul class="list-plain">{% for e in events %}<li><strong>{{ statuses.get(e.status, e.status) }}</strong> · {{ e.created_at|dt }} · {{ e.by_name or '—' }}{% if e.note %}<br><small class="muted">{{ e.note }}</small>{% endif %}</li>{% endfor %}</ul>
 </div></div>
+{% set comm_field, comm_id, comm_delivered = 'work_id', w.id, (w.delivered_on if w.status == 'delivered' else None) %}{% include "staff/lab_works/_commission.html" %}
 {% endblock %}

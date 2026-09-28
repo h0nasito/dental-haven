@@ -18,6 +18,7 @@ from flask import Blueprint, abort, current_app, flash, g, make_response, redire
 from .. import audit, settings
 from ..auth import require
 from ..db import get_db
+from ..attendance_rules import refresh_record
 from ..payroll import evaluate_record
 from ..permissions import branch_filter
 from ..uploads import document_path, save_private_image
@@ -137,6 +138,7 @@ def clock():
                     status, notes = rec["status"], rec["exception_note"]
                 conn.execute("UPDATE time_records SET time_in = ?, time_out = ?, status = ?, exception_note = ? WHERE id = ?",
                              (values["time_in"], values["time_out"], "exception" if notes and status == "ok" else status, notes, rid))
+            refresh_record(conn, rid)
             conn.insert("time_punches", {"employee_id": emp["id"], "branch_id": branch["id"], "time_record_id": rid, "kind": kind, "at": now_str(),
                                          "latitude": lat, "longitude": lng, "accuracy_m": acc, "distance_m": dist, "location_ok": ok,
                                          "photo": photo, "created_at": now_str()})

@@ -56,6 +56,8 @@ For a real installation, run `init-db`, then `seed-base`, then `create-superadmi
 | In-app notifications | Bell in the top bar: new lab works/cases, status changes, due tomorrow, overdue (no patient details) |
 | Selfie + location time clock | Staff & payroll → Time clock (phone), Time clock log and branch location setup; feeds Attendance (DTR); selfies private and auto-deleted (default 60 days) |
 | Dentist pay: daily rate + commission | Employees → dentist → Dentist pay; invoice lines carry dentist, date done and lab fee; Payroll review has a Dentists section with per-procedure details |
+| Clinic pay rules | Cutoffs 1–15 / 16–end; ₱1 per late minute (staff); 3rd late in a month emails a warning and alerts HR/super admins; overtime only when a supervisor approves it (daily rate ÷ 8 × 1.25 per hour); regular holiday worked = double, special = +30%, unworked regular = 1 day. Staff & payroll → Holidays / Attendance / Payroll review. SSS, PhilHealth, Pag-IBIG and tax are not computed |
+| Access roles | Super admin; Staff – Receptionist / HR / Supervisor / Cashier / General; Dentist. Chosen when a super admin creates the account; each has its own permissions in Role access |
 | Documentation | This README and `docs/` |
 
 ## Confirmed requirements vs assumptions

@@ -179,3 +179,14 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   });
 })();
+
+/* Sidebar accordion: opening one group closes the others. */
+(function () {
+  var groups = document.querySelectorAll('details.nav-acc');
+  groups.forEach(function (d) {
+    d.addEventListener('toggle', function () {
+      if (!d.open) return;
+      groups.forEach(function (o) { if (o !== d) o.open = false; });
+    });
+  });
+})();

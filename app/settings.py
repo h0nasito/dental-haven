@@ -26,6 +26,9 @@ DEFAULTS: dict[str, object] = {
     "payroll.rules_confirmed": False,       # estimates are labelled unconfirmed until this is true
     "payroll.standard_day_minutes": 480,
     "payroll.grace_minutes": 0,
+    "payroll.late_peso_per_minute": 1,        # ₱ deducted per late minute (clinic rule: 1 minute = ₱1)
+    "payroll.late_applies_dentists": False,
+    "payroll.pay_unworked_regular_holiday": True,
     # Privacy
     "privacy.retention_note": "Retention period to be confirmed by the clinic (see docs/PRIVACY_CHECKLIST.md).",
 }
@@ -46,6 +49,9 @@ LABELS = {
     "payroll.rules_confirmed": "Clinic pay rules confirmed and configured",
     "payroll.standard_day_minutes": "Standard working day (minutes)",
     "payroll.grace_minutes": "Late grace period (minutes)",
+    "payroll.late_peso_per_minute": "Late deduction per minute (₱)",
+    "payroll.late_applies_dentists": "Also deduct lates from dentists",
+    "payroll.pay_unworked_regular_holiday": "Pay 1 day for a regular holiday not worked (staff on daily rate)",
     "privacy.retention_note": "Record retention note",
 }
 

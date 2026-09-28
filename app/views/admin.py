@@ -11,7 +11,7 @@ from flask import Blueprint, abort, flash, g, redirect, render_template, request
 from .. import audit, settings
 from ..auth import hash_password, require, revoke_user_sessions
 from ..db import get_db
-from ..permissions import CATALOG, LOCKED, PERM_KEYS, ROLE_DEFAULTS, ROLES, grantable
+from ..permissions import CATALOG, LOCKED, PERM_KEYS, POSITION_FOR_ROLE, POSITIONS, ROLE_DEFAULTS, ROLES, base_role, grantable
 from ..util import WEEKDAYS, clean, hm_to_min, now_str, parse_money, to_int
 from .common import paginate
 
@@ -91,7 +91,8 @@ def user_new():
             temp = _temp_password()
             with conn.transaction():
                 uid = conn.insert("users", {
-                    "email": v["email"], "name": v["name"], "password_hash": hash_password(temp), "role": v["role"],
+                    "email": v["email"], "name": v["name"], "password_hash": hash_password(temp), "role": base_role(v["role"]),
+                    "access_role": v["role"],
                     "active": 1, "must_change_password": 1, "created_at": now_str(), "created_by": g.user.id,
                     "license_no": v["license_no"], "ptr_no": v["ptr_no"], "s2_no": v["s2_no"],
                     "notify_email": v["notify_email"],
@@ -103,7 +104,8 @@ def user_new():
                         conn.execute("INSERT INTO user_labs (user_id, lab_id) VALUES (?, ?)", (uid, lab))
                 if v["is_employee"]:
                     conn.insert("employees", {
-                        "user_id": uid, "full_name": v["name"], "position": v["position"] or ROLES[v["role"]],
+                        "user_id": uid, "full_name": v["name"],
+                        "position": v["position"] if v["position"] in POSITIONS else POSITION_FOR_ROLE.get(v["role"], "Staff"),
                         "primary_branch_id": v["branches"][0] if v["branches"] else None, "active": 1,
                         "created_at": now_str(),
                     })
@@ -124,7 +126,7 @@ def user_edit(user_id):
     current_branches = [r["branch_id"] for r in conn.all("SELECT branch_id FROM user_branches WHERE user_id = ?", (user_id,))]
     labs = conn.all("SELECT * FROM laboratories WHERE active = 1 ORDER BY name")
     current_labs = [r["lab_id"] for r in conn.all("SELECT lab_id FROM user_labs WHERE user_id = ?", (user_id,))]
-    v = {"name": row["name"], "email": row["email"], "role": row["role"], "branches": current_branches,
+    v = {"name": row["name"], "email": row["email"], "role": row["access_role"] or row["role"], "branches": current_branches,
          "active": row["active"], "is_employee": False, "position": "", "license_no": row["license_no"],
          "ptr_no": row["ptr_no"], "s2_no": row["s2_no"], "labs": current_labs,
          "notify_email": row["notify_email"]}
@@ -133,7 +135,7 @@ def user_edit(user_id):
         v = _user_form_values(request.form)
         errors = _validate_user(conn, v, user_id)
         is_self = user_id == g.user.id
-        if is_self and v["role"] != row["role"]:
+        if is_self and v["role"] != (row["access_role"] or row["role"]):
             errors["role"] = "You cannot change your own role."
         if is_self and not v["active"]:
             errors["active"] = "You cannot deactivate your own account."
@@ -143,7 +145,7 @@ def user_edit(user_id):
                 errors["role"] = "At least one active super admin must remain."
         if not errors:
             with conn.transaction():
-                conn.update("users", user_id, {"name": v["name"], "email": v["email"], "role": v["role"],
+                conn.update("users", user_id, {"name": v["name"], "email": v["email"], "role": base_role(v["role"]), "access_role": v["role"],
                                                "active": v["active"], "license_no": v["license_no"], "ptr_no": v["ptr_no"],
                                                "s2_no": v["s2_no"], "notify_email": v["notify_email"]})
                 conn.execute("DELETE FROM user_labs WHERE user_id = ?", (user_id,))
@@ -153,7 +155,8 @@ def user_edit(user_id):
                 conn.execute("DELETE FROM user_branches WHERE user_id = ?", (user_id,))
                 for b in v["branches"]:
                     conn.execute("INSERT INTO user_branches (user_id, branch_id) VALUES (?, ?)", (user_id, b))
-                changes = audit.diff(dict(row), v, ["name", "email", "role", "active", "license_no", "ptr_no", "s2_no", "notify_email"])
+                changes = audit.diff({**dict(row), "role": row["access_role"] or row["role"]}, v,
+                                     ["name", "email", "role", "active", "license_no", "ptr_no", "s2_no", "notify_email"])
                 if sorted(current_labs) != sorted(v["labs"]):
                     changes["labs"] = [current_labs, v["labs"]]
                 if sorted(current_branches) != sorted(v["branches"]):

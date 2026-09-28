@@ -1,0 +1,22 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Holidays {{ year }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Holidays {{ year }}</h1><p>Used by payroll: a regular holiday worked is paid double, a special non-working day worked is paid +30%, and an unworked regular holiday is paid 1 day for daily-rate staff (setting).</p></div>
+<div class="row"><a class="btn btn-ghost" href="{{ url_for('people.holidays', year=year - 1) }}">← {{ year - 1 }}</a><a class="btn btn-ghost" href="{{ url_for('people.holidays', year=year + 1) }}">{{ year + 1 }} →</a></div></div>
+<div class="grid grid-2">
+<div class="card"><h2>Holidays</h2>
+{% if rows %}<div class="table-wrap"><table><thead><tr><th>Date</th><th>Holiday</th><th>Type</th><th></th></tr></thead><tbody>
+{% for h in rows %}<tr><td>{{ h.day|date }}</td><td>{{ h.name }}</td><td><span class="badge {{ 'badge-red' if h.kind == 'regular' else 'badge-amber' }}">{{ 'Regular holiday' if h.kind == 'regular' else 'Special non-working day' }}</span></td>
+<td><form method="post" data-confirm="Remove {{ h.name }}?">{{ csrf() }}<input type="hidden" name="action" value="delete"><input type="hidden" name="holiday_id" value="{{ h.id }}"><button class="btn btn-ghost btn-sm">Remove</button></form></td></tr>{% endfor %}
+</tbody></table></div>{% else %}<p class="muted">No holidays entered for {{ year }} yet.</p>{% endif %}
+<form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="fixed"><input type="hidden" name="year" value="{{ year }}"><button class="btn btn-secondary">Add the fixed-date regular holidays for {{ year }}</button>
+<p class="hint">New Year, Araw ng Kagitingan, Labor Day, Independence Day, National Heroes Day, Bonifacio Day, Christmas and Rizal Day. Holy Week, Eid'l Fitr, Eid'l Adha and special non-working days change every year: add them from the official proclamation.</p></form>
+</div>
+<form method="post" class="card">{{ csrf() }}<input type="hidden" name="action" value="add"><h2>Add a holiday</h2>
+<div class="field"><label for="hd">Date</label><input id="hd" type="date" name="day" required></div>
+<div class="field"><label for="hn">Name</label><input id="hn" name="name" maxlength="80" placeholder="e.g. Maundy Thursday" required></div>
+<div class="field"><label for="hk">Type</label><select id="hk" name="kind"><option value="regular">Regular holiday (double pay if worked)</option><option value="special">Special non-working day (+30% if worked)</option></select></div>
+<button class="btn">Add holiday</button></form>
+</div>
+{% endblock %}

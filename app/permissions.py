@@ -1,20 +1,34 @@
 """Roles, permission catalog and access-scope helpers.
 
-Exactly four roles exist. super_admin implicitly holds every permission. The other
-roles hold whatever is stored in role_permissions (seeded from ROLE_DEFAULTS and
-editable only by a super admin). Permissions in LOCKED can never be granted to a
+Access roles: Super admin, Dentist, and Staff (Receptionist, Cashier, Technician, HR, Supervisor, or plain Staff).
+super_admin implicitly holds every permission. The other access roles hold whatever is stored in
+role_permissions (seeded from ROLE_DEFAULTS and editable only by a super admin). Permissions in LOCKED can never be granted to a
 non-super-admin role, so only super admins can manage users, roles and access.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-ROLES = {
+ROLES = {  # access roles, in the order shown when creating an account
     "super_admin": "Super admin",
     "dentist": "Dentist",
+    "receptionist": "Staff – Receptionist",
+    "hr": "Staff – HR",
+    "supervisor": "Staff – Supervisor",
+    "cashier": "Staff – Cashier",
+    "technician": "Staff – Technician",
     "staff": "Staff",
-    "receptionist": "Receptionist",
 }
+# Employee positions (job titles). Only a super admin assigns access roles; HR can set positions.
+POSITIONS = ["Receptionist", "Cashier", "Technician", "Staff", "Dentist", "HR", "Supervisor"]
+POSITION_FOR_ROLE = {"receptionist": "Receptionist", "cashier": "Cashier", "technician": "Technician", "staff": "Staff",
+                     "dentist": "Dentist", "hr": "HR", "supervisor": "Supervisor"}
+# users.role keeps the base role (what the rest of the system checks); users.access_role picks the permission set.
+BASE_ROLE = {"hr": "staff", "supervisor": "staff", "cashier": "staff", "technician": "staff"}
+
+
+def base_role(access_role: str) -> str:
+    return BASE_ROLE.get(access_role, access_role)
 
 
 @dataclass(frozen=True)
@@ -85,6 +99,7 @@ CATALOG: list[Perm] = [
     Perm("lab.manage", "Create and update lab cases", "Laboratory"),
     Perm("lab.works", "Outside-clinic lab works: add, edit and update works from other clinics (for users assigned to the lab)", "Laboratory"),
     Perm("lab.billing", "Lab invoices, discounts and payment receipts for outside clinics", "Laboratory", True),
+    Perm("lab.commission", "Add technician commissions on lab works and cases", "Laboratory", True),
     # Inventory
     Perm("inventory.view", "View inventory (stock, expiry, history)", "Inventory"),
     Perm("inventory.manage", "Update inventory: stock counts, receive and use items, edit items and prices", "Inventory"),
@@ -108,6 +123,7 @@ CATALOG: list[Perm] = [
     # People
     Perm("attendance.view", "View attendance (DTR)", "Staff & payroll"),
     Perm("attendance.clock", "Time in / time out with a selfie and location check", "Staff & payroll"),
+    Perm("overtime.approve", "Approve overtime (only approved overtime is paid)", "Staff & payroll", True),
     Perm("attendance.manage", "Record, import and correct attendance", "Staff & payroll", True),
     Perm("compensation.manage", "View and edit compensation settings", "Staff & payroll", True),
     Perm("payroll.prepare", "Prepare draft payroll summaries", "Staff & payroll", True),
@@ -142,6 +158,25 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
         "billing.view", "billing.manage", "bills.edit", "payments.add", "credit.apply",
         "expenses.view", "expenses.add", "lab.view", "reports.operations", "attendance.view",
         "quotes.view", "quotes.manage", "inventory.view", "attendance.clock",
+    },
+    "hr": {
+        "dashboard.view", "attendance.view", "attendance.manage", "attendance.clock", "overtime.approve", "compensation.manage",
+        "payroll.prepare", "reports.operations", "calendar.birthdays", "calendar.events",
+    },
+    "supervisor": {
+        "dashboard.view", "dashboard.balances", "appointments.view", "calendar.associates", "calendar.birthdays", "calendar.events",
+        "bookings.view", "appointments.manage", "appointments.complete", "bookings.manage", "patients.view", "patients.contact",
+        "patients.manage", "documents.upload", "leads.view", "leads.manage", "followups.view", "followups.manage", "reminders.view",
+        "reminders.send", "billing.view", "quotes.view", "lab.view", "reports.operations", "attendance.view", "attendance.manage",
+        "attendance.clock", "overtime.approve", "inventory.view",
+    },
+    "technician": {
+        "dashboard.view", "lab.view", "attendance.clock", "inventory.view",
+    },
+    "cashier": {
+        "dashboard.view", "dashboard.balances", "appointments.view", "calendar.associates", "patients.view", "patients.contact",
+        "billing.view", "billing.manage", "bills.edit", "payments.add", "credit.apply", "quotes.view", "reports.sales",
+        "expenses.view", "expenses.add", "attendance.clock",
     },
     "receptionist": {
         "dashboard.view", "appointments.view", "calendar.associates", "calendar.birthdays", "calendar.events",

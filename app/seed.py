@@ -17,6 +17,7 @@ from datetime import date, datetime, timedelta
 from .auth import hash_password
 from .billing import compute_totals, line_amount, next_invoice_number
 from .messaging import schedule_appointment_reminders
+from .attendance_rules import day_metrics
 from .payroll import build_lines, evaluate_record
 from .permissions import ROLE_DEFAULTS
 from .util import fmt_dt, now, now_str, today
@@ -239,6 +240,11 @@ def _top_up_chairs(conn, branch_id, slug):
         conn.insert("resources", {"branch_id": branch_id, "name": f"Chair {n}", "kind": "chair", "active": 1})
 
 
+def _settings_mod():
+    from . import settings
+    return settings
+
+
 def _seed_inventory(conn):
     """Inventory locations (every active branch + the in-house lab) and, once, the clinic's item list."""
     from . import settings as _st
@@ -373,11 +379,17 @@ def seed_base(conn):
         if not conn.scalar("SELECT COUNT(*) FROM laboratories"):
             conn.insert("laboratories", {"name": "DSDL", "address": "Liang, Malolos, Bulacan", "phone": "", "active": 1})
         _seed_inventory(conn)
+        if not _settings_mod().get("seed.attendance_metrics_v1", conn):
+            for r in conn.all("SELECT * FROM time_records"):
+                late, ot = day_metrics(conn, dict(r))
+                conn.execute("UPDATE time_records SET late_minutes = ?, ot_minutes = ? WHERE id = ?", (0 if r["status"] == "excused" else late, ot, r["id"]))
+            _settings_mod().put("seed.attendance_metrics_v1", True, None, conn)
         # Permissions added after a database was created are granted once to the roles that have them by default;
         # afterwards the super admin's choices in Role access are kept.
         from . import settings as _settings2
         granted = set(_settings2.get("seed.perms_granted", conn) or [])
-        new_perms = {"quotes.view", "quotes.manage", "inventory.view", "inventory.manage", "lab.works", "lab.billing", "attendance.clock"} - granted
+        new_perms = {"quotes.view", "quotes.manage", "inventory.view", "inventory.manage", "lab.works", "lab.billing", "attendance.clock",
+                     "overtime.approve", "lab.commission"} - granted
         if new_perms and conn.scalar("SELECT COUNT(*) FROM role_permissions"):
             for role, perms in ROLE_DEFAULTS.items():
                 for perm in new_perms & set(perms):
@@ -385,6 +397,14 @@ def seed_base(conn):
                         conn.execute("INSERT INTO role_permissions (role, permission) VALUES (?, ?)", (role, perm))
         if new_perms:
             _settings2.put("seed.perms_granted", sorted(granted | new_perms), None, conn)
+        # Access roles added later (HR, Supervisor, Cashier) start with their recommended access, once.
+        if conn.scalar("SELECT COUNT(*) FROM role_permissions"):
+            for role in ("hr", "supervisor", "cashier", "technician"):
+                if not conn.scalar("SELECT COUNT(*) FROM role_permissions WHERE role = ?", (role,)) and \
+                        not _settings2.get(f"seed.role_{role}", conn):
+                    for p in ROLE_DEFAULTS[role]:
+                        conn.execute("INSERT INTO role_permissions (role, permission) VALUES (?, ?)", (role, p))
+                    _settings2.put(f"seed.role_{role}", True, None, conn)
         if not conn.scalar("SELECT COUNT(*) FROM role_permissions"):
             for role, perms in ROLE_DEFAULTS.items():
                 for p in perms:
@@ -618,7 +638,9 @@ def seed_demo(conn, password: str | None = None) -> str:
                 tout = rnd.choice(["18:00", "18:05", "18:10", "18:02", "18:15", "18:00", "17:40"]) if rnd.random() > 0.04 else None
                 rec = {"employee_id": e["id"], "branch_id": e["primary_branch_id"], "work_date": d.isoformat(), "time_in": tin, "time_out": tout, "status": "ok"}
                 status, note = evaluate_record(conn, rec)
-                conn.insert("time_records", {**rec, "status": status, "exception_note": note, "source": "import", "created_at": ts})
+                rid = conn.insert("time_records", {**rec, "status": status, "exception_note": note, "source": "import", "created_at": ts})
+                late, ot = day_metrics(conn, rec)
+                conn.execute("UPDATE time_records SET late_minutes = ?, ot_minutes = ? WHERE id = ?", (late, ot, rid))
             # synthetic compensation (clearly labelled)
             conn.insert("compensation", {"employee_id": e["id"], "basis": "percentage" if e["role"] == "dentist" else "daily",
                                          "rate_cents": None if e["role"] == "dentist" else 70000,

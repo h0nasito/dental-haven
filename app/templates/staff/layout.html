@@ -13,72 +13,80 @@
       <a class="nav {% if (prefix and ep.startswith(prefix)) or ep == endpoint %}active{% endif %}" href="{{ url_for(endpoint) }}">
         <span>{{ label }}</span>{% if count %}<span class="count">{{ count }}</span>{% endif %}</a>
     {%- endmacro %}
-    <div class="nav-group">
+    {% macro icon(name) -%}
+      <svg class="nav-ico" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      {%- if name == 'calendar' %}<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>
+      {%- elif name == 'patients' %}<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.8c1.8.8 3 2.6 3.5 5.2"/>
+      {%- elif name == 'box' %}<path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z"/><path d="M3 7.5 12 12l9-4.5M12 12v9"/>
+      {%- elif name == 'desk' %}<path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/>
+      {%- elif name == 'billing' %}<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>
+      {%- elif name == 'staff' %}<rect x="4" y="3" width="16" height="18" rx="2"/><circle cx="12" cy="10" r="3"/><path d="M8 17c.8-1.8 2.2-2.7 4-2.7s3.2.9 4 2.7"/>
+      {%- elif name == 'admin' %}<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>
+      {%- elif name == 'lab' %}<path d="M9 3h6M10 3v6L4.5 19a1.5 1.5 0 0 0 1.3 2h12.4a1.5 1.5 0 0 0 1.3-2L14 9V3"/><path d="M7 15h10"/>
+      {%- endif %}</svg>
+    {%- endmacro %}
+    {% macro group(title, ico) -%}
+      {% set links = caller() %}
+      {% if links|trim %}<details class="nav-acc" {% if 'nav active' in links %}open{% endif %}>
+        <summary>{{ icon(ico) }}<span>{{ title }}</span>{% if 'class="count"' in links and 'nav active' not in links %}<span class="dot" aria-label="has items"></span>{% endif %}</summary>
+        <div class="nav-acc-body">{{ links }}</div></details>{% endif %}
+    {%- endmacro %}
+    <div class="nav-group nav-top">
       {{ nav('dash.home', 'Dashboard') }}
       {% if current_user.can('bookings.manage') or current_user.can('bookings.view') or current_user.can('leads.view') or current_user.can('followups.view') %}
         {{ nav('dash.queue', 'Work queue', count=nav_counts.queue) }}
       {% endif %}
     </div>
-    {% if current_user.can('appointments.view') %}
-    <div class="nav-group"><div class="title">Scheduling</div>
+    {% call group('Scheduling', 'calendar') %}{% if current_user.can('appointments.view') %}
       {{ nav('sched.calendar', 'Calendar', 'sched.calendar') }}
       {{ nav('sched.appointments', 'Appointments', 'sched.appointment') }}
       {% if current_user.can('bookings.manage') or current_user.can('bookings.view') %}{{ nav('sched.requests', 'Online bookings', 'sched.request', nav_counts.requests) }}{% endif %}
       {% if current_user.can('calendar.events') or current_user.can('settings.manage') %}{{ nav('sched.schedules', 'Dentist schedules', 'sched.schedules') }}{% endif %}
-    </div>
-    {% endif %}
-    {% if current_user.can('patients.view') %}
-    <div class="nav-group"><div class="title">Patients</div>
+    {% endif %}{% endcall %}
+    {% call group('Patients', 'patients') %}{% if current_user.can('patients.view') %}
       {{ nav('patients.index', 'Patients', 'patients.') }}
       {% if current_user.can('reportcards.generate') or current_user.can('reportcards.review') %}{{ nav('reportcards.index', 'Report cards', 'reportcards.', nav_counts.reviews) }}{% endif %}
-    </div>
-    {% endif %}
-    {% if nav_lab %}<div class="nav-group"><div class="title">Laboratory</div>{{ nav('labs.index', 'Branch lab cases', 'labs.') }}
-      {% if nav_lab_works %}{{ nav('lab_works.works', 'Outside clinic works', 'lab_works.work') }}{{ nav('lab_works.clients', 'Clinics', 'lab_works.clients') }}{% endif %}
-      {% if nav_lab_billing %}{{ nav('lab_works.invoices', 'Lab invoices & receipts', 'lab_works.invoice') }}{% endif %}</div>{% endif %}
-    {% if current_user.can('inventory.view') or current_user.can('inventory.manage') %}<div class="nav-group"><div class="title">Inventory</div>
-      {{ nav('inventory.index', 'Stock', 'inventory.location') }}
-      {% if current_user.can('inventory.manage') %}{{ nav('inventory.items', 'Items & prices', 'inventory.items') }}{% endif %}
-    </div>{% endif %}
-    {% if current_user.can('leads.view') or current_user.can('followups.view') or current_user.can('reminders.view') %}
-    <div class="nav-group"><div class="title">Front desk</div>
+    {% endif %}{% endcall %}
+    {% call group('Front desk', 'desk') %}
       {% if current_user.can('leads.view') %}{{ nav('leads.index', 'Leads', 'leads.lead') }}{% endif %}
       {% if current_user.can('followups.view') %}{{ nav('leads.followups', 'Follow-ups', 'leads.followup', nav_counts.overdue) }}{% endif %}
       {% if current_user.can('reminders.view') %}{{ nav('leads.reminders', 'Reminders', 'leads.reminder') }}{% endif %}
       {% if current_user.can('templates.manage') or current_user.can('leads.view') %}{{ nav('leads.templates', 'Response templates', 'leads.template') }}{% endif %}
-    </div>
-    {% endif %}
-    {% if current_user.can('billing.view') or current_user.can('quotes.view') or current_user.can('reports.sales') or current_user.can('reports.operations') or current_user.can('expenses.view') or current_user.can('expenses.add') %}
-    <div class="nav-group"><div class="title">Billing &amp; reports</div>
+    {% endcall %}
+    {% call group('Billing & reports', 'billing') %}
       {% if current_user.can('quotes.view') %}{{ nav('quotes.index', 'Quotations', 'quotes.') }}{% endif %}
       {% if current_user.can('billing.view') %}{{ nav('billing.invoices', 'Invoices', 'billing.invoice') }}{% endif %}
       {% if current_user.can('reports.sales') %}{{ nav('billing.sales', 'Sales & collections', 'billing.sales') }}{% endif %}
       {% if current_user.can('reports.operations') %}{{ nav('billing.operations', 'Operations report', 'billing.operations') }}{% endif %}
       {% if current_user.can('expenses.view') or current_user.can('expenses.add') %}{{ nav('expenses.index', 'Expenses', 'expenses.') }}{% endif %}
-    </div>
-    {% endif %}
-    {% if current_user.can('attendance.view') or current_user.can('attendance.clock') or current_user.can('payroll.prepare') or current_user.can('compensation.manage') %}
-    <div class="nav-group"><div class="title">Staff &amp; payroll</div>
+    {% endcall %}
+    {% call group('Inventory', 'box') %}
+      {% if current_user.can('inventory.view') or current_user.can('inventory.manage') %}{{ nav('inventory.index', 'Stock', 'inventory.location') }}{% endif %}
+      {% if current_user.can('inventory.manage') %}{{ nav('inventory.items', 'Items & prices', 'inventory.items') }}{% endif %}
+    {% endcall %}
+    {% call group('Staff & payroll', 'staff') %}
       {% if current_user.can('attendance.clock') %}{{ nav('timeclock.clock', 'Time clock', 'timeclock.clock') }}{% endif %}
-      {% if current_user.can('attendance.manage') %}{{ nav('timeclock.log', 'Time clock log', 'timeclock.log') }}{% endif %}
       {% if current_user.can('attendance.view') %}{{ nav('people.attendance', 'Attendance (DTR)', 'people.attendance') }}{% endif %}
+      {% if current_user.can('attendance.manage') %}{{ nav('timeclock.log', 'Time clock log', 'timeclock.log') }}{{ nav('people.holidays', 'Holidays', 'people.holidays') }}{% endif %}
       {% if current_user.can('compensation.manage') or current_user.can('attendance.manage') %}{{ nav('people.employees', 'Employees', 'people.employee') }}{% endif %}
       {% if current_user.can('payroll.prepare') or current_user.can('payroll.approve') %}{{ nav('people.payroll', 'Payroll review', 'people.payroll') }}{% endif %}
-    </div>
-    {% endif %}
-    {% if current_user.can('settings.manage') or current_user.can('content.manage') or current_user.is_super_admin %}
-    <div class="nav-group"><div class="title">Administration</div>
+    {% endcall %}
+    {% call group('Administration', 'admin') %}
       {% if current_user.can('users.manage') %}{{ nav('admin.users', 'Users', 'admin.user') }}{% endif %}
       {% if current_user.can('roles.manage') %}{{ nav('admin.roles', 'Role access', 'admin.role') }}{% endif %}
       {% if current_user.can('settings.manage') %}{{ nav('admin.branches', 'Branches & chairs', 'admin.branch') }}
       {{ nav('admin.services', 'Services', 'admin.service') }}
       {{ nav('admin.schedules', 'Dentist schedules', 'admin.schedule') }}{% endif %}
       {% if current_user.can('content.manage') %}{{ nav('admin.content', 'Website content', 'admin.content') }}{{ nav('admin.prices', 'Price list', 'admin.prices') }}{% endif %}
-      {% if current_user.can('system.settings') %}{{ nav('admin.system', 'System settings', 'admin.system') }}{% endif %}
-      {% if current_user.can('system.settings') %}{{ nav('admin.import_data', 'Import from MyMedsPH', 'admin.import') }}{% endif %}
+      {% if current_user.can('attendance.manage') %}{{ nav('timeclock.setup', 'Time clock setup', 'timeclock.setup') }}{% endif %}
+      {% if current_user.can('system.settings') %}{{ nav('admin.system', 'System settings', 'admin.system') }}{{ nav('admin.import_data', 'Import from MyMedsPH', 'admin.import') }}{% endif %}
       {% if current_user.can('audit.view') %}{{ nav('admin.audit_log', 'Audit trail', 'admin.audit') }}{% endif %}
-    </div>
-    {% endif %}
+    {% endcall %}
+    {% call group('Laboratory', 'lab') %}{% if nav_lab %}
+      {{ nav('labs.index', 'Branch lab cases', 'labs.') }}
+      {% if nav_lab_works %}{{ nav('lab_works.works', 'Outside clinic works', 'lab_works.work') }}{{ nav('lab_works.clients', 'Clinics', 'lab_works.clients') }}{% endif %}
+      {% if nav_lab_billing %}{{ nav('lab_works.invoices', 'Lab invoices & receipts', 'lab_works.invoice') }}{{ nav('lab_works.collections', 'Lab collection report', 'lab_works.collections') }}{% endif %}
+    {% endif %}{% endcall %}
     <div class="nav-group">
       <a class="nav" href="{{ url_for('public.home') }}" target="_blank" rel="noopener">View public site ↗</a>
     </div>
@@ -100,7 +108,7 @@
       </form>
       <div class="spacer"></div>
       <a class="bell" href="{{ url_for('notifications.index') }}" aria-label="Notifications{% if nav_unread %}: {{ nav_unread }} unread{% endif %}"><span aria-hidden="true">🔔</span>{% if nav_unread %}<span class="count">{{ nav_unread }}</span>{% endif %}</a>
-      <div class="who hide-sm"><strong>{{ current_user.name }}</strong><br><small>{{ ROLES[current_user.role] }}</small></div>
+      <div class="who hide-sm"><strong>{{ current_user.name }}</strong><br><small>{{ ROLES[current_user.access_role] }}</small></div>
       <a class="btn btn-ghost btn-sm" href="{{ url_for('auth.change_password') }}">Password</a>
       <form method="post" action="{{ url_for('auth.logout') }}">{{ csrf() }}<button class="btn btn-secondary btn-sm" type="submit">Sign out</button></form>
     </header>

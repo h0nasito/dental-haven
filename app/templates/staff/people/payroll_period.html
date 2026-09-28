@@ -6,20 +6,27 @@
 <div class="row">{{ status_badge(p.status) }}<a class="btn btn-secondary btn-sm" href="{{ url_for('people.payroll_export', period_id=p.id) }}">Export CSV</a></div></div>
 {% if p.status != 'approved' %}<div class="watermark">DRAFT, NOT FINAL PAYROLL{% if not rules_confirmed %}: these amounts are unconfirmed estimates{% endif %}</div>
 {% else %}<div class="flash flash-success">Approved by {{ p.approver }} on {{ p.approved_at|dt }}. This is a summary only. Payments are made outside this system.</div>{% endif %}
-<div class="card"><h2>Staff</h2><div class="table-wrap"><table>
-<thead><tr><th>Employee</th><th class="num">Days</th><th class="num">Hours</th><th class="num">Late (min)</th><th class="num">Undertime (min)</th><th class="num">Open exceptions</th><th>Pay basis</th>
-{% if show_money %}<th class="num">Rate</th><th class="num">Estimate</th><th class="num">Adjustment</th>{% endif %}</tr></thead><tbody>
-{% for l in lines if l.kind != 'dentist' %}<tr><td><strong>{{ l.full_name }}</strong><br><small class="muted">{{ l.position }}</small></td><td class="num">{{ l.days_present }}</td><td class="num">{{ '%.2f'|format(l.minutes_worked / 60) }}</td>
-<td class="num">{{ l.late_minutes }}</td><td class="num">{{ l.undertime_minutes }}</td><td class="num">{% if l.open_exceptions %}<a href="{{ url_for('people.attendance', employee=l.employee_id, status='exception', **{'from': p.start_date, 'to': p.end_date}) }}" style="color:var(--red-700);font-weight:700">{{ l.open_exceptions }}</a>{% else %}0{% endif %}</td>
-<td>{{ BASIS_LABELS.get(l.basis, l.basis) }}</td>
-{% if show_money %}<td class="num">{{ l.rate_cents|peso if l.rate_cents is not none else '—' }}{% if l.percentage_bp %}<br><small>{{ l.percentage_bp / 100 }}%</small>{% endif %}</td>
-<td class="num">{% if l.estimate_cents is not none %}{{ l.estimate_cents|peso }}{% if not rules_confirmed %}<br><small class="muted">unconfirmed</small>{% endif %}{% else %}<small class="muted">needs pay rule</small>{% endif %}</td>
+<div class="card"><h2>Staff</h2>
+<p class="hint">Daily rate × days worked, + holiday pay (regular holiday worked = double, special non-working day worked = +30%{% if pay_unworked %}, unworked regular holiday = 1 day{% endif %}), + approved overtime (daily rate ÷ 8 × 1.25 per hour), + technician commission (works delivered in this cutoff), − lates (₱{{ late_rate }} per minute).</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Employee</th><th class="num">Days</th><th class="num">Late</th><th class="num">OT approved</th><th class="num">Open exceptions</th>
+{% if show_money %}<th class="num">Daily rate</th><th class="num">Basic</th><th class="num">Holiday</th><th class="num">Overtime</th><th class="num">Technician commission</th><th class="num">Late deduction</th><th class="num">Adjustment</th><th class="num">Total estimate</th>{% else %}<th>Pay basis</th>{% endif %}</tr></thead><tbody>
+{% for l in lines if l.kind != 'dentist' %}<tr><td><strong>{{ l.full_name }}</strong><br><small class="muted">{{ l.position }}</small></td><td class="num">{{ l.days_present }}</td>
+<td class="num">{{ l.late_minutes }} min</td><td class="num">{% if l.ot_minutes %}{{ '%.2f'|format(l.ot_minutes / 60) }} h{% else %}—{% endif %}</td>
+<td class="num">{% if l.open_exceptions %}<a href="{{ url_for('people.attendance', employee=l.employee_id, status='exception', **{'from': p.start_date, 'to': p.end_date}) }}" style="color:var(--red-700);font-weight:700">{{ l.open_exceptions }}</a>{% else %}0{% endif %}</td>
+{% if show_money %}<td class="num">{{ l.rate_cents|peso if l.rate_cents is not none else '—' }}<br><small class="muted">{{ BASIS_LABELS.get(l.basis, l.basis) }}</small></td>
+<td class="num">{{ l.basic_pay_cents|peso if l.basic_pay_cents is not none else '—' }}</td><td class="num">{{ l.holiday_pay_cents|peso if l.holiday_pay_cents else '—' }}</td>
+<td class="num">{{ l.ot_pay_cents|peso if l.ot_pay_cents else '—' }}</td>
+<td class="num">{% if l.commission_cents is not none %}<a href="{{ url_for('people.payroll_tech_commission', period_id=p.id, emp_id=l.employee_id) }}">{{ l.commission_cents|peso }}</a><br><small class="muted">{{ l.commission_items }} work{{ 's' if l.commission_items != 1 }}</small>{% else %}—{% endif %}</td>
+<td class="num">{% if l.late_deduction_cents %}<span class="text-danger">-{{ l.late_deduction_cents|peso }}</span>{% else %}—{% endif %}</td>
 <td class="num">{% if p.status == 'draft' and current_user.can('payroll.prepare') %}<details><summary>{{ l.adjustment_cents|peso if l.adjustment_cents else 'Add' }}</summary><form method="post">{{ csrf() }}<input type="hidden" name="action" value="adjust"><input type="hidden" name="line_id" value="{{ l.id }}">
 <label class="sr-only" for="aj{{ l.id }}">Amount</label><input id="aj{{ l.id }}" name="adjustment" value="{{ (l.adjustment_cents / 100) if l.adjustment_cents else '' }}" placeholder="e.g. -250"><label class="sr-only" for="an{{ l.id }}">Reason</label><input id="an{{ l.id }}" name="adjustment_note" value="{{ l.adjustment_note }}" placeholder="Reason"><button class="btn btn-secondary btn-sm mt-1">Save</button></form></details>
-{% else %}{{ l.adjustment_cents|peso if l.adjustment_cents else '—' }}{% if l.adjustment_note %}<br><small class="muted">{{ l.adjustment_note }}</small>{% endif %}{% endif %}</td>{% endif %}</tr>
-{% else %}<tr><td colspan="10" class="empty">No employees in scope.</td></tr>{% endfor %}</tbody></table></div>
-{% if not show_money %}<p class="hint">Rates and estimates are hidden because you don't have access to compensation.</p>{% endif %}
-<p class="hint">Hours are time-out minus time-in. No break deduction, overtime, holiday premium, night differential or statutory deduction is applied until the clinic confirms its rules. Dentists' daily rate and commission are in their own section below.</p></div>
+{% else %}{{ l.adjustment_cents|peso if l.adjustment_cents else '—' }}{% if l.adjustment_note %}<br><small class="muted">{{ l.adjustment_note }}</small>{% endif %}{% endif %}</td>
+<td class="num"><strong>{{ (l.estimate_cents + l.adjustment_cents)|peso if l.estimate_cents is not none else '—' }}</strong>{% if l.estimate_cents is none %}<br><small class="muted">needs pay rule</small>{% endif %}</td>
+{% else %}<td>{{ BASIS_LABELS.get(l.basis, l.basis) }}</td>{% endif %}</tr>
+{% else %}<tr><td colspan="13" class="empty">No staff in scope.</td></tr>{% endfor %}</tbody></table></div>
+{% if not show_money %}<p class="hint">Rates and amounts are hidden because you don't have access to compensation.</p>{% endif %}
+<p class="hint">Night differential and statutory deductions (SSS, PhilHealth, Pag-IBIG, withholding tax) are not computed here.</p></div>
 <div class="card"><h2>Dentists: daily rate + commission</h2>
 <p class="hint">Daily pay = days present × daily rate. Commission = procedures done in this period on issued invoices: (amount − share of invoice discount − lab fee) × commission %.</p>
 <div class="table-wrap"><table><thead><tr><th>Dentist</th><th class="num">Days present</th><th class="num">Open exceptions</th><th class="num">Procedures done</th>

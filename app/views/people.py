@@ -3,15 +3,16 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import timedelta
+from datetime import date as date_cls, timedelta
 
 from flask import Blueprint, Response, abort, flash, g, redirect, render_template, request, url_for
 
 from .. import audit, settings
 from ..auth import require
 from ..db import get_db
+from ..attendance_rules import refresh_record
 from ..payroll import BASIS_LABELS, build_lines, current_compensation, evaluate_record, parse_time, worked_minutes
-from ..permissions import branch_filter
+from ..permissions import POSITIONS, branch_filter
 from ..util import clean, now_str, parse_date, parse_money, peso, to_int, today
 from .common import branches_for_user
 
@@ -50,14 +51,14 @@ def employees():
         if not name or not branch_id or not g.user.in_branch(branch_id):
             flash("Enter a name and one of your branches.", "error")
         else:
-            eid = conn.insert("employees", {"full_name": name, "position": clean(request.form.get("position"), 80),
+            eid = conn.insert("employees", {"full_name": name, "position": clean(request.form.get("position"), 80) if clean(request.form.get("position"), 80) in POSITIONS else "Staff",
                                             "employment_type": request.form.get("employment_type", "regular"),
                                             "primary_branch_id": branch_id, "active": 1, "created_at": now_str()})
             audit.record("employee_created", "employee", eid, f"Added employee {name}", branch_id=branch_id)
             flash("Employee added. This does not create a login; only a super admin can create users.", "success")
         return redirect(url_for("people.employees"))
     scope, params = _employee_scope()
-    rows = conn.all(f"SELECT e.*, b.name AS branch, u.email, u.role FROM employees e LEFT JOIN branches b ON b.id = e.primary_branch_id "
+    rows = conn.all(f"SELECT e.*, b.name AS branch, u.email, u.role, u.access_role FROM employees e LEFT JOIN branches b ON b.id = e.primary_branch_id "
                     f"LEFT JOIN users u ON u.id = e.user_id WHERE {scope} ORDER BY e.active DESC, e.full_name", params)
     if g.user.can("compensation.manage"):
         for r in rows:
@@ -141,7 +142,10 @@ def employee(emp_id):
             branch_id = to_int(request.form.get("primary_branch_id"))
             if branch_id and not g.user.in_branch(branch_id):
                 abort(403)
-            upd = {"position": clean(request.form.get("position"), 80), "employment_type": request.form.get("employment_type", "regular"),
+            pos = clean(request.form.get("position"), 80)
+            if pos not in POSITIONS and pos != e["position"]:
+                pos = e["position"]
+            upd = {"position": pos, "employment_type": request.form.get("employment_type", "regular"),
                    "primary_branch_id": branch_id, "active": 1 if request.form.get("active") else 0}
             conn.update("employees", emp_id, upd)
             audit.record("employee_updated", "employee", emp_id, "Updated employee", audit.diff(dict(e), upd, upd.keys()), branch_id)
@@ -186,6 +190,10 @@ def attendance():
     if status in ("ok", "exception", "corrected", "excused"):
         where.append("t.status = ?")
         args.append(status)
+    elif status == "ot":
+        where.append("t.ot_minutes > 0 AND t.ot_approved_minutes = 0")
+    elif status == "late":
+        where.append("t.late_minutes > 0")
     emp = to_int(request.args.get("employee"))
     if emp and manage:
         where.append("t.employee_id = ?")
@@ -197,7 +205,13 @@ def attendance():
         r["minutes"] = worked_minutes(r)
     scope, params = _employee_scope()
     emps = conn.all(f"SELECT e.id, e.full_name, e.primary_branch_id FROM employees e WHERE e.active = 1 AND {scope} ORDER BY e.full_name", params) if manage else []
+    warnings = []
+    if manage:
+        ws, wp = _employee_scope()
+        warnings = conn.all(f"SELECT w.*, e.full_name FROM late_warnings w JOIN employees e ON e.id = w.employee_id WHERE {ws} "
+                            "ORDER BY w.id DESC LIMIT 20", wp)
     return render_template("staff/people/attendance.html", rows=rows, start=start, end=end, status=status, emps=emps, emp=emp,
+                           warnings=warnings, can_ot=g.user.can("overtime.approve"),
                            manage=manage, branches=branches_for_user(g.user), today=today().isoformat())
 
 
@@ -208,6 +222,7 @@ def _save_record(conn, emp_id, branch_id, work_date, time_in, time_out, source="
     if existing:
         return None, existing
     rid = conn.insert("time_records", {**rec, "status": status, "exception_note": note, "source": source, "created_at": now_str()})
+    refresh_record(conn, rid)
     return rid, None
 
 
@@ -231,6 +246,26 @@ def attendance_record():
             audit.record("dtr_recorded", "time_record", rid, f"DTR {emp['full_name']} {d.isoformat()}", branch_id=branch_id)
             flash("Time record saved.", "success")
     return redirect(url_for("people.attendance"))
+
+
+@bp.route("/attendance/<int:rec_id>/overtime", methods=["POST"])
+@require("overtime.approve")
+def attendance_overtime(rec_id):
+    conn = get_db()
+    r = conn.one("SELECT t.*, e.full_name FROM time_records t JOIN employees e ON e.id = t.employee_id WHERE t.id = ?", (rec_id,))
+    if not r or not g.user.in_branch(r["branch_id"]):
+        abort(404)
+    minutes = to_int(request.form.get("minutes"))
+    note = clean(request.form.get("note"), 200)
+    if minutes is None or minutes < 0 or minutes > r["ot_minutes"]:
+        flash(f"Approve between 0 and {r['ot_minutes']} minutes (the time after closing).", "error")
+    else:
+        conn.execute("UPDATE time_records SET ot_approved_minutes = ?, ot_approved_by = ?, ot_approved_at = ?, ot_note = ? WHERE id = ?",
+                     (minutes, g.user.id, now_str(), note, rec_id))
+        audit.record("overtime_approved", "time_record", rec_id, f"Overtime {minutes} min approved for {r['full_name']} {r['work_date']}",
+                     {"note": note}, r["branch_id"])
+        flash("Overtime saved." if minutes else "Overtime not approved.", "success")
+    return redirect(request.referrer if (request.referrer or "").startswith(request.host_url) else url_for("people.attendance"))
 
 
 @bp.route("/attendance/import", methods=["POST"])
@@ -304,6 +339,7 @@ def attendance_correct(rec_id):
             upd = {"time_in": parse_time(request.form.get("time_in")), "time_out": parse_time(request.form.get("time_out")), "status": "corrected"}
         upd.update({"correction_reason": reason, "corrected_by": g.user.id, "corrected_at": now_str()})
         conn.update("time_records", rec_id, upd)
+        refresh_record(conn, rec_id)
         audit.record("dtr_corrected", "time_record", rec_id, f"Corrected DTR {r['full_name']} {r['work_date']}",
                      {"before": before, "after": {k: upd.get(k) for k in before}, "reason": reason}, r["branch_id"])
         flash("Correction saved with an audit record.", "success")
@@ -316,6 +352,53 @@ def attendance_correct(rec_id):
 # ---------------------------------------------------------------------------
 # Payroll review (draft → submitted → approved). No payments are made.
 # ---------------------------------------------------------------------------
+
+FIXED_REGULAR = [("01-01", "New Year's Day"), ("04-09", "Araw ng Kagitingan"), ("05-01", "Labor Day"), ("06-12", "Independence Day"),
+                 ("11-30", "Bonifacio Day"), ("12-25", "Christmas Day"), ("12-30", "Rizal Day")]
+
+
+@bp.route("/holidays", methods=["GET", "POST"])
+@require("attendance.manage")
+def holidays():
+    import calendar
+    conn = get_db()
+    year = to_int(request.values.get("year")) or today().year
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "add":
+            d = parse_date(request.form.get("day"))
+            name = clean(request.form.get("name"), 80)
+            kind = request.form.get("kind")
+            if not d or len(name) < 2 or kind not in ("regular", "special"):
+                flash("Enter the date, the holiday name and its type.", "error")
+            elif conn.one("SELECT id FROM holidays WHERE day = ?", (d.isoformat(),)):
+                flash("That date is already a holiday.", "error")
+            else:
+                conn.insert("holidays", {"day": d.isoformat(), "name": name, "kind": kind, "created_by": g.user.id, "created_at": now_str()})
+                audit.record("holiday_added", "holiday", None, f"Holiday {d.isoformat()} {name} ({kind})")
+                flash("Holiday added.", "success")
+            year = d.year if d else year
+        elif action == "delete":
+            h = conn.one("SELECT * FROM holidays WHERE id = ?", (to_int(request.form.get("holiday_id")),))
+            if h:
+                conn.execute("DELETE FROM holidays WHERE id = ?", (h["id"],))
+                audit.record("holiday_removed", "holiday", h["id"], f"Removed holiday {h['day']} {h['name']}")
+                flash("Holiday removed.", "success")
+        elif action == "fixed":
+            last_monday_aug = max(d for d in (date_cls(year, 8, day) for day in range(1, 32)) if d.weekday() == 0)
+            added = 0
+            for mmdd, name in FIXED_REGULAR + [(last_monday_aug.strftime("%m-%d"), "National Heroes Day")]:
+                day = f"{year}-{mmdd}"
+                if not conn.one("SELECT id FROM holidays WHERE day = ?", (day,)):
+                    conn.insert("holidays", {"day": day, "name": name, "kind": "regular", "created_by": g.user.id, "created_at": now_str()})
+                    added += 1
+            audit.record("holiday_added", "holiday", None, f"Added {added} fixed-date regular holidays for {year}")
+            flash(f"Added {added} fixed-date regular holidays for {year}. Add Holy Week, Eid and special non-working days from this year's proclamation.",
+                  "success")
+        return redirect(url_for("people.holidays", year=year))
+    rows = conn.all("SELECT * FROM holidays WHERE day LIKE ? ORDER BY day", (f"{year}-%",))
+    return render_template("staff/people/holidays.html", rows=rows, year=year)
+
 
 @bp.route("/payroll", methods=["GET", "POST"])
 @require("payroll.prepare", "payroll.approve", any_of=True)
@@ -343,10 +426,18 @@ def payroll():
                        "LEFT JOIN users u ON u.id = p.created_by ORDER BY p.start_date DESC")
     periods = [p for p in periods if g.user.is_super_admin or p["branch_id"] in g.user.branch_ids]
     t = today()
-    default_start = t.replace(day=1) if t.day <= 15 else t.replace(day=16)
+    default_start, cutoff_end = cutoff_for(t)
     return render_template("staff/people/payroll.html", periods=periods, branches=branches_for_user(g.user),
                            rules_confirmed=settings.get("payroll.rules_confirmed"), default_start=default_start.isoformat(),
-                           default_end=t.isoformat())
+                           default_end=cutoff_end.isoformat(), prev_cutoff=cutoff_for(default_start - timedelta(days=1)))
+
+
+def cutoff_for(d):
+    """The clinic's pay cutoffs: 1st-15th and 16th-end of month."""
+    import calendar
+    if d.day <= 15:
+        return d.replace(day=1), d.replace(day=15)
+    return d.replace(day=16), d.replace(day=calendar.monthrange(d.year, d.month)[1])
 
 
 def _rebuild(conn, period_id):
@@ -438,6 +529,7 @@ def payroll_period(period_id):
     history = conn.all("SELECT a.*, u.name AS actor FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id "
                        "WHERE entity_type = 'payroll_period' AND entity_id = ? ORDER BY a.id DESC", (period_id,))
     return render_template("staff/people/payroll_period.html", p=p, lines=lines, history=history, rules_confirmed=rules_confirmed,
+                           late_rate=settings.get("payroll.late_peso_per_minute", conn), pay_unworked=settings.get("payroll.pay_unworked_regular_holiday", conn),
                            show_money=g.user.can("compensation.manage"))
 
 
@@ -457,6 +549,19 @@ def payroll_commission(period_id, emp_id):
     line = conn.one("SELECT * FROM payroll_lines WHERE period_id = ? AND employee_id = ?", (period_id, emp_id))
     return render_template("staff/people/payroll_commission.html", p=p, e=e, items=items, rates=rates, line=line,
                            show_money=g.user.can("compensation.manage"))
+
+
+@bp.route("/payroll/<int:period_id>/technician/<int:emp_id>")
+@require("payroll.prepare", "payroll.approve", any_of=True)
+def payroll_tech_commission(period_id, emp_id):
+    from ..lab_commission import for_period
+    conn = get_db()
+    p = _load_period(period_id)
+    e = conn.one("SELECT * FROM employees WHERE id = ?", (emp_id,))
+    if not e:
+        abort(404)
+    items = for_period(conn, emp_id, p["start_date"], p["end_date"])
+    return render_template("staff/people/payroll_tech.html", p=p, e=e, items=items, show_money=g.user.can("compensation.manage"))
 
 
 @bp.route("/payroll/<int:period_id>/export.csv")
@@ -484,7 +589,7 @@ def payroll_export(period_id):
         if show_money:
             row += [(l["rate_cents"] or 0) / 100 if l["rate_cents"] is not None else "", (l["percentage_bp"] or 0) / 100 if dent else "",
                     (l["daily_pay_cents"] or 0) / 100 if dent and l["daily_pay_cents"] is not None else "",
-                    (l["commission_base_cents"] or 0) / 100 if dent else "", (l["commission_cents"] or 0) / 100 if dent and l["commission_cents"] is not None else "",
+                    (l["commission_base_cents"] or 0) / 100 if dent else "", (l["commission_cents"] or 0) / 100 if l["commission_cents"] is not None else "",
                     l["estimate_cents"] / 100 if l["estimate_cents"] is not None else "needs pay rule",
                     l["adjustment_cents"] / 100, l["adjustment_note"]]
         w.writerow(row)

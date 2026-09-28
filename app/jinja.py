@@ -6,7 +6,7 @@ from datetime import datetime
 from markupsafe import Markup, escape
 
 from .auth import csrf_token
-from .permissions import ROLES
+from .permissions import POSITIONS, ROLES
 from .scheduling import SOURCES, STATUSES
 from .util import WEEKDAYS, peso
 
@@ -74,6 +74,6 @@ def _opts(rows, key="id", label="name"):
 
 def register_jinja(app):
     app.jinja_env.globals.update(
-        csrf_token=csrf_token, ROLES=ROLES, APPT_STATUSES=STATUSES, SOURCES=SOURCES, WEEKDAYS=WEEKDAYS,
+        csrf_token=csrf_token, ROLES=ROLES, POSITIONS=POSITIONS, APPT_STATUSES=STATUSES, SOURCES=SOURCES, WEEKDAYS=WEEKDAYS,
     )
     app.jinja_env.filters.update(contact=_contact, phones=_phones, opts=_opts, peso=peso, nl2br=_nl2br, dt=_dt, time=_time, date=_date, label=_label)

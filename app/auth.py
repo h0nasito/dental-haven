@@ -49,6 +49,7 @@ class CurrentUser:
         self.name = row["name"]
         self.email = row["email"]
         self.role = row["role"]
+        self.access_role = row["access_role"] if "access_role" in row.keys() and row["access_role"] else row["role"]
         self.must_change_password = bool(row["must_change_password"])
         self.perms = perms
         self.branch_ids = branch_ids
@@ -111,7 +112,7 @@ def load_user():
                 (row["id"],),
             )
         ]
-    perms = load_role_permissions(conn, row["role"])
+    perms = load_role_permissions(conn, row["access_role"] or row["role"])
     g.user = CurrentUser(row, perms, branch_ids, s["active_branch_id"])
     g.session_hash = s["id_hash"]
     conn.execute("UPDATE sessions SET last_seen_at = ? WHERE id_hash = ?", (now_str(), s["id_hash"]))

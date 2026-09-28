@@ -12,6 +12,7 @@
 <div class="field"><label for="nm">Name</label><input id="nm" name="name" placeholder="e.g. Sept 16–30 cut-off"></div>
 <div class="form-grid"><div class="field"><label for="sd">Start</label><input id="sd" type="date" name="start_date" value="{{ default_start }}" required></div>
 <div class="field"><label for="ed">End</label><input id="ed" type="date" name="end_date" value="{{ default_end }}" required></div></div>
+<p class="hint">Cutoffs are the 1st–15th and the 16th–end of the month. Filled in: the current cutoff. Previous cutoff: {{ prev_cutoff[0]|date }} – {{ prev_cutoff[1]|date }}.</p>
 <div class="field"><label for="br">Branch</label><select id="br" name="branch_id">{% if current_user.is_super_admin %}<option value="">All branches</option>{% endif %}{% for b in branches %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}</select></div>
 <button class="btn">Create draft</button></form></div>
 {% endif %}
