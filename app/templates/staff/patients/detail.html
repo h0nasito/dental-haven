@@ -112,11 +112,14 @@
 <div class="card">
 <div class="card-head"><h2>Progress notes</h2>
 <div class="row">{% if current_user.can('progress.add') %}<button type="button" class="btn" data-open="dlg-pn">+ New progress note</button>{% endif %}</div></div>
+{% if drafts %}<div class="notice"><strong>Drafts</strong><ul class="list-plain">{% for d in drafts %}<li class="row between"><span>{{ d.visit_date|date }} · {{ d.lines|length }} service{{ 's' if d.lines|length != 1 }}{% if d.body %} · notes{% endif %} <small class="muted">by {{ d.by_name }}, {{ (d.updated_at or d.created_at)|dt }}</small></span>
+<span class="row"><a class="btn btn-secondary btn-sm" href="?tab=notes&draft={{ d.id }}">Continue</a>{% if d.created_by == current_user.id or current_user.can('progress.actions') %}<form method="post" action="{{ url_for('patients.visit_note_delete', patient_id=p.id, vid=d.id) }}" data-confirm="Delete this draft?">{{ csrf() }}<button class="btn btn-ghost btn-sm">Delete</button></form>{% endif %}</span></li>{% endfor %}</ul></div>{% endif %}
 <div class="table-wrap"><table class="pn-table"><thead><tr><th style="width:170px">Date</th><th>Progress note</th><th style="width:110px">Attachments</th><th style="width:70px">Actions</th></tr></thead><tbody>
 {% for gr in pn_groups %}<tr>
 <td><strong class="pn-date">{{ gr.date|date if gr.date else '—' }}</strong><br><small>{{ gr.dentist or '—' }}</small></td>
 <td>{% if gr.lines %}<ul class="pn-lines">{% for ln in gr.lines %}<li><span>{{ ln.text }}{% if ln.tooth %} <span class="muted">(#{{ ln.tooth }})</span>{% endif %}</span>{% if ln.price is not none and current_user.can('billing.view') %}<span class="pn-price">{{ ln.price|peso }}</span>{% endif %}</li>{% endfor %}</ul>{% endif %}
 {% for n in gr.notes %}<p class="pre pn-note">{% if n.amended %}<span class="badge badge-blue">Amendment</span> {% endif %}{{ n.body }}</p>{% endfor %}
+{% for vn in gr.visits or [] %}{% if vn.recall_date %}<small class="pn-recall">Recall {{ vn.recall_date|date }}{% if vn.recall_reason %} · {{ vn.recall_reason }}{% endif %}</small><br>{% endif %}{% if vn.signature_name %}<a href="{{ url_for('patients.visit_note_signature', patient_id=p.id, vid=vn.id) }}" target="_blank" rel="noopener"><small>✓ Signed by patient</small></a><br>{% endif %}{% endfor %}
 {% if gr.branch %}<small class="muted">{{ gr.branch }}</small>{% endif %}</td>
 <td>{% if gr.attachments %}<a href="?tab=documents">{{ gr.attachments }} file{{ 's' if gr.attachments != 1 }}</a>{% else %}<span class="muted">—</span>{% endif %}</td>
 <td><details class="kebab"><summary aria-label="Actions">⋯</summary><div class="kebab-menu">
@@ -134,22 +137,55 @@
 {% if planned %}<h3 class="mt-1">Planned (not yet done)</h3><ul class="list-plain">{% for pr in planned %}<li>{{ pr.description }}{% if pr.tooth %} (#{{ pr.tooth }}){% endif %} <small class="muted">{{ pr.created_at|date }}</small></li>{% endfor %}</ul>{% endif %}
 </div>
 {% if current_user.can('progress.add') %}
-<dialog id="dlg-pn" class="dlg" aria-labelledby="dlg-pn-t"><div class="dlg-head"><h2 id="dlg-pn-t">New progress note</h2><button type="button" class="btn btn-ghost" data-close aria-label="Close">✕</button></div>
-<h3>Procedure done</h3>
-<form method="post" action="{{ url_for('patients.add_procedure', patient_id=p.id) }}">{{ csrf() }}
-<div class="field"><label for="prs">Service</label><select id="prs" name="service_id"><option value="">—</option>{% for s in services %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}</select></div>
-<div class="field"><label for="prt">Tooth / area</label><input id="prt" name="tooth"></div>
-<div class="field"><label for="prv">Visit</label><select id="prv" name="appointment_id"><option value="">—</option>{% for a in recent_appts %}<option value="{{ a.id }}">{{ a.start_at|dt }}</option>{% endfor %}</select></div>
-<div class="field"><label for="prdt">Date performed</label><input id="prdt" type="date" name="performed_at"></div>
-<div class="field"><label for="prst">Status</label><select id="prst" name="status"><option value="completed">Completed</option><option value="planned">Planned</option></select></div></div>
-<button class="btn btn-secondary btn-sm">Save procedure</button></form>
-<hr><h3>Clinical note</h3>
-<form method="post" action="{{ url_for('patients.add_note', patient_id=p.id) }}">{{ csrf() }}
-<div class="field"><label for="nb">New note</label><textarea id="nb" name="body" rows="4" required></textarea></div>
-<div class="form-grid"><div class="field"><label for="na">Linked visit</label><select id="na" name="appointment_id"><option value="">None</option>{% for a in recent_appts %}<option value="{{ a.id }}">{{ a.start_at|dt }} · {{ a.service }}</option>{% endfor %}</select></div>
-<div class="field"><label for="am">Amends note #</label><input id="am" name="amends" type="number" min="1" placeholder="Optional"></div></div>
-<button class="btn btn-secondary btn-sm">Add note</button></form>
-<p class="hint">Prices come from the bill line with the same dentist, date done and service. Set these on the invoice so the note shows the price.</p>
+{% macro pn_line(ln={}) %}<tr data-pn-line>
+<td><input name="line_desc" list="pn-services" value="{{ ln.desc or '' }}" placeholder="Search service or procedure" aria-label="Service or procedure" data-pn-desc autocomplete="off">
+<input type="hidden" name="line_service_id" value="{{ ln.service_id or '' }}" data-pn-sid></td>
+<td><input name="line_tooth" value="{{ ln.tooth or '' }}" placeholder="Enter tooth #" aria-label="Teeth (e.g. 35, 46)" data-pn-tooth></td>
+<td><input name="line_qty" value="{{ ln.qty or '' }}" inputmode="numeric" placeholder="1" aria-label="Quantity" data-pn-qty class="num" style="max-width:60px"></td>
+<td><input name="line_price" value="{{ ln.price or '' }}" inputmode="decimal" placeholder="0" aria-label="Unit price" data-pn-price class="num"></td>
+<td class="num" data-pn-sub>0.00</td>
+<td><input name="line_disc" value="{{ ln.disc or '' }}" inputmode="decimal" placeholder="0" aria-label="Discount percent" data-pn-disc class="num" style="max-width:70px"></td>
+<td class="num" data-pn-net>0.00</td>
+<td><button type="button" class="btn btn-ghost btn-sm" data-pn-del aria-label="Remove line">🗑</button></td></tr>{% endmacro %}
+<dialog id="dlg-pn" class="dlg dlg-wide" aria-labelledby="dlg-pn-t" {% if draft %}data-autoopen{% endif %}>
+<div class="dlg-head"><h2 id="dlg-pn-t">{{ 'Continue draft' if draft else 'New progress note' }}</h2><button type="button" class="btn btn-ghost" data-close aria-label="Close">✕</button></div>
+<form method="post" action="{{ url_for('patients.visit_note', patient_id=p.id) }}" enctype="multipart/form-data" data-pnform data-signature-optional>{{ csrf() }}
+{% if draft %}<input type="hidden" name="draft_id" value="{{ draft.id }}">{% endif %}
+<div class="pay-box pn-top">
+<div class="field"><label for="pn-vd">Visit date</label><input id="pn-vd" type="date" name="visit_date" value="{{ draft.visit_date if draft else today_iso }}" max="{{ today_iso }}" required></div>
+<div class="field"><label>Patient</label><div class="pn-static">{{ p.first_name }} {{ p.last_name }}</div></div>
+<div class="field"><label for="pn-rd">Recall date</label><input id="pn-rd" type="date" name="recall_date" value="{{ draft.recall_date or '' if draft else '' }}" min="{{ today_iso }}"></div>
+<div class="field"><label for="pn-rr">Recall reason</label><input id="pn-rr" name="recall_reason" maxlength="200" value="{{ draft.recall_reason if draft else '' }}" placeholder="e.g. Braces adjustment, cleaning"></div>
+{% if current_user.role != 'dentist' %}<div class="field"><label for="pn-dn">Dentist</label><select id="pn-dn" name="dentist_id" required><option value="">Choose…</option>{% for d in all_dentists %}<option value="{{ d.id }}" {% if (draft and draft.dentist_id == d.id) or (not draft and last_visit and last_visit.dentist_id == d.id) %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select></div>{% endif %}
+<div class="field"><label for="pn-br">Branch</label><select id="pn-br" name="branch_id">{% for b in note_branches %}<option value="{{ b.id }}" {% if (draft and draft.branch_id == b.id) or (not draft and default_branch == b.id) %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select></div>
+</div>
+<div class="pay-box"><div class="table-wrap"><table class="pn-lines-tbl"><thead><tr><th>Service / procedure</th><th>Teeth</th><th class="num">Qty</th><th class="num">Unit price</th><th class="num">Sub total</th><th class="num">Discount (%)</th><th class="num">Net total</th><th></th></tr></thead>
+<tbody data-pn-lines>{% if draft and draft.lines %}{% for ln in draft.lines %}{{ pn_line(ln) }}{% endfor %}{% else %}{{ pn_line() }}{% endif %}</tbody></table></div>
+<button type="button" class="btn btn-ghost btn-sm" data-pn-add>+ Add service</button>
+<p class="hint">Qty follows the number of teeth you enter (e.g. “35, 46” = 2). Change it if the price isn't per tooth.</p>
+<datalist id="pn-services">{% for o in price_options %}<option value="{{ o.name }}" data-sid="{{ o.service_id or '' }}" data-price="{{ '%.2f'|format(o.price / 100) if o.price else '' }}">{% if o.unit %}{{ o.unit }}{% endif %}</option>{% endfor %}</datalist></div>
+<div class="pay-grid">
+<div>
+<div class="pay-box"><label for="pn-body" class="pay-lbl">Remarks / notes</label><textarea id="pn-body" name="body" rows="7" placeholder="Insert remarks here…">{{ draft.body if draft else '' }}</textarea></div>
+{% if current_user.can('documents.upload') %}<div class="pay-box"><label for="pn-files" class="pay-lbl">Attachments</label>
+<label class="dropzone" for="pn-files"><span>☁ <strong>Click to upload</strong> or drag and drop</span><small class="muted">Photos, X-rays or PDFs, up to 10 files{% if draft %}. Files aren't kept in drafts; attach them when you save the note.{% endif %}</small>
+<input id="pn-files" type="file" name="files" multiple accept="application/pdf,image/jpeg,image/png,image/webp" data-pn-files></label><ul class="list-plain" data-pn-filelist></ul></div>{% endif %}
+</div>
+<div>
+<div class="pay-summary"><div class="row between"><h3>Billing summary</h3>
+{% if current_user.can('billing.manage') %}<label class="switch"><input type="checkbox" name="create_bill" value="1" {% if not draft or draft.create_bill %}checked{% endif %} data-pn-bill> <span>Create bill</span></label>{% else %}<small class="muted">Front desk creates the bill</small>{% endif %}</div>
+<dl><dt>Subtotal</dt><dd data-pn-subtotal>₱0.00</dd>
+<dt><label for="pn-bd">Bill discount (%)</label></dt><dd><input id="pn-bd" name="bill_disc" value="{{ (draft.bill_discount_bp / 100)|round(2) if draft and draft.bill_discount_bp else '' }}" inputmode="decimal" placeholder="0" class="num" style="max-width:90px" data-pn-billdisc></dd>
+<dt class="pn-net">Net total</dt><dd class="pn-net" data-pn-total>₱0.00</dd></dl></div>
+<div class="pay-box mt-1"><span class="pay-lbl">Patient signature</span>
+<div class="sigpad"><canvas data-sigpad width="600" height="180" aria-label="Signature pad: the patient signs here"></canvas><input type="hidden" name="signature" data-sig-out></div>
+<div class="row between"><small class="muted">Optional: the patient signs to confirm the treatment done today.</small><button type="button" class="btn btn-ghost btn-sm" data-sig-clear>Clear</button></div></div>
+</div></div>
+<div class="row mt-1" style="justify-content:flex-end">
+<button class="btn btn-secondary" name="action" value="draft" formnovalidate>Save draft</button>
+<button type="button" class="btn btn-secondary" data-close>Cancel</button>
+<button class="btn" name="action" value="save">+ Save note</button></div>
+</form>
 </dialog>
 {% endif %}
 {% endif %}

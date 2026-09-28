@@ -220,29 +220,12 @@ document.addEventListener('DOMContentLoaded', function () {
       if (lines.length > 1) del.closest('[data-pay-line]').remove(); else lines[0].querySelector('[data-pay-amt]').value = '';
       update();
     });
-    // Signature pad
-    var canvas = form.querySelector('[data-sigpad]'), out = form.querySelector('[data-sig-out]');
-    var ctx = canvas.getContext('2d'), drawing = false, drawn = false, last = null;
-    ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#111';
-    function pos(e) {
-      var r = canvas.getBoundingClientRect();
-      return { x: (e.clientX - r.left) * canvas.width / r.width, y: (e.clientY - r.top) * canvas.height / r.height };
-    }
-    canvas.addEventListener('pointerdown', function (e) { drawing = true; last = pos(e); canvas.setPointerCapture(e.pointerId); e.preventDefault(); });
-    canvas.addEventListener('pointermove', function (e) {
-      if (!drawing) return;
-      var p = pos(e);
-      ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke();
-      last = p; drawn = true; e.preventDefault();
-    });
-    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (ev) { canvas.addEventListener(ev, function () { drawing = false; }); });
-    form.querySelector('[data-sig-clear]').addEventListener('click', function () { ctx.clearRect(0, 0, canvas.width, canvas.height); drawn = false; out.value = ''; });
     form.addEventListener('submit', function (e) {
-      out.value = drawn ? canvas.toDataURL('image/png') : '';
+      var canvas = form.querySelector('[data-sigpad]');
       var reason = form.querySelector('[name=not_signed_reason]');
-      if (!drawn && !(reason && reason.value.trim())) {
+      if (!(canvas && canvas.dataset.drawn === '1') && !(reason && reason.value.trim())) {
         e.preventDefault();
-        alert('Please ask the patient to sign, or open "Patient can’t sign" and give the reason.');
+        alert('Please ask the patient to sign, or open "Patient can\u2019t sign" and give the reason.');
       }
     });
     update();
@@ -261,4 +244,102 @@ document.addEventListener('DOMContentLoaded', function () {
     if (closer) { var dlg = closer.closest('dialog'); if (dlg) dlg.close(); }
     document.querySelectorAll('details.kebab[open]').forEach(function (k) { if (!k.contains(e.target)) k.open = false; });
   });
+})();
+
+/* Signature pads: <canvas data-sigpad> + hidden [data-sig-out] + [data-sig-clear], inside a form. */
+(function () {
+  document.querySelectorAll('canvas[data-sigpad]').forEach(function (canvas) {
+    var form = canvas.closest('form'), out = form.querySelector('[data-sig-out]');
+    var ctx = canvas.getContext('2d'), drawing = false, last = null;
+    ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#111';
+    function pos(e) {
+      var r = canvas.getBoundingClientRect();
+      return { x: (e.clientX - r.left) * canvas.width / r.width, y: (e.clientY - r.top) * canvas.height / r.height };
+    }
+    canvas.addEventListener('pointerdown', function (e) { drawing = true; last = pos(e); canvas.setPointerCapture(e.pointerId); e.preventDefault(); });
+    canvas.addEventListener('pointermove', function (e) {
+      if (!drawing) return;
+      var p = pos(e);
+      ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+      last = p; canvas.dataset.drawn = '1'; e.preventDefault();
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (ev) { canvas.addEventListener(ev, function () { drawing = false; }); });
+    var clear = form.querySelector('[data-sig-clear]');
+    if (clear) clear.addEventListener('click', function () { ctx.clearRect(0, 0, canvas.width, canvas.height); canvas.dataset.drawn = ''; out.value = ''; });
+    // capture phase: fill the hidden field before other submit handlers look at it
+    form.addEventListener('submit', function (e) {
+      var draft = e.submitter && e.submitter.value === 'draft';
+      out.value = (canvas.dataset.drawn === '1' && !draft) ? canvas.toDataURL('image/png') : '';
+    }, true);
+  });
+})();
+
+/* New progress note: service search fills the price, teeth set the quantity, live totals. */
+(function () {
+  var form = document.querySelector('form[data-pnform]');
+  if (!form) return;
+  var tbody = form.querySelector('[data-pn-lines]');
+  function cents(v) { var n = parseFloat(String(v || '').replace(/[^0-9.]/g, '')); return isNaN(n) ? 0 : Math.round(n * 100); }
+  function money(c) { return (c / 100).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function teeth(t) { return String(t || '').split(/[,\s;\/]+/).filter(Boolean).length; }
+  function recalc() {
+    var total = 0;
+    tbody.querySelectorAll('[data-pn-line]').forEach(function (row) {
+      var qtyIn = row.querySelector('[data-pn-qty]');
+      var qty = parseInt(qtyIn.value, 10) || Math.max(1, teeth(row.querySelector('[data-pn-tooth]').value));
+      var sub = qty * cents(row.querySelector('[data-pn-price]').value);
+      var pct = Math.min(100, parseFloat(row.querySelector('[data-pn-disc]').value) || 0);
+      var net = sub - Math.round(sub * pct / 100);
+      row.querySelector('[data-pn-sub]').textContent = money(sub);
+      row.querySelector('[data-pn-net]').textContent = money(net);
+      total += net;
+    });
+    var billPct = Math.min(100, parseFloat(form.querySelector('[data-pn-billdisc]').value) || 0);
+    form.querySelector('[data-pn-subtotal]').textContent = '\u20B1' + money(total);
+    form.querySelector('[data-pn-total]').textContent = '\u20B1' + money(total - Math.round(total * billPct / 100));
+  }
+  form.addEventListener('input', function (e) {
+    var row = e.target.closest('[data-pn-line]');
+    if (row && e.target.matches('[data-pn-desc]')) {
+      var opt = null;
+      document.querySelectorAll('#pn-services option').forEach(function (o) { if (o.value === e.target.value) opt = o; });
+      row.querySelector('[data-pn-sid]').value = opt ? opt.dataset.sid : '';
+      if (opt && opt.dataset.price) row.querySelector('[data-pn-price]').value = opt.dataset.price;
+    }
+    if (row && e.target.matches('[data-pn-tooth]')) {
+      var q = row.querySelector('[data-pn-qty]');
+      if (!q.dataset.touched) q.value = teeth(e.target.value) > 1 ? teeth(e.target.value) : '';
+    }
+    if (e.target.matches('[data-pn-qty]')) e.target.dataset.touched = '1';
+    recalc();
+  });
+  form.querySelector('[data-pn-add]').addEventListener('click', function () {
+    var row = tbody.querySelector('[data-pn-line]').cloneNode(true);
+    row.querySelectorAll('input').forEach(function (i) { i.value = ''; delete i.dataset.touched; });
+    tbody.appendChild(row);
+    row.querySelector('[data-pn-desc]').focus();
+    recalc();
+  });
+  tbody.addEventListener('click', function (e) {
+    var del = e.target.closest('[data-pn-del]');
+    if (!del) return;
+    var rows = tbody.querySelectorAll('[data-pn-line]');
+    if (rows.length > 1) del.closest('[data-pn-line]').remove();
+    else rows[0].querySelectorAll('input').forEach(function (i) { i.value = ''; });
+    recalc();
+  });
+  var files = form.querySelector('[data-pn-files]'), list = form.querySelector('[data-pn-filelist]');
+  if (files) {
+    var zone = files.closest('.dropzone');
+    ['dragover', 'dragenter'].forEach(function (ev) { zone.addEventListener(ev, function (e) { e.preventDefault(); zone.classList.add('over'); }); });
+    ['dragleave', 'drop'].forEach(function (ev) { zone.addEventListener(ev, function () { zone.classList.remove('over'); }); });
+    zone.addEventListener('drop', function (e) { e.preventDefault(); files.files = e.dataTransfer.files; files.dispatchEvent(new Event('change')); });
+    files.addEventListener('change', function () {
+      list.innerHTML = '';
+      Array.prototype.forEach.call(files.files, function (f) { var li = document.createElement('li'); li.textContent = '📎 ' + f.name; list.appendChild(li); });
+    });
+  }
+  recalc();
+  var dlg = document.querySelector('dialog[data-autoopen]');
+  if (dlg && dlg.showModal) dlg.showModal();
 })();

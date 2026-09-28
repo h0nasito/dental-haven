@@ -251,15 +251,30 @@ def progress_groups(conn, patient_id, procedures, notes):
             gr = grp(day, dentist, it["branch"])
             gr["lines"].append({"text": it["description"], "tooth": "", "price": it["amount_cents"], "proc": None})
             gr["invoices"][it["inv_id"]] = it["number"] or "Draft invoice"
+    from_visit = {r["note_id"]: (r["visit_date"], r["dentist"]) for r in conn.all(
+        "SELECT v.note_id, v.visit_date, u.name AS dentist FROM visit_notes v LEFT JOIN users u ON u.id = v.dentist_id "
+        "WHERE v.patient_id = ? AND v.note_id IS NOT NULL", (patient_id,))}
     for n in notes:
-        day = (n["appt_at"] or n["created_at"])[:10]
-        grp(day, n["author"])["notes"].append(n)
-    docs = {}
-    for d in conn.all("SELECT substr(uploaded_at, 1, 10) AS day, COUNT(*) AS n FROM patient_documents WHERE patient_id = ? GROUP BY day", (patient_id,)):
-        docs[d["day"]] = d["n"]
+        if n["id"] in from_visit:
+            day, who = from_visit[n["id"]]
+        else:
+            day, who = (n["appt_at"] or n["created_at"])[:10], n["author"]
+        grp(day, who)["notes"].append(n)
+    docs, by_visit = {}, {}
+    for d in conn.all("SELECT substr(uploaded_at, 1, 10) AS day, visit_note_id, COUNT(*) AS n FROM patient_documents WHERE patient_id = ? "
+                      "GROUP BY day, visit_note_id", (patient_id,)):
+        if d["visit_note_id"]:
+            by_visit[d["visit_note_id"]] = by_visit.get(d["visit_note_id"], 0) + d["n"]
+        else:
+            docs[d["day"]] = docs.get(d["day"], 0) + d["n"]
+    for vn in conn.all("SELECT v.id, v.visit_date, v.recall_date, v.recall_reason, v.signature_name, v.invoice_id, u.name AS dentist, "
+                       "b.name AS branch FROM visit_notes v LEFT JOIN users u ON u.id = v.dentist_id LEFT JOIN branches b ON b.id = v.branch_id "
+                       "WHERE v.patient_id = ? AND v.status = 'saved'", (patient_id,)):
+        gr = grp(vn["visit_date"], vn["dentist"], vn["branch"] or "")
+        gr.setdefault("visits", []).append(vn)
     out = sorted(groups.values(), key=lambda x: (x["date"] or "", x["dentist"] or ""), reverse=True)
     for gr in out:
-        gr["attachments"] = docs.get(gr["date"], 0)
+        gr["attachments"] = docs.get(gr["date"], 0) + sum(by_visit.get(v["id"], 0) for v in gr.get("visits", []))
         gr["branch"] = ", ".join(sorted(b for b in gr["branches"] if b))
     return out
 
@@ -342,7 +357,21 @@ def detail(patient_id):
         ctx["lab_cases"] = conn.all("SELECT c.*, l.name AS lab FROM lab_cases c JOIN laboratories l ON l.id = c.lab_id "
                                     "WHERE c.patient_id = ? ORDER BY c.id DESC LIMIT 10", (patient_id,))
     if clinical and tab == "notes":
+        import json
         ctx["pn_groups"] = progress_groups(conn, patient_id, ctx["procedures"], ctx["notes"])
+        ctx["price_options"] = conn.all(
+            "SELECT pi.name, pi.service_id, pi.price_from_cents AS price, pi.unit FROM price_items pi WHERE pi.sample = 0 "
+            "UNION ALL SELECT s.name, s.id, s.default_price_cents, '' FROM services s WHERE s.active = 1 ORDER BY 1")
+        ctx["drafts"] = conn.all("SELECT v.*, u.name AS by_name FROM visit_notes v LEFT JOIN users u ON u.id = v.created_by "
+                                 "WHERE v.patient_id = ? AND v.status = 'draft' ORDER BY v.id DESC", (patient_id,))
+        for d in ctx["drafts"]:
+            d["lines"] = json.loads(d["lines_json"] or "[]")
+        want = to_int(request.args.get("draft"))
+        ctx["draft"] = next((d for d in ctx["drafts"] if d["id"] == want), None)
+        ctx["note_branches"] = branches_for_user(g.user)
+        ctx["default_branch"] = g.user.active_branch_id if g.user.active_branch_id else (
+            p["preferred_branch_id"] if p["preferred_branch_id"] and g.user.in_branch(p["preferred_branch_id"]) else
+            (ctx["note_branches"][0]["id"] if ctx["note_branches"] else None))
     if clinical and tab in ("rx", "certs"):
         ctx["prescriptions"] = conn.all(
             "SELECT r.*, u.name AS prescriber FROM prescriptions r LEFT JOIN users u ON u.id = r.prescriber_id "
@@ -735,3 +764,207 @@ def restore_patient(patient_id):
     audit.record("patient_restored", "patient", patient_id, f"Restored patient {p['chart_no']}")
     flash("Patient restored.", "success")
     return redirect(url_for("patients.detail", patient_id=patient_id))
+
+
+# ---------------------------------------------------------------------------
+# New progress note (one visit): services per tooth, notes, attachments, recall, optional bill, patient signature
+# ---------------------------------------------------------------------------
+TOOTH_SPLIT = re.compile(r"[,\s;/]+")
+
+
+def _teeth(text: str) -> list[str]:
+    return [t for t in TOOTH_SPLIT.split(text or "") if t]
+
+
+def _pct_bp(text) -> int | None:
+    """'10' or '12.5' (%) -> basis points; blank -> 0; invalid -> None."""
+    t = (text or "").strip().rstrip("%")
+    if not t:
+        return 0
+    try:
+        v = round(float(t) * 100)
+    except ValueError:
+        return None
+    return v if 0 <= v <= 10000 else None
+
+
+def _visit_form():
+    """Read the form into a plain dict (also what a draft stores)."""
+    f = request.form
+    lines = []
+    for sid, desc, tooth, qty, unit, disc in zip(f.getlist("line_service_id"), f.getlist("line_desc"), f.getlist("line_tooth"),
+                                                 f.getlist("line_qty"), f.getlist("line_price"), f.getlist("line_disc")):
+        if not (desc or "").strip() and not (unit or "").strip():
+            continue
+        lines.append({"service_id": to_int(sid), "desc": clean(desc, 200), "tooth": clean(tooth, 60), "qty": clean(qty, 4),
+                      "price": clean(unit, 20), "disc": clean(disc, 8)})
+    return {"visit_date": clean(f.get("visit_date"), 10), "recall_date": clean(f.get("recall_date"), 10),
+            "recall_reason": clean(f.get("recall_reason"), 200), "body": clean(f.get("body"), 8000),
+            "dentist_id": to_int(f.get("dentist_id")), "branch_id": to_int(f.get("branch_id")),
+            "bill_disc": clean(f.get("bill_disc"), 8), "create_bill": 1 if f.get("create_bill") else 0, "lines": lines}
+
+
+def _store_draft(conn, patient_id, v, draft_id=None):
+    import json
+    row = {"patient_id": patient_id, "branch_id": v["branch_id"], "dentist_id": v["dentist_id"],
+           "visit_date": v["visit_date"] or today().isoformat(), "recall_date": v["recall_date"] or None,
+           "recall_reason": v["recall_reason"], "body": v["body"], "lines_json": json.dumps(v["lines"]),
+           "bill_discount_bp": _pct_bp(v["bill_disc"]) or 0, "create_bill": v["create_bill"], "status": "draft",
+           "updated_at": now_str()}
+    if draft_id:
+        conn.update("visit_notes", draft_id, row)
+        return draft_id
+    return conn.insert("visit_notes", {**row, "created_by": g.user.id, "created_at": now_str()})
+
+
+@bp.route("/<int:patient_id>/visit-note", methods=["POST"])
+@require("progress.add")
+def visit_note(patient_id):
+    from ..billing import compute_totals, line_amount, next_invoice_number
+    from ..uploads import save_signature
+    conn = get_db()
+    p = _load(patient_id)
+    _require_clinical(patient_id, edit=True, perm="progress.add")
+    v = _visit_form()
+    draft_id = to_int(request.form.get("draft_id"))
+    if draft_id and not conn.one("SELECT id FROM visit_notes WHERE id = ? AND patient_id = ? AND status = 'draft'", (draft_id, patient_id)):
+        abort(404)
+
+    def back_to_draft(msg, kind="error"):
+        did = _store_draft(conn, patient_id, v, draft_id)
+        flash(msg, kind)
+        return redirect(url_for("patients.detail", patient_id=patient_id, tab="notes", draft=did) + "#dlg-pn")
+
+    if request.form.get("action") == "draft":
+        did = _store_draft(conn, patient_id, v, draft_id)
+        audit.record("visit_note_draft", "patient", patient_id, "Saved a progress note draft", {"visit_note_id": did})
+        flash("Draft saved. Open it from Progress Notes to continue.", "success")
+        return redirect(url_for("patients.detail", patient_id=patient_id, tab="notes"))
+
+    # ---- validate
+    visit = parse_date(v["visit_date"])
+    if not visit or visit > today():
+        return back_to_draft("Enter the visit date (not in the future).")
+    recall = parse_date(v["recall_date"]) if v["recall_date"] else None
+    if v["recall_date"] and (not recall or recall <= visit):
+        return back_to_draft("The recall date must be after the visit date.")
+    dentist_id = g.user.id if g.user.role == "dentist" else v["dentist_id"]
+    if not dentist_id or not conn.one("SELECT id FROM users WHERE id = ? AND role = 'dentist'", (dentist_id,)):
+        return back_to_draft("Choose the dentist who did the work.")
+    branch_id = v["branch_id"]
+    if not branch_id or not g.user.in_branch(branch_id):
+        return back_to_draft("Choose one of your branches.")
+    lines = []
+    for ln in v["lines"]:
+        if not ln["desc"]:
+            return back_to_draft("Each service line needs a service or procedure.")
+        unit = parse_money(ln["price"]) if ln["price"] else 0
+        qty = to_int(ln["qty"]) or max(1, len(_teeth(ln["tooth"])))
+        disc_bp = _pct_bp(ln["disc"])
+        if unit is None or not 1 <= qty <= 32 or disc_bp is None:
+            return back_to_draft(f"Check the price, quantity and discount % on “{ln['desc']}”.")
+        sub = qty * unit
+        lines.append({**ln, "unit": unit, "qty": qty, "sub": sub, "disc_cents": round(sub * disc_bp / 10000)})
+    if not lines and not v["body"]:
+        return back_to_draft("Add at least one service, or write the notes.")
+    bill_bp = _pct_bp(v["bill_disc"])
+    if bill_bp is None:
+        return back_to_draft("Enter the bill discount as a percent, e.g. 10.")
+    make_bill = bool(v["create_bill"]) and g.user.can("billing.manage") and any(l["unit"] > 0 for l in lines)
+    files = [f for f in request.files.getlist("files") if f and f.filename]
+    if files and not g.user.can("documents.upload"):
+        abort(403)
+    sig_name = ""
+    if request.form.get("signature"):
+        sig_name, err = save_signature(request.form["signature"])
+        if err:
+            return back_to_draft(err)
+    saved_docs = []
+    for f in files[:10]:
+        stored, mime, size, original, err = save_document(f)
+        if err:
+            return back_to_draft(f"{f.filename}: {err}")
+        saved_docs.append((stored, mime, size, original))
+
+    # ---- save everything together
+    import json
+    with conn.transaction(immediate=True):
+        row = {"patient_id": patient_id, "branch_id": branch_id, "dentist_id": dentist_id, "visit_date": visit.isoformat(),
+               "recall_date": recall.isoformat() if recall else None, "recall_reason": v["recall_reason"], "body": v["body"],
+               "lines_json": json.dumps(v["lines"]), "bill_discount_bp": bill_bp, "create_bill": 1 if make_bill else 0,
+               "status": "saved", "signature_name": sig_name, "updated_at": now_str()}
+        if draft_id:
+            conn.update("visit_notes", draft_id, row)
+            vid = draft_id
+        else:
+            vid = conn.insert("visit_notes", {**row, "created_by": g.user.id, "created_at": now_str()})
+        for ln in lines:
+            conn.insert("procedures", {"patient_id": patient_id, "service_id": ln["service_id"], "branch_id": branch_id,
+                                       "tooth": ln["tooth"], "description": ln["desc"], "status": "completed", "performed_by": dentist_id,
+                                       "performed_at": visit.isoformat(), "created_at": now_str(), "visit_note_id": vid})
+        upd = {}
+        if v["body"]:
+            upd["note_id"] = conn.insert("clinical_notes", {"patient_id": patient_id, "author_id": g.user.id, "body": v["body"],
+                                                            "created_at": now_str()})
+        if recall:
+            upd["followup_id"] = conn.insert("follow_ups", {
+                "branch_id": branch_id, "patient_id": patient_id, "kind": "recall",
+                "title": "Recall" + (f": {v['recall_reason']}" if v["recall_reason"] else ""), "due_at": recall.isoformat() + " 09:00",
+                "status": "open", "notes": "From progress note", "created_at": now_str(), "created_by": g.user.id})
+        for stored, mime, size, original in saved_docs:
+            conn.insert("patient_documents", {"patient_id": patient_id, "category": "clinical_photo", "clinical": 1, "original_name": original,
+                                              "stored_name": stored, "mime": mime, "size_bytes": size, "uploaded_by": g.user.id,
+                                              "uploaded_at": now_str(), "visit_note_id": vid})
+        if make_bill:
+            inv = conn.insert("invoices", {"branch_id": branch_id, "patient_id": patient_id, "status": "draft", "created_by": g.user.id,
+                                           "created_at": now_str(), "notes": "Progress note"})
+            for ln in lines:
+                conn.insert("invoice_items", {"invoice_id": inv, "service_id": ln["service_id"], "description": ln["desc"], "qty": ln["qty"],
+                                              "unit_price_cents": ln["unit"], "discount_cents": ln["disc_cents"],
+                                              "amount_cents": line_amount(ln["qty"], ln["unit"], ln["disc_cents"]), "tooth": ln["tooth"],
+                                              "dentist_id": dentist_id, "done_on": visit.isoformat()})
+            items = conn.all("SELECT * FROM invoice_items WHERE invoice_id = ?", (inv,))
+            sub = sum(i["amount_cents"] for i in items)
+            conn.update("invoices", inv, compute_totals(items, round(sub * bill_bp / 10000), conn))
+            number = next_invoice_number(conn, branch_id)
+            conn.execute("UPDATE invoices SET status = 'issued', number = ?, issued_at = ? WHERE id = ?", (number, today().isoformat(), inv))
+            upd["invoice_id"] = inv
+            audit.record("invoice_issued", "invoice", inv, f"Issued {number} from a progress note", branch_id=branch_id)
+        if upd:
+            conn.update("visit_notes", vid, upd)
+        audit.record("visit_note_saved", "patient", patient_id,
+                     f"Progress note for {visit.isoformat()}: {len(lines)} service(s)" + (", bill created" if make_bill else "")
+                     + (", signed by patient" if sig_name else ""), {"visit_note_id": vid}, branch_id)
+    flash("Progress note saved" + (" and the bill was created. Add the payment from Bills & Payment." if make_bill else "."), "success")
+    return redirect(url_for("patients.detail", patient_id=patient_id, tab="notes"))
+
+
+@bp.route("/<int:patient_id>/visit-notes/<int:vid>/delete", methods=["POST"])
+@require("progress.add")
+def visit_note_delete(patient_id, vid):
+    conn = get_db()
+    _load(patient_id)
+    _require_clinical(patient_id)
+    d = conn.one("SELECT * FROM visit_notes WHERE id = ? AND patient_id = ? AND status = 'draft'", (vid, patient_id))
+    if not d:
+        abort(404)
+    if d["created_by"] != g.user.id and not g.user.can("progress.actions"):
+        abort(403)
+    conn.execute("DELETE FROM visit_notes WHERE id = ?", (vid,))
+    audit.record("visit_note_draft_deleted", "patient", patient_id, "Deleted a progress note draft", {"visit_note_id": vid})
+    flash("Draft deleted.", "success")
+    return redirect(url_for("patients.detail", patient_id=patient_id, tab="notes"))
+
+
+@bp.route("/<int:patient_id>/visit-notes/<int:vid>/signature")
+@require("patients.view")
+def visit_note_signature(patient_id, vid):
+    conn = get_db()
+    _load(patient_id)
+    _require_clinical(patient_id)
+    d = conn.one("SELECT signature_name FROM visit_notes WHERE id = ? AND patient_id = ?", (vid, patient_id))
+    if not d or not d["signature_name"]:
+        abort(404)
+    resp = send_file(document_path(d["signature_name"]), mimetype="image/png", max_age=0)
+    resp.headers["Cache-Control"] = "private, no-store"
+    return resp
