@@ -493,3 +493,11 @@ section[id] { scroll-margin-top: 72px; }
 .dh-note { font-size: .8rem; color: #5a616b; }
 .quote-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 1rem; align-items: start; }
 @media (max-width: 1000px) { .quote-grid { grid-template-columns: 1fr; } }
+
+/* Inventory */
+.inv-table .inv-cat th { background: var(--line-2, #f1f3f6); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-2); padding-top: .8em; }
+.inv-table .inv-cat .muted { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.inv-input { width: 6.5em; text-align: right; }
+.inv-date { width: 10.5em; }
+.inv-row-error td { background: #fdecee; }
+.inv-table td:first-child { white-space: nowrap; }

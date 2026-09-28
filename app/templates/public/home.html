@@ -352,6 +352,42 @@
   </div>
 </section>
 
+{# ---------------------------------------------------------------- CAREERS #}
+{% set careers = content('careers') %}{% set careers_email = (content('careers_email').body or '')|trim %}
+{% if careers_email and '@' in careers_email and ' ' not in careers_email %}
+<section class="lp-section lp-careers" id="careers">
+  {% set paras, perks = [], [] %}
+  {% for line in (careers.body or '').replace('\r', '').split('\n') %}
+    {% if line.strip().startswith('- ') %}{% set item = line.strip()[2:] %}{% set bits = item.split(':', 1) %}
+      {% set _ = perks.append((bits[0].strip(), bits[1].strip()) if bits|length == 2 else ('', item.strip())) %}
+    {% elif line.strip() %}{% set _ = paras.append(line.strip()) %}{% endif %}
+  {% endfor %}
+  <div class="wrap">
+    <div class="lp-careers-grid">
+      <div class="reveal">
+        <span class="lp-eyebrow">Careers</span>
+        <h2>{{ careers.title or 'Grow your career with us' }}</h2>
+        {% for para in paras[:1] %}<p class="lp-careers-lead">{{ para }}</p>{% endfor %}
+      </div>
+      <div class="lp-careers-card reveal">
+        <span class="lp-careers-icon" aria-hidden="true">✉</span>
+        <h3>Send your application</h3>
+        <p>{{ paras[1] if paras|length > 1 else "Email your CV, the position you're applying for, and your preferred branch." }}</p>
+        <a class="lp-careers-email" href="mailto:{{ careers_email }}?subject={{ 'Job application - Dental Haven'|urlencode }}">{{ careers_email }}</a>
+        <a class="lp-btn lp-btn-navy" href="mailto:{{ careers_email }}?subject={{ 'Job application - Dental Haven'|urlencode }}">Email your CV</a>
+      </div>
+    </div>
+    {% if perks %}
+    <h3 class="lp-perks-title reveal">Why work at Dental Haven</h3>
+    <ul class="lp-perks">
+      {% for title, text in perks %}<li class="reveal"><span class="lp-perk-num" aria-hidden="true">{{ '%02d' % loop.index }}</span>{% if title %}<strong>{{ title }}</strong>{% endif %}<span>{{ text }}</span></li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% for para in paras[2:] %}<p class="lp-careers-more reveal">{{ para }}</p>{% endfor %}
+  </div>
+</section>
+{% endif %}
+
 {# ---------------------------------------------------------------- FINAL CTA #}
 <section class="lp-final" id="contact">
   <div class="wrap lp-final-inner reveal">

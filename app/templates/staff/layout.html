@@ -34,6 +34,10 @@
     </div>
     {% endif %}
     {% if nav_lab %}<div class="nav-group"><div class="title">Laboratory</div>{{ nav('labs.index', 'Lab cases', 'labs.') }}</div>{% endif %}
+    {% if current_user.can('inventory.view') or current_user.can('inventory.manage') %}<div class="nav-group"><div class="title">Inventory</div>
+      {{ nav('inventory.index', 'Stock', 'inventory.location') }}
+      {% if current_user.can('inventory.manage') %}{{ nav('inventory.items', 'Items & prices', 'inventory.items') }}{% endif %}
+    </div>{% endif %}
     {% if current_user.can('leads.view') or current_user.can('followups.view') or current_user.can('reminders.view') %}
     <div class="nav-group"><div class="title">Front desk</div>
       {% if current_user.can('leads.view') %}{{ nav('leads.index', 'Leads', 'leads.lead') }}{% endif %}

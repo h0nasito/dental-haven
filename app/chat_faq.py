@@ -7,6 +7,16 @@ Clinic-specific things we don't know yet (HMO, discounts, payment options) are s
 """
 
 FAQ = [
+    {"key": "careers", "service": "",
+     "kw": ["hiring", "careers", "career", "job", "jobs", "vacancy", "vacancies", "job opening", "apply for", "apply as", "job application",
+            "resume", "cv", "work for you", "work with you", "work at dental haven", "naghahanap ng trabaho", "trabaho", "hiring ba", "may bakante",
+            "internship", "intern", "ojt", "bakanteng posisyon", "open position", "posisyon"],
+     "en": "We're always glad to hear from dentists, dental assistants, dental technicians and front-desk staff! At Dental Haven you'll get "
+           "training for dentists and staff, work with innovative tools and equipment, and practice digital dentistry every day with our own "
+           "digital dental lab. Send your CV to {careers_email}, with the position and the branch you're interested in.",
+     "tl": "Masaya po kaming makatanggap ng aplikasyon mula sa mga dentista, dental assistant, dental technician at front-desk staff! Sa Dental Haven, "
+           "may training para sa mga dentista at staff, gumagamit kami ng makabagong tools at equipment, at digital dentistry ang araw-araw naming "
+           "ginagawa kasama ang sarili naming digital dental lab. Ipadala po ang inyong CV sa {careers_email}, kasama ang posisyon at branch na gusto ninyo."},
     {"key": "hurt", "service": "",
      "kw": ["does it hurt", "will it hurt", "painful ba", "masakit ba", "sasakit ba", "is it painful", "pain during", "anesthesia", "anesthesia",
             "turok", "injection", "numb", "manhid"],

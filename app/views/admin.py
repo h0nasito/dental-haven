@@ -558,6 +558,8 @@ CONTENT_KEYS = [
     ("home_about", "Home page — about the clinic"),
     ("lab", "Digital dental laboratory section"),
     ("contact", "Contact details (main)"),
+    ("careers", "Careers section — heading and text"),
+    ("careers_email", "Careers — email address for applications"),
     ("booking_note", "Booking page — note to patients"),
     ("privacy_notice", "Privacy notice (full page)"),
     ("consent_booking", "Consent text on booking/inquiry forms"),

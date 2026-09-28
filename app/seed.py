@@ -148,6 +148,17 @@ CONTENT = {
             "and dentures) and 3D-printed appliances.\n\nWe're equipped with intraoral scanners, exocad design systems, 3D printers, "
             "milling machines, and in-house diagnostic imaging (including CBCT and Panoramic X-rays) for accurate treatments and "
             "faster turnaround times."),
+    "careers": ("Grow your career with us",
+                "Join a team that invests in you. We're always glad to hear from dentists, dental assistants, dental technicians "
+                "and front-desk staff who care about gentle, high-quality patient care.\n\n"
+                "- Training for dentists and staff: Hands-on training so you keep learning new techniques and grow in your role.\n"
+                "- Digital dentistry, every day: Intraoral scanning, exocad design, 3D printing and CAD/CAM milling are part of our daily workflow.\n"
+                "- Innovative tools and equipment: In-house CBCT, panoramic and cephalometric X-rays for accurate diagnosis and treatment planning.\n"
+                "- Our own digital dental lab: Work side by side with Digital Solutions Dental Laboratory on crowns, bridges, dentures and aligners.\n"
+                "- A wide range of cases: From check-ups and kids' dentistry to orthodontics, oral surgery, implants and smile makeovers.\n"
+                "- Four branches in Bulacan: Malolos, Guiguinto, Bocaue and San Jose del Monte. Tell us which branch suits you best.\n\n"
+                "Send us your CV and tell us the position and branch you're interested in."),
+    "careers_email": ("", "dentalhavenoffice@gmail.com"),
     "contact": ("Contact us", "Call, text or message your nearest branch on Facebook. We're happy to help."),
     "booking_note": ("", "Choose your branch, service and a preferred time. This is a request, not a confirmed booking — our team "
                          "will contact you to confirm."),
@@ -204,14 +215,15 @@ TEMPLATES = [
 
 
 # Wording replaced automatically when staff haven't edited it (the clinic chose the original hero wording).
-OLD_CONTENT = {"home_hero": "Complete dental care for the whole family, all in one clinic: check-ups and cleanings, fillings, "
+OLD_CONTENT = {"careers": "We don't have open positions right now, but we're always glad to hear from dentists, dental assistants, dental technicians and front-desk staff who care about gentle, high-quality patient care.\n\nSend us your CV and tell us the position and branch you're interested in (Malolos, Guiguinto, Bocaue or San Jose del Monte). We'll get in touch when a position opens.",
+               "home_hero": "Complete dental care for the whole family, all in one clinic: check-ups and cleanings, fillings, "
                             "care for kids, braces, veneers and crowns, dentures, and implants."}
 
 
 def _upsert_content(conn, key, title, body):
     row = conn.one("SELECT * FROM site_content WHERE key = ?", (key,))
     if row and row["body"] == OLD_CONTENT.get(key) and row["body"] != body:
-        conn.execute("UPDATE site_content SET body = ?, updated_at = ? WHERE key = ?", (body, now_str(), key))
+        conn.execute("UPDATE site_content SET title = ?, body = ?, updated_at = ? WHERE key = ?", (title, body, now_str(), key))
         return
     if not row:
         conn.execute("INSERT INTO site_content (key, title, body, updated_at) VALUES (?, ?, ?, ?)", (key, title, body, now_str()))
@@ -225,6 +237,29 @@ def _top_up_chairs(conn, branch_id, slug):
     have = conn.one("SELECT COUNT(*) AS n FROM resources WHERE branch_id = ? AND kind = 'chair'", (branch_id,))["n"]
     for n in range(have + 1, BRANCH_CHAIRS.get(slug, 2) + 1):
         conn.insert("resources", {"branch_id": branch_id, "name": f"Chair {n}", "kind": "chair", "active": 1})
+
+
+def _seed_inventory(conn):
+    """Inventory locations (every active branch + the in-house lab) and, once, the clinic's item list."""
+    from . import settings as _st
+    from .inventory_content import CATEGORIES, INVENTORY_VERSION, ITEMS
+    for b in conn.all("SELECT id, name, sort_order FROM branches WHERE active = 1 ORDER BY sort_order"):
+        if not conn.one("SELECT id FROM inventory_locations WHERE branch_id = ?", (b["id"],)):
+            conn.insert("inventory_locations", {"name": b["name"], "branch_id": b["id"], "active": 1, "sort_order": b["sort_order"]})
+    lab = conn.one("SELECT id FROM laboratories WHERE name = 'DSDL' ORDER BY id LIMIT 1")
+    if lab and not conn.one("SELECT id FROM inventory_locations WHERE laboratory_id = ?", (lab["id"],)):
+        conn.insert("inventory_locations", {"name": "Digital Solutions Dental Laboratory", "laboratory_id": lab["id"], "active": 1, "sort_order": 100})
+    if int(_st.get("seed.inventory_version", conn) or 0) < INVENTORY_VERSION:
+        have = {r["name"].lower() for r in conn.all("SELECT name FROM inventory_items")}
+        n = conn.scalar("SELECT COUNT(*) FROM inventory_items") or 0
+        for i, (name, unit, category) in enumerate(ITEMS):
+            if name.lower() in have:
+                continue
+            n += 1
+            conn.insert("inventory_items", {"code": f"DH-{n:04d}", "name": name, "unit": unit, "category": category,
+                                            "sort_order": CATEGORIES.index(category) * 1000 + i, "active": 1,
+                                            "created_at": now_str(), "updated_at": now_str()})
+        _st.put("seed.inventory_version", INVENTORY_VERSION, None, conn)
 
 
 def seed_base(conn):
@@ -337,11 +372,12 @@ def seed_base(conn):
                                        "created_at": now_str(), "updated_at": now_str()})
         if not conn.scalar("SELECT COUNT(*) FROM laboratories"):
             conn.insert("laboratories", {"name": "DSDL", "address": "Liang, Malolos, Bulacan", "phone": "", "active": 1})
+        _seed_inventory(conn)
         # Permissions added after a database was created are granted once to the roles that have them by default;
         # afterwards the super admin's choices in Role access are kept.
         from . import settings as _settings2
         granted = set(_settings2.get("seed.perms_granted", conn) or [])
-        new_perms = {"quotes.view", "quotes.manage"} - granted
+        new_perms = {"quotes.view", "quotes.manage", "inventory.view", "inventory.manage"} - granted
         if new_perms and conn.scalar("SELECT COUNT(*) FROM role_permissions"):
             for role, perms in ROLE_DEFAULTS.items():
                 for perm in new_perms & set(perms):

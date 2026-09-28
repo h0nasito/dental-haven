@@ -531,7 +531,10 @@ def chat_info():
     from ..chat_faq import FAQ
     from ..chat_procedures import GENERIC, PROCEDURES
     from ..chat_lifespan import LIFE, RESTO_WORDS, TOPICS as LIFE_TOPICS
-    resp = jsonify({"life": LIFE, "life_topics": LIFE_TOPICS, "resto": RESTO_WORDS, "branches": branches, "services": services, "guides": guides, "sections": sections, "faq": FAQ,
+    ce = (content("careers_email")["body"] or "").strip()
+    faq = [dict(f, en=f["en"].replace("{careers_email}", ce), tl=f["tl"].replace("{careers_email}", ce)) if f["key"] == "careers" else f
+           for f in FAQ if f["key"] != "careers" or ("@" in ce and " " not in ce)]
+    resp = jsonify({"life": LIFE, "life_topics": LIFE_TOPICS, "resto": RESTO_WORDS, "branches": branches, "services": services, "guides": guides, "sections": sections, "faq": faq,
                     "procedures": PROCEDURES, "generic": GENERIC, "slots": url_for("public.book_slots"),
                     "prices": prices, "book": url_for("public.book"),
                     "inquire": url_for("public.inquire"), "privacy": url_for("public.privacy")})

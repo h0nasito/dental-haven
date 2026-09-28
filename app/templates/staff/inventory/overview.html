@@ -1,0 +1,24 @@
+{% extends "staff/layout.html" %}
+{% from "staff/inventory/_status.html" import inv_status %}
+{% block page_title %}Inventory{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Inventory</h1><p>Consumables stock at each branch and at the Digital Solutions Dental Laboratory. Choose a location to see or update its stock.</p></div>
+{% if current_user.can('inventory.manage') %}<a class="btn btn-secondary" href="{{ url_for('inventory.items') }}">Items &amp; prices</a>{% endif %}</div>
+<div class="card"><div class="table-wrap"><table><thead><tr><th>Location</th><th class="num">Items in stock</th><th class="num">Stock value</th><th class="num">Reorder / out</th><th class="num">Expiring soon</th><th class="num">Expired</th><th class="num">Not counted yet</th></tr></thead><tbody>
+{% for loc, s in cards %}<tr><td><a href="{{ url_for('inventory.location', location_id=loc.id) }}"><strong>{{ loc.name }}</strong></a></td>
+<td class="num">{{ s.in_stock }}</td><td class="num">{{ s.value_cents|peso }}</td>
+<td class="num">{% if s.reorder + s.out %}<a href="{{ url_for('inventory.location', location_id=loc.id, status='attention') }}"><span class="badge badge-amber">{{ s.reorder + s.out }}</span></a>{% else %}0{% endif %}</td>
+<td class="num">{% if s.expiring %}<span class="badge badge-amber">{{ s.expiring }}</span>{% else %}0{% endif %}</td>
+<td class="num">{% if s.expired %}<span class="badge badge-red">{{ s.expired }}</span>{% else %}0{% endif %}</td>
+<td class="num muted">{{ s.none }}</td></tr>{% endfor %}
+</tbody></table></div></div>
+
+<div class="card mt-1"><h2>Needs attention</h2>
+<p class="muted">Expired, out of stock, expiring within {{ warn_days }} days, or at/below the reorder level.</p>
+{% if attention %}<div class="table-wrap"><table><thead><tr><th>Location</th><th>Item</th><th>Category</th><th class="num">On hand</th><th class="num">Reorder at</th><th>Expiry</th><th>Status</th></tr></thead><tbody>
+{% for loc, r in attention %}<tr><td>{{ loc.name }}</td><td><a href="{{ url_for('inventory.item', location_id=loc.id, item_id=r.id) }}">{{ r.name }}</a></td><td class="muted">{{ r.category }}</td>
+<td class="num">{{ fmt_qty(r.qty) }} <small class="muted">{{ r.unit }}</small></td><td class="num">{{ fmt_qty(r.reorder_level) or '—' }}</td><td>{{ r.expiry_date|date if r.expiry_date else '—' }}</td><td>{{ inv_status(r.status, statuses) }}</td></tr>{% endfor %}
+</tbody></table></div>{% if more %}<p class="muted">…and {{ more }} more. Open a location to see them all.</p>{% endif %}
+{% else %}<p class="empty">Nothing needs attention right now.</p>{% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,18 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Edit {{ it.name }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('inventory.items', category=it.category) }}">← Items &amp; prices</a><h1>{{ it.name }}</h1><p>{{ it.code }}. Changes apply at every location.</p></div></div>
+<form method="post" class="card" style="max-width:720px">{{ csrf() }}
+<div class="form-grid">
+<div class="field {{ 'error' if errors.name }}"><label for="en">Item name</label><input id="en" name="name" value="{{ v.name }}" maxlength="120" required>{% if errors.name %}<div class="field-error">{{ errors.name }}</div>{% endif %}</div>
+<div class="field {{ 'error' if errors.unit }}"><label for="eu">Unit</label><input id="eu" name="unit" value="{{ v.unit }}" maxlength="30" required>{% if errors.unit %}<div class="field-error">{{ errors.unit }}</div>{% endif %}</div>
+<div class="field {{ 'error' if errors.category }}"><label for="ec">Category</label><select id="ec" name="category">{% for g, cats in groups.items() %}<optgroup label="{{ g }}">{% for c in cats %}<option value="{{ c }}" {% if c == v.category %}selected{% endif %}>{{ c }}</option>{% endfor %}</optgroup>{% endfor %}</select></div>
+<div class="field {{ 'error' if errors.price }}"><label for="ep">Unit price (₱)</label><input id="ep" name="price" value="{{ v.price }}" inputmode="decimal">{% if errors.price %}<div class="field-error">{{ errors.price }}</div>{% endif %}</div>
+<div class="field"><label for="es">Supplier</label><input id="es" name="supplier" value="{{ v.supplier }}" maxlength="120"></div>
+<div class="field" style="grid-column:1/-1"><label for="eo">Notes</label><textarea id="eo" name="notes" rows="3" maxlength="500">{{ v.notes }}</textarea></div>
+</div>
+<label class="check"><input type="checkbox" name="active" value="1" {% if v.active %}checked{% endif %}> In use <span class="hint">Untick to hide an item you no longer stock. Its history is kept.</span></label>
+<div class="form-actions"><button class="btn">Save item</button> <a class="btn btn-ghost" href="{{ url_for('inventory.items', category=it.category) }}">Cancel</a></div>
+</form>
+{% endblock %}

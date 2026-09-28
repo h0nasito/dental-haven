@@ -1,0 +1,50 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% from "staff/inventory/_status.html" import inv_status %}
+{% block page_title %}{{ it.name }} · Inventory{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('inventory.location', location_id=loc.id, category=it.category) }}">← {{ loc.name }} · {{ it.category }}</a>
+<h1>{{ it.name }}</h1><p>{{ it.code }} · {{ group }} · unit: {{ it.unit or '—' }}{% if it.supplier %} · supplier: {{ it.supplier }}{% endif %}{% if not it.active %} · <strong>no longer used</strong>{% endif %}</p></div>
+<div class="row">{{ inv_status(status, statuses) }}{% if can_edit %}<a class="btn btn-secondary" href="{{ url_for('inventory.item_edit', item_id=it.id) }}">Edit item &amp; price</a>{% endif %}</div></div>
+
+<div class="grid grid-4" style="margin-bottom:1rem">
+  <div class="stat"><div class="label">On hand</div><div class="value">{{ fmt_qty(stock.qty) if stock else '—' }}</div><div class="sub">{{ it.unit }}{% if stock and stock.last_counted_at %} · counted {{ stock.last_counted_at|date }}{% endif %}</div></div>
+  <div class="stat"><div class="label">Reorder at</div><div class="value">{{ fmt_qty(stock.reorder_level) if stock and stock.reorder_level is not none else '—' }}</div></div>
+  <div class="stat {{ 'danger' if status == 'expired' else ('warn' if status == 'expiring' else '') }}"><div class="label">Earliest expiry</div><div class="value" style="font-size:1.3rem">{{ stock.expiry_date|date if stock and stock.expiry_date else '—' }}</div></div>
+  <div class="stat"><div class="label">Unit price</div><div class="value" style="font-size:1.3rem">{{ it.unit_price_cents|peso if it.unit_price_cents is not none else '—' }}</div>{% if stock and it.unit_price_cents is not none %}<div class="sub">Stock value {{ (stock.qty * it.unit_price_cents)|round|int|peso }}</div>{% endif %}</div>
+</div>
+
+{% if can_edit %}
+<div class="grid grid-3" style="margin-bottom:1rem">
+<form method="post" class="card">{{ csrf() }}<input type="hidden" name="action" value="receive"><h2>Receive stock</h2>
+{% if errors.receive %}<p class="field-error">{{ errors.receive }}</p>{% endif %}
+<div class="field"><label for="rq">Quantity received ({{ it.unit }})</label><input id="rq" name="qty" inputmode="decimal" value="{{ form.qty if form.action == 'receive' else '' }}" required></div>
+<div class="field"><label for="re">Expiry date of this batch <span class="hint">Optional</span></label><input id="re" type="date" name="expiry" value="{{ form.expiry if form.action == 'receive' else '' }}"></div>
+<div class="field"><label for="rn">Note <span class="hint">Optional, e.g. supplier or delivery receipt no.</span></label><input id="rn" name="note" maxlength="300"></div>
+<button class="btn">Add to stock</button></form>
+
+<form method="post" class="card">{{ csrf() }}<input type="hidden" name="action" value="remove"><h2>Use or remove</h2>
+{% if errors.remove %}<p class="field-error">{{ errors.remove }}</p>{% endif %}
+<div class="field"><label for="uq">Quantity ({{ it.unit }})</label><input id="uq" name="qty" inputmode="decimal" value="{{ form.qty if form.action == 'remove' else '' }}" required></div>
+<div class="field"><label for="ur">Reason</label><select id="ur" name="reason">{% for k, l in reasons.items() %}<option value="{{ k }}" {% if form.reason == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+<div class="field"><label for="un">Note <span class="hint">Optional</span></label><input id="un" name="note" maxlength="300"></div>
+<button class="btn">Remove from stock</button></form>
+
+<form method="post" class="card">{{ csrf() }}<input type="hidden" name="action" value="settings"><h2>Correct count &amp; settings</h2>
+{% if errors.settings %}<p class="field-error">{{ errors.settings }}</p>{% endif %}
+<div class="field"><label for="sq">Quantity on hand ({{ it.unit }})</label><input id="sq" name="qty" inputmode="decimal" value="{{ form.qty if form.action == 'settings' else (fmt_qty(stock.qty) if stock else '') }}"></div>
+<div class="field"><label for="sr">Reorder level <span class="hint">Reorder when stock reaches this</span></label><input id="sr" name="reorder" inputmode="decimal" value="{{ form.reorder if form.action == 'settings' else (fmt_qty(stock.reorder_level) if stock else '') }}"></div>
+<div class="field"><label for="se">Earliest expiry date</label><input id="se" type="date" name="expiry" value="{{ form.expiry if form.action == 'settings' else (stock.expiry_date if stock and stock.expiry_date else '') }}"></div>
+<div class="field"><label for="sn">Note <span class="hint">Optional, e.g. why the count changed</span></label><input id="sn" name="note" maxlength="300"></div>
+<button class="btn btn-secondary">Save</button></form>
+</div>
+{% endif %}
+
+{% if others %}<div class="card" style="margin-bottom:1rem"><h2>At your other locations</h2><div class="table-wrap"><table><thead><tr><th>Location</th><th class="num">On hand</th><th class="num">Reorder at</th><th>Expiry</th></tr></thead><tbody>
+{% for o, s in others %}<tr><td><a href="{{ url_for('inventory.item', location_id=o.id, item_id=it.id) }}">{{ o.name }}</a></td><td class="num">{{ fmt_qty(s.qty) if s else '—' }}</td><td class="num">{{ fmt_qty(s.reorder_level) if s and s.reorder_level is not none else '—' }}</td><td>{{ s.expiry_date|date if s and s.expiry_date else '—' }}</td></tr>{% endfor %}
+</tbody></table></div></div>{% endif %}
+
+<div class="card"><h2>History at {{ loc.name }}</h2><div class="table-wrap"><table><thead><tr><th>When</th><th>What</th><th class="num">Change</th><th class="num">After</th><th>Expiry</th><th>By</th><th>Note</th></tr></thead><tbody>
+{% for m in moves %}<tr><td>{{ m.at|dt }}</td><td>{{ move_labels.get(m.kind, m.kind) }}</td><td class="num">{{ '+' if m.qty_change > 0 else '' }}{{ fmt_qty(m.qty_change) }}</td><td class="num">{{ fmt_qty(m.qty_after) }}</td><td>{{ m.expiry_date|date if m.expiry_date else '' }}</td><td>{{ m.user_name or '—' }}</td><td>{{ m.note }}</td></tr>
+{% else %}<tr><td colspan="7" class="empty">No stock changes yet.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

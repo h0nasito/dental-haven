@@ -96,3 +96,29 @@ class TestChatKnowledge(Base):
         self.assertEqual(len(info["procedures"]), len(PROCEDURES))
         ext = next(p for p in info["procedures"] if p["key"] == "extraction")
         self.assertIn("minutes", ext["duration"]["en"])
+
+
+class TestCareers(Base):
+    def test_first_careers_wording_is_replaced_if_unedited(self):
+        from app.seed import CONTENT, OLD_CONTENT, seed_base
+        self.conn.execute("UPDATE site_content SET title = 'Build your career with us', body = ? WHERE key = 'careers'", (OLD_CONTENT["careers"],))
+        seed_base(self.conn)
+        row = self.q("SELECT * FROM site_content WHERE key = 'careers'")
+        self.assertEqual((row["title"], row["body"]), CONTENT["careers"])
+
+    def test_careers_section_and_chat_answer(self):
+        c = self.app.test_client()
+        html = c.get("/").data.decode()
+        self.assertIn('id="careers"', html)
+        self.assertIn("mailto:dentalhavenoffice@gmail.com", html)
+        self.assertNotIn("open positions", html)
+        for part in ("Training for dentists and staff", "Digital dentistry, every day", "Innovative tools and equipment"):
+            self.assertIn(part, html)
+        faq = {f["key"]: f for f in c.get("/chat/info.json").get_json()["faq"]}
+        self.assertIn("dentalhavenoffice@gmail.com", faq["careers"]["en"])
+        self.assertIn("dentalhavenoffice@gmail.com", faq["careers"]["tl"])
+        self.assertIn("digital dentistry", faq["careers"]["en"])
+        # without a valid email the section and chat answer are hidden
+        self.conn.execute("UPDATE site_content SET body = '' WHERE key = 'careers_email'")
+        self.assertNotIn('id="careers"', c.get("/").data.decode())
+        self.assertNotIn("careers", {f["key"] for f in c.get("/chat/info.json").get_json()["faq"]})

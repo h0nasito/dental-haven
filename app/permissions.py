@@ -83,6 +83,9 @@ CATALOG: list[Perm] = [
     # Laboratory
     Perm("lab.view", "View lab cases", "Laboratory"),
     Perm("lab.manage", "Create and update lab cases", "Laboratory"),
+    # Inventory
+    Perm("inventory.view", "View inventory (stock, expiry, history)", "Inventory"),
+    Perm("inventory.manage", "Update inventory: stock counts, receive and use items, edit items and prices", "Inventory"),
     # Expenses
     Perm("expenses.view", "View Expenses", "Expenses", True),
     Perm("expenses.post", "Post Expenses", "Expenses", True),
@@ -135,7 +138,7 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
         "leads.view", "followups.view", "followups.manage", "reminders.view", "reminders.send",
         "billing.view", "billing.manage", "bills.edit", "payments.add", "credit.apply",
         "expenses.view", "expenses.add", "lab.view", "reports.operations", "attendance.view",
-        "quotes.view", "quotes.manage",
+        "quotes.view", "quotes.manage", "inventory.view",
     },
     "receptionist": {
         "dashboard.view", "appointments.view", "calendar.associates", "calendar.birthdays", "calendar.events",

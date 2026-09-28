@@ -51,6 +51,7 @@ For a real installation, run `init-db`, then `seed-base`, then `create-superadmi
 | Management view across branches | Dashboard, Sales & collections, Operations report |
 | Report cards for dentist review | Patient → Report card → the assigned dentist approves → printable |
 | Mobile-friendly public site with editable placeholders | Public pages; Administration → Website content / Branches / Services |
+| Consumables inventory per branch and the in-house lab | Inventory → Stock (counts, receive/use, expiry, reorder, history, CSV) and Items & prices. Updating needs `inventory.manage`: super admins only until granted in Role access |
 | Documentation | This README and `docs/` |
 
 ## Confirmed requirements vs assumptions

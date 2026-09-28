@@ -761,6 +761,8 @@
         !(faq && faq.key === "discount" && !has(q, ["magkano", "how much", "price", "presyo"]))) {
       return reply("price", function () { priceAnswer(q); }, q);
     }
+    if (faq && faq.key === "careers" && has(q, ["hiring", "career", "job", "trabaho", "posisyon", "position", "vacancy", "vacancies", "apply", "resume", " cv", "intern", "ojt"]))
+      return reply("faq:careers", function () { faqAnswer(faq); }, q);
     if (has(q, ["weekend", "sunday", "linggo", "saturday", "sabado", "holiday"])) return reply("hours", allHours, q);
     if (has(q, ["open today", "open now", "open ngayon", "bukas ngayon", "bukas ba kayo", "bukas po ba", "bukas ba", "is the clinic open", "are you open",
                 "is it open", "open ba", "open po ba", "open pa ba", "open right now"])) return reply("opennow", openNow, q);

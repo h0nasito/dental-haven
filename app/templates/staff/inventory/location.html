@@ -1,0 +1,60 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% from "staff/inventory/_status.html" import inv_status %}
+{% block page_title %}Inventory · {{ loc.name }}{% endblock %}
+{% block content %}
+<div class="page-head"><div>{% if locs|length > 1 %}<a href="{{ url_for('inventory.index') }}">← All locations</a>{% endif %}
+<h1>{{ loc.name }}</h1><p>Consumables stock. Status updates by itself from the quantity, reorder level and expiry date.</p></div>
+<div class="row"><a class="btn btn-secondary" href="{{ url_for('inventory.export', location_id=loc.id) }}">Export CSV</a>
+{% if can_edit %}<a class="btn btn-secondary" href="{{ url_for('inventory.items') }}">Items &amp; prices</a>{% endif %}</div></div>
+
+{% if locs|length > 1 %}<nav class="tabs" aria-label="Locations">{% for l in locs %}<a href="{{ url_for('inventory.location', location_id=l.id, category=category, status=status, q=q) }}" class="{{ 'active' if l.id == loc.id else '' }}">{{ l.name }}</a>{% endfor %}</nav>{% endif %}
+
+<div class="grid grid-4" style="margin-bottom:1rem">
+  <div class="stat"><div class="label">Items in stock</div><div class="value">{{ summary.in_stock }}</div><div class="sub">{{ summary.counted }} of {{ summary.counted + summary.none }} items counted</div></div>
+  <div class="stat"><div class="label">Stock value</div><div class="value">{{ summary.value_cents|peso }}</div><div class="sub">Items with a price in Items &amp; prices</div></div>
+  <a class="stat {{ 'warn' if summary.reorder + summary.out else '' }}" href="{{ url_for('inventory.location', location_id=loc.id, status='attention') }}"><div class="label">Reorder / out of stock</div><div class="value">{{ summary.reorder + summary.out }}</div><div class="sub">{{ summary.out }} out of stock</div></a>
+  <a class="stat {{ 'danger' if summary.expired else ('warn' if summary.expiring else '') }}" href="{{ url_for('inventory.location', location_id=loc.id, status='expiring' if not summary.expired else 'expired') }}"><div class="label">Expiring / expired</div><div class="value">{{ summary.expiring + summary.expired }}</div><div class="sub">{{ summary.expired }} expired · {{ summary.expiring }} within {{ warn_days }} days</div></a>
+</div>
+
+<form class="toolbar" method="get">
+  <div class="field grow"><label for="iq">Search</label><input id="iq" name="q" value="{{ q }}" placeholder="Item name, code or supplier"></div>
+  <div class="field"><label for="ic">Category</label><select id="ic" name="category"><option value="">All categories</option>
+    {% for g, cats in groups.items() %}<optgroup label="{{ g }}">{% for c in cats %}<option value="{{ c }}" {% if c == category %}selected{% endif %}>{{ c }} ({{ counts[c] }})</option>{% endfor %}</optgroup>{% endfor %}</select></div>
+  <div class="field"><label for="is">Status</label><select id="is" name="status"><option value="">All</option><option value="attention" {% if status == 'attention' %}selected{% endif %}>Needs attention</option>
+    {% for k, s in statuses.items() %}<option value="{{ k }}" {% if status == k %}selected{% endif %}>{{ s[0] }}</option>{% endfor %}</select></div>
+  <button class="btn btn-secondary">Show</button>
+  {% if can_edit and not editing %}{% if category %}<a class="btn" href="{{ url_for('inventory.location', location_id=loc.id, category=category, status=status, q=q, edit=1) }}">Update stock</a>{% endif %}{% endif %}
+</form>
+{% if can_edit and not editing and not category %}<p class="hint" style="margin-top:-.5rem;margin-bottom:1rem">To update stock counts, choose a category first, then <strong>Update stock</strong>. To receive or use a single item, click its name.</p>{% endif %}
+
+{% if editing %}
+<form method="post">{{ csrf() }}<input type="hidden" name="category" value="{{ category }}"><input type="hidden" name="status" value="{{ status }}"><input type="hidden" name="q" value="{{ q }}">
+<div class="notice" style="margin-bottom:1rem">Updating <strong>{{ category }}</strong>. Type the quantity you counted, the reorder level and the earliest expiry date. Leave a quantity blank to keep it as is. Every change is saved in the item's history with your name.</div>
+<div class="form-actions" style="margin-bottom:1rem"><button class="btn">Save changes</button> <a class="btn btn-ghost" href="{{ url_for('inventory.location', location_id=loc.id, category=category, status=status, q=q) }}">Cancel</a></div>
+{% endif %}
+<div class="card"><div class="table-wrap"><table class="inv-table"><thead><tr><th>Code</th><th>Item</th><th>Unit</th><th class="num">On hand</th><th class="num">Reorder at</th><th>Expiry</th><th class="num">Unit price</th><th class="num">Value</th><th>Status</th></tr></thead><tbody>
+{% set ns = namespace(cat='') %}
+{% for r in rows %}
+{% if r.category != ns.cat %}{% set ns.cat = r.category %}<tr class="inv-cat"><th colspan="9">{{ r.category }} <span class="muted">· {{ r.group }}</span></th></tr>{% endif %}
+<tr class="{{ 'inv-row-error' if errors.get(r.id) else '' }}">
+<td class="muted">{{ r.code }}</td>
+<td><a href="{{ url_for('inventory.item', location_id=loc.id, item_id=r.id) }}">{{ r.name }}</a>{% if errors.get(r.id) %}<div class="field-error">{{ errors[r.id] }}</div>{% endif %}</td>
+<td class="muted">{{ r.unit }}</td>
+{% if editing %}
+{% set k = r.id|string %}
+<td class="num"><input class="inv-input" name="qty_{{ k }}" inputmode="decimal" aria-label="On hand: {{ r.name }}" value="{{ form['qty_' ~ k] if form else fmt_qty(r.qty) }}"></td>
+<td class="num"><input class="inv-input" name="reorder_{{ k }}" inputmode="decimal" aria-label="Reorder level: {{ r.name }}" value="{{ form['reorder_' ~ k] if form else fmt_qty(r.reorder_level) }}"></td>
+<td><input class="inv-date" type="date" name="expiry_{{ k }}" aria-label="Expiry: {{ r.name }}" value="{{ form['expiry_' ~ k] if form else (r.expiry_date or '') }}"></td>
+{% else %}
+<td class="num">{{ fmt_qty(r.qty) if r.qty is not none else '—' }}</td>
+<td class="num">{{ fmt_qty(r.reorder_level) if r.reorder_level is not none else '—' }}</td>
+<td>{{ r.expiry_date|date if r.expiry_date else '—' }}</td>
+{% endif %}
+<td class="num">{{ r.unit_price_cents|peso if r.unit_price_cents is not none else '—' }}</td>
+<td class="num">{{ r.value_cents|peso if r.value_cents is not none else '—' }}</td>
+<td>{{ inv_status(r.status, statuses) }}</td></tr>
+{% else %}<tr><td colspan="9" class="empty">No items match.</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% if editing %}<div class="form-actions mt-1"><button class="btn">Save changes</button> <a class="btn btn-ghost" href="{{ url_for('inventory.location', location_id=loc.id, category=category, status=status, q=q) }}">Cancel</a></div></form>{% endif %}
+{% endblock %}

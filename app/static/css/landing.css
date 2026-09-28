@@ -94,7 +94,7 @@ html { scroll-behavior: smooth; }
 /* ---------------- Sections */
 .lp-section { padding: clamp(4rem, 9vw, 7rem) 0; }
 .lp-head { max-width: 44rem; margin: 0 0 clamp(2rem, 5vw, 3.5rem); text-align: left; }
-.lp-head h2, .lp-lab h2, .lp-final h2 { text-wrap: balance; font-family: var(--display); font-weight: 400; font-size: clamp(2rem, 4.4vw, 3.1rem); line-height: 1.08; letter-spacing: -.015em; color: var(--navy); margin: .6rem 0 .9rem; }
+.lp-head h2, .lp-lab h2, .lp-final h2, .lp-careers-grid h2 { text-wrap: balance; font-family: var(--display); font-weight: 400; font-size: clamp(2rem, 4.4vw, 3.1rem); line-height: 1.08; letter-spacing: -.015em; color: var(--navy); margin: .6rem 0 .9rem; }
 .lp-head h2 em, .lp-final h2 em { font-style: italic; color: var(--gold-2); }
 .lp-final h2 em { color: var(--gold); }
 .lp-head p { color: #5a616b; font-size: 1.08rem; margin: 0; }
@@ -365,3 +365,25 @@ html { scroll-behavior: smooth; }
 .lp-branch-hours::after { content: ""; position: absolute; left: calc(.75rem + 7px); top: calc(.8rem + 4px); width: 4px; height: 5px; border-left: 2px solid var(--gold-2); border-bottom: 2px solid var(--gold-2); }
 .lp-hours-all { display: inline-block; margin: .4rem auto 0; padding: .5rem 1.1rem; border-radius: 999px; background: rgba(255, 255, 255, .08); border: 1px solid rgba(198, 161, 91, .35); color: #fff; font-weight: 600; }
 @media (min-width: 1200px) { .lp-svc-cards { grid-template-columns: repeat(4, 1fr); gap: 26px 18px; } }
+
+/* Careers */
+.lp-careers { background: var(--paper); }
+.lp-careers-grid { display: grid; gap: clamp(2rem, 5vw, 4rem); align-items: center; }
+.lp-careers-grid h2 { margin: .6rem 0 1rem; }
+.lp-careers-grid p { color: var(--slate); max-width: 36rem; }
+.lp-careers-card { background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: clamp(1.5rem, 4vw, 2.25rem);
+  box-shadow: 0 18px 40px -24px rgba(16, 37, 66, .35); display: flex; flex-direction: column; align-items: flex-start; gap: .75rem; }
+.lp-careers-card h3 { margin: 0; font-family: var(--display); color: var(--navy); font-size: 1.4rem; }
+.lp-careers-card p { margin: 0; }
+.lp-careers-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: var(--navy); color: var(--gold); font-size: 1.3rem; }
+.lp-careers-email { color: var(--navy); font-weight: 600; word-break: break-all; text-decoration: underline; text-decoration-color: var(--gold); text-underline-offset: 3px; }
+@media (min-width: 860px) { .lp-careers-grid { grid-template-columns: 1.2fr 1fr; } }
+.lp-perks-title { font-family: var(--display); font-weight: 400; color: var(--navy); font-size: clamp(1.4rem, 2.6vw, 1.8rem); margin: clamp(2.5rem, 6vw, 4rem) 0 1.25rem; }
+.lp-perks { list-style: none; margin: 0; padding: 0; display: grid; gap: 1rem; grid-template-columns: 1fr; }
+.lp-perks li { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 1.25rem 1.35rem; display: flex; flex-direction: column; gap: .35rem; }
+.lp-perks strong { color: var(--navy); font-size: 1.02rem; }
+.lp-perks li > span:last-child { color: var(--slate); font-size: .95rem; line-height: 1.55; }
+.lp-perk-num { font-family: var(--display); color: var(--gold-2); font-size: 1.1rem; letter-spacing: .04em; }
+.lp-careers-more { color: var(--slate); margin-top: 1.5rem; }
+@media (min-width: 640px) { .lp-perks { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1000px) { .lp-perks { grid-template-columns: repeat(3, 1fr); } }
