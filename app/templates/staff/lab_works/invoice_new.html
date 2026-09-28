@@ -1,0 +1,17 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}New lab invoice{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('lab_works.invoices') }}">← Invoices &amp; receipts</a><h1>New invoice</h1><p>Choose the clinic, then the works to bill.</p></div></div>
+<form method="get" class="toolbar"><div class="field grow"><label for="ic">Dental clinic</label><select id="ic" name="client"><option value="">Choose a clinic…</option>{% for c in clients %}<option value="{{ c.id }}" {% if client and client.id == c.id %}selected{% endif %}>{{ c.clinic_name }}</option>{% endfor %}</select></div><button class="btn btn-secondary">Next</button></form>
+{% if client %}
+<form method="post" class="card">{{ csrf() }}<input type="hidden" name="client" value="{{ client.id }}">
+<h2>{{ client.clinic_name }}</h2><p class="muted">{{ client.doctor }}{% if client.contact_number %} · {{ client.contact_number }}{% endif %}</p>
+<div class="table-wrap"><table><thead><tr><th></th><th>Work</th><th>Type of case</th><th class="num">Units</th><th>Received</th><th>Status</th><th class="num">Price / unit</th><th class="num">Amount</th></tr></thead><tbody>
+{% for w in works %}<tr><td><input type="checkbox" name="w_{{ w.id }}" value="1" checked aria-label="Bill {{ w.number }}"></td><td>{{ w.number }}</td><td>{{ w.case_type }}{% if w.teeth %} · {{ w.teeth }}{% endif %}{% if w.arch %} · {{ arches[w.arch] }}{% endif %}</td>
+<td class="num">{{ w.units }}</td><td>{{ w.received_on|date }}</td><td>{{ w.status|label }}</td><td class="num">{{ w.price_cents|peso if w.price_cents is not none else '—' }}</td><td class="num">{{ (w.price_cents * w.units)|peso if w.price_cents is not none else '—' }}</td></tr>
+{% else %}<tr><td colspan="8" class="empty">All works from this clinic are already invoiced. You can still create an invoice and add items by hand.</td></tr>{% endfor %}</tbody></table></div>
+<p class="hint">Works without a price get ₱0; you can type the price on the next page. Discounts are added on the next page too.</p>
+<div class="form-actions"><button class="btn">Create draft invoice</button></div></form>
+{% endif %}
+{% endblock %}

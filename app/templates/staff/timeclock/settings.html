@@ -1,0 +1,25 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Time clock setup{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('timeclock.log') }}">← Time clock log</a><h1>Time clock setup</h1>
+<p>Save each branch's location so the time clock can check that staff are at the clinic. The easiest way: stand at the clinic entrance with your phone and tap <strong>Use my current location</strong>.</p></div></div>
+{% for b in branches %}
+<form method="post" class="card" style="margin-bottom:1rem" data-geo-set>{{ csrf() }}<input type="hidden" name="branch_id" value="{{ b.id }}">
+<h2>{{ b.name }}</h2>
+<div class="form-grid">
+<div class="field"><label for="la{{ b.id }}">Latitude</label><input id="la{{ b.id }}" name="lat" value="{{ b.latitude if b.latitude is not none else '' }}" inputmode="decimal" data-geo-lat></div>
+<div class="field"><label for="lo{{ b.id }}">Longitude</label><input id="lo{{ b.id }}" name="lng" value="{{ b.longitude if b.longitude is not none else '' }}" inputmode="decimal" data-geo-lng></div>
+<div class="field"><label for="ra{{ b.id }}">Allowed distance (meters)</label><input id="ra{{ b.id }}" name="radius" value="{{ b.clock_radius_m or 150 }}" inputmode="numeric"></div>
+</div>
+<p class="hint" data-geo-status>{% if b.latitude is none %}Not set yet: time clock entries at this branch aren't location-checked.{% else %}<a href="https://www.google.com/maps?q={{ b.latitude }},{{ b.longitude }}" target="_blank" rel="noopener">Check on the map</a>{% endif %}</p>
+<div class="form-actions"><button type="button" class="btn btn-secondary" data-geo-fill>Use my current location</button><button class="btn">Save</button></div>
+</form>
+{% endfor %}
+{% if current_user.is_super_admin %}
+<form method="post" class="card">{{ csrf() }}<input type="hidden" name="action" value="retention"><h2>Selfie retention</h2>
+<div class="field" style="max-width:260px"><label for="rd">Delete selfies after (days)</label><input id="rd" name="days" value="{{ days }}" inputmode="numeric"></div>
+<p class="hint">Keep them only as long as you need to settle attendance and payroll questions. Time records themselves are kept.</p>
+<button class="btn btn-secondary">Save</button></form>
+{% endif %}
+{% endblock %}

@@ -52,6 +52,10 @@ For a real installation, run `init-db`, then `seed-base`, then `create-superadmi
 | Report cards for dentist review | Patient → Report card → the assigned dentist approves → printable |
 | Mobile-friendly public site with editable placeholders | Public pages; Administration → Website content / Branches / Services |
 | Consumables inventory per branch and the in-house lab | Inventory → Stock (counts, receive/use, expiry, reorder, history, CSV) and Items & prices. Updating needs `inventory.manage`: super admins only until granted in Role access |
+| Outside-clinic lab works, invoices and receipts | Laboratory → Outside clinic works / Clinics / Lab invoices & receipts (`lab.works`, `lab.billing`; only for users assigned to the lab). Acknowledgment receipts are not BIR official receipts |
+| In-app notifications | Bell in the top bar: new lab works/cases, status changes, due tomorrow, overdue (no patient details) |
+| Selfie + location time clock | Staff & payroll → Time clock (phone), Time clock log and branch location setup; feeds Attendance (DTR); selfies private and auto-deleted (default 60 days) |
+| Dentist pay: daily rate + commission | Employees → dentist → Dentist pay; invoice lines carry dentist, date done and lab fee; Payroll review has a Dentists section with per-procedure details |
 | Documentation | This README and `docs/` |
 
 ## Confirmed requirements vs assumptions

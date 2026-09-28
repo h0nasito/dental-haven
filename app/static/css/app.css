@@ -501,3 +501,19 @@ section[id] { scroll-margin-top: 72px; }
 .inv-date { width: 10.5em; }
 .inv-row-error td { background: #fdecee; }
 .inv-table td:first-child { white-space: nowrap; }
+/* Lab works / notifications */
+.dl { display: grid; grid-template-columns: minmax(120px, 34%) 1fr; gap: .35rem 1rem; margin: 0; }
+.dl dt { color: var(--ink-3); font-size: .88rem; }
+.dl dd { margin: 0; }
+.text-danger { color: var(--red-700); }
+.bell { position: relative; display: inline-flex; align-items: center; gap: .3rem; text-decoration: none; color: var(--ink); font-weight: 600; }
+.bell .count { background: var(--red-700); color: #fff; border-radius: 999px; font-size: .72rem; padding: .05em .5em; }
+.notice-list li { padding: .7rem 0; border-bottom: 1px solid var(--line-2, #eee); }
+.notice-list li.unread strong { color: var(--brand-800, #102542); }
+.notice-list li.unread::before { content: ""; display: inline-block; width: .5rem; height: .5rem; border-radius: 50%; background: var(--red-700); margin-right: .45rem; vertical-align: middle; }
+.clock-card { text-align: left; }
+.clock-now { font-size: 1.15rem; font-weight: 700; margin-top: 0; }
+.clock-btn { width: 100%; font-size: 1.15rem; padding: .9em; }
+.clock-thumb { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
+.inv-comm summary { font-size: .82rem; color: var(--brand-700, #253b53); cursor: pointer; margin-top: .25rem; }
+.inv-comm form { margin-top: .5rem; }

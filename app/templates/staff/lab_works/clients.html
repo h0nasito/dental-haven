@@ -1,0 +1,27 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Lab clinics{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Clinics</h1><p>Dental clinics that send work to our laboratory. They're added automatically when you save a work.</p></div>
+<a class="btn" href="{{ url_for('lab_works.work_new') }}">+ New work</a></div>
+{% set active = 'clients' %}{% include "staff/lab_works/_nav.html" %}
+<div class="card"><div class="table-wrap"><table><thead><tr><th>Dental clinic</th><th>Doctor</th><th>Contact</th><th class="num">Open works</th><th class="num">All works</th>{% if can_bill %}<th class="num">Balance</th>{% endif %}<th></th></tr></thead><tbody>
+{% for c in rows %}
+{% if edit == c.id %}
+<tr><td colspan="{{ 7 if can_bill else 6 }}"><form method="post" class="form-grid">{{ csrf() }}<input type="hidden" name="client_id" value="{{ c.id }}">
+<div class="field"><label for="cn{{ c.id }}">Clinic name</label><input id="cn{{ c.id }}" name="clinic_name" value="{{ c.clinic_name }}" maxlength="120" required></div>
+<div class="field"><label for="cd{{ c.id }}">Doctor</label><input id="cd{{ c.id }}" name="doctor" value="{{ c.doctor }}" maxlength="120"></div>
+<div class="field"><label for="cc{{ c.id }}">Contact number</label><input id="cc{{ c.id }}" name="contact_number" value="{{ c.contact_number }}" maxlength="60"></div>
+<div class="field"><label for="ce{{ c.id }}">Email</label><input id="ce{{ c.id }}" name="email" type="email" value="{{ c.email }}" maxlength="120"></div>
+<div class="field span-2"><label for="ca{{ c.id }}">Address</label><input id="ca{{ c.id }}" name="address" value="{{ c.address }}" maxlength="300"></div>
+<label class="check"><input type="checkbox" name="active" value="1" {% if c.active %}checked{% endif %}> Active</label>
+<div class="form-actions"><button class="btn btn-sm">Save</button><a class="btn btn-ghost btn-sm" href="{{ url_for('lab_works.clients') }}">Cancel</a></div></form></td></tr>
+{% else %}
+<tr><td><a href="{{ url_for('lab_works.works', client=c.id, status='all') }}"><strong>{{ c.clinic_name }}</strong></a>{% if not c.active %} <span class="badge">Inactive</span>{% endif %}{% if c.address %}<br><small class="muted">{{ c.address }}</small>{% endif %}</td>
+<td>{{ c.doctor or '—' }}</td><td>{{ c.contact_number or '—' }}{% if c.email %}<br><small class="muted">{{ c.email }}</small>{% endif %}</td>
+<td class="num">{{ c.open_works }}</td><td class="num">{{ c.all_works }}</td>{% if can_bill %}<td class="num">{{ c.balance_cents|peso if c.balance_cents else '—' }}</td>{% endif %}
+<td><a class="btn btn-ghost btn-sm" href="{{ url_for('lab_works.clients', edit=c.id) }}">Edit</a> <a class="btn btn-ghost btn-sm" href="{{ url_for('lab_works.work_new', client=c.id) }}">+ Work</a></td></tr>
+{% endif %}
+{% else %}<tr><td colspan="7" class="empty">No clinics yet.</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% endblock %}

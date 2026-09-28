@@ -1,0 +1,12 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Notifications{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Notifications</h1><p>Updates about work you handle. They stay here for your reference.</p></div>
+{% if rows|rejectattr('read_at')|list %}<form method="post" action="{{ url_for('notifications.read_all') }}">{{ csrf() }}<button class="btn btn-secondary">Mark all as read</button></form>{% endif %}</div>
+<div class="card"><ul class="list-plain notice-list">
+{% for n in rows %}<li class="{{ '' if n.read_at else 'unread' }}"><form method="post" action="{{ url_for('notifications.open_', nid=n.id) }}" style="display:inline">{{ csrf() }}
+<button class="btn-link" style="background:none;border:0;padding:0;cursor:pointer;text-align:left;font:inherit;color:inherit"><strong>{{ n.title }}</strong></button></form>
+{% if n.body %}<br><span class="muted">{{ n.body }}</span>{% endif %}<br><small class="muted">{{ n.created_at|dt }}</small></li>
+{% else %}<li class="empty">No notifications yet.</li>{% endfor %}</ul></div>
+{% endblock %}

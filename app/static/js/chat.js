@@ -466,16 +466,17 @@
       say([t("no_price").replace("{x}", up.x), t("price2")]);
       return after([[t("c_consult"), book], [t("c_team"), handoff]]);
     }
-    var items = priceMatch(q);
+    var wantsList = has(q, ["price list", "pricelist", "list of prices", "listahan ng presyo", "ballpark", "all your prices", "all prices"]);
+    var items = wantsList ? [] : priceMatch(q);
     var intro = null;
-    var named = procMatch(q);  // a treatment named in this question beats the one discussed earlier
+    var named = wantsList ? null : procMatch(q);  // a treatment named in this question beats the one discussed earlier
     if (!items.length && named) items = priceMatch(" " + named.kw.concat([named.name.toLowerCase()]).join(" ") + " ", true);
     if (!items.length && named) {
       say([t("no_price").replace("{x}", named.name.toLowerCase()), t("price2")]);
       return after([[t("c_consult"), book], [t("c_team"), handoff]]);
     }
-    if (!items.length && ctxProc) items = priceMatch(" " + ctxProc.kw.concat([ctxProc.name.toLowerCase()]).join(" ") + " ", true);
-    if (!items.length && ctxService) items = info.prices.filter(function (p) { return p.service === ctxService.slug; }).slice(0, 5);
+    if (!items.length && ctxProc && !wantsList) items = priceMatch(" " + ctxProc.kw.concat([ctxProc.name.toLowerCase()]).join(" ") + " ", true);
+    if (!items.length && ctxService && !wantsList) items = info.prices.filter(function (p) { return p.service === ctxService.slug; }).slice(0, 5);
     if (!items.length) {
       var seen = {};
       items = info.prices.filter(function (p) { if (seen[p.service]) return false; seen[p.service] = 1; return true; }).slice(0, 6);
@@ -535,12 +536,13 @@
                 "hindi pwedeng kainin", "activities after", "exercise after", "can i smoke", "coffee", "kape", "can i drink", "puwede uminom", "pwede uminom"])) return "avoid";
     if (has(q, ["risk", "side effect", "side-effect", "complication", "danger", "delikado", "safe ba", "is it safe", "ligtas ba", "masama ba"])) return "risks";
     if (has(q, ["alternative", "other option", "instead of", "ibang paraan", "ibang opsyon", "iba pang opsyon", "other than"])) return "alternatives";
+    if (/\b(does|will|would|is|do)\b.*\b(hurt|painful)\b/.test(q) || has(q, ["masakit ba", "masakit po ba"])) return "pain";
     if (has(q, ["recover", "heal", "gumaling", "hilom", "downtime", "aftercare", "after care", "pagkatapos", "after the procedure", "afterwards", "expect after",
                 "bed rest", "back to work", "back to school", "work after", "school after", "swelling after", "can i eat", "puwede kumain", "pwede kumain",
                 "pwede na kumain", "puwede na kumain", " after "])) return "recovery";
     if (has(q, ["how long", "gaano katagal", "katagal", "ilang oras", "ilang minuto", "how many hours", "how many minutes", "how many visits", "appointments will",
                 "how many appointments", "ilang balik", "ilang beses", "duration", "how much time", "take long", "same day", "one day", "isang araw", "one visit",
-                "isang balik", "gaano kabilis", "how fast", "how quick", "ilang araw", "how many days", "how many sessions", "session"])) return "duration";
+                "isang balik", "single visit", "single session", "one sitting", "one session", "isang upuan", "gaano kabilis", "how fast", "how quick", "ilang araw", "how many days", "how many sessions", "session"])) return "duration";
     if (/\b(does|will|would|is|do)\b.*\b(hurt|painful)\b/.test(q) || has(q, ["masakit ba", "sasakit", "masakit po ba", "painful", "anesthesia",
                 "anaesthesia", "numb", "turok", "manhid", "pain free", "painless", "sedation for", "need sedation"])) return "pain";
     if (has(q, ["material", "made of", "gawa sa", "yari sa", "materyales", "porcelain", "ceramic", "zirconia", "metal", "acrylic", "titanium",
@@ -732,7 +734,8 @@
     if (has(q, ["uncontrolled bleeding", "won't stop bleeding", "wont stop bleeding", "bleeding won't stop", "bleeding wont stop", "bleeding that won",
                 "can't stop the bleeding", "hindi tumitigil ang dugo", "hindi tumitigil ang pagdurugo", "trouble breathing", "hard to breathe", "difficulty breathing",
                 "can't breathe", "cant breathe", "hirap huminga", "trouble swallowing", "hard to swallow", "difficulty swallowing", "hirap lumunok",
-                "serious injury", "serious dental injury", "accident", "naaksidente", "nabangga"]) ||
+                "serious injury", "serious dental injury"]) ||
+        (has(q, ["accident", "naaksidente", "nabangga"]) && has(q, ["bleed", "dugo", "jaw", "panga", "head", "ulo", "unconscious", "nawalan ng malay", "breath", "hinga", "serious"])) ||
         (has(q, ["hirap", "nahihirapan"]) && has(q, ["huminga", "lumunok", "paghinga"]))) return reply("er", er, q);
     var urgent = has(q, ["emergency", "urgent", "namamaga", "swell", "swollen", " nana", "abscess", "sobrang sakit", "severe", "toothache", "sakit ng ngipin",
                          "masakit ang ngipin", "masakit ngipin", "masakit na ngipin", "hindi makatulog", "can't sleep", "fever", "lagnat"]);
@@ -750,6 +753,16 @@
         if (le) return reply("life:" + le.key, function () { lifeAnswer(le); }, q);
       }
     }
+    var OVERRIDE = ["change_booking", "book_channels", "waitlist", "book_ahead", "intake_forms", "insurance_check", "price_vary", "rct_signs",
+                    "crown_vs_bridge", "whitening_types", "whitening_shades", "whitening_sensitivity", "veneer_candidate", "smile_preview",
+                    "aligner_candidate", "multi_extraction", "implant_candidate", "implant_steps", "ortho_wire", "gag", "sterilization",
+                    "medical_conditions", "med_cert", "sedation_options", "pregnant", "seniors", "broken"];
+    var OVERRIDE_NOPROC = ["post_op", "eat_brush_after"];  // only when no treatment is named; otherwise that treatment's own answer is better
+    var SAFE_WHEN_SEVERE = ["broken", "post_op", "ortho_wire", "gag", "medical_conditions", "pregnant"];
+    if (faq && faq.strong && (OVERRIDE.indexOf(faq.key) !== -1 || (!proc && OVERRIDE_NOPROC.indexOf(faq.key) !== -1)) &&
+        (!severe || SAFE_WHEN_SEVERE.indexOf(faq.key) !== -1) && !(severe && has(q, ["swollen", "swell", "namamaga", "fever", "lagnat"]))) {
+      return reply("faq:" + faq.key, function () { faqAnswer(faq); }, q);
+    }
     if (faq && ["medication", "toothache_cause", "emergency_offer", "knocked_out", "temporary", "allergy", "material_cost", "material_diff",
                 "materials_safe", "choose_material", "samples", "dont_see", "which_right"].indexOf(faq.key) !== -1 && !severe) return reply("faq:" + faq.key, function () { faqAnswer(faq); }, q);
     if (urgent && !(faq && faq.key === "extraction_after") && aspect !== "recovery" && aspect !== "contact") return reply("pain", pain, q);
@@ -757,8 +770,8 @@
     if (comfortQ && !proc && ctxProc) { var cpp = ctxProc; return reply("proc:" + cpp.key + "pain", function () { procAnswer(cpp, "pain"); }, q); }
     if (comfortQ && !proc) { var fh = (info.faq || []).filter(function (x) { return x.key === "hurt"; })[0]; if (fh) return reply("faq:hurt", function () { faqAnswer(fh); }, q); }
     if (has(q, ["human", "real person", "agent", "receptionist", "talk to", "kausap", "contact me", "call me", "tawagan", "someone call"])) return reply("handoff", handoff, q);
-    if (has(q, ["magkano", "presyo", "price", "cost", "how much", " rate ", " rates ", " fee ", " fees ", "halaga", "budget", "mahal ba", "expensive", "cheap", " mura"]) &&
-        !(faq && faq.key === "discount" && !has(q, ["magkano", "how much", "price", "presyo"]))) {
+    if (has(q, ["magkano", "presyo", "price", "cost", "how much", " rate ", " rates ", " fee ", " fees ", "halaga", "do you charge", "charge for", "may bayad", "libre ba", "price list", "pricelist", "ballpark", "budget", "mahal ba", "expensive", "cheap", " mura"]) &&
+        !(faq && faq.key === "discount" && !has(q, ["magkano", "how much", "price", "presyo", "may bayad", "charge", "libre ba", "konsulta", "consultation"]))) {
       return reply("price", function () { priceAnswer(q); }, q);
     }
     if (faq && faq.key === "careers" && has(q, ["hiring", "career", "job", "trabaho", "posisyon", "position", "vacancy", "vacancies", "apply", "resume", " cv", "intern", "ojt"]))

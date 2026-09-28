@@ -39,7 +39,14 @@ def register_context(app):
                     f"SELECT COUNT(*) FROM report_cards WHERE status='pending_review' AND {bf}", bp)
         lab_ids = [r["lab_id"] for r in conn.all("SELECT lab_id FROM user_labs WHERE user_id = ?", (user.id,))]
         nav_lab = user.is_super_admin or user.can("lab.view") or bool(lab_ids)
-        return {"nav_branches": nav_branches, "nav_counts": counts, "nav_lab": nav_lab}
+        nav_lab_works = user.is_super_admin or (bool(lab_ids) and user.can("lab.works"))
+        nav_lab_billing = user.is_super_admin or (bool(lab_ids) and user.can("lab.billing"))
+        if lab_ids:
+            from ..notices import run_lab_due_checks
+            run_lab_due_checks(conn)
+        from ..notices import unread_count
+        return {"nav_branches": nav_branches, "nav_counts": counts, "nav_lab": nav_lab or nav_lab_works, "nav_lab_works": nav_lab_works,
+                "nav_lab_billing": nav_lab_billing, "nav_unread": unread_count(conn, user.id)}
 
 
 def followup_scope(user, alias="f"):

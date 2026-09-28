@@ -97,7 +97,8 @@ def invoice_new():
                 if appt:
                     price = appt["default_price_cents"] or 0
                     conn.insert("invoice_items", {"invoice_id": inv_id, "service_id": appt["service_id"], "description": appt["service"],
-                                                  "qty": 1, "unit_price_cents": price, "discount_cents": 0, "amount_cents": price})
+                                                  "qty": 1, "unit_price_cents": price, "discount_cents": 0, "amount_cents": price,
+                                                  "dentist_id": appt["dentist_id"], "done_on": appt["start_at"][:10]})
                 _recalc(conn, inv_id)
                 audit.record("invoice_created", "invoice", inv_id, "Draft invoice created", branch_id=branch_id)
             return redirect(url_for("billing.invoice", invoice_id=inv_id))
@@ -117,7 +118,15 @@ def invoice(invoice_id):
     paid = paid_amount(conn, invoice_id)
     history = conn.all("SELECT a.*, u.name AS actor FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id "
                        "WHERE a.entity_type = 'invoice' AND a.entity_id = ? ORDER BY a.id DESC", (invoice_id,))
-    return render_template("staff/billing/invoice.html", inv=inv, items=items, payments=payments, paid=paid,
+    appt = conn.one("SELECT dentist_id, start_at FROM appointments WHERE id = ?", (inv["appointment_id"],)) if inv["appointment_id"] else None
+    inv_dentists = conn.all("SELECT u.id, u.name FROM users u JOIN user_branches ub ON ub.user_id = u.id WHERE u.role = 'dentist' AND u.active = 1 "
+                            "AND ub.branch_id = ? ORDER BY u.name", (inv["branch_id"],))
+    lab_cases = conn.all("SELECT id, case_type, teeth, lab_fee_cents, sent_on FROM lab_cases WHERE patient_id = ? AND status != 'cancelled' "
+                         "ORDER BY id DESC LIMIT 20", (inv["patient_id"],))
+    dentist_names = {d["id"]: d["name"] for d in conn.all("SELECT id, name FROM users WHERE role = 'dentist'")}
+    return render_template("staff/billing/invoice.html", inv=inv, items=items, payments=payments, paid=paid, inv_dentists=inv_dentists,
+                           lab_cases=lab_cases, dentist_names=dentist_names, default_dentist=appt["dentist_id"] if appt else None,
+                           default_done=(appt["start_at"][:10] if appt else today().isoformat()),
                            credit=credit_balance(conn, inv["patient_id"]),
                            balance=inv["total_cents"] - paid, state=payment_state(inv["total_cents"], paid, inv["status"]),
                            services=services(), history=history, tax_label=settings.get("invoice.tax_label"),
@@ -137,8 +146,25 @@ def invoice_print(invoice_id):
                            tax_enabled=settings.get("invoice.tax_enabled"), tax_inclusive=settings.get("invoice.tax_inclusive"))
 
 
+def _commission_fields(conn, inv, form):
+    """Dentist, date done and lab fee for a procedure line (used for dentist commission)."""
+    dentist_id = to_int(form.get("dentist_id"))
+    if dentist_id and not conn.one("SELECT id FROM users WHERE id = ? AND role = 'dentist'", (dentist_id,)):
+        dentist_id = None
+    done = parse_date(form.get("done_on"))
+    if done and done > today():
+        done = today()
+    lab_case_id = to_int(form.get("lab_case_id"))
+    lab_case = conn.one("SELECT * FROM lab_cases WHERE id = ? AND patient_id = ?", (lab_case_id, inv["patient_id"])) if lab_case_id else None
+    fee = parse_money(form.get("lab_fee")) if form.get("lab_fee") else None
+    if fee is None and lab_case and lab_case["lab_fee_cents"]:
+        fee = lab_case["lab_fee_cents"]
+    return {"dentist_id": dentist_id, "done_on": (done or today()).isoformat() if dentist_id else (done.isoformat() if done else None),
+            "lab_fee_cents": max(0, fee or 0), "lab_case_id": lab_case["id"] if lab_case else None}
+
+
 EDIT_ACTION_PERMS = {"add_item": "billing.manage", "issue": "billing.manage", "delete": "billing.manage",
-                     "remove_item": "bills.edit", "discount": "bills.edit"}
+                     "remove_item": "bills.edit", "discount": "bills.edit", "commission": "bills.edit"}
 
 
 @bp.route("/invoices/<int:invoice_id>/edit", methods=["POST"])
@@ -151,6 +177,9 @@ def invoice_edit(invoice_id):
         abort(400)
     if not g.user.can(EDIT_ACTION_PERMS[action]):
         abort(403)
+    if inv["status"] == "void" and action == "commission":
+        flash("This invoice is void.", "error")
+        return redirect(url_for("billing.invoice", invoice_id=invoice_id))
     if inv["status"] != "draft" and action in ("add_item", "remove_item", "discount", "issue", "delete"):
         flash("Only draft invoices can be changed. Void and re-issue if needed.", "error")
         return redirect(url_for("billing.invoice", invoice_id=invoice_id))
@@ -168,9 +197,19 @@ def invoice_edit(invoice_id):
                 flash("Enter a description, quantity and price (e.g. 1500 or 1500.00).", "error")
             else:
                 amount = line_amount(qty, unit, disc)
+                extra = _commission_fields(conn, inv, request.form)
                 conn.insert("invoice_items", {"invoice_id": invoice_id, "service_id": svc_id, "description": desc, "qty": qty,
-                                              "unit_price_cents": unit, "discount_cents": min(disc, qty * unit), "amount_cents": amount})
+                                              "unit_price_cents": unit, "discount_cents": min(disc, qty * unit), "amount_cents": amount, **extra})
                 audit.record("invoice_item_added", "invoice", invoice_id, f"Added {desc} {peso(amount)}", branch_id=inv["branch_id"])
+        elif action == "commission":
+            item = conn.one("SELECT * FROM invoice_items WHERE id = ? AND invoice_id = ?", (to_int(request.form.get("item_id")), invoice_id))
+            if item:
+                extra = _commission_fields(conn, inv, request.form)
+                conn.execute("UPDATE invoice_items SET dentist_id = ?, done_on = ?, lab_fee_cents = ?, lab_case_id = ? WHERE id = ?",
+                             (extra["dentist_id"], extra["done_on"], extra["lab_fee_cents"], extra["lab_case_id"], item["id"]))
+                audit.record("invoice_item_commission", "invoice", invoice_id, f"Dentist / date done / lab fee set on '{item['description']}'",
+                             {"before": {k: item[k] for k in ("dentist_id", "done_on", "lab_fee_cents")}, "after": extra}, inv["branch_id"])
+                flash("Saved. Dentist payroll uses this line from the date done.", "success")
         elif action == "remove_item":
             item_id = to_int(request.form.get("item_id"))
             conn.execute("DELETE FROM invoice_items WHERE id = ? AND invoice_id = ?", (item_id, invoice_id))

@@ -143,5 +143,39 @@ document.addEventListener('DOMContentLoaded', function () {
       if (opt && opt.dataset.price) { price.value = opt.dataset.price; desc.value = opt.dataset.name || ""; }
       else { price.value = ""; desc.value = ""; desc.focus(); }
     });
+});
+})();
+
+/* Time clock: location for time in/out, and "Use my current location" on the setup page. */
+(function () {
+  // Time clock: fill in the phone's location before timing in/out
+  document.querySelectorAll('form[data-geo]').forEach(function (form) {
+    var status = form.querySelector('[data-geo-status]');
+    var say = function (t) { if (status) status.textContent = t; };
+    if (!navigator.geolocation) { say('Location isn\u2019t available on this device; your manager will review your time.'); return; }
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      form.elements.lat.value = pos.coords.latitude.toFixed(6);
+      form.elements.lng.value = pos.coords.longitude.toFixed(6);
+      form.elements.acc.value = Math.round(pos.coords.accuracy);
+      say('Location found (within about ' + Math.round(pos.coords.accuracy) + ' m).');
+    }, function () {
+      say('Location is off or was not allowed. You can still time in, but your manager will review it. To fix: allow location for this site in your browser settings.');
+    }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+  });
+  // Time clock setup: "Use my current location"
+  document.querySelectorAll('form[data-geo-set]').forEach(function (form) {
+    var btn = form.querySelector('[data-geo-fill]');
+    var status = form.querySelector('[data-geo-status]');
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      if (!navigator.geolocation) { status.textContent = 'Location isn\u2019t available on this device.'; return; }
+      status.textContent = 'Getting your location…';
+      navigator.geolocation.getCurrentPosition(function (pos) {
+        form.querySelector('[data-geo-lat]').value = pos.coords.latitude.toFixed(6);
+        form.querySelector('[data-geo-lng]').value = pos.coords.longitude.toFixed(6);
+        status.textContent = 'Got it (within about ' + Math.round(pos.coords.accuracy) + ' m). Tap Save.';
+      }, function () { status.textContent = 'Location was not allowed. Allow location for this site and try again.'; },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+    });
   });
 })();

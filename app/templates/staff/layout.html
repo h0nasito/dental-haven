@@ -33,7 +33,9 @@
       {% if current_user.can('reportcards.generate') or current_user.can('reportcards.review') %}{{ nav('reportcards.index', 'Report cards', 'reportcards.', nav_counts.reviews) }}{% endif %}
     </div>
     {% endif %}
-    {% if nav_lab %}<div class="nav-group"><div class="title">Laboratory</div>{{ nav('labs.index', 'Lab cases', 'labs.') }}</div>{% endif %}
+    {% if nav_lab %}<div class="nav-group"><div class="title">Laboratory</div>{{ nav('labs.index', 'Branch lab cases', 'labs.') }}
+      {% if nav_lab_works %}{{ nav('lab_works.works', 'Outside clinic works', 'lab_works.work') }}{{ nav('lab_works.clients', 'Clinics', 'lab_works.clients') }}{% endif %}
+      {% if nav_lab_billing %}{{ nav('lab_works.invoices', 'Lab invoices & receipts', 'lab_works.invoice') }}{% endif %}</div>{% endif %}
     {% if current_user.can('inventory.view') or current_user.can('inventory.manage') %}<div class="nav-group"><div class="title">Inventory</div>
       {{ nav('inventory.index', 'Stock', 'inventory.location') }}
       {% if current_user.can('inventory.manage') %}{{ nav('inventory.items', 'Items & prices', 'inventory.items') }}{% endif %}
@@ -55,8 +57,10 @@
       {% if current_user.can('expenses.view') or current_user.can('expenses.add') %}{{ nav('expenses.index', 'Expenses', 'expenses.') }}{% endif %}
     </div>
     {% endif %}
-    {% if current_user.can('attendance.view') or current_user.can('payroll.prepare') or current_user.can('compensation.manage') %}
+    {% if current_user.can('attendance.view') or current_user.can('attendance.clock') or current_user.can('payroll.prepare') or current_user.can('compensation.manage') %}
     <div class="nav-group"><div class="title">Staff &amp; payroll</div>
+      {% if current_user.can('attendance.clock') %}{{ nav('timeclock.clock', 'Time clock', 'timeclock.clock') }}{% endif %}
+      {% if current_user.can('attendance.manage') %}{{ nav('timeclock.log', 'Time clock log', 'timeclock.log') }}{% endif %}
       {% if current_user.can('attendance.view') %}{{ nav('people.attendance', 'Attendance (DTR)', 'people.attendance') }}{% endif %}
       {% if current_user.can('compensation.manage') or current_user.can('attendance.manage') %}{{ nav('people.employees', 'Employees', 'people.employee') }}{% endif %}
       {% if current_user.can('payroll.prepare') or current_user.can('payroll.approve') %}{{ nav('people.payroll', 'Payroll review', 'people.payroll') }}{% endif %}
@@ -95,6 +99,7 @@
         <button class="btn btn-secondary btn-sm js-hide" type="submit">Switch</button>
       </form>
       <div class="spacer"></div>
+      <a class="bell" href="{{ url_for('notifications.index') }}" aria-label="Notifications{% if nav_unread %}: {{ nav_unread }} unread{% endif %}"><span aria-hidden="true">🔔</span>{% if nav_unread %}<span class="count">{{ nav_unread }}</span>{% endif %}</a>
       <div class="who hide-sm"><strong>{{ current_user.name }}</strong><br><small>{{ ROLES[current_user.role] }}</small></div>
       <a class="btn btn-ghost btn-sm" href="{{ url_for('auth.change_password') }}">Password</a>
       <form method="post" action="{{ url_for('auth.logout') }}">{{ csrf() }}<button class="btn btn-secondary btn-sm" type="submit">Sign out</button></form>

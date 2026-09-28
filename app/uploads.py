@@ -79,3 +79,15 @@ def save_public_image(file_storage):
     name = f"{secrets.token_hex(12)}.{kind}"
     (folder / name).write_bytes(data)
     return f"uploads/gallery/{name}", None
+
+
+def save_private_image(file_storage, subfolder: str):
+    """An image kept outside the web root (e.g. time clock selfies). Returns (stored relative name, error)."""
+    kind, data, err = _read_checked(file_storage, IMAGE_TYPES)
+    if err:
+        return None, err
+    folder = Path(current_app.config["UPLOAD_DIR"]) / subfolder
+    folder.mkdir(parents=True, exist_ok=True)
+    name = f"{secrets.token_hex(16)}.{kind}"
+    (folder / name).write_bytes(data)
+    return f"{subfolder}/{name}", None

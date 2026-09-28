@@ -2,8 +2,9 @@
 {% from "macros.html" import empty %}
 {% block page_title %}Lab cases{% endblock %}
 {% block content %}
-<div class="page-head"><div><h1>Lab cases</h1><p>{% if lab_user %}Cases sent to your laboratory by the branches.{% else %}Crowns, bridges, dentures and other work sent to the laboratory.{% endif %}</p></div>
+<div class="page-head"><div><h1>Branch lab cases</h1><p>{% if lab_user %}Cases sent to your laboratory by the branches.{% else %}Crowns, bridges, dentures and other work sent to the laboratory.{% endif %}</p></div>
 {% if current_user.can('lab.manage') %}<a class="btn" href="{{ url_for('labs.new') }}">+ New lab case</a>{% endif %}</div>
+{% if nav_lab_works or nav_lab_billing %}{% set active = 'cases' %}{% include "staff/lab_works/_nav.html" %}{% endif %}
 <div class="tabs"><a class="{% if status == 'open' %}active{% endif %}" href="?status=open">Open</a>
 {% for k, l in statuses.items() %}<a class="{% if status == k %}active{% endif %}" href="?status={{ k }}">{{ l }}{% if counts.get(k) %} ({{ counts[k] }}){% endif %}</a>{% endfor %}</div>
 <div class="card"><div class="table-wrap"><table><thead><tr><th>Due</th><th>Patient</th><th>Case</th><th>Teeth / shade</th><th>Branch · dentist</th><th>Lab</th><th>Status</th></tr></thead><tbody>

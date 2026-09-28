@@ -1,0 +1,35 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Time clock{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Time clock</h1><p>Time in when you arrive and time out when you leave, with a selfie in front of the clinic.</p></div></div>
+{% if not emp %}
+<div class="card"><p>Your account isn't linked to an employee record yet, so you can't use the time clock. Ask your manager to link it in Employees.</p></div>
+{% else %}
+<div class="grid grid-2">
+<div class="card clock-card">
+{% if next_kind %}
+<p class="clock-now">{{ now.strftime('%A, %B %d') }}</p>
+<form method="post" enctype="multipart/form-data" data-geo>{{ csrf() }}
+<input type="hidden" name="kind" value="{{ next_kind }}"><input type="hidden" name="lat"><input type="hidden" name="lng"><input type="hidden" name="acc">
+<div class="field"><label for="cb">Branch</label><select id="cb" name="branch_id" {% if rec %}disabled{% endif %}>{% for b in branches %}<option value="{{ b.id }}" {% if b.id == branch_id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select>
+{% if rec %}<input type="hidden" name="branch_id" value="{{ rec.branch_id }}">{% endif %}</div>
+<div class="field"><label for="cp">Selfie in front of the clinic</label><input id="cp" type="file" name="photo" accept="image/*" capture="user" required>
+<span class="hint">Your phone's camera opens. Include the clinic entrance or signage behind you.</span></div>
+<p class="hint" data-geo-status>Checking your location… If your phone asks, tap Allow.</p>
+<button class="btn clock-btn">{{ 'Time in' if next_kind == 'in' else 'Time out' }}</button>
+</form>
+{% else %}
+<p class="clock-now">You're done for today. 👋</p><p class="muted">If a time is wrong, ask your manager to correct it in Attendance.</p>
+{% endif %}
+</div>
+<div class="card"><h2>Today</h2>
+{% if rec %}<dl class="dl"><dt>Time in</dt><dd>{{ rec.time_in or '—' }}</dd><dt>Time out</dt><dd>{{ rec.time_out or '—' }}</dd>
+<dt>Status</dt><dd>{% if rec.status == 'ok' %}<span class="badge badge-green">OK</span>{% else %}<span class="badge badge-amber">{{ rec.status|label }}</span>{% endif %}{% if rec.exception_note %}<br><small class="muted">{{ rec.exception_note }}</small>{% endif %}</dd></dl>
+{% else %}<p class="muted">You haven't timed in yet today.</p>{% endif %}
+{% if punches %}<ul class="list-plain mt-1">{% for p in punches %}<li>Time {{ p.kind }} · {{ p.at[11:16] }} · {{ p.branch }}
+{% if p.location_ok == 1 %}<span class="badge badge-green">At the branch</span>{% elif p.location_ok == 0 %}<span class="badge badge-amber">{{ '{:,}'.format(p.distance_m|int) }} m away</span>{% endif %}</li>{% endfor %}</ul>{% endif %}
+<p class="hint mt-1">Privacy: your selfie and location are used only to confirm your attendance. Only managers who handle attendance can see them, and selfies are deleted automatically after a set period.</p>
+</div></div>
+{% endif %}
+{% endblock %}

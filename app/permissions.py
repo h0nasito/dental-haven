@@ -83,6 +83,8 @@ CATALOG: list[Perm] = [
     # Laboratory
     Perm("lab.view", "View lab cases", "Laboratory"),
     Perm("lab.manage", "Create and update lab cases", "Laboratory"),
+    Perm("lab.works", "Outside-clinic lab works: add, edit and update works from other clinics (for users assigned to the lab)", "Laboratory"),
+    Perm("lab.billing", "Lab invoices, discounts and payment receipts for outside clinics", "Laboratory", True),
     # Inventory
     Perm("inventory.view", "View inventory (stock, expiry, history)", "Inventory"),
     Perm("inventory.manage", "Update inventory: stock counts, receive and use items, edit items and prices", "Inventory"),
@@ -105,6 +107,7 @@ CATALOG: list[Perm] = [
     Perm("reports.export", "Export authorised reports to CSV", "Reports"),
     # People
     Perm("attendance.view", "View attendance (DTR)", "Staff & payroll"),
+    Perm("attendance.clock", "Time in / time out with a selfie and location check", "Staff & payroll"),
     Perm("attendance.manage", "Record, import and correct attendance", "Staff & payroll", True),
     Perm("compensation.manage", "View and edit compensation settings", "Staff & payroll", True),
     Perm("payroll.prepare", "Prepare draft payroll summaries", "Staff & payroll", True),
@@ -129,7 +132,7 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
         "dashboard.view", "appointments.view", "appointments.complete", "calendar.birthdays", "calendar.events",
         "followups.view", "followups.manage", "patients.view", "clinical.view", "clinical.edit", *_CLINICAL_WRITE,
         "documents.upload", "lab.view", "lab.manage", "reportcards.generate", "reportcards.review",
-        "quotes.view", "quotes.manage",
+        "quotes.view", "quotes.manage", "attendance.clock",
     },
     "staff": {
         "dashboard.view", "dashboard.balances", "appointments.view", "calendar.associates", "calendar.birthdays",
@@ -138,14 +141,14 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
         "leads.view", "followups.view", "followups.manage", "reminders.view", "reminders.send",
         "billing.view", "billing.manage", "bills.edit", "payments.add", "credit.apply",
         "expenses.view", "expenses.add", "lab.view", "reports.operations", "attendance.view",
-        "quotes.view", "quotes.manage", "inventory.view",
+        "quotes.view", "quotes.manage", "inventory.view", "attendance.clock",
     },
     "receptionist": {
         "dashboard.view", "appointments.view", "calendar.associates", "calendar.birthdays", "calendar.events",
         "bookings.view", "appointments.manage", "appointments.complete", "bookings.manage",
         "patients.view", "patients.contact", "patients.manage", "documents.upload",
         "leads.view", "leads.manage", "followups.view", "followups.manage", "reminders.view", "reminders.send",
-        "quotes.view", "quotes.manage",
+        "quotes.view", "quotes.manage", "attendance.clock",
     },
 }
 

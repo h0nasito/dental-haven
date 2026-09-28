@@ -13,6 +13,24 @@
 <label class="check"><input type="checkbox" name="active" value="1" {% if e.active %}checked{% endif %}> Active</label>
 <button class="btn btn-secondary mt-1">Save</button></form></div>
 {% endif %}
+{% if current_user.can('compensation.manage') and is_dentist %}
+<div class="card"><h2>Dentist pay: daily rate + commission</h2>
+<p class="notice">Restricted. Commission is counted on each procedure once it's done: (amount billed − its share of the invoice discount − lab fee) × commission %. The daily rate is paid per day present (time record).</p>
+<form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="dentist_pay">
+<div class="form-grid"><div class="field"><label for="dr">Daily rate (₱)</label><input id="dr" name="daily_rate" inputmode="decimal" value="{{ '%.2f' % (dpay[0].daily_rate_cents / 100) if dpay else '' }}" required></div>
+<div class="field"><label for="dc">Commission (%)</label><input id="dc" name="commission" inputmode="decimal" value="{{ dpay[0].commission_bp / 100 if dpay else '' }}" required></div>
+<div class="field"><label for="de">Effective from</label><input id="de" type="date" name="effective_from" value="{{ today }}"></div></div>
+<div class="field"><label for="dno">Notes</label><input id="dno" name="notes" placeholder="e.g. Per contract dated …"></div>
+<button class="btn btn-secondary">Save rates</button></form>
+{% if dpay %}<h3 class="mt-1">History</h3><ul class="list-plain">{% for r in dpay %}<li>{{ r.daily_rate_cents|peso }}/day · {{ r.commission_bp / 100 }}% commission · from {{ r.effective_from|date }}<br><small class="muted">{{ r.by_name }}{% if r.notes %} · {{ r.notes }}{% endif %}</small></li>{% endfor %}</ul>{% endif %}
+<h3 class="mt-1">Different commission for specific services <span class="hint">Optional</span></h3>
+{% if svc_rates %}<ul class="list-plain">{% for r in svc_rates %}<li>{{ r.service }}: <strong>{{ r.commission_bp / 100 }}%</strong></li>{% endfor %}</ul>{% else %}<p class="muted">None: every service uses the rate above.</p>{% endif %}
+<form method="post" class="form-grid">{{ csrf() }}<input type="hidden" name="action" value="service_rate">
+<div class="field"><label for="ss">Service</label><select id="ss" name="service_id">{% for sv in all_services %}<option value="{{ sv.id }}">{{ sv.name }}</option>{% endfor %}</select></div>
+<div class="field"><label for="sc">Commission (%) <span class="hint">Blank = use the usual rate</span></label><input id="sc" name="commission" inputmode="decimal"></div>
+<div class="form-actions"><button class="btn btn-secondary btn-sm">Save</button></div></form>
+</div>
+{% endif %}
 {% if current_user.can('compensation.manage') %}
 <div class="card"><h2>Compensation settings</h2>
 <p class="notice">Restricted. Enter only amounts the clinic has confirmed. These are inputs for a draft review, not a payroll run.</p>

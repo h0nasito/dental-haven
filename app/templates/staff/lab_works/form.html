@@ -1,0 +1,36 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}{{ 'Edit ' ~ work.number if work else 'New outside work' }}{% endblock %}
+{% macro err(k) %}{% if errors[k] %}<div class="field-error">{{ errors[k] }}</div>{% endif %}{% endmacro %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('lab_works.work', work_id=work.id) if work else url_for('lab_works.works') }}">← {{ work.number if work else 'Outside clinic works' }}</a>
+<h1>{{ 'Edit ' ~ work.number if work else 'New outside work' }}</h1><p>Work sent to our laboratory by another dental clinic.</p></div></div>
+<form method="post" class="card" style="max-width:900px">{{ csrf() }}
+<datalist id="clinic-list">{% for c in clinics %}<option value="{{ c.clinic_name }}">{{ c.doctor }}{% if c.contact_number %} · {{ c.contact_number }}{% endif %}</option>{% endfor %}</datalist>
+<h2>Dental clinic</h2>
+<div class="form-grid">
+{% if labs|length > 1 %}<div class="field {{ 'error' if errors.lab_id }}"><label for="fl">Laboratory</label><select id="fl" name="lab_id">{% for l in labs %}<option value="{{ l.id }}" {% if v.lab_id|string == l.id|string %}selected{% endif %}>{{ lab_display(l.name) }}</option>{% endfor %}</select>{{ err('lab_id') }}</div>{% else %}<input type="hidden" name="lab_id" value="{{ labs[0].id }}">{% endif %}
+<div class="field {{ 'error' if errors.clinic_name }}"><label for="fc">Dental clinic name</label><input id="fc" name="clinic_name" list="clinic-list" value="{{ v.clinic_name }}" maxlength="120" required autocomplete="off"><span class="hint">Start typing to pick a clinic you've worked with.</span>{{ err('clinic_name') }}</div>
+<div class="field"><label for="fd">Doctor</label><input id="fd" name="doctor" value="{{ v.doctor }}" maxlength="120" placeholder="Dr. Juan dela Cruz"></div>
+<div class="field"><label for="fn">Contact number</label><input id="fn" name="contact_number" value="{{ v.contact_number }}" maxlength="60" inputmode="tel"></div>
+<div class="field"><label for="fp">Patient reference <span class="hint">Optional: initials or the clinic's case no.</span></label><input id="fp" name="patient_ref" value="{{ v.patient_ref }}" maxlength="60"></div>
+</div>
+<h2 class="mt-1">Case</h2>
+<div class="form-grid">
+<div class="field {{ 'error' if errors.case_type }}"><label for="ft">Type of case</label><select id="ft" name="case_type">{% for t in case_types %}<option {% if v.case_type == t %}selected{% endif %}>{{ t }}</option>{% endfor %}</select>{{ err('case_type') }}</div>
+<div class="field {{ 'error' if errors.units }}"><label for="fu">Units</label><input id="fu" name="units" value="{{ v.units }}" inputmode="numeric" required>{{ err('units') }}</div>
+<div class="field"><label for="fa">Arch</label><select id="fa" name="arch">{% for k, l in arches.items() %}<option value="{{ k }}" {% if v.arch == k %}selected{% endif %}>{{ l if k else 'Not applicable' }}</option>{% endfor %}</select></div>
+<div class="field"><label for="fte">Teeth</label><input id="fte" name="teeth" value="{{ v.teeth }}" maxlength="60" placeholder="e.g. 11, 21"></div>
+<div class="field"><label for="fs">Shade</label><input id="fs" name="shade" value="{{ v.shade }}" maxlength="30" placeholder="e.g. A2"></div>
+<div class="field"><label for="fm">Material</label><input id="fm" name="material" value="{{ v.material }}" maxlength="80" placeholder="e.g. Zirconia"></div>
+<div class="field {{ 'error' if errors.price }}"><label for="fpr">Price per unit (₱) <span class="hint">Used for the invoice</span></label><input id="fpr" name="price" value="{{ v.price }}" inputmode="decimal">{{ err('price') }}</div>
+<div class="field span-2"><label for="fi">Instructions</label><textarea id="fi" name="instructions" rows="3" maxlength="1000">{{ v.instructions }}</textarea></div>
+</div>
+<h2 class="mt-1">Dates</h2>
+<div class="form-grid">
+<div class="field {{ 'error' if errors.received_on }}"><label for="fr">Date received</label><input id="fr" type="date" name="received_on" value="{{ v.received_on }}" required>{{ err('received_on') }}</div>
+<div class="field {{ 'error' if errors.due_on }}"><label for="fdu">Due date</label><input id="fdu" type="date" name="due_on" value="{{ v.due_on }}">{{ err('due_on') }}</div>
+</div>
+<div class="form-actions"><button class="btn">{{ 'Save changes' if work else 'Save work' }}</button><a class="btn btn-ghost" href="{{ url_for('lab_works.work', work_id=work.id) if work else url_for('lab_works.works') }}">Cancel</a></div>
+</form>
+{% endblock %}

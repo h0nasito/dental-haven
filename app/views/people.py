@@ -65,6 +65,16 @@ def employees():
     return render_template("staff/people/employees.html", rows=rows, branches=branches_for_user(g.user))
 
 
+def _pct_bp(raw):
+    """'40' or '40%' or '37.5' -> basis points (4000); None if not 0-100."""
+    raw = (raw or "").strip().rstrip("%").strip()
+    try:
+        v = float(raw)
+    except ValueError:
+        return None
+    return int(round(v * 100)) if 0 <= v <= 100 else None
+
+
 @bp.route("/employees/<int:emp_id>", methods=["GET", "POST"])
 @require("attendance.manage", "compensation.manage", any_of=True)
 def employee(emp_id):
@@ -93,6 +103,38 @@ def employee(emp_id):
                 audit.record("compensation_set", "employee", emp_id, "Compensation setting added",
                              {"compensation_id": cid, "basis": basis, "effective_from": eff.isoformat()}, e["primary_branch_id"])
                 flash("Compensation setting saved (effective-dated history is kept).", "success")
+        elif action in ("dentist_pay", "service_rate"):
+            if not g.user.can("compensation.manage"):
+                abort(403)
+            if action == "dentist_pay":
+                daily = parse_money(request.form.get("daily_rate"))
+                pct = _pct_bp(request.form.get("commission"))
+                eff = parse_date(request.form.get("effective_from")) or today()
+                if daily is None or daily < 0 or pct is None:
+                    flash("Enter the daily rate (e.g. 1500) and the commission % (e.g. 40).", "error")
+                else:
+                    rid = conn.insert("dentist_pay_rates", {"employee_id": emp_id, "daily_rate_cents": daily, "commission_bp": pct,
+                                                            "effective_from": eff.isoformat(), "notes": clean(request.form.get("notes"), 300),
+                                                            "created_by": g.user.id, "created_at": now_str()})
+                    audit.record("dentist_pay_set", "employee", emp_id, "Dentist daily rate and commission set",
+                                 {"rate_id": rid, "effective_from": eff.isoformat()}, e["primary_branch_id"])
+                    flash("Saved. Earlier rates are kept as history.", "success")
+            else:
+                svc = to_int(request.form.get("service_id"))
+                raw = (request.form.get("commission") or "").strip()
+                if not conn.one("SELECT id FROM services WHERE id = ?", (svc,)):
+                    flash("Choose a service.", "error")
+                elif raw == "":
+                    conn.execute("DELETE FROM dentist_service_rates WHERE employee_id = ? AND service_id = ?", (emp_id, svc))
+                    audit.record("dentist_service_rate_removed", "employee", emp_id, "Service commission rate removed", {"service_id": svc})
+                    flash("Removed: this service uses the dentist's usual rate.", "success")
+                elif _pct_bp(raw) is None:
+                    flash("Enter the commission % from 0 to 100.", "error")
+                else:
+                    conn.execute("INSERT INTO dentist_service_rates (employee_id, service_id, commission_bp) VALUES (?, ?, ?) "
+                                 "ON CONFLICT(employee_id, service_id) DO UPDATE SET commission_bp = excluded.commission_bp", (emp_id, svc, _pct_bp(raw)))
+                    audit.record("dentist_service_rate_set", "employee", emp_id, "Service commission rate set", {"service_id": svc})
+                    flash("Saved.", "success")
         elif action == "details":
             if not g.user.can("attendance.manage"):
                 abort(403)
@@ -107,7 +149,17 @@ def employee(emp_id):
         return redirect(url_for("people.employee", emp_id=emp_id))
     comps = conn.all("SELECT c.*, u.name AS by_name FROM compensation c LEFT JOIN users u ON u.id = c.created_by WHERE employee_id = ? "
                      "ORDER BY effective_from DESC, id DESC", (emp_id,)) if g.user.can("compensation.manage") else []
-    return render_template("staff/people/employee.html", e=e, comps=comps, branches=branches_for_user(g.user))
+    user = conn.one("SELECT role FROM users WHERE id = ?", (e["user_id"],)) if e["user_id"] else None
+    is_dentist = bool(user and user["role"] == "dentist")
+    dpay = svc_rates = []
+    if is_dentist and g.user.can("compensation.manage"):
+        dpay = conn.all("SELECT r.*, u.name AS by_name FROM dentist_pay_rates r LEFT JOIN users u ON u.id = r.created_by WHERE employee_id = ? "
+                        "ORDER BY effective_from DESC, id DESC", (emp_id,))
+        svc_rates = conn.all("SELECT r.*, s.name AS service FROM dentist_service_rates r JOIN services s ON s.id = r.service_id WHERE employee_id = ? "
+                             "ORDER BY s.sort_order", (emp_id,))
+    return render_template("staff/people/employee.html", e=e, comps=comps, branches=branches_for_user(g.user), is_dentist=is_dentist,
+                           dpay=dpay, svc_rates=svc_rates, all_services=conn.all("SELECT id, name FROM services WHERE active = 1 ORDER BY sort_order"),
+                           today=today().isoformat())
 
 
 # ---------------------------------------------------------------------------
@@ -389,27 +441,50 @@ def payroll_period(period_id):
                            show_money=g.user.can("compensation.manage"))
 
 
+@bp.route("/payroll/<int:period_id>/dentist/<int:emp_id>")
+@require("payroll.prepare", "payroll.approve", any_of=True)
+def payroll_commission(period_id, emp_id):
+    """The procedures behind a dentist's commission for the period."""
+    from ..payroll import commission_items, dentist_rates
+    conn = get_db()
+    p = _load_period(period_id)
+    e = conn.one("SELECT e.*, u.name AS user_name FROM employees e JOIN users u ON u.id = e.user_id WHERE e.id = ? AND u.role = 'dentist'", (emp_id,))
+    if not e:
+        abort(404)
+    rates = dentist_rates(conn, e["id"], p["end_date"])
+    svc = {r["service_id"]: r["commission_bp"] for r in conn.all("SELECT * FROM dentist_service_rates WHERE employee_id = ?", (e["id"],))}
+    items = commission_items(conn, e["user_id"], p["start_date"], p["end_date"], p["branch_id"], rates["commission_bp"] if rates else 0, svc)
+    line = conn.one("SELECT * FROM payroll_lines WHERE period_id = ? AND employee_id = ?", (period_id, emp_id))
+    return render_template("staff/people/payroll_commission.html", p=p, e=e, items=items, rates=rates, line=line,
+                           show_money=g.user.can("compensation.manage"))
+
+
 @bp.route("/payroll/<int:period_id>/export.csv")
 @require("payroll.prepare", "payroll.approve", any_of=True)
 def payroll_export(period_id):
     conn = get_db()
     p = _load_period(period_id)
     lines = conn.all("SELECT l.*, e.full_name, e.position FROM payroll_lines l JOIN employees e ON e.id = l.employee_id WHERE l.period_id = ? "
-                     "ORDER BY e.full_name", (period_id,))
+                     "ORDER BY l.kind DESC, e.full_name", (period_id,))
     show_money = g.user.can("compensation.manage")
     buf = io.StringIO()
     w = csv.writer(buf)
     label = "APPROVED SUMMARY (not a payment instruction)" if p["status"] == "approved" else "DRAFT — UNCONFIRMED ESTIMATE, NOT FINAL PAYROLL"
     w.writerow([f"Dental Haven payroll review: {p['name']} ({p['start_date']} to {p['end_date']})", label])
-    header = ["Employee", "Position", "Days present", "Hours worked", "Late (min)", "Undertime (min)", "Open exceptions", "Pay basis"]
+    header = ["Employee", "Position", "Group", "Days present", "Hours worked", "Late (min)", "Undertime (min)", "Open exceptions", "Pay basis",
+              "Procedures done"]
     if show_money:
-        header += ["Rate (PHP)", "Estimate (PHP)", "Adjustment (PHP)", "Adjustment note"]
+        header += ["Rate (PHP)", "Commission %", "Daily pay (PHP)", "Commission base (PHP)", "Commission (PHP)", "Estimate (PHP)",
+                   "Adjustment (PHP)", "Adjustment note"]
     w.writerow(header)
     for l in lines:
-        row = [l["full_name"], l["position"], l["days_present"], round(l["minutes_worked"] / 60, 2), l["late_minutes"],
-               l["undertime_minutes"], l["open_exceptions"], BASIS_LABELS.get(l["basis"], l["basis"])]
+        dent = l["kind"] == "dentist"
+        row = [l["full_name"], l["position"], "Dentist" if dent else "Staff", l["days_present"], round(l["minutes_worked"] / 60, 2), l["late_minutes"],
+               l["undertime_minutes"], l["open_exceptions"], BASIS_LABELS.get(l["basis"], l["basis"]), l["commission_items"] if dent else ""]
         if show_money:
-            row += [(l["rate_cents"] or 0) / 100 if l["rate_cents"] is not None else "",
+            row += [(l["rate_cents"] or 0) / 100 if l["rate_cents"] is not None else "", (l["percentage_bp"] or 0) / 100 if dent else "",
+                    (l["daily_pay_cents"] or 0) / 100 if dent and l["daily_pay_cents"] is not None else "",
+                    (l["commission_base_cents"] or 0) / 100 if dent else "", (l["commission_cents"] or 0) / 100 if dent and l["commission_cents"] is not None else "",
                     l["estimate_cents"] / 100 if l["estimate_cents"] is not None else "needs pay rule",
                     l["adjustment_cents"] / 100, l["adjustment_note"]]
         w.writerow(row)

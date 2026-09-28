@@ -1,0 +1,16 @@
+{% extends "staff/layout.html" %}
+{% block page_title %}Lab invoices{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Invoices &amp; receipts</h1><p>Invoices for outside clinics, with discounts and payment acknowledgment receipts.</p></div>
+<a class="btn" href="{{ url_for('lab_works.invoice_new') }}">+ New invoice</a></div>
+{% set active = 'invoices' %}{% include "staff/lab_works/_nav.html" %}
+{% if uninvoiced %}<div class="notice" style="margin-bottom:1rem"><strong>Works not yet invoiced:</strong>
+{% for c in uninvoiced %}<a href="{{ url_for('lab_works.invoice_new', client=c.id) }}">{{ c.clinic_name }} ({{ c.n }})</a>{{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}
+<div class="row between" style="margin-bottom:.75rem"><nav class="tabs" style="margin:0;border:0"><a href="{{ url_for('lab_works.invoices', show='open') }}" class="{{ 'active' if show == 'open' else '' }}">Draft &amp; unpaid</a><a href="{{ url_for('lab_works.invoices', show='all') }}" class="{{ 'active' if show == 'all' else '' }}">All</a></nav>
+<span><strong>Outstanding:</strong> {{ outstanding|peso }}</span></div>
+<div class="card"><div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Dental clinic</th><th>Issued</th><th>Due</th><th class="num">Total</th><th class="num">Paid</th><th class="num">Balance</th><th>Status</th></tr></thead><tbody>
+{% for r in rows %}<tr><td><a href="{{ url_for('lab_works.invoice', invoice_id=r.id) }}"><strong>{{ r.number or 'Draft' }}</strong></a></td><td>{{ r.clinic_name }}<br><small class="muted">{{ r.doctor }}</small></td>
+<td>{{ r.issued_on|date if r.issued_on else '—' }}</td><td>{{ r.due_on|date if r.due_on else '—' }}</td><td class="num">{{ r.total_cents|peso }}</td><td class="num">{{ r.paid_cents|peso }}</td>
+<td class="num">{{ (r.total_cents - r.paid_cents)|peso if r.pay in ('unpaid','partial') else '—' }}</td><td><span class="badge {{ labels[r.pay][1] }}">{{ labels[r.pay][0] }}</span></td></tr>
+{% else %}<tr><td colspan="8" class="empty">No invoices here.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

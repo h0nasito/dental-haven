@@ -1,9 +1,10 @@
 """Attendance exception detection and draft payroll summaries.
 
-IMPORTANT: The clinic's pay rules (overtime, holidays, night differential, commissions,
-associate dentist percentage splits, statutory deductions) have NOT been provided. This
-module only aggregates attendance and, for daily/hourly rates, shows an *unconfirmed
-estimate* (rate x days or hours). Nothing here pays anyone or produces final payroll.
+IMPORTANT: The clinic's rules for overtime, holidays, night differential and statutory deductions
+have NOT been provided. This module aggregates attendance and shows *estimates*: rate x days or hours
+for staff, and for dentists daily rate x days present + commission (clinic-confirmed basis: amount billed
+for each completed procedure, less its share of the invoice discount and the lab fee, x commission %).
+Nothing here pays anyone or produces final payroll.
 """
 from __future__ import annotations
 
@@ -13,7 +14,8 @@ from . import settings
 from .util import hm_to_min, parse_date
 
 BASIS_LABELS = {"monthly": "Monthly salary", "daily": "Daily rate", "hourly": "Hourly rate",
-                "percentage": "Percentage of production", "per_case": "Per case / procedure", "unset": "Not set"}
+                "percentage": "Percentage of production", "per_case": "Per case / procedure", "unset": "Not set",
+                "daily_commission": "Daily rate + commission"}
 
 
 def evaluate_record(conn, rec: dict) -> tuple[str, str]:
@@ -54,6 +56,37 @@ def current_compensation(conn, employee_id: int, as_of: str):
                     (employee_id, as_of))
 
 
+def dentist_rates(conn, employee_id: int, as_of: str):
+    return conn.one("SELECT * FROM dentist_pay_rates WHERE employee_id = ? AND effective_from <= ? ORDER BY effective_from DESC, id DESC LIMIT 1",
+                    (employee_id, as_of))
+
+
+def commission_items(conn, user_id: int, start: str, end: str, branch_id=None, default_bp: int = 0, service_bp: dict | None = None):
+    """Procedure lines a dentist completed in the period, on issued invoices, with the commission for each.
+
+    base = line amount - its share of the invoice-level discount - lab fee (never below zero); commission = base x rate.
+    """
+    service_bp = service_bp or {}
+    where, args = ["ii.dentist_id = ?", "i.status = 'issued'", "ii.done_on BETWEEN ? AND ?"], [user_id, start, end]
+    if branch_id:
+        where.append("i.branch_id = ?")
+        args.append(branch_id)
+    rows = conn.all("SELECT ii.*, i.number AS invoice_number, i.branch_id, i.discount_cents AS inv_discount, i.subtotal_cents AS inv_subtotal, "
+                    "p.chart_no, b.name AS branch, s.name AS service FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id "
+                    "JOIN patients p ON p.id = i.patient_id JOIN branches b ON b.id = i.branch_id LEFT JOIN services s ON s.id = ii.service_id "
+                    f"WHERE {' AND '.join(where)} ORDER BY ii.done_on, ii.id", args)
+    out = []
+    for r in rows:
+        r = dict(r)
+        share = round(r["inv_discount"] * r["amount_cents"] / r["inv_subtotal"]) if r["inv_discount"] and r["inv_subtotal"] else 0
+        r["discount_share_cents"] = share
+        r["base_cents"] = max(0, r["amount_cents"] - share - (r["lab_fee_cents"] or 0))
+        r["rate_bp"] = service_bp.get(r["service_id"], default_bp)
+        r["commission_cents"] = round(r["base_cents"] * r["rate_bp"] / 10000)
+        out.append(r)
+    return out
+
+
 def build_lines(conn, period) -> list[dict]:
     where = "e.active = 1"
     params: list = []
@@ -77,6 +110,21 @@ def build_lines(conn, period) -> list[dict]:
                     if part.startswith("left "):
                         undertime += int(part.split(" ")[1])
         open_exc = sum(1 for r in recs if r["status"] == "exception")
+        user = conn.one("SELECT id, role FROM users WHERE id = ?", (e["user_id"],)) if e["user_id"] else None
+        if user and user["role"] == "dentist":
+            rates = dentist_rates(conn, e["id"], period["end_date"])
+            svc = {r["service_id"]: r["commission_bp"] for r in conn.all("SELECT * FROM dentist_service_rates WHERE employee_id = ?", (e["id"],))}
+            items = commission_items(conn, user["id"], period["start_date"], period["end_date"], period["branch_id"],
+                                     rates["commission_bp"] if rates else 0, svc)
+            daily_pay = days * rates["daily_rate_cents"] if rates else None
+            commission = sum(i["commission_cents"] for i in items) if rates else None
+            lines.append({"employee_id": e["id"], "days_present": days, "minutes_worked": minutes, "late_minutes": late,
+                          "undertime_minutes": undertime, "open_exceptions": open_exc, "kind": "dentist",
+                          "basis": "daily_commission" if rates else "unset", "rate_cents": rates["daily_rate_cents"] if rates else None,
+                          "percentage_bp": rates["commission_bp"] if rates else None, "daily_pay_cents": daily_pay,
+                          "commission_cents": commission, "commission_base_cents": sum(i["base_cents"] for i in items),
+                          "commission_items": len(items), "estimate_cents": (daily_pay + commission) if rates else None})
+            continue
         comp = current_compensation(conn, e["id"], period["end_date"])
         basis = comp["basis"] if comp else "unset"
         rate = comp["rate_cents"] if comp else None
@@ -87,7 +135,7 @@ def build_lines(conn, period) -> list[dict]:
             estimate = round(minutes / 60 * rate)
         lines.append({"employee_id": e["id"], "days_present": days, "minutes_worked": minutes, "late_minutes": late,
                       "undertime_minutes": undertime, "open_exceptions": open_exc, "basis": basis, "rate_cents": rate,
-                      "percentage_bp": comp["percentage_bp"] if comp else None, "estimate_cents": estimate})
+                      "percentage_bp": comp["percentage_bp"] if comp else None, "estimate_cents": estimate, "kind": "staff"})
     return lines
 
 

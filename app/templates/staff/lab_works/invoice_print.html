@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}{{ inv.number or 'Draft invoice' }}{% endblock %}
+{% block body %}
+<main id="main" class="print-sheet">
+<div class="no-print row between" style="margin-bottom:1rem"><a href="{{ url_for('lab_works.invoice', invoice_id=inv.id) }}">← Back</a><span class="muted">Use your browser's Print command (or Save as PDF)</span></div>
+{% if inv.status == 'draft' %}<div class="watermark">DRAFT</div>{% elif inv.status == 'void' %}<div class="watermark">VOID</div>{% endif %}
+<div class="row between" style="flex-wrap:nowrap;align-items:flex-start;gap:2rem">
+<div style="max-width:58%"><img src="{{ url_for('static', filename='img/logo.png') }}" alt="" width="60" height="40"><h2 class="mb-0">{{ lab.name }}</h2><p class="muted">{{ lab.address }}{% if lab.phone %}<br>{{ lab.phone }}{% endif %}</p></div>
+<div style="text-align:right;flex:none"><h2 class="mb-0">Invoice</h2><p>No. <strong>{{ inv.number or 'Draft' }}</strong><br>Date: {{ (inv.issued_on or inv.created_at)|date }}{% if inv.due_on %}<br>Payment due: <strong>{{ inv.due_on|date }}</strong>{% endif %}</p></div></div>
+<p><strong>Bill to:</strong> {{ inv.clinic_name }}{% if inv.doctor %}<br><strong>Doctor:</strong> {{ inv.doctor }}{% endif %}{% if inv.contact_number %}<br><strong>Contact:</strong> {{ inv.contact_number }}{% endif %}</p>
+<table><thead><tr><th>Description</th><th class="num">Qty</th><th class="num">Unit price</th><th class="num">Discount</th><th class="num">Amount</th></tr></thead><tbody>
+{% for it in items %}<tr><td>{{ it.description }}</td><td class="num">{{ it.qty }}</td><td class="num">{{ it.unit_price_cents|peso }}</td><td class="num">{{ it.discount_cents|peso if it.discount_cents else '' }}</td><td class="num">{{ it.amount_cents|peso }}</td></tr>{% endfor %}</tbody>
+<tfoot><tr><td colspan="4">Subtotal</td><td class="num">{{ inv.subtotal_cents|peso }}</td></tr>
+{% if inv.discount_cents %}<tr><td colspan="4">Discount{% if inv.discount_note %} ({{ inv.discount_note }}){% endif %}</td><td class="num">-{{ inv.discount_cents|peso }}</td></tr>{% endif %}
+<tr><td colspan="4"><strong>Total</strong></td><td class="num"><strong>{{ inv.total_cents|peso }}</strong></td></tr>
+{% if inv.paid_cents %}<tr><td colspan="4">Paid</td><td class="num">{{ inv.paid_cents|peso }}</td></tr><tr><td colspan="4"><strong>Balance</strong></td><td class="num"><strong>{{ (inv.total_cents - inv.paid_cents)|peso }}</strong></td></tr>{% endif %}</tfoot></table>
+{% if inv.notes %}<p class="pre mt-1"><strong>Notes:</strong> {{ inv.notes }}</p>{% endif %}
+<p class="mt-1" style="font-size:.85rem">This invoice is a statement of charges for laboratory work. It is not a BIR official receipt.</p>
+<div class="row between" style="margin-top:3rem"><div style="border-top:1px solid #999;padding-top:.3rem;min-width:220px">Prepared by</div><div style="border-top:1px solid #999;padding-top:.3rem;min-width:220px">Received by (clinic)</div></div>
+</main>
+{% endblock %}

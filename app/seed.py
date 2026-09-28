@@ -377,7 +377,7 @@ def seed_base(conn):
         # afterwards the super admin's choices in Role access are kept.
         from . import settings as _settings2
         granted = set(_settings2.get("seed.perms_granted", conn) or [])
-        new_perms = {"quotes.view", "quotes.manage", "inventory.view", "inventory.manage"} - granted
+        new_perms = {"quotes.view", "quotes.manage", "inventory.view", "inventory.manage", "lab.works", "lab.billing", "attendance.clock"} - granted
         if new_perms and conn.scalar("SELECT COUNT(*) FROM role_permissions"):
             for role, perms in ROLE_DEFAULTS.items():
                 for perm in new_perms & set(perms):
@@ -694,4 +694,8 @@ def seed_demo(conn, password: str | None = None) -> str:
         for aid, status, *_ in appt_ids:
             if status == "confirmed":
                 schedule_appointment_reminders(conn, aid)
+    # Demo invoice lines: the appointment's dentist did the procedure on the appointment date (for dentist commission).
+    conn.execute("UPDATE invoice_items SET dentist_id = (SELECT a.dentist_id FROM invoices i JOIN appointments a ON a.id = i.appointment_id "
+                 "WHERE i.id = invoice_items.invoice_id), done_on = (SELECT COALESCE(substr(a.start_at, 1, 10), i.issued_at) FROM invoices i "
+                 "LEFT JOIN appointments a ON a.id = i.appointment_id WHERE i.id = invoice_items.invoice_id) WHERE dentist_id IS NULL")
     return password

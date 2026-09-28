@@ -12,6 +12,7 @@ from flask import Blueprint, abort, flash, g, redirect, render_template, request
 from .. import audit
 from ..auth import login_required, require
 from ..db import get_db
+from ..notices import lab_staff, notify
 from ..permissions import can_see_patient, patient_scope
 from ..util import clean, now_str, parse_date, parse_money, to_int, today
 from .common import branches_for_user, dentists
@@ -135,6 +136,10 @@ def new():
                                                 "created_by": g.user.id, "created_at": now_str(), "updated_at": now_str()})
                 conn.insert("lab_case_events", {"case_id": cid, "user_id": g.user.id, "status": "sent", "note": "Case created", "created_at": now_str()})
                 audit.record("lab_case_created", "patient", patient["id"], f"Lab case #{cid}: {v['case_type']}", {"lab_case_id": cid}, branch_id)
+                branch = conn.one("SELECT name FROM branches WHERE id = ?", (branch_id,))
+                notify(conn, lab_staff(conn, lab_id), "lab_case_new", f"New lab case #{cid}: {v['case_type']}",
+                       f"From {branch['name'] if branch else 'a branch'}" + (f", due {due.isoformat()}" if due else ""), f"/staff/lab/{cid}",
+                       exclude=g.user.id)
             flash("Lab case created.", "success")
             return redirect(url_for("labs.case", case_id=cid))
     return render_template("staff/labs/new.html", labs=labs, patient=patient, results=results, v=v, errors=errors, case_types=CASE_TYPES,
@@ -168,6 +173,10 @@ def case(case_id):
             upd["lab_fee_cents"] = fee
         conn.update("lab_cases", case_id, upd)
         conn.insert("lab_case_events", {"case_id": case_id, "user_id": g.user.id, "status": st, "note": note, "created_at": now_str()})
+        if st != c["status"]:
+            watchers = set(lab_staff(conn, c["lab_id"])) | {c["created_by"], c["dentist_id"]}
+            notify(conn, watchers, "lab_case_status", f"Lab case #{case_id} is now {STATUSES[st]}", f"{c['case_type']} · {c['branch']}",
+                   f"/staff/lab/{case_id}", exclude=g.user.id)
         audit.record("lab_case_updated", "patient", c["patient_id"], f"Lab case #{case_id} → {STATUSES[st]}", {"note": note}, c["branch_id"])
         flash("Lab case updated.", "success")
         return redirect(url_for("labs.case", case_id=case_id))
