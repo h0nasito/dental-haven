@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from . import settings
-from .util import hm_to_min, parse_date
+from .util import hm_to_min, now_str, parse_date
 
 BASIS_LABELS = {"monthly": "Monthly salary", "daily": "Daily rate", "hourly": "Hourly rate",
                 "percentage": "Percentage of production", "per_case": "Per case / procedure", "unset": "Not set",
@@ -83,10 +83,26 @@ def commission_items(conn, user_id: int, start: str, end: str, branch_id=None, d
         share = round(r["inv_discount"] * r["amount_cents"] / r["inv_subtotal"]) if r["inv_discount"] and r["inv_subtotal"] else 0
         r["discount_share_cents"] = share
         r["base_cents"] = max(0, r["amount_cents"] - share - (r["lab_fee_cents"] or 0))
-        r["rate_bp"] = service_bp.get(r["service_id"], default_bp)
-        r["commission_cents"] = round(r["base_cents"] * r["rate_bp"] / 10000)
+        mode = r.get("commission_mode") or "auto"
+        if mode == "amount" and r.get("commission_cents") is not None:
+            r["rate_bp"] = None                      # fixed amount typed on the bill line
+        else:
+            r["rate_bp"] = r["commission_bp"] if mode == "percent" and r.get("commission_bp") is not None \
+                else service_bp.get(r["service_id"], default_bp)
+            r["commission_cents"] = round(r["base_cents"] * r["rate_bp"] / 10000)
+            if mode != "percent":
+                mode = "auto"
+        r["commission_mode"] = mode
         out.append(r)
     return out
+
+
+def manual_commissions(conn, employee_id: int, start: str, end: str):
+    """Manual dentist commission entries dated inside the period (e.g. per ortho adjustment payment)."""
+    return conn.all("SELECT c.*, i.number AS invoice_number, p.chart_no, u.name AS by_name FROM dentist_commissions c "
+                    "LEFT JOIN invoices i ON i.id = c.invoice_id LEFT JOIN patients p ON p.id = i.patient_id "
+                    "LEFT JOIN users u ON u.id = c.created_by WHERE c.employee_id = ? AND c.status = 'valid' "
+                    "AND c.earned_on BETWEEN ? AND ? ORDER BY c.earned_on, c.id", (employee_id, start, end))
 
 
 OT_MULTIPLIER = 1.25          # clinic rule: hourly OT rate = daily rate / 8 x 1.25
@@ -142,8 +158,9 @@ def build_lines(conn, period) -> list[dict]:
             svc = {r["service_id"]: r["commission_bp"] for r in conn.all("SELECT * FROM dentist_service_rates WHERE employee_id = ?", (e["id"],))}
             items = commission_items(conn, user["id"], period["start_date"], period["end_date"], period["branch_id"],
                                      rates["commission_bp"] if rates else 0, svc)
+            manual = manual_commissions(conn, e["id"], period["start_date"], period["end_date"])
             daily_pay = days * rates["daily_rate_cents"] if rates else None
-            commission = sum(i["commission_cents"] for i in items) if rates else None
+            commission = (sum(i["commission_cents"] for i in items) + sum(m["amount_cents"] for m in manual)) if rates else None
             late_min = sum(r["late_minutes"] or 0 for r in recs if r["status"] != "excused")
             late_ded = late_min * int(settings.get("payroll.late_peso_per_minute", conn) or 0) * 100 \
                 if settings.get("payroll.late_applies_dentists", conn) else 0
@@ -152,7 +169,7 @@ def build_lines(conn, period) -> list[dict]:
                           "basis": "daily_commission" if rates else "unset", "rate_cents": rates["daily_rate_cents"] if rates else None,
                           "percentage_bp": rates["commission_bp"] if rates else None, "daily_pay_cents": daily_pay,
                           "commission_cents": commission, "commission_base_cents": sum(i["base_cents"] for i in items),
-                          "commission_items": len(items), "late_deduction_cents": late_ded if rates else None,
+                          "commission_items": len(items) + len(manual), "late_deduction_cents": late_ded if rates else None,
                           "estimate_cents": (daily_pay + commission - late_ded) if rates else None})
             continue
         is_tech = e["position"] == "Technician" or bool(user and conn.one("SELECT 1 AS x FROM users WHERE id = ? AND access_role = 'technician'", (user["id"],)))
@@ -190,3 +207,27 @@ def parse_time(value: str | None) -> str | None:
         except ValueError:
             continue
     return None
+
+
+def add_manual_commission(conn, dentist_user_id: int | None, employee_id: int | None, earned_on, base_cents, rate_bp, amount_cents,
+                          by_user_id: int, invoice_id=None, payment_id=None, description: str = ""):
+    """Record a manual dentist commission. Give either amount_cents, or base_cents + rate_bp (amount = base x rate).
+    Returns (id, error)."""
+    if not employee_id and dentist_user_id:
+        emp = conn.one("SELECT e.id FROM employees e JOIN users u ON u.id = e.user_id WHERE u.id = ? AND u.role = 'dentist'", (dentist_user_id,))
+        if not emp:
+            return None, "This dentist has no employee record yet (Staff & payroll → Employees), so commission can't be recorded."
+        employee_id = emp["id"]
+    if not employee_id:
+        return None, "Choose the dentist."
+    if amount_cents is None:
+        if base_cents is None or rate_bp is None:
+            return None, "Enter the commission amount, or the amount paid and the commission %."
+        amount_cents = round(base_cents * rate_bp / 10000)
+    if amount_cents < 0:
+        return None, "The commission can't be negative."
+    cid = conn.insert("dentist_commissions", {"employee_id": employee_id, "earned_on": earned_on.isoformat(), "invoice_id": invoice_id,
+                                              "payment_id": payment_id, "description": description[:200], "base_cents": base_cents,
+                                              "rate_bp": rate_bp, "amount_cents": amount_cents, "created_by": by_user_id,
+                                              "created_at": now_str()})
+    return cid, None

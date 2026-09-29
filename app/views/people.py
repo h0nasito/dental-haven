@@ -537,7 +537,7 @@ def payroll_period(period_id):
 @require("payroll.prepare", "payroll.approve", any_of=True)
 def payroll_commission(period_id, emp_id):
     """The procedures behind a dentist's commission for the period."""
-    from ..payroll import commission_items, dentist_rates
+    from ..payroll import commission_items, dentist_rates, manual_commissions
     conn = get_db()
     p = _load_period(period_id)
     e = conn.one("SELECT e.*, u.name AS user_name FROM employees e JOIN users u ON u.id = e.user_id WHERE e.id = ? AND u.role = 'dentist'", (emp_id,))
@@ -546,9 +546,56 @@ def payroll_commission(period_id, emp_id):
     rates = dentist_rates(conn, e["id"], p["end_date"])
     svc = {r["service_id"]: r["commission_bp"] for r in conn.all("SELECT * FROM dentist_service_rates WHERE employee_id = ?", (e["id"],))}
     items = commission_items(conn, e["user_id"], p["start_date"], p["end_date"], p["branch_id"], rates["commission_bp"] if rates else 0, svc)
+    manual = manual_commissions(conn, e["id"], p["start_date"], p["end_date"])
     line = conn.one("SELECT * FROM payroll_lines WHERE period_id = ? AND employee_id = ?", (period_id, emp_id))
-    return render_template("staff/people/payroll_commission.html", p=p, e=e, items=items, rates=rates, line=line,
-                           show_money=g.user.can("compensation.manage"))
+    return render_template("staff/people/payroll_commission.html", p=p, e=e, items=items, manual=manual, rates=rates, line=line,
+                           total=sum(i["commission_cents"] for i in items) + sum(m["amount_cents"] for m in manual),
+                           show_money=g.user.can("compensation.manage"), today=today().isoformat())
+
+
+@bp.route("/payroll/<int:period_id>/dentist/<int:emp_id>/manual", methods=["POST"])
+@require("payroll.prepare")
+def payroll_commission_manual(period_id, emp_id):
+    """Manual commission not tied to a bill line (e.g. an agreed amount), or remove one."""
+    from ..payroll import add_manual_commission
+    from .billing import pct_to_bp
+    conn = get_db()
+    p = _load_period(period_id)
+    if p["status"] != "draft":
+        flash("This payroll period is no longer a draft.", "error")
+        return redirect(url_for("people.payroll_commission", period_id=period_id, emp_id=emp_id))
+    e = conn.one("SELECT e.* FROM employees e JOIN users u ON u.id = e.user_id WHERE e.id = ? AND u.role = 'dentist'", (emp_id,))
+    if not e:
+        abort(404)
+    back = redirect(url_for("people.payroll_commission", period_id=period_id, emp_id=emp_id))
+    if request.form.get("action") == "void":
+        c = conn.one("SELECT * FROM dentist_commissions WHERE id = ? AND employee_id = ? AND status = 'valid'",
+                     (to_int(request.form.get("commission_id")), emp_id))
+        if not c:
+            abort(404)
+        conn.execute("UPDATE dentist_commissions SET status = 'void', voided_by = ?, voided_at = ? WHERE id = ?", (g.user.id, now_str(), c["id"]))
+        audit.record("dentist_commission_voided", "employee", emp_id, f"Removed manual commission {peso(c['amount_cents'])}", {"commission_id": c["id"]})
+        flash("Commission removed. Use Recalculate from DTR on the period page to update the totals.", "success")
+        return back
+    earned = parse_date(request.form.get("earned_on"))
+    amt_txt, base_txt, pct_txt = ((request.form.get(k) or "").strip() for k in ("amount", "base", "pct"))
+    amount = parse_money(amt_txt) if amt_txt else None
+    base = parse_money(base_txt) if base_txt else None
+    bp = pct_to_bp(pct_txt) if pct_txt else None
+    desc = clean(request.form.get("description"), 200)
+    if not earned or not (p["start_date"] <= earned.isoformat() <= p["end_date"]):
+        flash("The date must be inside this payroll period.", "error")
+        return back
+    if (amt_txt and amount is None) or (base_txt and base is None) or (pct_txt and bp is None) or not desc:
+        flash("Enter what it's for, and the amount (or the base and %).", "error")
+        return back
+    cid, err = add_manual_commission(conn, None, emp_id, earned, base, bp, amount, g.user.id, description=desc)
+    if err:
+        flash(err, "error")
+        return back
+    audit.record("dentist_commission_added", "employee", emp_id, f"Manual commission for {earned.isoformat()}: {desc}", {"commission_id": cid})
+    flash("Commission added. Use Recalculate from DTR on the period page to update the totals.", "success")
+    return back
 
 
 @bp.route("/payroll/<int:period_id>/technician/<int:emp_id>")

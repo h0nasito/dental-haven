@@ -1,5 +1,5 @@
 {% from "macros.html" import csrf %}
-{% macro pay_form(inv, balance, paid, today, patient_name, return_to='') %}
+{% macro pay_form(inv, balance, paid, today, patient_name, return_to='', comm_dentists=[]) %}
 <form method="post" action="{{ url_for('billing.payment', invoice_id=inv.id) }}" class="payform" data-payform data-total="{{ inv.total_cents }}" data-paid="{{ paid }}">
 {{ csrf() }}<input type="hidden" name="action" value="multi">{% if return_to %}<input type="hidden" name="return_to" value="{{ return_to }}">{% endif %}
 <div class="pay-top"><div><span class="pay-lbl">Patient</span><div>{{ patient_name }}</div></div><div><span class="pay-lbl">Bill date</span><div>{{ (inv.issued_at or inv.created_at)|date }} · {{ inv.number or 'Draft' }}</div></div></div>
@@ -23,6 +23,15 @@
 <div class="row between"><small class="muted">Patient signs above to acknowledge the payment.</small><button type="button" class="btn btn-ghost btn-sm" data-sig-clear>Clear</button></div>
 <details class="mt-1"><summary><small>Patient can't sign</small></summary><div class="field mt-1"><label>Reason</label><input name="not_signed_reason" aria-label="Reason the patient can't sign" maxlength="200" placeholder="e.g. Paid by parent via GCash, not in clinic"></div></details>
 </fieldset>
+{% if current_user.can('bills.edit') and comm_dentists %}
+<details class="pay-box"><summary><strong>Dentist commission from this payment</strong> <small class="muted">(optional, e.g. ortho adjustment)</small></summary>
+<div class="form-grid mt-1">
+<div class="field"><label>Dentist</label><select name="comm_dentist_id" aria-label="Dentist for commission"><option value="">— No commission now —</option>{% for d in comm_dentists %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}</select></div>
+<div class="field"><label>% of this payment</label><input name="comm_pct" inputmode="decimal" placeholder="e.g. 40" aria-label="Commission percent of this payment"></div>
+<div class="field"><label>Or amount (₱)</label><input name="comm_amount" inputmode="decimal" placeholder="e.g. 600" aria-label="Commission amount"></div>
+<div class="field"><label>For</label><input name="comm_desc" maxlength="200" placeholder="e.g. Braces adjustment" aria-label="What the commission is for"></div></div>
+<p class="hint">Counted in the payroll cutoff that includes the payment date. Leave the dentist blank if commission isn't earned on this payment.</p></details>
+{% endif %}
 </div>
 <div class="pay-summary"><h3>Payment summary</h3>
 <dl><dt>Total bill</dt><dd>{{ inv.total_cents|peso }}</dd><dt>Total paid</dt><dd class="c-green">{{ paid|peso }}</dd>

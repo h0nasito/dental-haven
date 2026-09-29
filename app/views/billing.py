@@ -124,7 +124,11 @@ def invoice(invoice_id):
     lab_cases = conn.all("SELECT id, case_type, teeth, lab_fee_cents, sent_on FROM lab_cases WHERE patient_id = ? AND status != 'cancelled' "
                          "ORDER BY id DESC LIMIT 20", (inv["patient_id"],))
     dentist_names = {d["id"]: d["name"] for d in conn.all("SELECT id, name FROM users WHERE role = 'dentist'")}
+    manual_comm = conn.all("SELECT c.*, e.full_name AS dentist, u.name AS by_name FROM dentist_commissions c JOIN employees e ON e.id = c.employee_id "
+                           "LEFT JOIN users u ON u.id = c.created_by WHERE c.invoice_id = ? AND c.status = 'valid' ORDER BY c.earned_on, c.id",
+                           (invoice_id,))
     return render_template("staff/billing/invoice.html", inv=inv, items=items, payments=payments, paid=paid, inv_dentists=inv_dentists,
+                           manual_comm=manual_comm,
                            lab_cases=lab_cases, dentist_names=dentist_names, default_dentist=appt["dentist_id"] if appt else None,
                            default_done=(appt["start_at"][:10] if appt else today().isoformat()),
                            credit=credit_balance(conn, inv["patient_id"]),
@@ -161,8 +165,29 @@ def _commission_fields(conn, inv, form):
     fee = parse_money(form.get("lab_fee")) if form.get("lab_fee") else None
     if fee is None and lab_case and lab_case["lab_fee_cents"]:
         fee = lab_case["lab_fee_cents"]
-    return {"dentist_id": dentist_id, "done_on": (done or today()).isoformat() if dentist_id else (done.isoformat() if done else None),
-            "lab_fee_cents": max(0, fee or 0), "lab_case_id": lab_case["id"] if lab_case else None}
+    out = {"dentist_id": dentist_id, "done_on": (done or today()).isoformat() if dentist_id else (done.isoformat() if done else None),
+           "lab_fee_cents": max(0, fee or 0), "lab_case_id": lab_case["id"] if lab_case else None}
+    mode = form.get("commission_mode")
+    if mode in ("auto", "percent", "amount"):
+        out.update(commission_mode="auto", commission_bp=None, commission_cents=None)
+        if mode == "percent":
+            bp = pct_to_bp(form.get("commission_pct"))
+            if bp is not None:
+                out.update(commission_mode="percent", commission_bp=bp)
+        elif mode == "amount":
+            amt = parse_money(form.get("commission_amount")) if (form.get("commission_amount") or "").strip() else None
+            if amt is not None and amt >= 0:
+                out.update(commission_mode="amount", commission_cents=amt)
+    return out
+
+
+def pct_to_bp(text):
+    t = (text or "").strip().rstrip("%")
+    try:
+        v = round(float(t) * 100)
+    except ValueError:
+        return None
+    return v if 0 <= v <= 10000 else None
 
 
 EDIT_ACTION_PERMS = {"add_item": "billing.manage", "issue": "billing.manage", "delete": "billing.manage",
@@ -208,10 +233,17 @@ def invoice_edit(invoice_id):
             item = conn.one("SELECT * FROM invoice_items WHERE id = ? AND invoice_id = ?", (to_int(request.form.get("item_id")), invoice_id))
             if item:
                 extra = _commission_fields(conn, inv, request.form)
-                conn.execute("UPDATE invoice_items SET dentist_id = ?, done_on = ?, lab_fee_cents = ?, lab_case_id = ? WHERE id = ?",
-                             (extra["dentist_id"], extra["done_on"], extra["lab_fee_cents"], extra["lab_case_id"], item["id"]))
-                audit.record("invoice_item_commission", "invoice", invoice_id, f"Dentist / date done / lab fee set on '{item['description']}'",
-                             {"before": {k: item[k] for k in ("dentist_id", "done_on", "lab_fee_cents")}, "after": extra}, inv["branch_id"])
+                if request.form.get("commission_mode") in ("percent", "amount") and extra.get("commission_mode") != request.form.get("commission_mode"):
+                    flash("Enter the commission % (0–100) or the commission amount, e.g. 500 or 500.00.", "error")
+                    return redirect(url_for("billing.invoice", invoice_id=invoice_id))
+                conn.execute("UPDATE invoice_items SET dentist_id = ?, done_on = ?, lab_fee_cents = ?, lab_case_id = ?, "
+                             "commission_mode = ?, commission_bp = ?, commission_cents = ? WHERE id = ?",
+                             (extra["dentist_id"], extra["done_on"], extra["lab_fee_cents"], extra["lab_case_id"],
+                              extra.get("commission_mode", item["commission_mode"]), extra.get("commission_bp", item["commission_bp"]),
+                              extra.get("commission_cents", item["commission_cents"]), item["id"]))
+                keys = ("dentist_id", "done_on", "lab_fee_cents", "commission_mode", "commission_bp", "commission_cents")
+                audit.record("invoice_item_commission", "invoice", invoice_id, f"Dentist / date done / lab fee / commission set on '{item['description']}'",
+                             {"before": {k: item[k] for k in keys}, "after": extra}, inv["branch_id"])
                 flash("Saved. Dentist payroll uses this line from the date done.", "success")
         elif action == "remove_item":
             item_id = to_int(request.form.get("item_id"))
@@ -320,6 +352,9 @@ def payment(invoice_id):
                              (reason, g.user.id, now_str(), pay_id))
                 # voiding a credit application gives the credit back to the patient
                 conn.execute("UPDATE patient_credits SET status = 'void' WHERE payment_id = ? AND kind = 'applied'", (pay_id,))
+                # a voided payment earns no commission
+                conn.execute("UPDATE dentist_commissions SET status = 'void', voided_by = ?, voided_at = ? WHERE payment_id = ? AND status = 'valid'",
+                             (g.user.id, now_str(), pay_id))
                 audit.record("payment_voided", "invoice", invoice_id, f"Voided {p['kind']} {peso(p['amount_cents'])}",
                              {"payment_id": pay_id, "reason": reason}, inv["branch_id"])
                 flash("Payment voided.", "success")
@@ -357,6 +392,20 @@ def _multi_payment(conn, inv, paid):
             return err
     elif not reason:
         return "Ask the patient to sign, or tick 'Patient can't sign' and give the reason."
+    comm = None
+    comm_dentist = to_int(request.form.get("comm_dentist_id"))
+    if comm_dentist:
+        if not g.user.can("bills.edit"):
+            abort(403)
+        emp = conn.one("SELECT e.id FROM employees e JOIN users u ON u.id = e.user_id WHERE u.id = ? AND u.role = 'dentist'", (comm_dentist,))
+        if not emp:
+            return "That dentist has no employee record yet (Staff & payroll → Employees), so commission can't be recorded."
+        amt_txt, pct_txt = (request.form.get("comm_amount") or "").strip(), (request.form.get("comm_pct") or "").strip()
+        amt = parse_money(amt_txt) if amt_txt else None
+        bp = pct_to_bp(pct_txt) if pct_txt else None
+        if (amt_txt and (amt is None or amt < 0)) or (pct_txt and bp is None) or (not amt_txt and not pct_txt):
+            return "For the dentist's commission, enter a % of this payment (e.g. 40) or an amount."
+        comm = {"employee_id": emp["id"], "amount": amt, "bp": None if amt is not None else bp}
     sig_id = conn.insert("payment_signatures", {"invoice_id": inv["id"], "patient_id": inv["patient_id"], "stored_name": stored,
                                                 "not_signed_reason": "" if stored else reason, "captured_by": g.user.id,
                                                 "created_at": now_str()})
@@ -367,8 +416,71 @@ def _multi_payment(conn, inv, paid):
                                        "status": "valid", "notes": note, "signature_id": sig_id, "created_at": now_str()})
         audit.record("payment_recorded", "invoice", inv["id"], f"Payment {peso(amt)} via {PAYMENT_METHODS[m]}",
                      {"payment_id": pid, "signed": bool(stored)}, inv["branch_id"])
-    flash(f"Payment of {peso(total)} recorded" + (" with the patient's signature." if stored else "."), "success")
+    comm_note = ""
+    if comm:
+        from ..payroll import add_manual_commission
+        _cid, err = add_manual_commission(conn, None, comm["employee_id"], received, total, comm["bp"], comm["amount"], g.user.id,
+                                          invoice_id=inv["id"], payment_id=pid,
+                                          description=clean(request.form.get("comm_desc"), 200) or f"Payment on {inv['number']}")
+        comm_note = " Dentist commission recorded." if not err else f" Commission not recorded: {err}"
+    flash(f"Payment of {peso(total)} recorded" + (" with the patient's signature." if stored else ".") + comm_note, "success")
     return None
+
+
+@bp.route("/invoices/<int:invoice_id>/dentist-commission", methods=["POST"])
+@require("bills.edit")
+def dentist_commission(invoice_id):
+    """Manual dentist commission linked to this bill, e.g. for each ortho adjustment the patient pays for."""
+    from ..payroll import add_manual_commission
+    conn = get_db()
+    inv = _load_invoice(invoice_id)
+    if request.form.get("action") == "void":
+        c = conn.one("SELECT * FROM dentist_commissions WHERE id = ? AND invoice_id = ? AND status = 'valid'",
+                     (to_int(request.form.get("commission_id")), invoice_id))
+        if not c:
+            abort(404)
+        conn.execute("UPDATE dentist_commissions SET status = 'void', voided_by = ?, voided_at = ? WHERE id = ?", (g.user.id, now_str(), c["id"]))
+        audit.record("dentist_commission_voided", "invoice", invoice_id, f"Removed manual dentist commission {peso(c['amount_cents'])}",
+                     {"commission_id": c["id"]}, inv["branch_id"])
+        flash("Commission removed.", "success")
+        return redirect(url_for("billing.invoice", invoice_id=invoice_id) + "#dentist-commission")
+    if inv["status"] != "issued":
+        flash("Add manual commission on an issued bill.", "error")
+        return redirect(url_for("billing.invoice", invoice_id=invoice_id))
+    earned = parse_date(request.form.get("earned_on")) or today()
+    amt_txt, base_txt, pct_txt = ((request.form.get(k) or "").strip() for k in ("amount", "base", "pct"))
+    pay = None
+    if request.form.get("payment_id"):
+        # commission on one payment row: base = that payment, dated on the payment date
+        pay = conn.one("SELECT * FROM payments WHERE id = ? AND invoice_id = ? AND status = 'valid' AND kind = 'payment'",
+                       (to_int(request.form.get("payment_id")), invoice_id))
+        if not pay:
+            abort(404)
+        if conn.one("SELECT id FROM dentist_commissions WHERE payment_id = ? AND status = 'valid'", (pay["id"],)):
+            flash("This payment already has a dentist commission. Remove it first to change it.", "error")
+            return redirect(url_for("billing.invoice", invoice_id=invoice_id))
+        earned = parse_date(pay["received_at"])
+        base_txt = "%.2f" % (pay["amount_cents"] / 100)
+        if not amt_txt and not pct_txt:
+            flash("Enter a % of the payment or an amount.", "error")
+            return redirect(url_for("billing.invoice", invoice_id=invoice_id))
+    amount = parse_money(amt_txt) if amt_txt else None
+    base = parse_money(base_txt) if base_txt else None
+    bp = pct_to_bp(pct_txt) if pct_txt else None
+    if earned > today() or (amt_txt and amount is None) or (base_txt and base is None) or (pct_txt and bp is None):
+        flash("Check the date (not in the future), amounts (e.g. 1500 or 1500.00) and % (0–100).", "error")
+        return redirect(url_for("billing.invoice", invoice_id=invoice_id) + "#dentist-commission")
+    desc = clean(request.form.get("description"), 200) or ((pay["notes"] or f"Payment {PAYMENT_METHODS.get(pay['method'], pay['method'])}") if pay else "")
+    cid, err = add_manual_commission(conn, to_int(request.form.get("dentist_id")), None, earned, base, bp, amount, g.user.id,
+                                     invoice_id=invoice_id, payment_id=pay["id"] if pay else None, description=desc)
+    if err:
+        flash(err, "error")
+    else:
+        c = conn.one("SELECT amount_cents FROM dentist_commissions WHERE id = ?", (cid,))
+        audit.record("dentist_commission_added", "invoice", invoice_id, f"Manual dentist commission {peso(c['amount_cents'])} for {earned.isoformat()}",
+                     {"commission_id": cid}, inv["branch_id"])
+        flash(f"Commission of {peso(c['amount_cents'])} recorded. It counts in the payroll cutoff that includes {earned.isoformat()}.", "success")
+    return redirect(url_for("billing.invoice", invoice_id=invoice_id) + "#dentist-commission")
 
 
 @bp.route("/invoices/<int:invoice_id>/signatures/<int:sig_id>")
