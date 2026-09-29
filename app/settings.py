@@ -29,6 +29,9 @@ DEFAULTS: dict[str, object] = {
     "payroll.late_peso_per_minute": 1,        # ₱ deducted per late minute (clinic rule: 1 minute = ₱1)
     "payroll.late_applies_dentists": False,
     "payroll.pay_unworked_regular_holiday": True,
+    # 'payment': the cashier records the dentist's commission on each payment (counted on the payment date);
+    # 'procedure': commission is counted from bill lines on the date the procedure was done.
+    "payroll.dentist_commission_basis": "payment",
     # Privacy
     "privacy.retention_note": "Retention period to be confirmed by the clinic (see docs/PRIVACY_CHECKLIST.md).",
 }
@@ -52,6 +55,7 @@ LABELS = {
     "payroll.late_peso_per_minute": "Late deduction per minute (₱)",
     "payroll.late_applies_dentists": "Also deduct lates from dentists",
     "payroll.pay_unworked_regular_holiday": "Pay 1 day for a regular holiday not worked (staff on daily rate)",
+    "payroll.dentist_commission_basis": "Dentist commission is counted",
     "privacy.retention_note": "Record retention note",
 }
 

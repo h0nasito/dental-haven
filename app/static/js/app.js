@@ -203,8 +203,34 @@ document.addEventListener('DOMContentLoaded', function () {
       form.querySelectorAll('[data-pay-amt]').forEach(function (i) { now += cents(i.value); });
       form.querySelector('[data-pay-now]').textContent = peso(now);
       form.querySelector('[data-pay-left]').textContent = peso(Math.max(0, total - paid - now));
+      comm(now);
+    }
+    // Dentist commission on this payment: pre-filled with the dentist's usual %, after the bill's lab fee share.
+    var box = form.querySelector('[data-comm]');
+    function comm(now) {
+      if (!box) return;
+      var sel = box.querySelector('[data-comm-dentist]'), mode = box.querySelector('[data-comm-mode]').value;
+      var out = box.querySelector('[data-comm-calc]');
+      box.querySelector('[data-comm-pctbox]').hidden = mode !== 'percent';
+      box.querySelector('[data-comm-amtbox]').hidden = mode !== 'amount';
+      if (!sel.value) { out.textContent = 'No commission on this payment.'; return; }
+      var lab = parseInt(box.dataset.lab, 10) || 0;
+      var share = (lab && total) ? Math.min(now, Math.round(now * lab / total)) : 0;
+      var base = now - share;
+      if (mode === 'amount') { out.textContent = 'Commission: ' + peso(cents(box.querySelector('[data-comm-amt]').value)); return; }
+      var pct = parseFloat(box.querySelector('[data-comm-pct]').value);
+      if (isNaN(pct)) { out.textContent = 'Enter the commission %.'; return; }
+      out.textContent = 'Commission: ' + peso(Math.round(base * pct / 100)) + '  (' + pct + '% of ' + peso(base) +
+        (share ? ', after lab fee share ' + peso(share) : '') + ')';
+    }
+    if (box) {
+      var dsel = box.querySelector('[data-comm-dentist]'), pctIn = box.querySelector('[data-comm-pct]');
+      function fillRate() { var o = dsel.options[dsel.selectedIndex]; if (o && o.dataset.rate) pctIn.value = o.dataset.rate; }
+      dsel.addEventListener('change', fillRate);
+      if (!pctIn.value) fillRate();
     }
     form.addEventListener('input', update);
+    form.addEventListener('change', update);
     form.querySelector('[data-pay-add]').addEventListener('click', function () {
       var first = list.querySelector('[data-pay-line]');
       var line = first.cloneNode(true);

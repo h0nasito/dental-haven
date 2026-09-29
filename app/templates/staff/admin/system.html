@@ -23,6 +23,11 @@
 {% for key, label in labels.items() if key.startswith(prefix) %}
   {% if key in bool_keys %}
     <label class="check"><input type="checkbox" name="{{ key }}" value="1" {% if s[key] %}checked{% endif %}> {{ label }}</label>
+  {% elif key == 'payroll.dentist_commission_basis' %}
+    <div class="field"><label for="{{ key }}">{{ label }}</label><select id="{{ key }}" name="{{ key }}">
+    <option value="payment" {% if s[key] == 'payment' %}selected{% endif %}>Per payment: the cashier records it on each payment</option>
+    <option value="procedure" {% if s[key] == 'procedure' %}selected{% endif %}>Per procedure: from bill lines on the date done</option></select>
+    <span class="hint">Only one is counted, so the dentist is never paid twice. Manual entries always count.</span></div>
   {% elif key == 'messaging.provider' %}
     <div class="field"><label for="{{ key }}">{{ label }}</label><select id="{{ key }}" name="{{ key }}"><option value="manual" selected>Manual (preview and copy; staff send from the clinic phone)</option></select>
     <span class="hint">No SMS, email or Messenger provider is set up. See docs/INTEGRATIONS.md.</span></div>

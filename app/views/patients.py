@@ -317,7 +317,10 @@ def detail(patient_id):
             "JOIN branches b ON b.id = i.branch_id LEFT JOIN users u ON u.id = i.created_by "
             "WHERE i.patient_id = ? ORDER BY COALESCE(i.issued_at, substr(i.created_at, 1, 10)) DESC, i.id DESC", (patient_id,))
         if tab == "billing":
+            from ..billing import commission_dentists, invoice_commission_info
+            ctx["comm_dentists"] = commission_dentists(conn)
             for inv in ctx["invoices"]:
+                inv["comm_info"] = invoice_commission_info(conn, inv)
                 inv["lines"] = ", ".join(it["description"] + (f"(#{it['tooth']})" if it["tooth"] else "")
                                          for it in conn.all("SELECT description, tooth FROM invoice_items WHERE invoice_id = ? ORDER BY id", (inv["id"],)))
         ctx["balance"] = sum((i["total_cents"] - i["paid"]) for i in ctx["invoices"] if i["status"] == "issued")

@@ -9,8 +9,8 @@ from flask import Blueprint, Response, abort, flash, g, redirect, render_templat
 
 from .. import audit, settings
 from ..auth import require
-from ..billing import (CREDIT_METHOD, PAYMENT_METHODS, collections, compute_totals, credit_balance, line_amount,
-                       next_invoice_number, paid_amount, payment_state)
+from ..billing import (CREDIT_METHOD, PAYMENT_METHODS, collections, commission_dentists, compute_totals, credit_balance,
+                       invoice_commission_info, lab_share, line_amount, next_invoice_number, paid_amount, payment_state)
 from ..db import get_db
 from ..permissions import branch_filter, can_see_patient
 from ..util import clean, now_str, parse_date, parse_money, peso, to_int, today
@@ -128,7 +128,7 @@ def invoice(invoice_id):
                            "LEFT JOIN users u ON u.id = c.created_by WHERE c.invoice_id = ? AND c.status = 'valid' ORDER BY c.earned_on, c.id",
                            (invoice_id,))
     return render_template("staff/billing/invoice.html", inv=inv, items=items, payments=payments, paid=paid, inv_dentists=inv_dentists,
-                           manual_comm=manual_comm,
+                           manual_comm=manual_comm, comm_dentists=commission_dentists(conn), comm_info=invoice_commission_info(conn, inv),
                            lab_cases=lab_cases, dentist_names=dentist_names, default_dentist=appt["dentist_id"] if appt else None,
                            default_done=(appt["start_at"][:10] if appt else today().isoformat()),
                            credit=credit_balance(conn, inv["patient_id"]),
@@ -395,17 +395,26 @@ def _multi_payment(conn, inv, paid):
     comm = None
     comm_dentist = to_int(request.form.get("comm_dentist_id"))
     if comm_dentist:
-        if not g.user.can("bills.edit"):
+        if not (g.user.can("commission.record") or g.user.can("bills.edit")):
             abort(403)
         emp = conn.one("SELECT e.id FROM employees e JOIN users u ON u.id = e.user_id WHERE u.id = ? AND u.role = 'dentist'", (comm_dentist,))
         if not emp:
             return "That dentist has no employee record yet (Staff & payroll → Employees), so commission can't be recorded."
-        amt_txt, pct_txt = (request.form.get("comm_amount") or "").strip(), (request.form.get("comm_pct") or "").strip()
-        amt = parse_money(amt_txt) if amt_txt else None
-        bp = pct_to_bp(pct_txt) if pct_txt else None
-        if (amt_txt and (amt is None or amt < 0)) or (pct_txt and bp is None) or (not amt_txt and not pct_txt):
-            return "For the dentist's commission, enter a % of this payment (e.g. 40) or an amount."
-        comm = {"employee_id": emp["id"], "amount": amt, "bp": None if amt is not None else bp}
+        mode = request.form.get("comm_mode") or ("amount" if (request.form.get("comm_amount") or "").strip() else "percent")
+        info = invoice_commission_info(conn, inv)
+        base = total - lab_share(total, info["lab_fee_cents"], inv["total_cents"])
+        if mode == "amount":
+            amt = parse_money(request.form.get("comm_amount")) if (request.form.get("comm_amount") or "").strip() else None
+            if amt is None or amt < 0:
+                return "Enter the dentist's commission amount, e.g. 600 or 600.00, or choose “No commission”."
+            if amt > total:
+                return "The commission can't be more than the payment."
+            comm = {"employee_id": emp["id"], "amount": amt, "bp": None, "base": base}
+        else:
+            bp = pct_to_bp(request.form.get("comm_pct"))
+            if bp is None:
+                return "Enter the dentist's commission % (0–100), or choose “No commission”."
+            comm = {"employee_id": emp["id"], "amount": None, "bp": bp, "base": base}
     sig_id = conn.insert("payment_signatures", {"invoice_id": inv["id"], "patient_id": inv["patient_id"], "stored_name": stored,
                                                 "not_signed_reason": "" if stored else reason, "captured_by": g.user.id,
                                                 "created_at": now_str()})
@@ -419,7 +428,7 @@ def _multi_payment(conn, inv, paid):
     comm_note = ""
     if comm:
         from ..payroll import add_manual_commission
-        _cid, err = add_manual_commission(conn, None, comm["employee_id"], received, total, comm["bp"], comm["amount"], g.user.id,
+        _cid, err = add_manual_commission(conn, None, comm["employee_id"], received, comm["base"], comm["bp"], comm["amount"], g.user.id,
                                           invoice_id=inv["id"], payment_id=pid,
                                           description=clean(request.form.get("comm_desc"), 200) or f"Payment on {inv['number']}")
         comm_note = " Dentist commission recorded." if not err else f" Commission not recorded: {err}"
@@ -428,7 +437,7 @@ def _multi_payment(conn, inv, paid):
 
 
 @bp.route("/invoices/<int:invoice_id>/dentist-commission", methods=["POST"])
-@require("bills.edit")
+@require("commission.record", "bills.edit", any_of=True)
 def dentist_commission(invoice_id):
     """Manual dentist commission linked to this bill, e.g. for each ortho adjustment the patient pays for."""
     from ..payroll import add_manual_commission
@@ -460,7 +469,8 @@ def dentist_commission(invoice_id):
             flash("This payment already has a dentist commission. Remove it first to change it.", "error")
             return redirect(url_for("billing.invoice", invoice_id=invoice_id))
         earned = parse_date(pay["received_at"])
-        base_txt = "%.2f" % (pay["amount_cents"] / 100)
+        info = invoice_commission_info(conn, inv)
+        base_txt = "%.2f" % ((pay["amount_cents"] - lab_share(pay["amount_cents"], info["lab_fee_cents"], inv["total_cents"])) / 100)
         if not amt_txt and not pct_txt:
             flash("Enter a % of the payment or an amount.", "error")
             return redirect(url_for("billing.invoice", invoice_id=invoice_id))

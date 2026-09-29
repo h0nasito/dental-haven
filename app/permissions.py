@@ -79,6 +79,7 @@ CATALOG: list[Perm] = [
     Perm("bills.edit", "Edit Patient bill", "Patient bills/payments"),
     Perm("payments.add", "Add Payment (and patient deposits)", "Patient bills/payments"),
     Perm("credit.apply", "Apply Account Credit", "Patient bills/payments"),
+    Perm("commission.record", "Record dentist commission on payments", "Patient bills/payments"),
     Perm("billing.void", "Delete patient bill (void) and refunds", "Patient bills/payments", True),
     # Quotations
     Perm("quotes.view", "View price quotations", "Price quotations"),
@@ -155,7 +156,7 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
         "calendar.events", "bookings.view", "appointments.manage", "appointments.complete", "bookings.manage",
         "patients.view", "patients.contact", "patients.manage", "documents.upload",
         "leads.view", "followups.view", "followups.manage", "reminders.view", "reminders.send",
-        "billing.view", "billing.manage", "bills.edit", "payments.add", "credit.apply",
+        "billing.view", "billing.manage", "bills.edit", "payments.add", "credit.apply", "commission.record",
         "expenses.view", "expenses.add", "lab.view", "reports.operations", "attendance.view",
         "quotes.view", "quotes.manage", "inventory.view", "attendance.clock",
     },
@@ -175,7 +176,7 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
     },
     "cashier": {
         "dashboard.view", "dashboard.balances", "appointments.view", "calendar.associates", "patients.view", "patients.contact",
-        "billing.view", "billing.manage", "bills.edit", "payments.add", "credit.apply", "quotes.view", "reports.sales",
+        "billing.view", "billing.manage", "bills.edit", "payments.add", "credit.apply", "commission.record", "quotes.view", "reports.sales",
         "expenses.view", "expenses.add", "attendance.clock",
     },
     "receptionist": {

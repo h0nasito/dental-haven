@@ -281,7 +281,7 @@
 {% else %}<tr><td colspan="7" class="empty">No bills yet.</td></tr>{% endfor %}</tbody></table></div>
 {% for i in invoices if i.status == 'issued' and i.total_cents - i.paid > 0 and current_user.can('payments.add') %}
 <dialog id="pay-{{ i.id }}" class="dlg dlg-wide" aria-labelledby="pay-{{ i.id }}-t"><div class="dlg-head"><h2 id="pay-{{ i.id }}-t">Add payment</h2><button type="button" class="btn btn-ghost" data-close aria-label="Close">✕</button></div>
-{{ pay_form(i, i.total_cents - i.paid, i.paid, today_iso, p.first_name ~ ' ' ~ p.last_name, 'patient', all_dentists) }}</dialog>
+{{ pay_form(i, i.total_cents - i.paid, i.paid, today_iso, p.first_name ~ ' ' ~ p.last_name, 'patient', comm_dentists, i.comm_info) }}</dialog>
 {% endfor %}
 <p>Outstanding balance: <strong>{{ balance|peso }}</strong> · Account credit: <strong>{{ credit|peso }}</strong></p>
 {% if current_user.can('payments.add') or (current_user.can('billing.void') and credit > 0) %}

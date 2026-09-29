@@ -12,6 +12,9 @@ class TestDentistPay(Base):
     def test_daily_rate_plus_commission(self):
         from app.util import now_str
         conn = self.conn
+        from app import settings
+        settings.put("payroll.dentist_commission_basis", "procedure", None, conn)
+        self.addCleanup(settings.put, "payroll.dentist_commission_basis", "payment", None, conn)
         doc = self.q("SELECT id FROM users WHERE email = 'dentist.sjdm@demo.dentalhaven.test'")["id"]
         emp = self.q("SELECT * FROM employees WHERE user_id = ?", (doc,))
         sjdm = self.branch("sjdm")

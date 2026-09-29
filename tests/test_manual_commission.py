@@ -13,6 +13,9 @@ class TestManualCommission(Base):
     def test_ortho_package_paid_in_parts(self):
         from app.util import now_str
         conn = self.conn
+        from app import settings
+        settings.put("payroll.dentist_commission_basis", "procedure", None, conn)
+        self.addCleanup(settings.put, "payroll.dentist_commission_basis", "payment", None, conn)
         doc = self.q("SELECT id FROM users WHERE email = 'dentist.sjdm@demo.dentalhaven.test'")["id"]
         emp = self.q("SELECT * FROM employees WHERE user_id = ?", (doc,))
         sjdm = self.branch("sjdm")
@@ -97,3 +100,46 @@ class TestManualCommission(Base):
         # voiding the payment removes its commission
         admin.post(f"/staff/invoices/{inv}/payments", data={"action": "void_payment", "payment_id": pay, "reason": "wrong amount"})
         self.assertEqual(self.q("SELECT status FROM dentist_commissions WHERE id = ?", (c["id"],))["status"], "void")
+
+    def test_cashier_commission_per_payment(self):
+        """Default: the cashier records commission on each payment; bill lines aren't counted (no double pay)."""
+        from app.util import now_str
+        conn = self.conn
+        doc = self.q("SELECT id FROM users WHERE email = 'dentist.sjdm@demo.dentalhaven.test'")["id"]
+        emp = self.q("SELECT * FROM employees WHERE user_id = ?", (doc,))
+        admin = self.login("admin")
+        admin.post(f"/staff/employees/{emp['id']}", data={"action": "dentist_pay", "daily_rate": "1500", "commission": "40",
+                                                            "effective_from": "2020-01-01"})
+        patient = self.q("SELECT patient_id AS id FROM patient_assignments WHERE dentist_id = ? LIMIT 1", (doc,))["id"]
+        sjdm = self.branch("sjdm")
+        # crown 20,000 with a 5,000 lab fee (25% of the bill)
+        inv = conn.insert("invoices", {"number": "TEST-CC-1", "branch_id": sjdm, "patient_id": patient, "status": "issued",
+                                       "issued_at": "2025-06-02", "subtotal_cents": 2000000, "total_cents": 2000000, "created_at": now_str()})
+        conn.insert("invoice_items", {"invoice_id": inv, "description": "Zirconia crown", "qty": 1, "unit_price_cents": 2000000,
+                                      "amount_cents": 2000000, "dentist_id": doc, "done_on": "2025-06-02", "lab_fee_cents": 500000})
+        # cashiers get the "Record dentist commission" permission by default
+        self.assertIsNotNone(self.q("SELECT 1 AS x FROM role_permissions WHERE role = 'cashier' AND permission = 'commission.record'"))
+        # the payment form is pre-filled with the bill's dentist and their usual %
+        page = admin.get(f"/staff/invoices/{inv}").data.decode()
+        self.assertIn("data-comm ", page)
+        self.assertIn(f'<option value="{doc}" data-rate="40.0" selected>', page)
+        # payment 10,000 at 40%: lab share 2,500 -> base 7,500 -> 3,000
+        admin.post(f"/staff/invoices/{inv}/payments", data={"action": "multi", "method": ["cash"], "amount": ["10000"], "received_at": "2025-06-03",
+                                                            "not_signed_reason": "test", "comm_dentist_id": doc, "comm_mode": "percent", "comm_pct": "40"})
+        # second payment with a manual amount
+        admin.post(f"/staff/invoices/{inv}/payments", data={"action": "multi", "method": ["gcash"], "amount": ["10000"], "received_at": "2025-06-10",
+                                                            "not_signed_reason": "test", "comm_dentist_id": doc, "comm_mode": "amount", "comm_amount": "2500"})
+        rows = conn.all("SELECT * FROM dentist_commissions WHERE invoice_id = ? ORDER BY id", (inv,))
+        self.assertEqual([(r["earned_on"], r["base_cents"], r["rate_bp"], r["amount_cents"]) for r in rows],
+                         [("2025-06-03", 750000, 4000, 300000), ("2025-06-10", 750000, None, 250000)])
+        # a bad % is refused and no payment is saved
+        admin.post(f"/staff/invoices/{inv}/payments", data={"action": "multi", "method": ["cash"], "amount": ["100"], "not_signed_reason": "t",
+                                                            "comm_dentist_id": doc, "comm_mode": "percent", "comm_pct": "140"})
+        n = self.q("SELECT COUNT(*) AS n FROM payments WHERE invoice_id = ?", (inv,))["n"]
+        # payroll 1-15 June: only payment commissions (5,500); the crown line itself is not counted
+        r = admin.post("/staff/payroll", data={"start_date": "2025-06-01", "end_date": "2025-06-15", "branch_id": "", "name": "Test Jun"})
+        pid = int(r.headers["Location"].rsplit("/", 1)[1])
+        line = self.q("SELECT * FROM payroll_lines WHERE period_id = ? AND employee_id = ?", (pid, emp["id"]))
+        self.assertEqual(line["commission_cents"], 550000)
+        self.assertIn("per payment", admin.get(f"/staff/payroll/{pid}/dentist/{emp['id']}").data.decode())
+        self.assertEqual(n, 2)

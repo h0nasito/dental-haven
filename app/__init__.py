@@ -152,6 +152,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.context_processor
     def _ctx():
-        return {"current_user": g.get("user"), "demo_mode": app.config["APP_ENV"] == "demo"}
+        from . import settings as _settings
+        return {"current_user": g.get("user"), "demo_mode": app.config["APP_ENV"] == "demo", "settings_get": _settings.get}
 
     return app

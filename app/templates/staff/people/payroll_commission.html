@@ -3,9 +3,10 @@
 {% block page_title %}Commission · {{ e.full_name }}{% endblock %}
 {% block content %}
 <div class="page-head"><div><a href="{{ url_for('people.payroll_period', period_id=p.id) }}">← {{ p.name }}</a><h1>{{ e.full_name }}: commission</h1>
-<p>Procedures done {{ p.start_date|date }} – {{ p.end_date|date }}{% if p.branch %} at {{ p.branch }}{% endif %}, on issued invoices.
+<p>{{ "Procedures done" if by_procedure else "Commission earned" }} {{ p.start_date|date }} – {{ p.end_date|date }}{% if p.branch %} at {{ p.branch }}{% endif %}{{ ", on issued invoices" if by_procedure else "" }}.
 {% if rates %}Daily rate {{ rates.daily_rate_cents|peso if show_money else '—' }} · commission {{ rates.commission_bp / 100 }}%{% else %}<strong>No rates set yet</strong> (Employees → {{ e.full_name }}).{% endif %}</p></div></div>
-<div class="card"><div class="table-wrap"><table><thead><tr><th>Date done</th><th>Branch</th><th>Invoice</th><th>Patient</th><th>Procedure</th>
+{% if not by_procedure %}<p class="notice">Dentist commission is recorded <strong>per payment</strong> by the cashier (System settings), so only the payment commissions below are counted. Bill lines aren't counted, so nothing is paid twice.</p>{% endif %}
+{% if by_procedure %}<div class="card"><div class="table-wrap"><table><thead><tr><th>Date done</th><th>Branch</th><th>Invoice</th><th>Patient</th><th>Procedure</th>
 {% if show_money %}<th class="num">Amount</th><th class="num">Invoice discount share</th><th class="num">Lab fee</th><th class="num">Base</th><th class="num">Rate</th><th class="num">Commission</th>{% endif %}</tr></thead><tbody>
 {% for i in items %}<tr><td>{{ i.done_on|date }}</td><td>{{ i.branch }}</td><td><a href="{{ url_for('billing.invoice', invoice_id=i.invoice_id) }}">{{ i.invoice_number }}</a></td><td>{{ i.chart_no }}</td><td>{{ i.description }}</td>
 {% if show_money %}<td class="num">{{ i.amount_cents|peso }}</td><td class="num">{{ ('-' ~ (i.discount_share_cents|peso)) if i.discount_share_cents else '—' }}</td><td class="num">{{ ('-' ~ (i.lab_fee_cents|peso)) if i.lab_fee_cents else '—' }}</td>
@@ -13,8 +14,8 @@
 {% else %}<tr><td colspan="11" class="empty">No completed procedures for this dentist in this period. Check that invoice lines have the dentist and date done set.</td></tr>{% endfor %}</tbody>
 {% if show_money and items %}<tfoot><tr><td colspan="8">Total from bill lines</td><td class="num">{{ items|sum(attribute='base_cents')|peso }}</td><td></td><td class="num"><strong>{{ items|sum(attribute='commission_cents')|peso }}</strong></td></tr></tfoot>{% endif %}
 </table></div>
-</div>
-<div class="card"><h2>Manual commission</h2>
+</div>{% endif %}
+<div class="card"><h2>{{ 'Manual commission' if by_procedure else 'Commission from payments and manual entries' }}</h2>
 <p class="hint">Entries dated inside this cutoff, such as ortho adjustments paid in parts, added from a bill, a payment, or here.</p>
 <div class="table-wrap"><table><thead><tr><th>Date</th><th>For</th><th>Bill</th><th>Patient</th>{% if show_money %}<th class="num">Paid / base</th><th class="num">%</th><th class="num">Commission</th>{% endif %}<th></th></tr></thead><tbody>
 {% for m in manual %}<tr><td>{{ m.earned_on|date }}</td><td>{{ m.description or '—' }}<br><small class="muted">by {{ m.by_name }}</small></td>

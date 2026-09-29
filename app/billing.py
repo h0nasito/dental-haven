@@ -86,3 +86,34 @@ def collections(conn, branch_ids: list[int], start: str, end: str) -> dict:
     received = pay["received"] + dep["received"]
     refunded = pay["refunded"] + dep["refunded"]
     return {"received": received, "refunded": refunded, "net": received - refunded, "deposits": dep["received"]}
+
+
+def commission_dentists(conn) -> list[dict]:
+    """Active dentists with their current usual commission % (for pre-filling the cashier's commission)."""
+    from .payroll import dentist_rates
+    from .util import today
+    out = []
+    for d in conn.all("SELECT u.id, u.name, e.id AS emp_id FROM users u LEFT JOIN employees e ON e.user_id = u.id "
+                      "WHERE u.role = 'dentist' AND u.active = 1 ORDER BY u.name"):
+        r = dentist_rates(conn, d["emp_id"], today().isoformat()) if d["emp_id"] else None
+        out.append({"id": d["id"], "name": d["name"], "rate_bp": r["commission_bp"] if r else None, "has_employee": bool(d["emp_id"])})
+    return out
+
+
+def invoice_commission_info(conn, inv) -> dict:
+    """The dentist most lines on this bill belong to (or the visit's dentist), and the bill's total lab fees."""
+    row = conn.one("SELECT dentist_id, COUNT(*) AS n FROM invoice_items WHERE invoice_id = ? AND dentist_id IS NOT NULL "
+                   "GROUP BY dentist_id ORDER BY n DESC LIMIT 1", (inv["id"],))
+    dentist = row["dentist_id"] if row else None
+    if not dentist and inv["appointment_id"]:
+        a = conn.one("SELECT dentist_id FROM appointments WHERE id = ?", (inv["appointment_id"],))
+        dentist = a["dentist_id"] if a else None
+    lab = conn.scalar("SELECT COALESCE(SUM(lab_fee_cents), 0) FROM invoice_items WHERE invoice_id = ?", (inv["id"],)) or 0
+    return {"dentist_id": dentist, "lab_fee_cents": int(lab)}
+
+
+def lab_share(payment_cents: int, lab_fee_cents: int, total_cents: int) -> int:
+    """The part of a payment that goes to the lab fee (in proportion to the bill), never more than the payment."""
+    if not lab_fee_cents or not total_cents:
+        return 0
+    return min(payment_cents, round(payment_cents * lab_fee_cents / total_cents))

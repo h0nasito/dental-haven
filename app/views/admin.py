@@ -885,6 +885,8 @@ def system():
                 new[key] = val
             else:
                 new[key] = clean(request.form.get(key), 500)
+        if new.get("payroll.dentist_commission_basis") not in ("payment", "procedure"):
+            errors["payroll.dentist_commission_basis"] = "Choose how dentist commission is counted."
         if new.get("messaging.provider") != "manual":
             errors["messaging.provider"] = "Only the manual provider is available until a messaging integration is configured."
         try:

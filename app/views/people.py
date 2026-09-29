@@ -537,7 +537,7 @@ def payroll_period(period_id):
 @require("payroll.prepare", "payroll.approve", any_of=True)
 def payroll_commission(period_id, emp_id):
     """The procedures behind a dentist's commission for the period."""
-    from ..payroll import commission_items, dentist_rates, manual_commissions
+    from ..payroll import commission_items, dentist_rates, manual_commissions, per_procedure
     conn = get_db()
     p = _load_period(period_id)
     e = conn.one("SELECT e.*, u.name AS user_name FROM employees e JOIN users u ON u.id = e.user_id WHERE e.id = ? AND u.role = 'dentist'", (emp_id,))
@@ -545,10 +545,13 @@ def payroll_commission(period_id, emp_id):
         abort(404)
     rates = dentist_rates(conn, e["id"], p["end_date"])
     svc = {r["service_id"]: r["commission_bp"] for r in conn.all("SELECT * FROM dentist_service_rates WHERE employee_id = ?", (e["id"],))}
-    items = commission_items(conn, e["user_id"], p["start_date"], p["end_date"], p["branch_id"], rates["commission_bp"] if rates else 0, svc)
+    by_procedure = per_procedure(conn)
+    items = commission_items(conn, e["user_id"], p["start_date"], p["end_date"], p["branch_id"], rates["commission_bp"] if rates else 0, svc) \
+        if by_procedure else []
     manual = manual_commissions(conn, e["id"], p["start_date"], p["end_date"])
     line = conn.one("SELECT * FROM payroll_lines WHERE period_id = ? AND employee_id = ?", (period_id, emp_id))
     return render_template("staff/people/payroll_commission.html", p=p, e=e, items=items, manual=manual, rates=rates, line=line,
+                           by_procedure=by_procedure,
                            total=sum(i["commission_cents"] for i in items) + sum(m["amount_cents"] for m in manual),
                            show_money=g.user.can("compensation.manage"), today=today().isoformat())
 

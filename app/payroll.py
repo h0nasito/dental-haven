@@ -97,6 +97,11 @@ def commission_items(conn, user_id: int, start: str, end: str, branch_id=None, d
     return out
 
 
+def per_procedure(conn) -> bool:
+    """True when dentist commission comes from bill lines (date done); False when the cashier records it per payment."""
+    return settings.get("payroll.dentist_commission_basis", conn) == "procedure"
+
+
 def manual_commissions(conn, employee_id: int, start: str, end: str):
     """Manual dentist commission entries dated inside the period (e.g. per ortho adjustment payment)."""
     return conn.all("SELECT c.*, i.number AS invoice_number, p.chart_no, u.name AS by_name FROM dentist_commissions c "
@@ -157,7 +162,7 @@ def build_lines(conn, period) -> list[dict]:
             rates = dentist_rates(conn, e["id"], period["end_date"])
             svc = {r["service_id"]: r["commission_bp"] for r in conn.all("SELECT * FROM dentist_service_rates WHERE employee_id = ?", (e["id"],))}
             items = commission_items(conn, user["id"], period["start_date"], period["end_date"], period["branch_id"],
-                                     rates["commission_bp"] if rates else 0, svc)
+                                     rates["commission_bp"] if rates else 0, svc) if per_procedure(conn) else []
             manual = manual_commissions(conn, e["id"], period["start_date"], period["end_date"])
             daily_pay = days * rates["daily_rate_cents"] if rates else None
             commission = (sum(i["commission_cents"] for i in items) + sum(m["amount_cents"] for m in manual)) if rates else None
