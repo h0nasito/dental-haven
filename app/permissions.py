@@ -20,7 +20,9 @@ ROLES = {  # access roles, in the order shown when creating an account
     "staff": "Staff",
 }
 # Employee positions (job titles). Only a super admin assigns access roles; HR can set positions.
-POSITIONS = ["Receptionist", "Cashier", "Technician", "Staff", "Dentist", "HR", "Supervisor"]
+POSITIONS = ["Head Dentist", "Associate Dentist", "Dentist", "Head Staff", "Dental Staff Consultant", "Head Receptionist", "Receptionist",
+             "Lab Receptionist", "Dental Assistant", "Finance Officer", "Digital Content Associate", "Dental Technician (RPD)", "Dental Technician (FPD)", "Cashier", "Technician", "HR",
+             "Supervisor", "Staff"]
 POSITION_FOR_ROLE = {"receptionist": "Receptionist", "cashier": "Cashier", "technician": "Technician", "staff": "Staff",
                      "dentist": "Dentist", "hr": "HR", "supervisor": "Supervisor"}
 # users.role keeps the base role (what the rest of the system checks); users.access_role picks the permission set.
@@ -102,6 +104,8 @@ CATALOG: list[Perm] = [
     Perm("lab.billing", "Lab invoices, discounts and payment receipts for outside clinics", "Laboratory", True),
     Perm("lab.commission", "Add technician commissions on lab works and cases", "Laboratory", True),
     # Inventory
+    Perm("evaluations.answer", "Answer staff evaluation forms (through the form link, while the form is open)", "Staff evaluations"),
+    Perm("evaluations.manage", "Manage evaluation forms: open/close, edit questions, see all answers and results", "Staff evaluations"),
     Perm("inventory.view", "View inventory (stock, expiry, history)", "Inventory"),
     Perm("inventory.manage", "Update inventory: stock counts, receive and use items, edit items and prices", "Inventory"),
     # Expenses
@@ -149,7 +153,7 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
         "dashboard.view", "appointments.view", "appointments.complete", "calendar.birthdays", "calendar.events",
         "followups.view", "followups.manage", "patients.view", "clinical.view", "clinical.edit", *_CLINICAL_WRITE,
         "documents.upload", "lab.view", "lab.manage", "reportcards.generate", "reportcards.review",
-        "quotes.view", "quotes.manage", "attendance.clock",
+        "quotes.view", "quotes.manage", "attendance.clock", "evaluations.answer",
     },
     "staff": {
         "dashboard.view", "dashboard.balances", "appointments.view", "calendar.associates", "calendar.birthdays",

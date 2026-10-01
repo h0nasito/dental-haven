@@ -70,6 +70,7 @@
       {% if current_user.can('attendance.manage') %}{{ nav('timeclock.log', 'Time clock log', 'timeclock.log') }}{{ nav('people.holidays', 'Holidays', 'people.holidays') }}{% endif %}
       {% if current_user.can('compensation.manage') or current_user.can('attendance.manage') %}{{ nav('people.employees', 'Employees', 'people.employee') }}{% endif %}
       {% if current_user.can('payroll.prepare') or current_user.can('payroll.approve') %}{{ nav('people.payroll', 'Payroll review', 'people.payroll') }}{% endif %}
+      {% if current_user.can('evaluations.answer') or current_user.can('evaluations.manage') %}{{ nav('evals.index', 'Staff evaluations', 'evals.') }}{% endif %}
     {% endcall %}
     {% call group('Administration', 'admin') %}
       {% if current_user.can('users.manage') %}{{ nav('admin.users', 'Users', 'admin.user') }}{% endif %}

@@ -1,0 +1,20 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}{{ 'Edit form' if f else 'New evaluation form' }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('evals.results', form_id=f.id) if f else url_for('evals.index') }}">← {{ f.title if f else 'Staff evaluations' }}</a><h1>{{ 'Edit form' if f else 'New evaluation form' }}</h1></div></div>
+{% if errors %}<div class="flash flash-error" role="alert">{% for e in errors %}<div>{{ e }}</div>{% endfor %}</div>{% endif %}
+{% if has_answers %}<p class="notice">This form already has answers. Answers are matched to questions by number, so if you add or remove questions, add new ones at the end; reordering changes which question old answers point to.</p>{% endif %}
+<form method="post" class="card">{{ csrf() }}
+<div class="field"><label for="ef-t">Title</label><input id="ef-t" name="title" value="{{ v.title }}" maxlength="150" required></div>
+<div class="field"><label for="ef-d">Description</label><input id="ef-d" name="description" value="{{ v.description }}" maxlength="1000"></div>
+<fieldset class="field"><legend>Who is evaluated with this form</legend><div class="row">
+{% for pos in positions if pos != 'Dentist' %}<label class="check"><input type="checkbox" name="target" value="{{ pos }}" {% if pos in v.targets %}checked{% endif %}> {{ pos }}</label>{% endfor %}</div>
+<span class="hint">Only staff with these positions (Employees → position) appear when a dentist answers. Leave all unticked for everyone.</span></fieldset>
+<div class="field"><label for="ef-w">Who answers this form</label><select id="ef-w" name="answered_by">{% for k, l in answered_by.items() %}<option value="{{ k }}" {% if v.answered_by == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+<span class="hint">Dentists = accounts with “Answer staff evaluation forms”. Head Dentist = the employee whose position is Head Dentist. Management can answer every form.</span></div>
+<div class="field"><label for="ef-q">Questions</label><textarea id="ef-q" name="questions" rows="22" class="mono">{{ v.questions }}</textarea>
+<span class="hint">One question per line, answered Yes / No. Start a line with <code>##</code> to make a section heading, e.g. <code>## A. Personality</code>.</span></div>
+<label class="check"><input type="checkbox" name="allow_na" value="1" {% if v.allow_na %}checked{% endif %}> Allow “N/A” for questions that don't apply that day (not counted in the score)</label>
+<div class="row mt-1"><button class="btn">Save form</button></div></form>
+{% endblock %}

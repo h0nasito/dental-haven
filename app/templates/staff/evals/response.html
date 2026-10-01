@@ -1,0 +1,13 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}{{ f.title }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('evals.results', form_id=f.id) if manage else url_for('evals.index') }}">← {{ f.title }}</a>
+<h1>{{ r.subject or '—' }}</h1><p>{{ r.eval_date|date }}{% if r.branch %} · {{ r.branch }}{% endif %} · evaluated by {{ r.evaluator }} · <strong>{{ r.score ~ '%' if r.score is not none else '—' }}</strong> ({{ r.yes_count }} Yes, {{ r.no_count }} No{% if r.na_count %}, {{ r.na_count }} N/A{% endif %})</p></div>
+{% if manage %}<form method="post" data-confirm="Delete this answer? It won't count in the results.">{{ csrf() }}<input type="hidden" name="action" value="delete"><button class="btn btn-danger btn-sm">Delete answer</button></form>{% endif %}</div>
+<div class="card"><div class="table-wrap"><table><tbody>
+{% for it in f["items"] %}{% if it.section is defined %}<tr class="eval-sec-row"><th colspan="3">{{ it.section }}</th></tr>{% else %}{% set a = r.answers.get(it.n|string) %}
+<tr><td style="width:40px">{{ it.n }}</td><td>{{ it.q }}</td><td style="width:70px">{% if a == 'yes' %}<span class="badge badge-green">Yes</span>{% elif a == 'no' %}<span class="badge badge-red">No</span>{% elif a == 'na' %}<span class="badge">N/A</span>{% else %}—{% endif %}</td></tr>{% endif %}{% endfor %}
+</tbody></table></div>
+{% if r.remarks %}<h3 class="mt-1">Remarks</h3><p class="pre">{{ r.remarks }}</p>{% endif %}</div>
+{% endblock %}

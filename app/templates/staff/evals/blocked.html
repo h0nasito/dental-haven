@@ -1,0 +1,8 @@
+{% extends "staff/layout.html" %}
+{% block page_title %}{{ f.title }}{% endblock %}
+{% block content %}
+<div class="card eval-blocked"><h1>{{ f.title }}</h1>
+{% if reason == 'closed' %}<p><strong>This form is closed.</strong> It isn't accepting answers right now. Please check with the admin.</p>
+{% else %}<p><strong>Your account can't answer this form.</strong> {% if who %}This form is answered by: {{ who }}.{% else %}Only accounts given access to staff evaluations can answer.{% endif %} Please ask the admin if you should have access.</p>{% endif %}
+<p><a class="btn btn-secondary" href="{{ url_for('dash.home') }}">Back to dashboard</a></p></div>
+{% endblock %}

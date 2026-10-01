@@ -1,0 +1,21 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Staff evaluations{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Staff evaluations</h1>
+<p>{% if can_manage %}Open a form so staff with access can answer it through its link. Close it to stop new answers.{% else %}Forms that are open now. Tap <strong>Evaluate</strong> next to the person you're evaluating.{% endif %}</p></div>
+{% if can_manage %}<a class="btn" href="{{ url_for('evals.edit') }}">+ New form</a>{% endif %}</div>
+<div class="card"><div class="table-wrap"><table><thead><tr><th>Form</th><th>Status</th><th class="num">Questions</th>{% if can_manage %}<th class="num">Answers</th>{% endif %}<th></th></tr></thead><tbody>
+{% for f in forms %}<tr>
+<td><strong>{{ f.title }}</strong>{% if f.target_positions %} <span class="badge badge-blue">{{ f.target_positions }}</span>{% endif %}{% if can_manage %} <small class="muted">· answered by {{ {'dentists': 'Dentists', 'head_dentist': 'Head Dentist', 'management': 'Management'}[f.answered_by] }}</small>{% endif %}{% if f.description %}<br><small class="muted">{{ f.description }}</small>{% endif %}
+{% if f.staff is defined %}<ul class="list-plain eval-staff">{% for e in f.staff %}<li class="row between"><span>{{ e.full_name }}{% if e.branch %} <small class="muted">· {{ e.branch }}</small>{% endif %}{% if e.last %}<br><small class="muted">You last evaluated: {{ e.last|date }}</small>{% endif %}</span>
+<a class="btn btn-sm" href="{{ url_for('evals.answer', slug=f.slug, staff=e.id) }}">Evaluate</a></li>{% else %}<li class="muted">No staff with this position yet.</li>{% endfor %}</ul>{% endif %}</td>
+<td>{% if f.status == 'open' %}<span class="badge badge-green">Open</span>{% else %}<span class="badge">Closed</span>{% endif %}</td>
+<td class="num">{{ f.qn }}</td>{% if can_manage %}<td class="num">{{ f.n }}</td>{% endif %}
+<td class="row" style="justify-content:flex-end">
+{% if can_manage %}<form method="post" action="{{ url_for('evals.status', form_id=f.id) }}">{{ csrf() }}<input type="hidden" name="back" value="index">
+<button class="btn btn-secondary btn-sm" name="action" value="{{ 'close' if f.status == 'open' else 'open' }}">{{ 'Close form' if f.status == 'open' else 'Open form' }}</button></form>
+<a class="btn btn-ghost btn-sm" href="{{ url_for('evals.results', form_id=f.id) }}">Link &amp; results</a>{% endif %}</td></tr>
+{% else %}<tr><td colspan="5" class="empty">{{ 'No forms yet.' if can_manage else 'No evaluation form is open right now.' }}</td></tr>{% endfor %}</tbody></table></div></div>
+{% if mine %}<div class="card"><h2>My recent answers</h2><ul class="list-plain">{% for r in mine %}<li class="row between"><span><a href="{{ url_for('evals.response', rid=r.id) }}">{{ r.title }}</a> · {{ r.subject or '—' }} <small class="muted">{{ r.eval_date|date }}</small></span><span>{{ r.score ~ '%' if r.score is not none else '—' }}</span></li>{% endfor %}</ul></div>{% endif %}
+{% endblock %}

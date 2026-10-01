@@ -389,7 +389,7 @@ def seed_base(conn):
         from . import settings as _settings2
         granted = set(_settings2.get("seed.perms_granted", conn) or [])
         new_perms = {"quotes.view", "quotes.manage", "inventory.view", "inventory.manage", "lab.works", "lab.billing", "attendance.clock",
-                     "overtime.approve", "lab.commission", "commission.record"} - granted
+                     "overtime.approve", "lab.commission", "commission.record", "evaluations.answer", "evaluations.manage"} - granted
         if new_perms and conn.scalar("SELECT COUNT(*) FROM role_permissions"):
             for role, perms in ROLE_DEFAULTS.items():
                 for perm in new_perms & set(perms):
@@ -397,6 +397,91 @@ def seed_base(conn):
                         conn.execute("INSERT INTO role_permissions (role, permission) VALUES (?, ?)", (role, perm))
         if new_perms:
             _settings2.put("seed.perms_granted", sorted(granted | new_perms), None, conn)
+        # The clinic's Assistant Checklist, created once (closed until the admin opens it).
+        if not _settings2.get("seed.eval_assistant_v1", conn):
+            import json as _json
+            import secrets as _secrets
+            from .evaluation_content import ASSISTANT_CHECKLIST, ASSISTANT_CHECKLIST_DESCRIPTION, ASSISTANT_CHECKLIST_TITLE, parse_questions
+            if not conn.one("SELECT id FROM evaluation_forms WHERE title = ?", (ASSISTANT_CHECKLIST_TITLE,)):
+                conn.insert("evaluation_forms", {"slug": _secrets.token_urlsafe(9), "title": ASSISTANT_CHECKLIST_TITLE,
+                                                 "description": ASSISTANT_CHECKLIST_DESCRIPTION,
+                                                 "questions_json": _json.dumps(parse_questions(ASSISTANT_CHECKLIST)), "status": "closed",
+                                                 "created_at": now_str()})
+            _settings2.put("seed.eval_assistant_v1", True, None, conn)
+        # Dentists evaluate the staff: the Receptionist Checklist, each form tied to a position, and dentists can answer.
+        if not _settings2.get("seed.eval_v2", conn):
+            import json as _json
+            import secrets as _secrets
+            from .evaluation_content import (ASSISTANT_CHECKLIST_TITLE, ASSISTANT_TARGET, RECEPTIONIST_CHECKLIST,
+                                             RECEPTIONIST_CHECKLIST_DESCRIPTION, RECEPTIONIST_CHECKLIST_TITLE, RECEPTIONIST_TARGET, parse_questions)
+            conn.execute("UPDATE evaluation_forms SET target_positions = ? WHERE title = ? AND target_positions = ''",
+                         (ASSISTANT_TARGET, ASSISTANT_CHECKLIST_TITLE))
+            if not conn.one("SELECT id FROM evaluation_forms WHERE title = ?", (RECEPTIONIST_CHECKLIST_TITLE,)):
+                conn.insert("evaluation_forms", {"slug": _secrets.token_urlsafe(9), "title": RECEPTIONIST_CHECKLIST_TITLE,
+                                                 "description": RECEPTIONIST_CHECKLIST_DESCRIPTION, "target_positions": RECEPTIONIST_TARGET,
+                                                 "questions_json": _json.dumps(parse_questions(RECEPTIONIST_CHECKLIST)), "status": "closed",
+                                                 "created_at": now_str()})
+            if conn.scalar("SELECT COUNT(*) FROM role_permissions") and not conn.one(
+                    "SELECT 1 AS x FROM role_permissions WHERE role = 'dentist' AND permission = 'evaluations.answer'"):
+                conn.execute("INSERT INTO role_permissions (role, permission) VALUES ('dentist', 'evaluations.answer')")
+            _settings2.put("seed.eval_v2", True, None, conn)
+        if not _settings2.get("seed.eval_headstaff_v1", conn):
+            import json as _json
+            import secrets as _secrets
+            from .evaluation_content import HEAD_STAFF_CHECKLIST, HEAD_STAFF_DESCRIPTION, HEAD_STAFF_TARGET, HEAD_STAFF_TITLE, parse_questions
+            if not conn.one("SELECT id FROM evaluation_forms WHERE title = ?", (HEAD_STAFF_TITLE,)):
+                conn.insert("evaluation_forms", {"slug": _secrets.token_urlsafe(9), "title": HEAD_STAFF_TITLE, "description": HEAD_STAFF_DESCRIPTION,
+                                                 "target_positions": HEAD_STAFF_TARGET, "status": "closed", "created_at": now_str(),
+                                                 "questions_json": _json.dumps(parse_questions(HEAD_STAFF_CHECKLIST))})
+            _settings2.put("seed.eval_headstaff_v1", True, None, conn)
+        # Role Clarity performance evaluations, one per position (closed until the admin opens them).
+        if not _settings2.get("seed.eval_roles_v1", conn):
+            import json as _json
+            import secrets as _secrets
+            from .evaluation_content import parse_questions
+            from .evaluation_roles import ROLE_FORMS
+            for rf in ROLE_FORMS:
+                existing = conn.one("SELECT id FROM evaluation_forms WHERE title = ?", (rf["title"],))
+                if existing:
+                    conn.execute("UPDATE evaluation_forms SET answered_by = ?, target_positions = ? WHERE id = ?",
+                                 (rf["answered_by"], rf["target"], existing["id"]))
+                elif rf["questions"]:
+                    conn.insert("evaluation_forms", {"slug": _secrets.token_urlsafe(9), "title": rf["title"], "description": rf["description"],
+                                                     "target_positions": rf["target"], "answered_by": rf["answered_by"], "status": "closed",
+                                                     "created_at": now_str(), "questions_json": _json.dumps(parse_questions(rf["questions"]))})
+            _settings2.put("seed.eval_roles_v1", True, None, conn)
+        if not _settings2.get("seed.eval_roles_v2", conn):
+            import json as _json
+            import secrets as _secrets
+            from .evaluation_content import parse_questions
+            from .evaluation_roles import ROLE_FORMS
+            for rf in ROLE_FORMS:
+                if rf["questions"] and not conn.one("SELECT id FROM evaluation_forms WHERE title = ?", (rf["title"],)):
+                    conn.insert("evaluation_forms", {"slug": _secrets.token_urlsafe(9), "title": rf["title"], "description": rf["description"],
+                                                     "target_positions": rf["target"], "answered_by": rf["answered_by"], "status": "closed",
+                                                     "created_at": now_str(), "questions_json": _json.dumps(parse_questions(rf["questions"]))})
+            _settings2.put("seed.eval_roles_v2", True, None, conn)
+        # Technician evaluations are answered by dentists from the case results: update the RPD form (if it has no answers yet)
+        # and add the FPD / CAD-CAM form.
+        if not _settings2.get("seed.eval_roles_v3", conn):
+            import json as _json
+            import secrets as _secrets
+            from .evaluation_content import parse_questions
+            from .evaluation_roles import ROLE_FORMS
+            for rf in ROLE_FORMS:
+                if not rf["questions"] or "Technician" not in rf["title"]:
+                    continue
+                row = conn.one("SELECT id FROM evaluation_forms WHERE title = ?", (rf["title"],))
+                vals = {"description": rf["description"], "target_positions": rf["target"], "answered_by": rf["answered_by"],
+                        "questions_json": _json.dumps(parse_questions(rf["questions"])), "updated_at": now_str()}
+                if not row:
+                    conn.insert("evaluation_forms", {**vals, "slug": _secrets.token_urlsafe(9), "title": rf["title"], "status": "closed",
+                                                     "created_at": now_str()})
+                elif not conn.one("SELECT id FROM evaluation_responses WHERE form_id = ? LIMIT 1", (row["id"],)):
+                    conn.update("evaluation_forms", row["id"], vals)
+                else:
+                    conn.execute("UPDATE evaluation_forms SET answered_by = ? WHERE id = ?", (rf["answered_by"], row["id"]))
+            _settings2.put("seed.eval_roles_v3", True, None, conn)
         # Access roles added later (HR, Supervisor, Cashier) start with their recommended access, once.
         if conn.scalar("SELECT COUNT(*) FROM role_permissions"):
             for role in ("hr", "supervisor", "cashier", "technician"):

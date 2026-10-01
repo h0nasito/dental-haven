@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', function () {
     btn.addEventListener('click', function () {
       var el = document.getElementById(btn.getAttribute('data-copy'));
       if (!el || !navigator.clipboard) return;
-      navigator.clipboard.writeText(el.innerText).then(function () {
+      navigator.clipboard.writeText(el.value !== undefined && el.tagName === 'INPUT' ? el.value : el.innerText).then(function () {
         var old = btn.textContent; btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = old; }, 1500);
       });
     });
@@ -368,4 +368,29 @@ document.addEventListener('DOMContentLoaded', function () {
   recalc();
   var dlg = document.querySelector('dialog[data-autoopen]');
   if (dlg && dlg.showModal) dlg.showModal();
+})();
+
+/* Evaluation form: "answered X of Y" and jump to the first unanswered question. */
+(function () {
+  var form = document.querySelector('form[data-evalform]');
+  if (!form) return;
+  var qs = form.querySelectorAll('.eval-q'), out = form.querySelector('[data-eval-progress]');
+  function update() {
+    var done = 0;
+    qs.forEach(function (q) { if (q.querySelector('input:checked')) { done++; q.classList.remove('unanswered'); } });
+    out.textContent = done + ' of ' + qs.length + ' answered';
+  }
+  form.addEventListener('change', update);
+  // picking the staff member also picks their branch
+  var subj = form.querySelector('[data-eval-subject]'), br = form.querySelector('[data-eval-branch]');
+  if (subj && br) subj.addEventListener('change', function () {
+    var o = subj.options[subj.selectedIndex], b = o && o.dataset.branch;
+    if (b && br.querySelector('option[value="' + b + '"]')) br.value = b;
+  });
+  form.addEventListener('submit', function (e) {
+    var first = null;
+    qs.forEach(function (q) { if (!q.querySelector('input:checked')) { q.classList.add('unanswered'); if (!first) first = q; } });
+    if (first) { e.preventDefault(); first.scrollIntoView({ behavior: 'smooth', block: 'center' }); first.querySelector('input').focus({ preventScroll: true }); }
+  });
+  update();
 })();

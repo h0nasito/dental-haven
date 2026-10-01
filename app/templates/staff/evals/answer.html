@@ -1,0 +1,26 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}{{ f.title }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>{{ f.title }}</h1>{% if f.description %}<p>{{ f.description }}</p>{% endif %}</div></div>
+{% if errors %}<div class="flash flash-error" role="alert">{% for e in errors %}<div>{{ e }}</div>{% endfor %}</div>{% endif %}
+<form method="post" class="eval-form" data-evalform novalidate>{{ csrf() }}
+<div class="card"><div class="form-grid">
+<div class="field"><label for="ev-s">{{ f.target_positions or 'Staff' }} being evaluated</label><select id="ev-s" name="subject_employee_id" required data-eval-subject><option value="">Choose…</option>
+{% for e in employees %}<option value="{{ e.id }}" data-branch="{{ e.primary_branch_id or '' }}" {% if v.subject == e.id %}selected{% endif %}>{{ e.full_name }}{% if e.branch %} · {{ e.branch }}{% endif %}</option>{% endfor %}</select>
+{% if not employees %}<span class="hint">No active staff with the position “{{ f.target_positions }}” yet. Set it in Staff &amp; payroll → Employees.</span>{% endif %}</div>
+<div class="field"><label for="ev-d">Date</label><input id="ev-d" type="date" name="eval_date" value="{{ v.eval_date }}" max="{{ today_iso }}" required></div>
+<div class="field"><label for="ev-b">Branch</label><select id="ev-b" name="branch_id" data-eval-branch>{% for b in branches %}<option value="{{ b.id }}" {% if v.branch_id == b.id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select></div>
+</div><p class="hint">One person per evaluation. Evaluated by {{ current_user.name }}. Answer every question{% if f.allow_na %}; use N/A when it doesn't apply today (N/A isn't counted in the score){% endif %}.</p></div>
+{% for it in f["items"] %}
+{% if it.section is defined %}{% if not loop.first %}</div>{% endif %}<div class="card eval-section"><h2>{{ it.section }}</h2>
+{% else %}{% if loop.first %}<div class="card eval-section">{% endif %}
+<fieldset class="eval-q"><legend><span class="eval-n">{{ it.n }}.</span> {{ it.q }}</legend>
+<div class="eval-opts">{% for key, label in answers.items() if key != 'na' or f.allow_na %}
+<label class="eval-opt eval-{{ key }}"><input type="radio" name="q{{ it.n }}" value="{{ key }}" {% if v.answers.get(it.n|string) == key %}checked{% endif %} required> <span>{{ label }}</span></label>{% endfor %}</div></fieldset>
+{% endif %}{% if loop.last %}</div>{% endif %}
+{% endfor %}
+<div class="card"><div class="field"><label for="ev-r">Remarks (optional)</label><textarea id="ev-r" name="remarks" rows="3" maxlength="2000">{{ v.remarks }}</textarea></div></div>
+<div class="eval-submitbar"><span data-eval-progress aria-live="polite"></span><button class="btn">Submit evaluation</button></div>
+</form>
+{% endblock %}

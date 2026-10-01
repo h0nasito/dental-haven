@@ -644,3 +644,27 @@ section[id] { scroll-margin-top: 72px; }
 .switch { display: inline-flex; align-items: center; gap: .4rem; font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; font-weight: 700; color: var(--ink-3); cursor: pointer; }
 .pay-summary dd input { text-align: right; }
 .pay-summary .pn-net { font-size: 1.15rem; padding-top: .4rem; border-top: 1px solid var(--line); }
+
+/* Staff evaluations */
+.c-red { color: var(--red-700); }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .9rem; }
+.eval-section h2 { margin-top: 0; }
+.eval-q { border: 0; border-top: 1px solid var(--line-2); margin: 0; padding: .7rem 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem 1rem; align-items: center; }
+.eval-q legend { float: left; padding: 0; font-weight: 500; }
+.eval-section h2 + .eval-q { border-top: 0; }
+.eval-n { color: var(--ink-3); font-weight: 700; margin-right: .2rem; }
+.eval-opts { display: flex; gap: .35rem; }
+.eval-opt { position: relative; cursor: pointer; }
+.eval-opt input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.eval-opt span { display: inline-block; min-width: 3.6rem; text-align: center; padding: .45em .8em; border: 1.5px solid var(--line); border-radius: 999px; font-weight: 700; color: var(--ink-2); background: var(--card); }
+.eval-opt input:focus-visible + span { outline: 3px solid rgba(42, 82, 158, .35); outline-offset: 2px; }
+.eval-yes input:checked + span { background: var(--green-700); border-color: var(--green-700); color: #fff; }
+.eval-no input:checked + span { background: var(--red-700); border-color: var(--red-700); color: #fff; }
+.eval-na input:checked + span { background: var(--ink-3); border-color: var(--ink-3); color: #fff; }
+.eval-q.unanswered legend { color: var(--red-700); }
+@media (max-width: 640px) { .eval-q { grid-template-columns: 1fr; } }
+.eval-submitbar { position: sticky; bottom: 0; z-index: 5; display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: .7rem 1rem; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); margin-top: 1rem; }
+.eval-sec-row th { background: var(--brand-50); text-align: left; }
+.eval-blocked { max-width: 560px; }
+.eval-staff { margin-top: .5rem; }
+.eval-staff li { padding: .35rem 0; border-top: 1px solid var(--line-2); }

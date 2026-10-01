@@ -177,7 +177,7 @@ def build_lines(conn, period) -> list[dict]:
                           "commission_items": len(items) + len(manual), "late_deduction_cents": late_ded if rates else None,
                           "estimate_cents": (daily_pay + commission - late_ded) if rates else None})
             continue
-        is_tech = e["position"] == "Technician" or bool(user and conn.one("SELECT 1 AS x FROM users WHERE id = ? AND access_role = 'technician'", (user["id"],)))
+        is_tech = "technician" in (e["position"] or "").lower() or bool(user and conn.one("SELECT 1 AS x FROM users WHERE id = ? AND access_role = 'technician'", (user["id"],)))
         comp = current_compensation(conn, e["id"], period["end_date"])
         basis = comp["basis"] if comp else "unset"
         rate = comp["rate_cents"] if comp else None

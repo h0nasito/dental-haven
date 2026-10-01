@@ -5,7 +5,7 @@ from __future__ import annotations
 
 def technicians(conn):
     return conn.all("SELECT e.id, e.full_name FROM employees e LEFT JOIN users u ON u.id = e.user_id WHERE e.active = 1 "
-                    "AND (e.position = 'Technician' OR u.access_role = 'technician') ORDER BY e.full_name")
+                    "AND (lower(e.position) LIKE '%technician%' OR u.access_role = 'technician') ORDER BY e.full_name")
 
 
 def entries(conn, work_id=None, case_id=None):
