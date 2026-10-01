@@ -1,0 +1,13 @@
+{% extends "staff/layout.html" %}
+{% block page_title %}Logins created{% endblock %}
+{% block content %}
+<div class="page-head no-print"><div><a href="{{ url_for('admin.users') }}">← Users</a><h1>{{ created|length }} login(s) created</h1>
+<p><strong>Print or copy this page now.</strong> The temporary passwords are shown only once and aren't saved anywhere. Give each person their own slip privately.</p></div>
+<button type="button" class="btn" data-print>Print slips</button></div>
+<div class="slips">
+{% for c in created %}<div class="slip card"><h2>Dental Haven staff login</h2>
+<dl class="kv"><dt>Name</dt><dd>{{ c.name }}</dd><dt>Sign in at</dt><dd>{{ login_url }}</dd><dt>Email</dt><dd><strong>{{ c.email }}</strong></dd>
+<dt>Temporary password</dt><dd><code class="temp-pw">{{ c.temp }}</code></dd><dt>Access</dt><dd>{{ c.role }} · {{ c.branch }}</dd></dl>
+<p class="hint">You'll be asked to choose your own password the first time you sign in. Don't share it with anyone.</p></div>{% endfor %}
+</div>
+{% endblock %}

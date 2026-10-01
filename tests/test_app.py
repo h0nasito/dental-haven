@@ -78,7 +78,7 @@ class TestAccessControl(Base):
     def test_user_creation_is_audited_and_least_privilege(self):
         c = self.login("admin")
         r = c.post("/staff/admin/users/new", data={"name": "New Recep", "email": "new.recep@clinic.test", "role": "receptionist",
-                                                   "branches": [str(self.branch("bocaue"))]})
+                                                   "branches": [str(self.branch("bocaue"))], "position": "Receptionist"})
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"shown only once", r.data)
         u = self.q("SELECT * FROM users WHERE email = 'new.recep@clinic.test'")
@@ -86,7 +86,7 @@ class TestAccessControl(Base):
         self.assertIsNotNone(self.q("SELECT id FROM audit_log WHERE action = 'user_created' AND entity_id = ?", (u["id"],)))
         # role change audited
         c.post(f"/staff/admin/users/{u['id']}", data={"name": "New Recep", "email": "new.recep@clinic.test", "role": "staff",
-                                                     "branches": [str(self.branch("bocaue"))], "active": "1"})
+                                                     "branches": [str(self.branch("bocaue"))], "active": "1", "position": "Receptionist"})
         self.assertIsNotNone(self.q("SELECT id FROM audit_log WHERE action = 'role_changed' AND entity_id = ?", (u["id"],)))
 
     def test_super_admin_cannot_change_own_role(self):

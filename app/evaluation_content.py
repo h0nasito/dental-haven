@@ -173,9 +173,10 @@ Laging nakangiti?
 ALIASES = {"dental assistant": {"assistant", "dental asst"}, "receptionist": {"dental receptionist"},
            "lab receptionist": {"dental laboratory receptionist", "laboratory receptionist"},
            "head receptionist": {"dental head receptionist"}, "dental staff consultant": {"staff consultant"},
-           "dental technician (rpd)": {"rpd technician", "dental technician - rpd", "dental technician rpd"},
+           "dental technician (rpd)": {"rpd technician", "dental technician - rpd", "dental technician rpd", "technician (rpd)",
+                                       "technician rpd", "technician - rpd"},
            "dental technician (fpd)": {"fpd technician", "dental technician - fpd", "dental technician fpd", "cad/cam technician",
-                                       "cad cam technician"}}
+                                       "cad cam technician", "technician (fpd)", "technician fpd", "technician - fpd"}}
 
 
 def matches_target(position: str | None, targets: str) -> bool:

@@ -25,6 +25,14 @@ POSITIONS = ["Head Dentist", "Associate Dentist", "Dentist", "Head Staff", "Dent
              "Supervisor", "Staff"]
 POSITION_FOR_ROLE = {"receptionist": "Receptionist", "cashier": "Cashier", "technician": "Technician", "staff": "Staff",
                      "dentist": "Dentist", "hr": "HR", "supervisor": "Supervisor"}
+# Suggested access role when a login is created for an employee, by position (the super admin can change it).
+ACCESS_FOR_POSITION = {
+    "Head Dentist": "dentist", "Associate Dentist": "dentist", "Dentist": "dentist",
+    "Head Receptionist": "receptionist", "Receptionist": "receptionist", "Lab Receptionist": "staff",
+    "Cashier": "cashier", "Finance Officer": "cashier", "HR": "hr", "Supervisor": "supervisor", "Head Staff": "supervisor",
+    "Technician": "technician", "Dental Technician (RPD)": "technician", "Dental Technician (FPD)": "technician",
+    "Dental Assistant": "staff", "Dental Staff Consultant": "staff", "Digital Content Associate": "staff", "Staff": "staff",
+}
 # users.role keeps the base role (what the rest of the system checks); users.access_role picks the permission set.
 BASE_ROLE = {"hr": "staff", "supervisor": "staff", "cashier": "staff", "technician": "staff"}
 
@@ -82,6 +90,7 @@ CATALOG: list[Perm] = [
     Perm("payments.add", "Add Payment (and patient deposits)", "Patient bills/payments"),
     Perm("credit.apply", "Apply Account Credit", "Patient bills/payments"),
     Perm("commission.record", "Record dentist commission on payments", "Patient bills/payments"),
+    Perm("fees.manage", "Edit the fee schedule (billing prices)", "Patient bills/payments"),
     Perm("billing.void", "Delete patient bill (void) and refunds", "Patient bills/payments", True),
     # Quotations
     Perm("quotes.view", "View price quotations", "Price quotations"),

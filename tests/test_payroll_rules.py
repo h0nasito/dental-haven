@@ -80,7 +80,7 @@ class TestPayrollRules(Base):
         for role, email in (("hr", "hr.test@demo.dentalhaven.test"), ("cashier", "cashier.test@demo.dentalhaven.test"),
                             ("supervisor", "sup.test@demo.dentalhaven.test")):
             r = admin.post("/staff/admin/users/new", data={"name": f"{role} tester", "email": email, "role": role, "branches": str(bid),
-                                                         "is_employee": "1"})
+                                                         "is_employee": "1", "position": {"hr": "HR", "cashier": "Cashier", "supervisor": "Supervisor"}[role]})
             self.assertEqual(r.status_code, 200)
             u = self.q("SELECT * FROM users WHERE email = ?", (email,))
             self.assertEqual((u["role"], u["access_role"]), ("staff", role))
@@ -103,7 +103,7 @@ class TestPayrollRules(Base):
     def test_positions_and_only_super_admin_assigns_roles(self):
         admin = self.login("admin")
         r = admin.post("/staff/admin/users/new", data={"name": "Tech Tester", "email": "tech.tester@demo.dentalhaven.test", "role": "technician",
-                                                     "branches": str(self.branch("malolos")), "is_employee": "1"})
+                                                     "branches": str(self.branch("malolos")), "is_employee": "1", "position": "Technician"})
         self.assertEqual(r.status_code, 200)
         u = self.q("SELECT * FROM users WHERE email = 'tech.tester@demo.dentalhaven.test'")
         self.assertEqual((u["role"], u["access_role"]), ("staff", "technician"))

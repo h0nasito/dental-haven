@@ -1,0 +1,40 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Import employees{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('people.employees') }}">← Employees</a><h1>Import employees</h1>
+<p>Add or update many employees at once from your Excel or CSV list. Employees already in the system (same name) are updated, not doubled.</p></div></div>
+{% if error %}<div class="flash flash-error" role="alert">{{ error }}</div>{% endif %}
+
+{% if not rows %}
+<div class="grid grid-2">
+<div class="card"><h2>1. Prepare your list</h2>
+<p>First row = headings. One employee per row:</p>
+<div class="table-wrap"><table><thead><tr><th>Name</th><th>Position</th><th>Branch</th><th>Type <small class="muted">(optional)</small></th><th>Email <small class="muted">(for their login)</small></th></tr></thead>
+<tbody><tr><td>Juan Dela Cruz</td><td>Dental Assistant</td><td>Malolos</td><td>Regular</td><td>juan@example.com</td></tr><tr><td>Maria Santos</td><td>Receptionist</td><td>Bocaue</td><td>Probationary</td><td>maria@example.com</td></tr></tbody></table></div>
+<p class="mt-1"><a class="btn btn-secondary btn-sm" href="{{ url_for('people.employees_import_template') }}">Download template (CSV)</a></p>
+<details><summary>Positions you can use</summary><p class="hint">{{ positions|join(', ') }}</p></details>
+<details><summary>Branches you can use</summary><p class="hint">{{ branches|map(attribute='name')|join(', ') }}{% if current_user.is_super_admin %}. Leave Branch blank for lab or all-branch staff.{% endif %}</p></details>
+<p class="hint">Type: Regular, Probationary, Associate, Part-time or Contractual (blank = Regular). Email is optional; it's used when the super admin creates their login.</p></div>
+<div class="card"><h2>2. Upload it</h2>
+<form method="post" enctype="multipart/form-data">{{ csrf() }}<input type="hidden" name="action" value="preview">
+<div class="field"><label for="ef">Excel (.xlsx) or CSV file</label><input id="ef" type="file" name="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required></div>
+<button class="btn">Check the list</button>
+<p class="hint">Nothing is saved yet. You'll see what will be added, updated or skipped first.</p></form></div>
+</div>
+{% else %}
+{% set n_new = rows|selectattr('status', 'equalto', 'new')|list|length %}{% set n_upd = rows|selectattr('status', 'equalto', 'update')|list|length %}
+{% set n_err = rows|selectattr('status', 'equalto', 'error')|list|length %}{% set n_same = rows|selectattr('status', 'equalto', 'same')|list|length %}
+<div class="card"><h2>Check before importing</h2>
+<p><strong>{{ n_new }}</strong> to add · <strong>{{ n_upd }}</strong> to update · {{ n_same }} already up to date · {% if n_err %}<strong class="c-red">{{ n_err }} with problems (skipped)</strong>{% else %}0 problems{% endif %}</p>
+<div class="table-wrap"><table><thead><tr><th>Row</th><th>Name</th><th>Position</th><th>Branch</th><th>Result</th></tr></thead><tbody>
+{% for r in rows %}<tr><td>{{ r.line }}</td><td>{{ r.name or '—' }}</td><td>{{ r.position or r.position_raw or '—' }}</td><td>{{ r.branch or r.branch_raw or '—' }}</td>
+<td>{% if r.status == 'new' %}<span class="badge badge-green">Add</span>{% if r.note %} <small>{{ r.note }}</small>{% endif %}{% elif r.status == 'update' %}<span class="badge badge-blue">Update</span> <small>{{ r.note }}</small>{% elif r.status == 'same' %}<span class="badge">No change</span>{% else %}<span class="badge badge-red">Skip</span> <small class="c-red">{{ r.note }}</small>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div>
+{% if n_err %}<p class="hint">Fix the skipped rows in your file and upload it again, or import the rest now and add those by hand.</p>{% endif %}
+<div class="row mt-1">
+{% if n_new or n_upd %}<form method="post">{{ csrf() }}<input type="hidden" name="action" value="import"><textarea name="rows_json" hidden>{{ payload }}</textarea>
+<button class="btn">Import {{ n_new + n_upd }} employee(s)</button></form>{% endif %}
+<a class="btn btn-secondary" href="{{ url_for('people.employees_import') }}">Upload a different file</a></div></div>
+{% endif %}
+{% endblock %}

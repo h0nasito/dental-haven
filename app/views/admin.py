@@ -11,7 +11,8 @@ from flask import Blueprint, abort, flash, g, redirect, render_template, request
 from .. import audit, settings
 from ..auth import hash_password, require, revoke_user_sessions
 from ..db import get_db
-from ..permissions import CATALOG, LOCKED, PERM_KEYS, POSITION_FOR_ROLE, POSITIONS, ROLE_DEFAULTS, ROLES, base_role, grantable
+from ..permissions import (ACCESS_FOR_POSITION, CATALOG, LOCKED, PERM_KEYS, POSITION_FOR_ROLE, POSITIONS, ROLE_DEFAULTS, ROLES,
+                           base_role, grantable)
 from ..util import WEEKDAYS, clean, hm_to_min, now_str, parse_money, to_int
 from .common import paginate
 
@@ -33,12 +34,48 @@ def _temp_password() -> str:
 @bp.route("/users")
 @require("users.manage")
 def users():
+    """Users in two lists like MyMedsPH: Associates (dentists) and Staff. The super admin is listed as account owner."""
     conn = get_db()
-    rows = conn.all("SELECT * FROM users ORDER BY active DESC, role, name")
+    tab = "staff" if request.args.get("tab") == "staff" else "associates"
+    q = clean(request.args.get("q"), 80).lower()
+    rows = conn.all("SELECT u.*, e.position FROM users u LEFT JOIN employees e ON e.user_id = u.id "
+                    "ORDER BY CASE WHEN u.role = 'super_admin' THEN 0 ELSE 1 END, u.active DESC, u.name")
     ub = {}
     for r in conn.all("SELECT ub.user_id, b.name FROM user_branches ub JOIN branches b ON b.id = ub.branch_id ORDER BY b.sort_order"):
         ub.setdefault(r["user_id"], []).append(r["name"])
-    return render_template("staff/admin/users.html", users=rows, user_branches=ub)
+    def is_associate(u):
+        return u["role"] == "dentist" or (u["role"] == "super_admin" and (u["license_no"] or "dentist" in (u["position"] or "").lower()))
+    counts = {"associates": sum(1 for u in rows if is_associate(u)), "staff": sum(1 for u in rows if not is_associate(u))}
+    rows = [u for u in rows if is_associate(u) == (tab == "associates")]
+    if q:
+        rows = [u for u in rows if q in (u["name"] or "").lower() or q in (u["email"] or "").lower() or q in (u["position"] or "").lower()]
+    return render_template("staff/admin/users.html", users=rows, user_branches=ub, tab=tab, q=q, counts=counts)
+
+
+@bp.route("/users/<int:user_id>/active", methods=["POST"])
+@require("users.manage")
+def user_toggle_active(user_id):
+    """Quick activate / deactivate from the list. Deactivated users can't sign in; their records stay."""
+    conn = get_db()
+    row = conn.one("SELECT * FROM users WHERE id = ?", (user_id,))
+    if not row:
+        abort(404)
+    back = redirect(url_for("admin.users", tab=request.form.get("tab") or None, q=request.form.get("q") or None))
+    make_active = 0 if row["active"] else 1
+    if not make_active and user_id == g.user.id:
+        flash("You cannot deactivate your own account.", "error")
+        return back
+    if not make_active and row["role"] == "super_admin" and not conn.scalar(
+            "SELECT COUNT(*) FROM users WHERE role = 'super_admin' AND active = 1 AND id != ?", (user_id,)):
+        flash("At least one active super admin must remain.", "error")
+        return back
+    conn.execute("UPDATE users SET active = ? WHERE id = ?", (make_active, user_id))
+    if not make_active:
+        revoke_user_sessions(user_id)
+    audit.record("user_activated" if make_active else "user_deactivated", "user", user_id,
+                 f"{'Activated' if make_active else 'Deactivated'} {row['email']}", {"active": [row["active"], make_active]})
+    flash(f"{row['name']} {'can sign in again' if make_active else 'is deactivated and signed out'}.", "success")
+    return back
 
 
 def _user_form_values(form):
@@ -53,6 +90,7 @@ def _user_form_values(form):
         "license_no": clean(form.get("license_no"), 40), "ptr_no": clean(form.get("ptr_no"), 40), "s2_no": clean(form.get("s2_no"), 40),
         "labs": [int(x) for x in form.getlist("labs") if str(x).isdigit()],
         "notify_email": 1 if form.get("notify_email") else 0,
+        "mobile": clean(form.get("mobile"), 30), "specialization": clean(form.get("specialization"), 80),
     }
 
 
@@ -71,7 +109,24 @@ def _validate_user(conn, v, user_id=None):
         errors["branches"] = "Unknown branch."
     if v["role"] != "super_admin" and not v["branches"] and not v.get("labs"):
         errors["branches"] = "Assign at least one branch (or a laboratory for lab staff)."
+    if "position" in v and v["role"] != "super_admin" and v["position"] not in POSITIONS:
+        errors["position"] = "Choose the position."
+    if v.get("mobile") and not re.match(r"^[0-9+()\-\s]{7,20}$", v["mobile"]):
+        errors["mobile"] = "Enter a valid mobile number, e.g. 0917 123 4567."
     return errors
+
+
+def _save_position(conn, user_id, v):
+    """Every account except the super admin has an employee record holding the position (used by evaluations and payroll)."""
+    if v["role"] == "super_admin" or v["position"] not in POSITIONS:
+        return
+    emp = conn.one("SELECT id, position FROM employees WHERE user_id = ?", (user_id,))
+    if emp:
+        if emp["position"] != v["position"]:
+            conn.execute("UPDATE employees SET position = ? WHERE id = ?", (v["position"], emp["id"]))
+    else:
+        conn.insert("employees", {"user_id": user_id, "full_name": v["name"], "position": v["position"], "email": v["email"],
+                                  "primary_branch_id": v["branches"][0] if v["branches"] else None, "active": 1, "created_at": now_str()})
 
 
 @bp.route("/users/new", methods=["GET", "POST"])
@@ -81,7 +136,7 @@ def user_new():
     branches = conn.all("SELECT * FROM branches ORDER BY sort_order")
     labs = conn.all("SELECT * FROM laboratories WHERE active = 1 ORDER BY name")
     v = {"name": "", "email": "", "role": "", "branches": [], "active": 1, "is_employee": True, "position": "",
-         "license_no": "", "ptr_no": "", "s2_no": "", "labs": [], "notify_email": 1}
+         "license_no": "", "ptr_no": "", "s2_no": "", "labs": [], "notify_email": 1, "mobile": "", "specialization": ""}
     errors = {}
     if request.method == "POST":
         v = _user_form_values(request.form)
@@ -95,24 +150,75 @@ def user_new():
                     "access_role": v["role"],
                     "active": 1, "must_change_password": 1, "created_at": now_str(), "created_by": g.user.id,
                     "license_no": v["license_no"], "ptr_no": v["ptr_no"], "s2_no": v["s2_no"],
-                    "notify_email": v["notify_email"],
+                    "notify_email": v["notify_email"], "mobile": v["mobile"], "specialization": v["specialization"],
                 })
                 for b in v["branches"]:
                     conn.execute("INSERT INTO user_branches (user_id, branch_id) VALUES (?, ?)", (uid, b))
                 for lab in v["labs"]:
                     if any(l["id"] == lab for l in labs):
                         conn.execute("INSERT INTO user_labs (user_id, lab_id) VALUES (?, ?)", (uid, lab))
-                if v["is_employee"]:
-                    conn.insert("employees", {
-                        "user_id": uid, "full_name": v["name"],
-                        "position": v["position"] if v["position"] in POSITIONS else POSITION_FOR_ROLE.get(v["role"], "Staff"),
-                        "primary_branch_id": v["branches"][0] if v["branches"] else None, "active": 1,
-                        "created_at": now_str(),
-                    })
+                _save_position(conn, uid, v)
                 audit.record("user_created", "user", uid, f"Created user {v['email']} as {ROLES[v['role']]}",
                              {"role": v["role"], "branches": v["branches"], "labs": v["labs"]})
             return render_template("staff/admin/user_created.html", email=v["email"], temp=temp, user_id=uid)
     return render_template("staff/admin/user_form.html", v=v, errors=errors, branches=branches, labs=labs, is_new=True)
+
+
+@bp.route("/users/from-employees", methods=["GET", "POST"])
+@require("users.manage")
+def users_from_employees():
+    """Create login accounts for employees who don't have one yet. Each gets a temporary password, shown once, that they
+    must change at first sign-in. Nothing is emailed."""
+    conn = get_db()
+    labs = conn.all("SELECT * FROM laboratories WHERE active = 1 ORDER BY name")
+    emps = conn.all("SELECT e.*, b.name AS branch FROM employees e LEFT JOIN branches b ON b.id = e.primary_branch_id "
+                    "WHERE e.active = 1 AND e.user_id IS NULL ORDER BY e.full_name")
+    only = to_int(request.args.get("employee"))
+    if only:
+        emps = [e for e in emps if e["id"] == only]
+    for e in emps:
+        e["suggested"] = ACCESS_FOR_POSITION.get(e["position"], "staff")
+        e["is_tech"] = "technician" in (e["position"] or "").lower()
+    errors, created = {}, []
+    if request.method == "POST":
+        picks = []
+        for e in emps:
+            if not request.form.get(f"make_{e['id']}"):
+                continue
+            v = {"name": e["full_name"], "email": clean(request.form.get(f"email_{e['id']}"), 200).lower(),
+                 "role": request.form.get(f"role_{e['id']}", ""), "branches": [e["primary_branch_id"]] if e["primary_branch_id"] else [],
+                 "labs": [to_int(request.form.get(f"lab_{e['id']}"))] if to_int(request.form.get(f"lab_{e['id']}")) else []}
+            if v["role"] == "super_admin":
+                v["role"] = ""
+            v["labs"] = [l for l in v["labs"] if any(x["id"] == l for x in labs)]
+            err = _validate_user(conn, v)
+            if any(p["email"] == v["email"] for p in picks):
+                err["email"] = "Same email used twice."
+            if err:
+                errors[e["id"]] = " ".join(err.values())
+            picks.append({**v, "emp": e})
+        if not picks:
+            flash("Tick at least one employee.", "error")
+        elif not errors:
+            with conn.transaction():
+                for v in picks:
+                    temp = _temp_password()
+                    uid = conn.insert("users", {"email": v["email"], "name": v["name"], "password_hash": hash_password(temp),
+                                                "role": base_role(v["role"]), "access_role": v["role"], "active": 1,
+                                                "must_change_password": 1, "created_at": now_str(), "created_by": g.user.id})
+                    for b in v["branches"]:
+                        conn.execute("INSERT INTO user_branches (user_id, branch_id) VALUES (?, ?)", (uid, b))
+                    for lab in v["labs"]:
+                        conn.execute("INSERT INTO user_labs (user_id, lab_id) VALUES (?, ?)", (uid, lab))
+                    conn.execute("UPDATE employees SET user_id = ?, email = ? WHERE id = ?", (uid, v["email"], v["emp"]["id"]))
+                    audit.record("user_created", "user", uid, f"Created login {v['email']} for employee {v['name']} as {ROLES[v['role']]}",
+                                 {"role": v["role"], "employee_id": v["emp"]["id"], "branches": v["branches"], "labs": v["labs"]})
+                    created.append({"name": v["name"], "email": v["email"], "role": ROLES[v["role"]], "temp": temp,
+                                    "branch": v["emp"]["branch"] or "—"})
+            return render_template("staff/admin/users_created_bulk.html", created=created,
+                                   login_url=url_for("auth.login", _external=True))
+    roles = {k: l for k, l in ROLES.items() if k != "super_admin"}
+    return render_template("staff/admin/users_from_employees.html", emps=emps, roles=roles, labs=labs, errors=errors, form=request.form)
 
 
 @bp.route("/users/<int:user_id>", methods=["GET", "POST"])
@@ -127,9 +233,11 @@ def user_edit(user_id):
     labs = conn.all("SELECT * FROM laboratories WHERE active = 1 ORDER BY name")
     current_labs = [r["lab_id"] for r in conn.all("SELECT lab_id FROM user_labs WHERE user_id = ?", (user_id,))]
     v = {"name": row["name"], "email": row["email"], "role": row["access_role"] or row["role"], "branches": current_branches,
-         "active": row["active"], "is_employee": False, "position": "", "license_no": row["license_no"],
+         "active": row["active"], "is_employee": False,
+         "position": (conn.one("SELECT position FROM employees WHERE user_id = ?", (user_id,)) or {}).get("position", ""),
+         "license_no": row["license_no"],
          "ptr_no": row["ptr_no"], "s2_no": row["s2_no"], "labs": current_labs,
-         "notify_email": row["notify_email"]}
+         "notify_email": row["notify_email"], "mobile": row["mobile"], "specialization": row["specialization"]}
     errors = {}
     if request.method == "POST":
         v = _user_form_values(request.form)
@@ -147,7 +255,10 @@ def user_edit(user_id):
             with conn.transaction():
                 conn.update("users", user_id, {"name": v["name"], "email": v["email"], "role": base_role(v["role"]), "access_role": v["role"],
                                                "active": v["active"], "license_no": v["license_no"], "ptr_no": v["ptr_no"],
-                                               "s2_no": v["s2_no"], "notify_email": v["notify_email"]})
+                                               "s2_no": v["s2_no"], "notify_email": v["notify_email"], "mobile": v["mobile"],
+                                               "specialization": v["specialization"]})
+                old_pos = (conn.one("SELECT position FROM employees WHERE user_id = ?", (user_id,)) or {}).get("position", "")
+                _save_position(conn, user_id, v)
                 conn.execute("DELETE FROM user_labs WHERE user_id = ?", (user_id,))
                 for lab in v["labs"]:
                     if any(l["id"] == lab for l in labs):
@@ -156,9 +267,12 @@ def user_edit(user_id):
                 for b in v["branches"]:
                     conn.execute("INSERT INTO user_branches (user_id, branch_id) VALUES (?, ?)", (user_id, b))
                 changes = audit.diff({**dict(row), "role": row["access_role"] or row["role"]}, v,
-                                     ["name", "email", "role", "active", "license_no", "ptr_no", "s2_no", "notify_email"])
+                                     ["name", "email", "role", "active", "license_no", "ptr_no", "s2_no", "notify_email", "mobile",
+                                      "specialization"])
                 if sorted(current_labs) != sorted(v["labs"]):
                     changes["labs"] = [current_labs, v["labs"]]
+                if v["role"] != "super_admin" and old_pos != v["position"]:
+                    changes["position"] = [old_pos, v["position"]]
                 if sorted(current_branches) != sorted(v["branches"]):
                     changes["branches"] = [current_branches, v["branches"]]
                 if changes:

@@ -12,6 +12,7 @@ from ..auth import require
 from ..billing import (CREDIT_METHOD, PAYMENT_METHODS, collections, commission_dentists, compute_totals, credit_balance,
                        invoice_commission_info, lab_share, line_amount, next_invoice_number, paid_amount, payment_state)
 from ..db import get_db
+from ..fee_schedule import picker_options
 from ..permissions import branch_filter, can_see_patient
 from ..util import clean, now_str, parse_date, parse_money, peso, to_int, today
 from .common import branches_for_user, date_range_args, paginate, services
@@ -129,6 +130,7 @@ def invoice(invoice_id):
                            (invoice_id,))
     return render_template("staff/billing/invoice.html", inv=inv, items=items, payments=payments, paid=paid, inv_dentists=inv_dentists,
                            manual_comm=manual_comm, comm_dentists=commission_dentists(conn), comm_info=invoice_commission_info(conn, inv),
+                           fee_options=picker_options(conn) if inv["status"] == "draft" else [],
                            lab_cases=lab_cases, dentist_names=dentist_names, default_dentist=appt["dentist_id"] if appt else None,
                            default_done=(appt["start_at"][:10] if appt else today().isoformat()),
                            credit=credit_balance(conn, inv["patient_id"]),

@@ -2,11 +2,13 @@
 {% from "macros.html" import csrf %}
 {% block page_title %}Employees{% endblock %}
 {% block content %}
-<div class="page-head"><div><h1>Employees</h1><p>Staff and associate dentists for attendance and payroll review. Adding an employee here doesn't create a login.</p></div></div>
+<div class="page-head"><div><h1>Employees</h1><p>Staff and associate dentists for attendance and payroll review. Adding an employee here doesn't create a login.</p></div>
+<div class="row">{% if current_user.can('attendance.manage') %}<a class="btn btn-secondary" href="{{ url_for('people.employees_import') }}">Import employees (Excel / CSV)</a>{% endif %}
+{% if current_user.can('users.manage') %}{% set no_login = rows|selectattr('active')|rejectattr('user_id')|list|length %}<a class="btn" href="{{ url_for('admin.users_from_employees') }}">Create logins{% if no_login %} ({{ no_login }} without){% endif %}</a>{% endif %}</div></div>
 <div class="card"><div class="table-wrap"><table>
 <thead><tr><th>Name</th><th>Position</th><th>Branch</th><th>Type</th><th>Login</th>{% if current_user.can('compensation.manage') %}<th>Current pay basis</th>{% endif %}<th>Status</th><th></th></tr></thead><tbody>
 {% for e in rows %}<tr><td><strong>{{ e.full_name }}</strong></td><td>{{ e.position }}</td><td>{{ e.branch or '—' }}</td><td>{{ e.employment_type|label }}</td>
-<td>{% if e.email %}{{ ROLES[e.access_role or e.role] }}{% else %}<span class="muted">No login</span>{% endif %}</td>
+<td>{% if e.login_email %}{{ ROLES[e.access_role or e.role] }}{% elif current_user.can('users.manage') and e.active %}<a href="{{ url_for('admin.users_from_employees', employee=e.id) }}">Create login</a>{% else %}<span class="muted">No login</span>{% endif %}</td>
 {% if current_user.can('compensation.manage') %}<td>{% if e.comp %}{{ BASIS_LABELS[e.comp.basis] }}{% if e.comp.rate_cents is not none %} · {{ e.comp.rate_cents|peso }}{% endif %}{% if e.comp.percentage_bp %} · {{ e.comp.percentage_bp / 100 }}%{% endif %}{% else %}<span class="badge badge-amber">Not set</span>{% endif %}</td>{% endif %}
 <td>{% if e.active %}<span class="badge badge-green">Active</span>{% else %}<span class="badge">Inactive</span>{% endif %}</td>
 <td><a class="btn btn-secondary btn-sm" href="{{ url_for('people.employee', emp_id=e.id) }}">Open</a></td></tr>{% endfor %}

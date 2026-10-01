@@ -163,7 +163,7 @@
 <tbody data-pn-lines>{% if draft and draft.lines %}{% for ln in draft.lines %}{{ pn_line(ln) }}{% endfor %}{% else %}{{ pn_line() }}{% endif %}</tbody></table></div>
 <button type="button" class="btn btn-ghost btn-sm" data-pn-add>+ Add service</button>
 <p class="hint">Qty follows the number of teeth you enter (e.g. “35, 46” = 2). Change it if the price isn't per tooth.</p>
-<datalist id="pn-services">{% for o in price_options %}<option value="{{ o.name }}" data-sid="{{ o.service_id or '' }}" data-price="{{ '%.2f'|format(o.price / 100) if o.price else '' }}">{% if o.unit %}{{ o.unit }}{% endif %}</option>{% endfor %}</datalist></div>
+<datalist id="pn-services">{% for o in price_options %}<option value="{{ o.name }}" data-sid="{{ o.service_id or '' }}" data-price="{{ '%.2f'|format(o.price / 100) if o.price else '0.00' }}" data-percount="{{ 1 if o.per_count else 0 }}">{{ o.category }}{% if o.unit %} · {{ o.unit }}{% endif %} · ₱{{ '{:,.2f}'.format((o.price or 0) / 100) }}</option>{% endfor %}</datalist></div>
 <div class="pay-grid">
 <div>
 <div class="pay-box"><label for="pn-body" class="pay-lbl">Remarks / notes</label><textarea id="pn-body" name="body" rows="7" placeholder="Insert remarks here…">{{ draft.body if draft else '' }}</textarea></div>

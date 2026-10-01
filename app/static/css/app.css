@@ -668,3 +668,21 @@ section[id] { scroll-margin-top: 72px; }
 .eval-blocked { max-width: 560px; }
 .eval-staff { margin-top: .5rem; }
 .eval-staff li { padding: .35rem 0; border-top: 1px solid var(--line-2); }
+
+/* Login slips */
+.slips { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; }
+.slip h2 { font-size: 1.05rem; margin-top: 0; }
+.temp-pw { font-size: 1.05rem; letter-spacing: .03em; background: var(--brand-50); padding: .1em .4em; border-radius: 6px; }
+.row-error td { background: var(--red-100); }
+@media print { .slip { break-inside: avoid; box-shadow: none; border: 1px dashed #999; } .sidebar, .topbar, .no-print { display: none !important; } }
+.row-muted td { opacity: .6; }
+.users-table td { vertical-align: top; }
+.users-table td:nth-child(3) { min-width: 190px; }
+.users-table td:last-child { white-space: nowrap; }
+
+/* Fee schedule */
+.fee-cats { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .8rem; }
+.fee-cats a { text-decoration: none; border: 1px solid var(--line); border-radius: 999px; padding: .25em .75em; font-size: .85rem; color: var(--ink-2); background: var(--card); }
+.fee-cats a.active, .fee-cats a:hover { background: var(--brand-700); color: #fff; border-color: var(--brand-700); }
+.fee-group h2 { font-size: 1.1rem; }
+.fee-edit[open] { min-width: 320px; }

@@ -1,23 +1,44 @@
 {% extends "staff/layout.html" %}
-{% from "macros.html" import status_badge %}
+{% from "macros.html" import csrf %}
 {% block page_title %}Users{% endblock %}
 {% block content %}
 <div class="page-head"><div><h1>Users</h1><p>Only super admins can create users, change roles or assign branches. Every change is recorded in the audit trail.</p></div>
-  <a class="btn" href="{{ url_for('admin.user_new') }}">+ New user</a></div>
-<div class="card"><div class="table-wrap"><table>
-  <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Branches</th><th>Status</th><th>Last sign-in</th><th></th></tr></thead>
+  <div class="row"><a class="btn btn-secondary" href="{{ url_for('admin.users_from_employees') }}">Create logins for employees</a><a class="btn" href="{{ url_for('admin.user_new') }}">+ New {{ 'associate' if tab == 'associates' else 'staff' }}</a></div></div>
+<nav class="pills" aria-label="User lists">
+  <a href="?tab=associates" class="{% if tab == 'associates' %}active{% endif %}">Associates (dentists) <span class="pill-n">{{ counts.associates }}</span></a>
+  <a href="?tab=staff" class="{% if tab == 'staff' %}active{% endif %}">Staff <span class="pill-n">{{ counts.staff }}</span></a>
+</nav>
+<div class="card">
+<form method="get" class="row" style="max-width:460px"><input type="hidden" name="tab" value="{{ tab }}"><label class="sr-only" for="uq">Search</label>
+<input id="uq" name="q" value="{{ q }}" placeholder="Search by {{ 'associate' if tab == 'associates' else 'staff' }} name, email or position" style="flex:1"><button class="btn btn-secondary">Search</button></form>
+<div class="table-wrap mt-1"><table class="users-table">
+{% if tab == 'associates' %}
+  <thead><tr><th>#</th><th>Status</th><th>Name</th><th>License no.</th><th>PTR no.</th><th>Designation</th><th>Specialization</th><th>Email</th><th>Mobile</th><th>Actions</th></tr></thead>
+{% else %}
+  <thead><tr><th>#</th><th>Status</th><th>Name</th><th>Position</th><th>Access role</th><th>Branches</th><th>Email</th><th>Mobile</th><th>Actions</th></tr></thead>
+{% endif %}
   <tbody>
   {% for u in users %}
-    <tr>
-      <td><strong>{{ u.name }}</strong>{% if u.id == current_user.id %} <span class="badge">You</span>{% endif %}</td>
-      <td>{{ u.email }}</td>
+    <tr {% if not u.active %}class="row-muted"{% endif %}>
+      <td>{{ loop.index }}</td>
+      <td>{% if u.active %}<span class="badge badge-green">Active</span>{% else %}<span class="badge badge-red">Deactivated</span>{% endif %}{% if u.must_change_password and u.active %}<br><span class="badge badge-amber">Temp password</span>{% endif %}
+        <br><small class="muted">{{ ('Last in ' ~ (u.last_login_at|date)) if u.last_login_at else 'Never signed in' }}</small></td>
+      <td>{% if u.role == 'super_admin' %}<span class="badge badge-teal">Account owner</span><br>{% endif %}<strong>{{ u.name }}</strong>{% if u.id == current_user.id %} <span class="badge">You</span>{% endif %}
+        {% if tab == 'associates' %}<br><small class="muted">{% if u.role == 'super_admin' %}All branches{% else %}{{ (user_branches.get(u.id) or ['No branch'])|join(', ') }}{% endif %}</small>{% endif %}</td>
+      {% if tab == 'associates' %}
+      <td>{{ u.license_no or '—' }}</td><td>{{ u.ptr_no or '—' }}</td>
+      <td>{% if u.position %}{{ u.position }}{% elif u.role != 'super_admin' %}<a href="{{ url_for('admin.user_edit', user_id=u.id) }}" class="c-red">Set position</a>{% else %}—{% endif %}</td>
+      <td>{{ u.specialization or '—' }}</td>
+      {% else %}
+      <td>{% if u.position %}{{ u.position }}{% elif u.role != 'super_admin' %}<a href="{{ url_for('admin.user_edit', user_id=u.id) }}" class="c-red">Set position</a>{% else %}—{% endif %}</td>
       <td><span class="badge {% if u.role == 'super_admin' %}badge-red{% else %}badge-teal{% endif %}">{{ ROLES[u.access_role or u.role] }}</span></td>
       <td>{% if u.role == 'super_admin' %}<span class="muted">All branches</span>{% else %}{{ (user_branches.get(u.id) or ['—'])|join(', ') }}{% endif %}</td>
-      <td>{% if u.active %}<span class="badge badge-green">Active</span>{% else %}<span class="badge">Inactive</span>{% endif %}
-          {% if u.must_change_password %}<span class="badge badge-amber">Temp password</span>{% endif %}</td>
-      <td>{{ u.last_login_at|dt }}</td>
-      <td><a class="btn btn-secondary btn-sm" href="{{ url_for('admin.user_edit', user_id=u.id) }}">Edit</a></td>
+      {% endif %}
+      <td>{{ u.email }}</td><td>{{ u.mobile or '—' }}</td>
+      <td class="row" style="flex-wrap:nowrap"><a class="btn btn-secondary btn-sm" href="{{ url_for('admin.user_edit', user_id=u.id) }}">Edit</a>
+        {% if u.id != current_user.id %}<form method="post" action="{{ url_for('admin.user_toggle_active', user_id=u.id) }}" data-confirm="{{ 'Deactivate ' ~ u.name ~ '? They will be signed out and can’t sign in.' if u.active else 'Activate ' ~ u.name ~ '? They can sign in again.' }}">{{ csrf() }}<input type="hidden" name="tab" value="{{ tab }}"><input type="hidden" name="q" value="{{ q }}">
+        <button class="btn btn-sm {{ 'btn-ghost c-red' if u.active else 'btn-ghost' }}">{{ 'Deactivate' if u.active else 'Activate' }}</button></form>{% endif %}</td>
     </tr>
-  {% endfor %}
+  {% else %}<tr><td colspan="11" class="empty">{{ 'No match.' if q else 'No ' ~ ('associates' if tab == 'associates' else 'staff') ~ ' yet.' }}</td></tr>{% endfor %}
   </tbody></table></div></div>
 {% endblock %}

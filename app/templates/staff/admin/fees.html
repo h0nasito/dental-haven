@@ -1,0 +1,48 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Fee schedule{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Fee schedule</h1>
+<p>The clinic's billing prices ({{ total }} services), by category. These come up when staff add a progress note or a bill line. The public price list on the website is separate (Administration → Price list).</p></div></div>
+<div class="card">
+<form method="get" class="toolbar">
+<div class="field grow"><label for="fq">Search</label><input id="fq" name="q" value="{{ q }}" placeholder="e.g. zirconia, rebracket, RCT"></div>
+<div class="field"><label for="fc">Category</label><select id="fc" name="cat" data-autosubmit><option value="">All categories</option>{% for c in categories %}<option value="{{ c }}" {% if cat == c %}selected{% endif %}>{{ c }} ({{ counts.get(c, 0) }})</option>{% endfor %}</select></div>
+<label class="check"><input type="checkbox" name="inactive" value="1" {% if show_inactive %}checked{% endif %}> Show hidden</label>
+<button class="btn btn-secondary">Filter</button></form>
+<nav class="fee-cats" aria-label="Categories">{% for c in categories %}<a href="?cat={{ c|urlencode }}" class="{% if cat == c %}active{% endif %}">{{ c }} <span class="pill-n">{{ counts.get(c, 0) }}</span></a>{% endfor %}</nav>
+</div>
+
+{% for category, items in groups %}
+<div class="card fee-group"><h2>{{ category }} <small class="muted">({{ items|length }})</small></h2>
+<div class="table-wrap"><table><thead><tr><th>Service / procedure</th><th>Unit</th><th class="num">Price</th><th></th></tr></thead><tbody>
+{% for f in items %}<tr {% if not f.active %}class="row-muted"{% endif %}>
+<td><strong>{{ f.name }}</strong>{% if not f.active %} <span class="badge">Hidden</span>{% endif %}</td><td>{{ f.unit or '—' }}</td>
+<td class="num">{{ f.price_cents|peso if f.price_cents else '₱0.00' }}</td>
+<td><details class="fee-edit"><summary>Edit</summary>
+<form method="post" class="form-grid mt-1">{{ csrf() }}<input type="hidden" name="action" value="save"><input type="hidden" name="id" value="{{ f.id }}"><input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="cat" value="{{ cat }}">
+<div class="field"><label for="fn{{ f.id }}">Name</label><input id="fn{{ f.id }}" name="name" value="{{ f.name }}" required></div>
+<div class="field"><label for="fu{{ f.id }}">Unit</label><input id="fu{{ f.id }}" name="unit" value="{{ f.unit }}"></div>
+<div class="field"><label for="fp{{ f.id }}">Price (₱)</label><input id="fp{{ f.id }}" name="price" inputmode="decimal" value="{{ '%.2f' % (f.price_cents / 100) }}" required></div>
+<div class="field"><label for="fk{{ f.id }}">Category</label><select id="fk{{ f.id }}" name="category">{% for c in categories %}<option {% if f.category == c %}selected{% endif %}>{{ c }}</option>{% endfor %}</select></div>
+<label class="check"><input type="checkbox" name="active" value="1" {% if f.active %}checked{% endif %}> Show in pickers</label>
+<button class="btn btn-secondary btn-sm">Save</button>
+{% if f.updated_by %}<small class="muted">Last changed by {{ f.by_name }} · {{ f.updated_at|dt }}</small>{% endif %}</form></details></td></tr>{% endfor %}
+</tbody></table></div></div>
+{% else %}<div class="card"><p class="muted">Nothing matches.</p></div>{% endfor %}
+
+<div class="grid grid-2">
+<div class="card"><h2>Add a service</h2>
+<form method="post" class="form-grid">{{ csrf() }}<input type="hidden" name="action" value="add">
+<div class="field"><label for="an">Service / procedure</label><input id="an" name="name" required></div>
+<div class="field"><label for="au">Unit</label><input id="au" name="unit" placeholder="e.g. Per tooth"></div>
+<div class="field"><label for="ap">Price (₱)</label><input id="ap" name="price" inputmode="decimal" required></div>
+<div class="field"><label for="ak">Category</label><select id="ak" name="category"><option value="">Sort it for me</option>{% for c in categories %}<option>{{ c }}</option>{% endfor %}</select></div>
+<button class="btn btn-secondary">Add</button></form></div>
+<div class="card"><h2>Update prices from Excel</h2>
+<form method="post" action="{{ url_for('fees.import_file') }}" enctype="multipart/form-data">{{ csrf() }}
+<div class="field"><label for="ff">Excel (.xlsx) or CSV with columns SERVICES/PROCEDURE, UNIT, PRICE</label><input id="ff" type="file" name="file" accept=".xlsx,.csv" required></div>
+<button class="btn btn-secondary">Upload</button>
+<p class="hint">Same name and unit = price updated. New services are added and put in a category automatically. Nothing is deleted; hide items you no longer offer.</p></form></div>
+</div>
+{% endblock %}

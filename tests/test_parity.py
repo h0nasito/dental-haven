@@ -164,7 +164,8 @@ class TestParity(Base):
         case_id = int(r.headers["Location"].rstrip("/").split("/")[-1])
         # super admin creates a lab-only user
         a = self.login("admin")
-        r = a.post("/staff/admin/users/new", data={"name": "DSDL Tech", "email": "tech@dsdl.test", "role": "staff", "labs": [str(lab)]})
+        r = a.post("/staff/admin/users/new", data={"name": "DSDL Tech", "email": "tech@dsdl.test", "role": "staff", "labs": [str(lab)],
+                                                  "position": "Technician"})
         temp = re.search(rb'id="temp-pw"[^>]*>([^<]+)<', r.data).group(1).decode()
         t = self.app.test_client()
         t.post("/staff/login", data={"email": "tech@dsdl.test", "password": temp})

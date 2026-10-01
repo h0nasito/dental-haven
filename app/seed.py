@@ -482,6 +482,14 @@ def seed_base(conn):
                 else:
                     conn.execute("UPDATE evaluation_forms SET answered_by = ? WHERE id = ?", (rf["answered_by"], row["id"]))
             _settings2.put("seed.eval_roles_v3", True, None, conn)
+        # The clinic's fee schedule (billing price list), loaded once; afterwards the admin edits it in the app.
+        if not _settings2.get("seed.fee_schedule_v1", conn):
+            from .fee_schedule_data import FEES
+            if not conn.scalar("SELECT COUNT(*) FROM fee_schedule"):
+                for i, (name, unit, cents, cat) in enumerate(FEES):
+                    conn.insert("fee_schedule", {"name": name, "unit": unit, "price_cents": cents, "category": cat, "active": 1,
+                                                 "sort_order": i, "updated_at": now_str()})
+            _settings2.put("seed.fee_schedule_v1", True, None, conn)
         # Access roles added later (HR, Supervisor, Cashier) start with their recommended access, once.
         if conn.scalar("SELECT COUNT(*) FROM role_permissions"):
             for role in ("hr", "supervisor", "cashier", "technician"):

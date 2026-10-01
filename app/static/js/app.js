@@ -312,7 +312,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var total = 0;
     tbody.querySelectorAll('[data-pn-line]').forEach(function (row) {
       var qtyIn = row.querySelector('[data-pn-qty]');
-      var qty = parseInt(qtyIn.value, 10) || Math.max(1, teeth(row.querySelector('[data-pn-tooth]').value));
+      var qty = parseInt(qtyIn.value, 10) || (row.dataset.percount === '0' ? 1 : Math.max(1, teeth(row.querySelector('[data-pn-tooth]').value)));
       var sub = qty * cents(row.querySelector('[data-pn-price]').value);
       var pct = Math.min(100, parseFloat(row.querySelector('[data-pn-disc]').value) || 0);
       var net = sub - Math.round(sub * pct / 100);
@@ -331,10 +331,15 @@ document.addEventListener('DOMContentLoaded', function () {
       document.querySelectorAll('#pn-services option').forEach(function (o) { if (o.value === e.target.value) opt = o; });
       row.querySelector('[data-pn-sid]').value = opt ? opt.dataset.sid : '';
       if (opt && opt.dataset.price) row.querySelector('[data-pn-price]').value = opt.dataset.price;
+      if (opt) {
+        row.dataset.percount = opt.dataset.percount || '1';
+        var qq = row.querySelector('[data-pn-qty]');
+        if (opt.dataset.percount === '0' && !qq.dataset.touched) qq.value = '';
+      }
     }
     if (row && e.target.matches('[data-pn-tooth]')) {
       var q = row.querySelector('[data-pn-qty]');
-      if (!q.dataset.touched) q.value = teeth(e.target.value) > 1 ? teeth(e.target.value) : '';
+      if (!q.dataset.touched && row.dataset.percount !== '0') q.value = teeth(e.target.value) > 1 ? teeth(e.target.value) : '';
     }
     if (e.target.matches('[data-pn-qty]')) e.target.dataset.touched = '1';
     recalc();
@@ -393,4 +398,23 @@ document.addEventListener('DOMContentLoaded', function () {
     if (first) { e.preventDefault(); first.scrollIntoView({ behavior: 'smooth', block: 'center' }); first.querySelector('input').focus({ preventScroll: true }); }
   });
   update();
+})();
+
+/* Print buttons: <button data-print> */
+(function () {
+  document.querySelectorAll('[data-print]').forEach(function (b) { b.addEventListener('click', function () { window.print(); }); });
+})();
+
+/* Bill line: pick from the fee schedule to fill the description and unit price. */
+(function () {
+  document.querySelectorAll('input[data-fee-pick]').forEach(function (inp) {
+    var form = inp.closest('form'), list = document.getElementById(inp.getAttribute('list'));
+    inp.addEventListener('change', function () {
+      var opt = null;
+      list.querySelectorAll('option').forEach(function (o) { if (o.value === inp.value) opt = o; });
+      if (!opt) return;
+      form.querySelector('[name=description]').value = inp.value;
+      form.querySelector('[name=unit_price]').value = opt.dataset.price;
+    });
+  });
 })();

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 from datetime import date as date_cls, timedelta
 
 from flask import Blueprint, Response, abort, flash, g, redirect, render_template, request, url_for
@@ -58,12 +59,196 @@ def employees():
             flash("Employee added. This does not create a login; only a super admin can create users.", "success")
         return redirect(url_for("people.employees"))
     scope, params = _employee_scope()
-    rows = conn.all(f"SELECT e.*, b.name AS branch, u.email, u.role, u.access_role FROM employees e LEFT JOIN branches b ON b.id = e.primary_branch_id "
+    rows = conn.all(f"SELECT e.*, b.name AS branch, u.email AS login_email, u.role, u.access_role FROM employees e LEFT JOIN branches b ON b.id = e.primary_branch_id "
                     f"LEFT JOIN users u ON u.id = e.user_id WHERE {scope} ORDER BY e.active DESC, e.full_name", params)
     if g.user.can("compensation.manage"):
         for r in rows:
             r["comp"] = current_compensation(conn, r["id"], today().isoformat())
     return render_template("staff/people/employees.html", rows=rows, branches=branches_for_user(g.user))
+
+
+EMPLOYMENT_TYPES = {"regular": "regular", "probationary": "probationary", "probation": "probationary", "associate": "associate",
+                    "associate dentist": "associate", "part-time": "part_time", "part time": "part_time", "parttime": "part_time",
+                    "part_time": "part_time", "contractual": "contractual", "contract": "contractual", "": "regular"}
+HEADERS = {"name": ("name", "full name", "employee", "employee name", "pangalan"),
+           "position": ("position", "job title", "title", "designation", "role"),
+           "branch": ("branch", "primary branch", "clinic", "assigned branch"),
+           "type": ("type", "employment type", "employment status", "status"),
+           "email": ("email", "e-mail", "email address", "work email")}
+
+
+def normalize_position(text: str):
+    """Map what people type ('Assistant', 'Technician (RPD)', 'Receptionist / Cashier') to a position in the list.
+    With two jobs in one cell, the first one that matches is used."""
+    from ..evaluation_content import ALIASES
+    t = " ".join((text or "").lower().replace("–", "-").split())
+    if "/" in t and not t.startswith("cad/cam"):
+        for part in t.split("/"):
+            hit = normalize_position(part)
+            if hit:
+                return hit
+        return None
+    for p in POSITIONS:
+        if t == p.lower() or t in ALIASES.get(p.lower(), ()):
+            return p
+    extra = {"dentist": "Dentist", "assistant": "Dental Assistant", "dental asst": "Dental Assistant", "front desk": "Receptionist",
+             "technician": "Technician", "lab technician": "Technician", "dental technician": "Technician"}
+    return extra.get(t)
+
+
+def _branch_lookup(conn):
+    out = {}
+    for b in conn.all("SELECT id, slug, name FROM branches"):
+        for key in {b["slug"].lower(), b["name"].lower(), b["name"].split(" (")[0].lower()}:
+            out[key] = b
+    if "sjdm" in out:
+        out.setdefault("san jose del monte", out["sjdm"])
+    return out
+
+
+def _import_rows(conn, table):
+    """Check each row of the uploaded list. Returns rows with status 'new' / 'update' / 'same' / 'error'."""
+    branches = _branch_lookup(conn)
+    existing = {" ".join(e["full_name"].lower().split()): e for e in conn.all("SELECT * FROM employees WHERE active = 1")}
+    users_by_name = {" ".join(u["name"].lower().split()): u["id"] for u in conn.all(
+        "SELECT u.id, u.name FROM users u WHERE u.active = 1 AND NOT EXISTS (SELECT 1 FROM employees e WHERE e.user_id = u.id)")}
+    out, seen = [], set()
+
+    def col(row, key):
+        for h in HEADERS[key]:
+            if h in row:
+                return (row.get(h) or "").strip()
+        return ""
+
+    for i, row in enumerate(table, start=2):
+        name = " ".join(col(row, "name").split())[:120]
+        if name and name == name.lower():
+            name = " ".join(w[:1].upper() + w[1:] for w in name.split())   # "jamie lorenzo" -> "Jamie Lorenzo"
+        pos_raw, br_raw, type_raw = col(row, "position"), col(row, "branch"), col(row, "type")
+        email = col(row, "email").lower()[:200]
+        r = {"line": i, "name": name, "position_raw": pos_raw, "branch_raw": br_raw, "position": None, "branch_id": None,
+             "branch": "", "type": EMPLOYMENT_TYPES.get(type_raw.lower().strip()), "type_raw": type_raw, "email": email, "status": "new", "note": ""}
+        if not name and not pos_raw and not br_raw:
+            continue
+        problems = []
+        if not name:
+            problems.append("no name")
+        r["position"] = normalize_position(pos_raw)
+        if r["position"] and "/" in pos_raw:
+            r["note"] = f"“{pos_raw}” → {r['position']} (pick the access role when creating their login)"
+        if not r["position"]:
+            problems.append(f"unknown position “{pos_raw}”" if pos_raw else "no position")
+        if br_raw:
+            b = branches.get(br_raw.lower().strip())
+            if not b:
+                problems.append(f"unknown branch “{br_raw}”")
+            elif not g.user.is_super_admin and not g.user.in_branch(b["id"]):
+                problems.append(f"{b['name']} isn't one of your branches")
+            else:
+                r["branch_id"], r["branch"] = b["id"], b["name"]
+        elif not g.user.is_super_admin:
+            problems.append("no branch")
+        if r["type"] is None:
+            problems.append(f"unknown employment type “{type_raw}”")
+        if email and not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+            problems.append(f"invalid email “{email}”")
+        key = " ".join(name.lower().split())
+        if key and key in seen:
+            problems.append("listed twice")
+        seen.add(key)
+        if problems:
+            r["status"], r["note"] = "error", "; ".join(problems)
+        elif key not in existing and key in users_by_name:
+            r["user_id"] = users_by_name[key]
+            r["note"] = ((r["note"] + "; ") if r["note"] else "") + "linked to their existing login"
+        elif key in existing:
+            e = existing[key]
+            changes = []
+            if e["position"] != r["position"]:
+                changes.append(f"position {e['position'] or '—'} → {r['position']}")
+            if r["branch_id"] and e["primary_branch_id"] != r["branch_id"]:
+                changes.append("branch → " + r["branch"])
+            if type_raw and e["employment_type"] != r["type"]:
+                changes.append(f"type → {r['type']}")
+            if email and (e["email"] or "") != email:
+                changes.append(f"email → {email}")
+            r["employee_id"] = e["id"]
+            r["status"], r["note"] = ("update", ", ".join(changes)) if changes else ("same", "already up to date")
+        out.append(r)
+    return out
+
+
+@bp.route("/employees/import", methods=["GET", "POST"])
+@require("attendance.manage")
+def employees_import():
+    """Add or update many employees at once from an Excel (.xlsx) or CSV list: Name, Position, Branch, (Type)."""
+    import json
+    from ..sheets import SheetError, read_table
+    conn = get_db()
+    rows, error = None, None
+    if request.method == "POST" and request.form.get("action") == "preview":
+        f = request.files.get("file")
+        if not f or not f.filename:
+            error = "Choose your Excel or CSV file first."
+        else:
+            data = f.read(5 * 1024 * 1024 + 1)
+            if len(data) > 5 * 1024 * 1024:
+                error = "The file is larger than 5 MB."
+            else:
+                try:
+                    table = read_table(f.filename, data)
+                    if not any(any(h in row for h in HEADERS["name"]) for row in table[:1]) and table:
+                        raise SheetError("The first row must be the headings: Name, Position, Branch (and Type, optional).")
+                    rows = _import_rows(conn, table)
+                    if not rows:
+                        error = "No employees found in the file."
+                except SheetError as exc:
+                    error = str(exc)
+    elif request.method == "POST" and request.form.get("action") == "import":
+        try:
+            raw = json.loads(request.form.get("rows_json") or "[]")
+        except ValueError:
+            abort(400)
+        table = [{"name": r.get("name", ""), "position": r.get("position_raw", ""), "branch": r.get("branch_raw", ""),
+                  "type": r.get("type_raw", ""), "email": r.get("email", "")} for r in raw if isinstance(r, dict)][:2000]
+        checked = _import_rows(conn, table)
+        added = updated = 0
+        with conn.transaction():
+            for r in checked:
+                if r["status"] == "new":
+                    conn.insert("employees", {"full_name": r["name"], "position": r["position"], "employment_type": r["type"],
+                                              "primary_branch_id": r["branch_id"], "email": r["email"], "active": 1, "created_at": now_str(),
+                                              "user_id": r.get("user_id")})
+                    added += 1
+                elif r["status"] == "update":
+                    upd = {"position": r["position"]}
+                    if r["branch_id"]:
+                        upd["primary_branch_id"] = r["branch_id"]
+                    if r["type_raw"]:
+                        upd["employment_type"] = r["type"]
+                    if r["email"]:
+                        upd["email"] = r["email"]
+                    conn.update("employees", r["employee_id"], upd)
+                    updated += 1
+            audit.record("employees_imported", "employee", None, f"Imported employee list: {added} added, {updated} updated",
+                         {"added": added, "updated": updated, "skipped": sum(1 for r in checked if r["status"] == "error")})
+        flash(f"Done: {added} employee(s) added, {updated} updated. Logins are separate; only a super admin creates user accounts.", "success")
+        return redirect(url_for("people.employees"))
+    payload = None
+    if rows:
+        payload = json.dumps([{"name": r["name"], "position_raw": r["position_raw"], "branch_raw": r["branch_raw"], "type_raw": r["type_raw"],
+                               "email": r["email"]}
+                              for r in rows if r["status"] in ("new", "update")])
+    return render_template("staff/people/employees_import.html", rows=rows, error=error, payload=payload, positions=POSITIONS,
+                           branches=conn.all("SELECT name FROM branches ORDER BY sort_order, name"))
+
+
+@bp.route("/employees/import/template.csv")
+@require("attendance.manage")
+def employees_import_template():
+    body = ("Name,Position,Branch,Type,Email\r\nJuan Dela Cruz,Dental Assistant,Malolos,Regular,juan@example.com\r\n"
+            "Maria Santos,Receptionist,Bocaue,Probationary,maria@example.com\r\n")
+    return Response("\ufeff" + body, mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=employee-list-template.csv"})
 
 
 def _pct_bp(raw):
@@ -283,12 +468,13 @@ def attendance_import():
         flash("The file must be a UTF-8 CSV.", "error")
         return redirect(url_for("people.attendance"))
     scope, params = _employee_scope()
-    emps = conn.all(f"SELECT e.*, u.email FROM employees e LEFT JOIN users u ON u.id = e.user_id WHERE e.active = 1 AND {scope}", params)
+    emps = conn.all(f"SELECT e.*, COALESCE(u.email, e.email) AS login_email FROM employees e LEFT JOIN users u ON u.id = e.user_id "
+                    f"WHERE e.active = 1 AND {scope}", params)
     by_key = {}
     for e in emps:
         by_key[e["full_name"].strip().lower()] = e
-        if e["email"]:
-            by_key[e["email"].lower()] = e
+        if e["login_email"]:
+            by_key[e["login_email"].lower()] = e
     branches = {b["name"].lower(): b["id"] for b in branches_for_user(g.user)}
     added, skipped, errors = 0, 0, []
     with conn.transaction():

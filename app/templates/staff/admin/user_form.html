@@ -10,6 +10,7 @@
   {{ csrf() }}
   {{ field('name', 'Full name', v.name, errors=errors, required=True) }}
   {{ field('email', 'Email (used to sign in)', v.email, type='email', errors=errors, required=True) }}
+  {{ field('mobile', 'Mobile', v.mobile, errors=errors) }}
   <div class="field {% if errors.role %}error{% endif %}">
     <label for="f-role">Role *</label>
     <select id="f-role" name="role" required {% if not is_new and user.id == current_user.id %}disabled{% endif %}>
@@ -34,13 +35,13 @@
     <p class="hint">Sent to the email above when one of their appointments is approved or booked, rescheduled or cancelled. The email shows the day, time, branch, patient name and procedure.</p>
   </fieldset>
   <fieldset><legend>For dentists: printed on prescriptions and certificates</legend>
-    <div class="form-grid">{{ field('license_no', 'PRC license no.', v.license_no) }}{{ field('ptr_no', 'PTR no.', v.ptr_no) }}{{ field('s2_no', 'S2 no. (if any)', v.s2_no) }}</div>
+    <div class="form-grid">{{ field('license_no', 'PRC license no.', v.license_no) }}{{ field('ptr_no', 'PTR no.', v.ptr_no) }}{{ field('s2_no', 'S2 no. (if any)', v.s2_no) }}{{ field('specialization', 'Specialization', v.specialization) }}</div>
   </fieldset>
-  {% if is_new %}
-    <label class="check"><input type="checkbox" name="is_employee" value="1" {% if v.is_employee %}checked{% endif %}> Also add to the employee list (attendance and payroll)</label>
-    <div class="field"><label for="f-position">Position</label><select id="f-position" name="position"><option value="">Same as the access role</option>
-      {% for pos in POSITIONS %}<option {% if v.position == pos %}selected{% endif %}>{{ pos }}</option>{% endfor %}</select></div>
-  {% else %}
+  <div class="field {% if errors.position %}error{% endif %}"><label for="f-position">Position</label><select id="f-position" name="position"><option value="">Choose… (not needed for super admin)</option>
+    {% for pos in POSITIONS %}<option {% if v.position == pos %}selected{% endif %}>{{ pos }}</option>{% endfor %}</select>
+    <span class="hint">Their job in the clinic. Used for evaluations, attendance and payroll. Access role (above) decides what they can see.</span>
+    {% if errors.position %}<div class="field-error">{{ errors.position }}</div>{% endif %}</div>
+  {% if not is_new %}
     <label class="check"><input type="checkbox" name="active" value="1" {% if v.active %}checked{% endif %} {% if user.id == current_user.id %}disabled{% endif %}> Active (can sign in)</label>
     {% if user.id == current_user.id %}<input type="hidden" name="active" value="1">{% endif %}
     {% if errors.active %}<div class="field-error">{{ errors.active }}</div>{% endif %}

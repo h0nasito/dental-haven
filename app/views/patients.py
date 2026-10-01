@@ -362,9 +362,10 @@ def detail(patient_id):
     if clinical and tab == "notes":
         import json
         ctx["pn_groups"] = progress_groups(conn, patient_id, ctx["procedures"], ctx["notes"])
-        ctx["price_options"] = conn.all(
-            "SELECT pi.name, pi.service_id, pi.price_from_cents AS price, pi.unit FROM price_items pi WHERE pi.sample = 0 "
-            "UNION ALL SELECT s.name, s.id, s.default_price_cents, '' FROM services s WHERE s.active = 1 ORDER BY 1")
+        from ..fee_schedule import picker_options
+        ctx["price_options"] = picker_options(conn) or conn.all(
+            "SELECT pi.name, pi.service_id, pi.price_from_cents AS price, pi.unit, '' AS category, 1 AS per_count FROM price_items pi "
+            "WHERE pi.sample = 0 UNION ALL SELECT s.name, s.id, s.default_price_cents, '', '', 1 FROM services s WHERE s.active = 1 ORDER BY 1")
         ctx["drafts"] = conn.all("SELECT v.*, u.name AS by_name FROM visit_notes v LEFT JOIN users u ON u.id = v.created_by "
                                  "WHERE v.patient_id = ? AND v.status = 'draft' ORDER BY v.id DESC", (patient_id,))
         for d in ctx["drafts"]:
@@ -857,12 +858,14 @@ def visit_note(patient_id):
     branch_id = v["branch_id"]
     if not branch_id or not g.user.in_branch(branch_id):
         return back_to_draft("Choose one of your branches.")
+    from ..fee_schedule import picker_options
+    per_count = {o["name"].upper(): o["per_count"] for o in picker_options(conn)}
     lines = []
     for ln in v["lines"]:
         if not ln["desc"]:
             return back_to_draft("Each service line needs a service or procedure.")
         unit = parse_money(ln["price"]) if ln["price"] else 0
-        qty = to_int(ln["qty"]) or max(1, len(_teeth(ln["tooth"])))
+        qty = to_int(ln["qty"]) or (max(1, len(_teeth(ln["tooth"]))) if per_count.get(ln["desc"].upper(), True) else 1)
         disc_bp = _pct_bp(ln["disc"])
         if unit is None or not 1 <= qty <= 32 or disc_bp is None:
             return back_to_draft(f"Check the price, quantity and discount % on “{ln['desc']}”.")
