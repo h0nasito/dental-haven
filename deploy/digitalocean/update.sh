@@ -9,6 +9,7 @@ echo "==> Backing up the database first"
 echo "==> Getting the newest version"
 git -C "$APP_DIR" pull --ff-only
 "$APP_DIR/.venv/bin/pip" install -r "$APP_DIR/requirements.txt" -q
+bash "$APP_DIR/deploy/digitalocean/install-commands.sh"
 echo "==> Restarting"
 systemctl restart dental-haven
 for _ in $(seq 1 30); do

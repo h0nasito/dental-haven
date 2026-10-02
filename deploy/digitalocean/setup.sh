@@ -143,12 +143,11 @@ systemctl reload nginx
 
 # ---------------------------------------------------------------- backups + helper commands
 say "Scheduling the nightly database backup (11:30 PM, keeps 14 days)"
-install -m 755 "$HERE/backup.sh" /usr/local/sbin/dental-haven-backup
+rm -f /usr/local/sbin/dental-haven-backup; install -m 755 "$HERE/backup.sh" /usr/local/sbin/dental-haven-backup
 sed -i "s|^DATA_DIR=.*|DATA_DIR=\"$DATA_DIR\"|; s|^BACKUP_DIR=.*|BACKUP_DIR=\"$BACKUP_DIR\"|" /usr/local/sbin/dental-haven-backup
 echo "30 23 * * * root /usr/local/sbin/dental-haven-backup >/dev/null 2>&1" > /etc/cron.d/dental-haven-backup
 chmod 644 /etc/cron.d/dental-haven-backup
-ln -sf "$HERE/update.sh" /usr/local/sbin/dental-haven-update
-ln -sf "$HERE/enable-https.sh" /usr/local/sbin/dental-haven-https
+bash "$HERE/install-commands.sh"
 
 # ---------------------------------------------------------------- check the app answers
 say "Checking that the system is running"
