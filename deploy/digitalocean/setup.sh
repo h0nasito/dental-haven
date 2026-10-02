@@ -154,7 +154,7 @@ ln -sf "$HERE/enable-https.sh" /usr/local/sbin/dental-haven-https
 say "Checking that the system is running"
 ok=0
 for _ in $(seq 1 30); do
-  if curl -fsS -o /dev/null http://127.0.0.1:8000/; then ok=1; break; fi
+  if curl -fs -o /dev/null http://127.0.0.1:8000/; then ok=1; break; fi
   sleep 2
 done
 [ "$ok" -eq 1 ] || die "The system didn't start. Show the error with:  journalctl -u dental-haven -n 50 --no-pager"

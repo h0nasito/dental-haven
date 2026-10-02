@@ -108,6 +108,27 @@ class TestEmployeeImport(Base):
         self.assertEqual((one["email"], one["access_role"], one["must_change_password"]), ("login.one@clinic.test", "receptionist", 1))
         two = self.q("SELECT u.* FROM users u JOIN employees e ON e.user_id = u.id WHERE e.id = ?", (e2,))
         self.assertEqual(two["access_role"], "technician")
+        # a dentist who works in two branches gets both
+        malolos, bocaue = self.branch("malolos"), self.branch("bocaue")
+        e4 = self.conn.insert("employees", {"full_name": "Rotating Dentist", "position": "Associate Dentist", "primary_branch_id": malolos,
+                                            "active": 1, "created_at": now_str()})
+        page = admin.get("/staff/admin/users/from-employees").data.decode()
+        self.assertRegex(page, rf'name="branches_{e4}" value="{malolos}" checked')
+        self.assertNotRegex(page, rf'name="branches_{e4}" value="{bocaue}" checked')
+        r = admin.post("/staff/admin/users/from-employees", data={
+            f"make_{e4}": "1", f"email_{e4}": "rotating@clinic.test", f"role_{e4}": "dentist",
+            f"branches_shown_{e4}": "1", f"branches_{e4}": [str(malolos), str(bocaue)]})
+        self.assertIn("1 login(s) created", r.data.decode())
+        four = self.q("SELECT id FROM users WHERE email = 'rotating@clinic.test'")
+        got = {x["branch_id"] for x in self.conn.all("SELECT branch_id FROM user_branches WHERE user_id = ?", (four["id"],))}
+        self.assertEqual(got, {malolos, bocaue})
+        # unticking every branch is refused
+        e5 = self.conn.insert("employees", {"full_name": "No Branch Ticked", "position": "Receptionist", "primary_branch_id": malolos,
+                                            "active": 1, "created_at": now_str()})
+        r = admin.post("/staff/admin/users/from-employees", data={
+            f"make_{e5}": "1", f"email_{e5}": "nobranch@clinic.test", f"role_{e5}": "receptionist", f"branches_shown_{e5}": "1"})
+        self.assertIn("Assign at least one branch", r.data.decode())
+        self.assertIsNone(self.q("SELECT id FROM users WHERE email = 'nobranch@clinic.test'"))
         # only the super admin can do this
         self.assertEqual(self.login("staff.malolos").get("/staff/admin/users/from-employees").status_code, 403)
         # a super admin can't be created here
@@ -115,7 +136,7 @@ class TestEmployeeImport(Base):
                                             "active": 1, "created_at": now_str()})
         admin.post("/staff/admin/users/from-employees", data={f"make_{e3}": "1", f"email_{e3}": "three@clinic.test", f"role_{e3}": "super_admin"})
         self.assertIsNone(self.q("SELECT id FROM users WHERE email = 'three@clinic.test'"))
-        for e in (e1, e2, e3):
+        for e in (e1, e2, e3, e4, e5):
             self.conn.execute("UPDATE employees SET active = 0 WHERE id = ?", (e,))
 
     def test_users_lists_and_quick_deactivate(self):

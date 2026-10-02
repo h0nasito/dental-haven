@@ -12,7 +12,7 @@ git -C "$APP_DIR" pull --ff-only
 echo "==> Restarting"
 systemctl restart dental-haven
 for _ in $(seq 1 30); do
-  if curl -fsS -o /dev/null http://127.0.0.1:8000/; then
+  if curl -fs -o /dev/null http://127.0.0.1:8000/; then
     echo "Updated to: $(git -C "$APP_DIR" log -1 --format='%h %s')"; exit 0
   fi
   sleep 2

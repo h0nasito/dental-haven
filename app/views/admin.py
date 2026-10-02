@@ -179,6 +179,8 @@ def users_from_employees():
     for e in emps:
         e["suggested"] = ACCESS_FOR_POSITION.get(e["position"], "staff")
         e["is_tech"] = "technician" in (e["position"] or "").lower()
+    branches = conn.all("SELECT id, name FROM branches ORDER BY sort_order")
+    branch_names = {b["id"]: b["name"] for b in branches}
     errors, created = {}, []
     if request.method == "POST":
         picks = []
@@ -186,7 +188,7 @@ def users_from_employees():
             if not request.form.get(f"make_{e['id']}"):
                 continue
             v = {"name": e["full_name"], "email": clean(request.form.get(f"email_{e['id']}"), 200).lower(),
-                 "role": request.form.get(f"role_{e['id']}", ""), "branches": [e["primary_branch_id"]] if e["primary_branch_id"] else [],
+                 "role": request.form.get(f"role_{e['id']}", ""), "branches": _picked_branches(e),
                  "labs": [to_int(request.form.get(f"lab_{e['id']}"))] if to_int(request.form.get(f"lab_{e['id']}")) else []}
             if v["role"] == "super_admin":
                 v["role"] = ""
@@ -214,11 +216,25 @@ def users_from_employees():
                     audit.record("user_created", "user", uid, f"Created login {v['email']} for employee {v['name']} as {ROLES[v['role']]}",
                                  {"role": v["role"], "employee_id": v["emp"]["id"], "branches": v["branches"], "labs": v["labs"]})
                     created.append({"name": v["name"], "email": v["email"], "role": ROLES[v["role"]], "temp": temp,
-                                    "branch": v["emp"]["branch"] or "—"})
+                                    "branch": ", ".join(branch_names.get(b, "") for b in v["branches"]) or "—"})
             return render_template("staff/admin/users_created_bulk.html", created=created,
                                    login_url=url_for("auth.login", _external=True))
     roles = {k: l for k, l in ROLES.items() if k != "super_admin"}
-    return render_template("staff/admin/users_from_employees.html", emps=emps, roles=roles, labs=labs, errors=errors, form=request.form)
+    return render_template("staff/admin/users_from_employees.html", emps=emps, roles=roles, labs=labs, errors=errors, form=request.form,
+                           branches=branches)
+
+
+def _picked_branches(emp) -> list[int]:
+    """Branches ticked for one employee on the create-logins page (a dentist can work in several).
+    Without the branch checkboxes in the form, the employee's own branch is used."""
+    if request.form.get(f"branches_shown_{emp['id']}"):
+        picked = []
+        for raw in request.form.getlist(f"branches_{emp['id']}"):
+            b = to_int(raw)
+            if b and b not in picked:
+                picked.append(b)
+        return picked
+    return [emp["primary_branch_id"]] if emp["primary_branch_id"] else []
 
 
 @bp.route("/users/<int:user_id>", methods=["GET", "POST"])

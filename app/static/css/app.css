@@ -74,6 +74,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--brand-600); outl
 input[type=checkbox], input[type=radio] { width: 18px; height: 18px; accent-color: var(--brand-700); vertical-align: middle; margin: 0 .4em 0 0; }
 .check { display: flex; align-items: flex-start; gap: .2em; font-weight: 400; color: var(--ink); }
 .check input { margin-top: .2em; flex: none; }
+.branch-picks { display: grid; gap: .1em; font-size: .9em; min-width: 9em; }
 .field { margin-bottom: 1rem; }
 .field.error input, .field.error select, .field.error textarea { border-color: var(--red-700); }
 .field-error { color: var(--red-700); font-size: .85rem; margin-top: .25em; }

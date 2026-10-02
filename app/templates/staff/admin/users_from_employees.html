@@ -7,16 +7,17 @@
 {% if errors %}<div class="flash flash-error" role="alert">Some rows need fixing (marked below). Nothing was created.</div>{% endif %}
 {% if emps %}
 <form method="post" class="card">{{ csrf() }}
-<div class="table-wrap"><table><thead><tr><th><span class="sr-only">Create</span></th><th>Employee</th><th>Email (sign-in)</th><th>Access role</th><th>Branch / lab</th></tr></thead><tbody>
+<div class="table-wrap"><table><thead><tr><th><span class="sr-only">Create</span></th><th>Employee</th><th>Email (sign-in)</th><th>Access role</th><th>Branches / lab</th></tr></thead><tbody>
 {% for e in emps %}{% set ticked = form.get('make_' ~ e.id) if form else e.email %}
 <tr {% if errors.get(e.id) %}class="row-error"{% endif %}>
 <td><input type="checkbox" name="make_{{ e.id }}" value="1" aria-label="Create login for {{ e.full_name }}" {% if ticked %}checked{% endif %}></td>
 <td><strong>{{ e.full_name }}</strong><br><small class="muted">{{ e.position or '—' }}</small>{% if errors.get(e.id) %}<br><small class="c-red">{{ errors[e.id] }}</small>{% endif %}</td>
 <td><input type="email" name="email_{{ e.id }}" value="{{ form.get('email_' ~ e.id) if form else e.email }}" placeholder="name@email.com" aria-label="Email for {{ e.full_name }}"></td>
 <td><select name="role_{{ e.id }}" aria-label="Access role for {{ e.full_name }}">{% for k, l in roles.items() %}<option value="{{ k }}" {% if (form.get('role_' ~ e.id) if form else e.suggested) == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></td>
-<td>{{ e.branch or '—' }}{% if e.is_tech and labs %}<br><select name="lab_{{ e.id }}" aria-label="Laboratory for {{ e.full_name }}"><option value="">No lab</option>{% for l in labs %}<option value="{{ l.id }}" {% if (form.get('lab_' ~ e.id)|int if form else (labs|length == 1 and l.id or 0)) == l.id %}selected{% endif %}>{{ l.name }}</option>{% endfor %}</select>{% endif %}</td></tr>
+<td><input type="hidden" name="branches_shown_{{ e.id }}" value="1">
+<div class="branch-picks">{% for b in branches %}{% set on = (b.id|string in form.getlist('branches_' ~ e.id)) if form else (b.id == e.primary_branch_id) %}<label class="check"><input type="checkbox" name="branches_{{ e.id }}" value="{{ b.id }}" {% if on %}checked{% endif %}> {{ b.name }}</label>{% endfor %}</div>{% if e.is_tech and labs %}<br><select name="lab_{{ e.id }}" aria-label="Laboratory for {{ e.full_name }}"><option value="">No lab</option>{% for l in labs %}<option value="{{ l.id }}" {% if (form.get('lab_' ~ e.id)|int if form else (labs|length == 1 and l.id or 0)) == l.id %}selected{% endif %}>{{ l.name }}</option>{% endfor %}</select>{% endif %}</td></tr>
 {% endfor %}</tbody></table></div>
-<p class="hint">The suggested role comes from the position. What each role can see and do is set in Administration → Role access. Branch access = the employee's branch; change it later in Users if someone works in more than one branch.</p>
+<p class="hint">The suggested role comes from the position. What each role can see and do is set in Administration → Role access. Tick every branch the person works in. A dentist who rotates between branches gets all of them; set which days they're at each branch in Administration → Dentist schedules.</p>
 <button class="btn">Create logins</button></form>
 {% else %}<div class="card"><p>Every active employee already has a login. 🎉</p></div>{% endif %}
 {% endblock %}
