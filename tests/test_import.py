@@ -202,3 +202,46 @@ class TestMyMedsImport(Base):
         token = re.search(rb'name="token" value="([^"]+)"', r.data).group(1).decode()
         c.post("/staff/admin/import/confirm", data={"token": token, "action": "confirm"})
         self.assertEqual(self.q("SELECT COUNT(*) AS n FROM legacy_bills WHERE patient_id = ?", (p["id"],))["n"], 2)
+
+    def test_rich_text_notes_become_plain_text(self):
+        """MyMedsPH notes saved as HTML (<ul><li><strong>, &amp;) are imported as clean text with line breaks;
+        visits imported earlier with the HTML codes are fixed when the export is imported again."""
+        from app.util import html_to_text
+        self.assertEqual(html_to_text("<ul><li><strong>TOOTH 26 IRRIGATION &amp; ENLARGE</strong></li><li>26(D)</li></ul><p><br></p><ul><li>26(M)</li><li><stron"),
+                         "• TOOTH 26 IRRIGATION & ENLARGE\n• 26(D)\n\n• 26(M)")
+        self.assertEqual(html_to_text("Oral prophylaxis (Mild)"), "Oral prophylaxis (Mild)")
+        c = self.login("admin")
+        pats = [{"PATIENT ID": "970001", "FIRSTNAME": "Rich", "LASTNAME": "Text", "BIRTHDAY": "1990-01-01", "GENDER": "male"}]
+        html_note = "<ul><li><strong>TOOTH NO. 26 (3 CANALS) IRRIGATION &amp; CANAL ENLARGE</strong></li><li><strong>WL- 20mm</strong></li></ul>"
+        prog = [{"patient_id": "970001", "recall_datetime": "2025-07-23", "service": "Root Canal Treatment", "tooth_no": "26",
+                 "progress_notes": html_note}]
+        files = lambda: [(io.BytesIO(_csv(PAT_COLS, pats)), "patients.csv"), (io.BytesIO(_csv(PROG_COLS, prog)), "progress_notes.csv")]  # noqa: E731
+        r = c.post("/staff/admin/import", data={"branch_id": "all", "files": files()}, content_type="multipart/form-data")
+        token = re.search(rb'name="token" value="([^"]+)"', r.data).group(1).decode()
+        c.post("/staff/admin/import/confirm", data={"token": token, "action": "confirm"})
+        p = self.q("SELECT id FROM patients WHERE legacy_id = '970001'")
+        proc = self.q("SELECT * FROM procedures WHERE patient_id = ?", (p["id"],))
+        self.assertEqual(proc["description"], "Root Canal Treatment\n• TOOTH NO. 26 (3 CANALS) IRRIGATION & CANAL ENLARGE\n• WL- 20mm")
+        # simulate a visit imported by the old version (HTML codes, cut off), then import again: it gets fixed
+        self.conn.execute("UPDATE procedures SET description = ? WHERE id = ?", ("Root Canal Treatment - " + html_note[:60], proc["id"]))
+        r = c.post("/staff/admin/import", data={"branch_id": "all", "files": files()}, content_type="multipart/form-data")
+        token = re.search(rb'name="token" value="([^"]+)"', r.data).group(1).decode()
+        c.post("/staff/admin/import/confirm", data={"token": token, "action": "confirm"})
+        self.assertEqual(self.q("SELECT description FROM procedures WHERE id = ?", (proc["id"],))["description"],
+                         "Root Canal Treatment\n• TOOTH NO. 26 (3 CANALS) IRRIGATION & CANAL ENLARGE\n• WL- 20mm")
+        self.assertEqual(self.q("SELECT COUNT(*) AS n FROM procedures WHERE patient_id = ?", (p["id"],))["n"], 1)
+        page = c.get(f"/staff/patients/{p['id']}?tab=notes").data.decode()
+        self.assertNotIn("&lt;strong&gt;", page)
+        self.assertIn("IRRIGATION &amp; CANAL ENLARGE", page)
+
+    def test_startup_cleans_html_in_records_already_imported(self):
+        from app.seed import seed_base
+        from app.util import now_str
+        pid = self.q("SELECT id FROM patients ORDER BY id LIMIT 1")["id"]
+        author = self.q("SELECT id FROM users WHERE role = 'super_admin' LIMIT 1")["id"]
+        nid = self.conn.insert("clinical_notes", {"patient_id": pid, "author_id": author, "body": "<p>Pain on <strong>36</strong> &amp; 37</p>",
+                                                  "created_at": now_str(), "legacy_key": "cleanup-test-1"})
+        self.conn.execute("DELETE FROM settings WHERE key = 'seed.html_cleanup_v1'")
+        with self.app.app_context():
+            seed_base(self.conn)
+        self.assertEqual(self.q("SELECT body FROM clinical_notes WHERE id = ?", (nid,))["body"], "Pain on 36 & 37")

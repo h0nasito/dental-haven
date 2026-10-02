@@ -23,7 +23,7 @@ import io
 import zipfile
 from datetime import date, datetime
 
-from .util import fmt_dt, now_str, today
+from .util import fmt_dt, html_to_text, now_str, today
 
 MAX_ERRORS_SHOWN = 50
 
@@ -149,7 +149,8 @@ def _phone(value: str) -> str:
 
 
 def _clean(value: str, limit=2000) -> str:
-    value = (value or "").strip()
+    # MyMedsPH's note editor saves rich text (<ul><li><strong>…); keep the text and line breaks, drop the HTML codes.
+    value = html_to_text(value or "")
     return "" if value.lower() in ("none", "n/a", "na", "-", ".", "nothing", "no") else value[:limit]
 
 
@@ -296,7 +297,7 @@ def run_import(conn, data: dict, *, branch_id: int | None, user_id: int, commit:
             # --- visits / procedures + follow-ups -------------------------
             if "progress_notes" in data:
                 seen, fseen = keys("procedures"), keys("follow_ups")
-                proc_rows, fu_rows = [], []
+                proc_rows, fu_rows, fix_rows = [], [], []
                 for row in data["progress_notes"]["rows"]:
                     pid = patient_of("progress_notes", row)
                     if pid is None:
@@ -306,14 +307,15 @@ def run_import(conn, data: dict, *, branch_id: int | None, user_id: int, commit:
                     if not d:
                         err("progress_notes", row, "invalid visit date - skipped")
                         continue
+                    desc = _clean(row.get("service"), 250) or "Visit"
+                    notes = "\n".join(x for x in (_clean(row.get("progress_notes"), 6000), _clean(row.get("remarks"), 1000)) if x)
+                    if notes:
+                        desc = f"{desc}\n{notes}"[:8000]
                     if k in seen:
                         s["skipped_existing"] += 1
+                        fix_rows.append((desc, k))
                     else:
                         seen.add(k)
-                        desc = _clean(row.get("service"), 250) or "Visit"
-                        notes = "; ".join(x for x in (_clean(row.get("progress_notes"), 500), _clean(row.get("remarks"), 500)) if x)
-                        if notes:
-                            desc = f"{desc} - {notes}"[:1000]
                         proc_rows.append((pid, pbranch.get(pid), _clean(row.get("tooth_no"), 40), desc, d.isoformat(), ts, k))
                     fd = _date(row.get("followup_date"))
                     if fd and fd >= today():
@@ -326,6 +328,13 @@ def run_import(conn, data: dict, *, branch_id: int | None, user_id: int, commit:
                 if proc_rows:
                     conn.executemany("INSERT INTO procedures (patient_id, branch_id, tooth, description, status, performed_at, created_at, legacy_key) "
                                      "VALUES (?, ?, ?, ?, 'completed', ?, ?, ?)", proc_rows)
+                if fix_rows:
+                    # Visits imported earlier with HTML codes (or cut off at 1,000 characters) get the full, clean text.
+                    before = conn.scalar("SELECT total_changes()")
+                    conn.executemany("UPDATE procedures SET description = ? WHERE legacy_key = ? AND description != ? "
+                                     "AND (description LIKE '%<%' OR description LIKE '%&amp;%' OR description LIKE '%&nbsp;%' OR length(description) = 1000)",
+                                     [(dsc, key, dsc) for dsc, key in fix_rows])
+                    s["notes_cleaned"] = s.get("notes_cleaned", 0) + (conn.scalar("SELECT total_changes()") - before)
                 if fu_rows:
                     conn.executemany("INSERT INTO follow_ups (branch_id, patient_id, kind, title, due_at, status, created_at, created_by, legacy_key) "
                                      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", fu_rows)

@@ -110,3 +110,36 @@ def to_int(value, default=None):
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+_BLOCK_TAGS = ("p", "div", "br", "ul", "ol", "tr", "h1", "h2", "h3", "h4", "h5", "h6", "table")
+
+
+def html_to_text(value: str) -> str:
+    """Turn rich-text HTML (as saved by MyMedsPH's note editor) into plain text with line breaks:
+    list items become "• " lines, paragraphs and <br> new lines, tags removed, &amp; etc. decoded.
+    Text without tags is returned unchanged (except decoding entities like &amp;)."""
+    import html as _html
+    import re as _re
+    text = value or ""
+    if "<" not in text and "&" not in text:
+        return text.strip()
+    text = _re.sub(r"<[^>]*$", "", text)  # a tag cut off at the end ("<stron")
+    text = _re.sub(r"(?is)<(script|style)\b.*?</\1>", "", text)
+    text = _re.sub(r"(?i)</li\s*>", "", text)
+    text = _re.sub(r"(?i)<li\b[^>]*>", "\n• ", text)
+    text = _re.sub(r"(?i)<br\s*/?>", "\n", text)
+    text = _re.sub(r"(?i)</?(%s)\b[^>]*>" % "|".join(_BLOCK_TAGS), "\n", text)
+    text = _re.sub(r"<[^>]+>", "", text)
+    text = _html.unescape(text).replace("\xa0", " ")
+    lines = [ln.strip() for ln in text.split("\n")]
+    out, blank = [], False
+    for ln in lines:
+        if not ln or ln == "•":
+            blank = bool(out)
+            continue
+        if blank:
+            out.append("")
+        blank = False
+        out.append(ln)
+    return "\n".join(out).strip()

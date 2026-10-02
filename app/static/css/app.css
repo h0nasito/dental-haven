@@ -808,3 +808,5 @@ section[id] { scroll-margin-top: 72px; }
 .pt-photo-edit[open] > form { position: absolute; top: 1.4rem; left: 0; z-index: 5; width: 260px; background: var(--card, #fff); padding: .7rem;
   border-radius: 10px; box-shadow: 0 6px 24px rgba(0,0,0,.15); margin-top: 0; }
 .pt-photo-edit[open] > form + form { top: auto; position: static; box-shadow: none; padding: 0; width: auto; background: none; }
+/* Imported notes keep their line breaks and bullet points */
+.pn-lines li > span:first-child { white-space: pre-line; }

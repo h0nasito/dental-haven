@@ -517,6 +517,18 @@ def seed_base(conn):
                     conn.insert("quote_presets", {"name": n, "unit_price_cents": price * 100, "unit_label": unit, "kind": kind, "section": sec,
                                                   "note": note, "active": 1, "sort_order": i, "updated_at": now_str()})
             _settings2.put("seed.quote_presets_v1", True, None, conn)
+        # Once: records imported from MyMedsPH with rich-text HTML codes (<ul><li><strong>, &amp;) become plain text.
+        if not _settings2.get("seed.html_cleanup_v1", conn):
+            from .util import html_to_text
+            for table, col in (("procedures", "description"), ("clinical_notes", "body"), ("treatment_plan_items", "description"),
+                               ("legacy_bills", "remarks"), ("certificates", "body")):
+                rows = conn.all(f"SELECT id, {col} AS v FROM {table} WHERE legacy_key IS NOT NULL AND "
+                                f"({col} LIKE '%<%' OR {col} LIKE '%&amp;%' OR {col} LIKE '%&nbsp;%')")
+                for r in rows:
+                    clean = html_to_text(r["v"])
+                    if clean != r["v"]:
+                        conn.execute(f"UPDATE {table} SET {col} = ? WHERE id = ?", (clean, r["id"]))
+            _settings2.put("seed.html_cleanup_v1", True, None, conn)
         # Access roles added later (HR, Supervisor, Cashier) start with their recommended access, once.
         if conn.scalar("SELECT COUNT(*) FROM role_permissions"):
             for role in ("hr", "supervisor", "cashier", "technician"):
