@@ -1252,6 +1252,29 @@ def import_data():
     return render_template("staff/admin/import.html", branches=branches, runs=runs, demo=demo)
 
 
+@bp.route("/import/problems", methods=["POST"])
+@require("system.settings")
+def import_problems():
+    """Download every row the import would skip (file, line, MyMedsPH patient ID, reason) as CSV. No names or health data."""
+    import csv
+    import io
+    from ..importer import read_export, run_import
+    pending, _path = _load_pending(request.form.get("token", ""))
+    if pending is None:
+        flash("That upload has expired. Please upload the file again.", "error")
+        return redirect(url_for("admin.import_data"))
+    s = run_import(get_db(), read_export(pending["files"]), branch_id=pending["branch_id"], user_id=g.user.id, commit=False,
+                   all_errors=True)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["File", "Line in file", "MyMedsPH patient ID", "Problem"])
+    for row in s["problem_rows"]:
+        w.writerow(row)
+    from flask import Response
+    return Response(buf.getvalue().encode("utf-8-sig"), mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment; filename=import-problems.csv", "Cache-Control": "no-store"})
+
+
 @bp.route("/import/confirm", methods=["POST"])
 @require("system.settings")
 def import_confirm():

@@ -170,19 +170,35 @@ def _pid(row):
 # Import
 # ---------------------------------------------------------------------------
 
-def run_import(conn, data: dict, *, branch_id: int | None, user_id: int, commit: bool) -> dict:
+def run_import(conn, data: dict, *, branch_id: int | None, user_id: int, commit: bool, all_errors: bool = False) -> dict:
     """Import `data` (from read_export). With commit=False, everything is rolled back and only
     the summary is returned (preview).
     branch_id=None: the export covers all branches, so new patients are shared (every branch's staff can see them)."""
     s = {k: 0 for k in ("patients_new", "patients_updated", "patients_unchanged", "procedures", "followups",
                         "plan_items", "notes", "bills", "skipped_existing", "rows_with_errors")}
     s["errors"] = []
+    s["problem_rows"] = []   # every problem (file, line, patient ID, reason) when all_errors=True; no names
+    s["problem_counts"] = {}  # "file: reason" -> number of rows
     s["files"] = {k: {"file": v["file"], "rows": len(v["rows"])} for k, v in data.items()}
 
     def err(kind, row, msg):
         s["rows_with_errors"] += 1
+        label = f"{data[kind]['file']}: {msg}"
+        s["problem_counts"][label] = s["problem_counts"].get(label, 0) + 1
         if len(s["errors"]) < MAX_ERRORS_SHOWN:
             s["errors"].append(f"{data[kind]['file']} line {row.get('_line')}: {msg}")
+        if all_errors:
+            s["problem_rows"].append((data[kind]["file"], row.get("_line"), _pid(row), msg))
+
+    occurrences = {}
+
+    def ukey(kind, row):
+        """Fingerprint of a row. Identical rows in the same file (e.g. the same service billed twice on the same day) get
+        a number after the first one, so each is imported once instead of the copies being treated as already imported."""
+        base = _key(kind, row)
+        n = occurrences.get(base, 0)
+        occurrences[base] = n + 1
+        return base if n == 0 else f"{base}-{n}"
 
     try:
         with conn.transaction(immediate=True):
@@ -285,7 +301,7 @@ def run_import(conn, data: dict, *, branch_id: int | None, user_id: int, commit:
                     pid = patient_of("progress_notes", row)
                     if pid is None:
                         continue
-                    k = _key("progress", row)
+                    k = ukey("progress", row)
                     d = _date(row.get("recall_datetime"))
                     if not d:
                         err("progress_notes", row, "invalid visit date - skipped")
@@ -325,7 +341,7 @@ def run_import(conn, data: dict, *, branch_id: int | None, user_id: int, commit:
                     pid = patient_of("treatment_plans", row)
                     if pid is None:
                         continue
-                    k = _key("plan", row)
+                    k = ukey("plan", row)
                     if k in seen:
                         s["skipped_existing"] += 1
                         continue
@@ -350,7 +366,7 @@ def run_import(conn, data: dict, *, branch_id: int | None, user_id: int, commit:
                 pid = patient_of("notes", row)
                 if pid is None:
                     continue
-                k = _key("notes", row)
+                k = ukey("notes", row)
                 if k in seen:
                     s["skipped_existing"] += 1
                     continue
@@ -370,7 +386,7 @@ def run_import(conn, data: dict, *, branch_id: int | None, user_id: int, commit:
                 pid = patient_of("prescriptions", row)
                 if pid is None:
                     continue
-                k = _key("prescriptions", row)
+                k = ukey("prescriptions", row)
                 if k in seen:
                     s["skipped_existing"] += 1
                     continue
@@ -390,7 +406,7 @@ def run_import(conn, data: dict, *, branch_id: int | None, user_id: int, commit:
                 pid = patient_of("certificates", row)
                 if pid is None:
                     continue
-                k = _key("certificates", row)
+                k = ukey("certificates", row)
                 if k in seen:
                     s["skipped_existing"] += 1
                     continue
@@ -416,7 +432,7 @@ def run_import(conn, data: dict, *, branch_id: int | None, user_id: int, commit:
                     if not d:
                         err("bills", row, "invalid bill date - skipped")
                         continue
-                    k = _key("bill", row)
+                    k = ukey("bill", row)
                     if k in seen:
                         s["skipped_existing"] += 1
                         continue

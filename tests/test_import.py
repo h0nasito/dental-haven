@@ -130,7 +130,7 @@ class TestMyMedsImport(Base):
         self.assertEqual(self.q("SELECT allergies FROM patient_history WHERE patient_id = ?", (p["id"],))["allergies"], "Penicillin, latex (confirmed)")
         self.assertEqual(self.q("SELECT COUNT(*) AS n FROM procedures WHERE patient_id = ?", (p["id"],))["n"], 2)
         self.assertEqual(self.q("SELECT COUNT(*) AS n FROM legacy_bills WHERE patient_id = ?", (p["id"],))["n"], 1)
-        self.assertEqual(self.q("SELECT COUNT(*) AS n FROM import_runs WHERE status = 'done'")["n"], 2)
+        self.assertEqual(self.q("SELECT COUNT(*) AS n FROM import_runs WHERE status = 'done' AND filename = 'mymedsph_export.zip'")["n"], 2)
         # uploaded files are not kept
         self.assertFalse(list(Path(self.app.config["IMPORT_DIR"]).glob("*.upload")))
 
@@ -174,3 +174,31 @@ class TestMyMedsImport(Base):
         # every patient is visible in every branch, not only imported ones
         other = self.q("SELECT id FROM patients WHERE preferred_branch_id = ? AND shared = 0 LIMIT 1", (self.branch("malolos"),))
         self.assertEqual(self.login("reception.sjdm").get(f"/staff/patients/{other['id']}").status_code, 200)
+
+    def test_identical_rows_are_all_imported_and_problem_list(self):
+        """Two identical bill lines (same service twice on the same day) are both kept; re-import adds nothing;
+        skipped rows can be downloaded with file, line, patient ID and reason only."""
+        c = self.login("admin")
+        pats = [{"PATIENT ID": "960001", "FIRSTNAME": "Twin", "LASTNAME": "Rows", "BIRTHDAY": "1990-01-01", "GENDER": "female"}]
+        bill = {"patient_id": "960001", "bill_dt": "2025-02-02", "service_type": "Restoration", "qty": "1", "unit": "pcs",
+                "unit_price": "1000.00", "total_amount": "1000", "status": "4"}
+        bills = [bill, dict(bill), {**bill, "patient_id": "999999"}, {**bill, "bill_dt": "0000-00-00"}]
+        files = lambda: [(io.BytesIO(_csv(PAT_COLS, pats)), "patients.csv"), (io.BytesIO(_csv(BILL_COLS, bills)), "bills.csv")]  # noqa: E731
+        r = c.post("/staff/admin/import", data={"branch_id": "all", "files": files()}, content_type="multipart/form-data")
+        html = r.data.decode()
+        self.assertIn("bills.csv: patient ID not found in patients file - skipped", html)
+        self.assertIn("bills.csv: invalid bill date - skipped", html)
+        token = re.search(r'name="token" value="([^"]+)"', html).group(1)
+        csv_resp = c.post("/staff/admin/import/problems", data={"token": token})
+        body = csv_resp.data.decode("utf-8-sig")
+        self.assertIn("File,Line in file,MyMedsPH patient ID,Problem", body)
+        self.assertIn("bills.csv,4,999999,patient ID not found", body)
+        self.assertNotIn("Twin", body)
+        c.post("/staff/admin/import/confirm", data={"token": token, "action": "confirm"})
+        p = self.q("SELECT id FROM patients WHERE legacy_id = '960001'")
+        self.assertEqual(self.q("SELECT COUNT(*) AS n FROM legacy_bills WHERE patient_id = ?", (p["id"],))["n"], 2)
+        # importing the same files again adds nothing
+        r = c.post("/staff/admin/import", data={"branch_id": "all", "files": files()}, content_type="multipart/form-data")
+        token = re.search(rb'name="token" value="([^"]+)"', r.data).group(1).decode()
+        c.post("/staff/admin/import/confirm", data={"token": token, "action": "confirm"})
+        self.assertEqual(self.q("SELECT COUNT(*) AS n FROM legacy_bills WHERE patient_id = ?", (p["id"],))["n"], 2)
