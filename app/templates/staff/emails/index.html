@@ -1,0 +1,55 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Patient emails{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Patient emails</h1>
+<p>Automatic birthday greetings, and announcements or promotions sent to many patients at once.</p></div>
+<div class="row"><a class="btn" href="{{ url_for('emails.campaign', kind='announcement') }}">+ Announcement</a><a class="btn btn-secondary" href="{{ url_for('emails.campaign', kind='promotion') }}">+ Promotion</a></div></div>
+
+{% if demo %}<div class="flash flash-warning">This is the demo site: nothing is ever emailed from here.</div>
+{% elif not senders %}<div class="flash flash-warning">Email isn't set up yet, so nothing can be sent. Add each branch's Gmail and its app password on the server (docs/INTEGRATIONS.md, or docs/DEPLOY_DIGITALOCEAN.md step 7). Emails you queue now wait until it's set up.</div>{% endif %}
+
+<div class="grid grid-4" style="margin-bottom:1rem">
+<div class="stat"><div class="label">Waiting to send</div><div class="value">{{ '{:,}'.format(queue.pending + queue.sending) }}</div></div>
+<div class="stat"><div class="label">Sent</div><div class="value">{{ '{:,}'.format(queue.sent) }}</div></div>
+<div class="stat {% if queue.failed %}warn{% endif %}"><div class="label">Failed</div><div class="value">{{ queue.failed }}</div></div>
+<div class="stat"><div class="label">Gmail accounts sending</div><div class="value">{{ senders|length }}</div><div class="sub">up to {{ limit }} emails each per day</div></div>
+</div>
+
+<div class="grid grid-2">
+<div class="card" id="birthday"><h2>🎂 Birthday greetings</h2>
+<form method="post">{{ csrf() }}<input type="hidden" name="action" value="birthday">
+<label class="check"><input type="checkbox" name="enabled" value="1" {% if bday.enabled %}checked{% endif %}> <strong>Send automatically every day (from 8 AM)</strong></label>
+<p class="hint">Goes to patients with privacy consent, an email address, and who haven't opted out: {{ '{:,}'.format(bday.audience) }} patient(s) now · {{ bday.today }} birthday(s) today.</p>
+<div class="field"><label for="bs">Subject</label><input id="bs" name="subject" value="{{ bday.subject }}"></div>
+<div class="field"><label for="bb">Message</label><textarea id="bb" name="body" rows="6">{{ bday.body }}</textarea>
+<span class="hint">{first_name} is replaced with the patient's first name. The unsubscribe link is added at the end automatically.</span></div>
+<div class="field"><label for="bp">Birthday promo (optional)</label><textarea id="bp" name="promo" rows="3" placeholder="e.g. Enjoy 10% off cleaning this month. Show this email at the clinic.">{{ bday.promo }}</textarea>
+<span class="hint">Added only for patients who accept promotions. Use only offers the clinic has approved.</span></div>
+<div class="row"><button class="btn">Save</button><button class="btn btn-secondary" name="action" value="birthday_test" formnovalidate>Send me a test</button></div>
+</form>
+{% if recent %}<h3 class="mt-1">Latest birthday emails</h3><ul class="list-plain">{% for r in recent %}<li class="row between"><span>{{ r.first_name }} {{ r.last_name[:1] }}.</span><small class="muted">{{ r.status|label }} · {{ (r.sent_at or r.created_at)|dt }}</small></li>{% endfor %}</ul>{% endif %}
+</div>
+
+<div class="card"><h2>Who receives what</h2>
+<ul class="list-plain">
+<li><strong>Promotions</strong>: only patients who said yes to promotions (“OK to receive promotions/newsletters” on their profile).</li>
+<li><strong>Announcements</strong> (e.g. holiday schedule, new branch): patients with privacy consent who haven't opted out.</li>
+<li><strong>Birthday greetings</strong>: the same as announcements; the birthday promo only for those who accept promotions.</li>
+<li>Every email has an <strong>unsubscribe link</strong>. Patients can stop promotions only, or all clinic emails. It takes effect right away, even for emails still waiting to send.</li>
+<li>Deleted patients and patients without an email are skipped.</li>
+</ul>
+<h3 class="mt-1">Daily limit per Gmail account</h3>
+<form method="post" class="row">{{ csrf() }}<input type="hidden" name="action" value="limit">
+<input name="daily_limit" value="{{ limit }}" inputmode="numeric" style="max-width:7rem" aria-label="Daily limit"><button class="btn btn-secondary btn-sm">Save</button></form>
+<p class="hint">A normal Gmail account can send about 500 emails a day; going over gets it blocked for a day. Big blasts are spread over several days automatically. Google Workspace accounts allow up to 2,000.</p>
+</div>
+</div>
+
+<div class="card"><h2>Announcements &amp; promotions</h2>
+<div class="table-wrap"><table><thead><tr><th>Subject</th><th>Type</th><th>To</th><th>Status</th><th class="num">Sent</th><th class="num">Waiting</th><th class="num">Failed</th></tr></thead><tbody>
+{% for c in campaigns %}<tr><td><a href="{{ url_for('emails.campaign', cid=c.id) }}"><strong>{{ c.subject }}</strong></a><br><small class="muted">{{ c.by_name }} · {{ c.created_at|dt }}</small></td>
+<td>{{ kinds[c.kind] }}</td><td>{{ c.branch or 'All branches' }}</td><td>{{ c.status|label }}</td>
+<td class="num">{{ c.stats.sent }}</td><td class="num">{{ c.stats.pending + c.stats.sending }}</td><td class="num">{{ c.stats.failed }}</td></tr>
+{% else %}<tr><td colspan="7" class="empty">No announcements or promotions yet.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

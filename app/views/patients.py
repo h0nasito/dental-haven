@@ -17,7 +17,7 @@ bp = Blueprint("patients", __name__, url_prefix="/staff/patients")
 
 PROFILE_FIELDS = ["first_name", "middle_name", "last_name", "occupation", "civil_status", "emergency_contact", "emergency_phone", "birth_date", "sex", "phone", "email", "address", "preferred_branch_id",
                   "consent_privacy", "consent_marketing", "contact_sms", "contact_email", "contact_messenger",
-                  "opt_out_all", "preferred_channel", "admin_notes"]
+                  "opt_out_all", "news_opt_out", "preferred_channel", "admin_notes"]
 HISTORY_FIELDS = ["medical_conditions", "allergies", "medications", "dental_history", "other_notes"]
 DOC_CATEGORIES = {
     "xray": ("X-ray / imaging", True), "lab": ("Lab / prosthesis record", True), "referral": ("Referral letter", True),
@@ -75,10 +75,13 @@ def index():
         where.append("(NOT lower(p.first_name) GLOB '*[a-z]*' OR NOT lower(p.last_name) GLOB '*[a-z]*')")
     if q:
         like = f"%{q.lower()}%"
+        # Searching by mobile or email only for users allowed to see contact details (otherwise a search would reveal them).
+        contact_ok = g.user.can("patients.contact")
         where.append("(lower(p.first_name || ' ' || p.last_name) LIKE ? OR lower(p.last_name || ', ' || p.first_name) LIKE ? "
-                     "OR p.phone LIKE ? OR lower(p.chart_no) LIKE ? OR lower(p.email) LIKE ? OR p.legacy_id = ? "
+                     + ("OR p.phone LIKE ? OR lower(p.email) LIKE ? " if contact_ok else "")
+                     + "OR lower(p.chart_no) LIKE ? OR p.legacy_id = ? "
                      "OR lower(p.first_name || ' ' || p.middle_name || ' ' || p.last_name) LIKE ?)")
-        args += [like, like, like, like, like, q, like]
+        args += [like, like, *([like, like] if contact_ok else []), like, q, like]
     total = conn.scalar(f"SELECT COUNT(*) FROM patients p WHERE {' AND '.join(where)}", args)
     pg = paginate(total, per)
     rows = conn.all(
@@ -154,6 +157,7 @@ def _profile_from_form(form):
         "consent_marketing": 1 if form.get("consent_marketing") else 0,
         "contact_sms": 1 if form.get("contact_sms") else 0, "contact_email": 1 if form.get("contact_email") else 0,
         "contact_messenger": 1 if form.get("contact_messenger") else 0, "opt_out_all": 1 if form.get("opt_out_all") else 0,
+        "news_opt_out": 1 if form.get("news_opt_out") else 0,
         "preferred_channel": form.get("preferred_channel") if form.get("preferred_channel") in ("sms", "email", "messenger", "call") else "",
         "admin_notes": clean(form.get("admin_notes"), 1000),
     }
@@ -189,7 +193,7 @@ def new():
     v = {f: "" for f in PROFILE_FIELDS}
     v.update({"preferred_branch_id": g.user.active_branch_id or (g.user.branch_ids[0] if g.user.branch_ids else None),
               "consent_privacy": 0, "contact_sms": 0, "contact_email": 0, "contact_messenger": 0, "opt_out_all": 0,
-              "consent_marketing": 0})
+              "consent_marketing": 0, "news_opt_out": 0})
     errors = {}
     if request.method == "POST":
         v = _profile_from_form(request.form)

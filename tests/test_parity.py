@@ -24,6 +24,13 @@ class TestParity(Base):
         self.assertEqual(r.status_code, 200)
         self.assertNotIn(phone.encode(), r.data)
         self.assertIn(b"Hidden", r.data)
+        # the dentist can't find patients by their mobile number either
+        dc = self.login("dentist.malolos")
+        page = dc.get("/staff/patients/").data.decode()
+        import re as _re
+        token = _re.search(r'name="csrf_token" value="([^"]+)"', page).group(1)
+        found = dc.post("/staff/patients/", data={"csrf_token": token, "q": phone[-7:]}).data
+        self.assertNotIn(f"/staff/patients/{pid}\"".encode(), found)
         # grant via Role access, then it shows
         a = self.login("admin")
         current = [f"{x['role']}:{x['permission']}" for x in self.conn.all("SELECT * FROM role_permissions")]

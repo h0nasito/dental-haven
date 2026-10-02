@@ -17,7 +17,7 @@
 
 {% if show != 'deleted' %}
 <form method="post" class="toolbar" action="{{ url_for('patients.index', **qs) }}">{{ csrf() }}
-<div class="field grow"><label for="q">Search</label><input id="q" type="search" name="q" value="{{ q }}" placeholder="Name, mobile, email or chart number"></div>
+<div class="field grow"><label for="q">Search</label><input id="q" type="search" name="q" value="{{ q }}" placeholder="{{ 'Name, mobile, email or chart number' if current_user.can('patients.contact') else 'Name or chart number' }}"></div>
 <button class="btn btn-secondary" type="submit">Search</button>{% if q %}<a class="btn btn-ghost" href="{{ url_for('patients.index', **qs) }}">Clear</a>{% endif %}
 </form>
 <p class="hint" style="margin-top:-.5rem">We send searches privately, so patient names don't appear in web addresses or browser history.</p>

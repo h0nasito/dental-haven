@@ -30,6 +30,7 @@
 <label class="check"><input type="checkbox" name="contact_email" value="1" {% if v.contact_email %}checked{% endif %}> OK to send email reminders</label>{% if errors.contact_email %}<div class="field-error">{{ errors.contact_email }}</div>{% endif %}
 <label class="check"><input type="checkbox" name="contact_messenger" value="1" {% if v.contact_messenger %}checked{% endif %}> OK to contact via Messenger</label></div>
 <div><label class="check"><input type="checkbox" name="consent_marketing" value="1" {% if v.consent_marketing %}checked{% endif %}> OK to receive promotions/newsletters</label>
+<label class="check"><input type="checkbox" name="news_opt_out" value="1" {% if v.news_opt_out %}checked{% endif %}> No announcement or birthday emails</label>
 <label class="check"><input type="checkbox" name="opt_out_all" value="1" {% if v.opt_out_all %}checked{% endif %}> <strong>Opted out of all non-essential messages</strong></label>
 {{ select('preferred_channel', 'Preferred channel', [('sms','SMS'),('call','Phone call'),('email','Email'),('messenger','Messenger')], v.preferred_channel, blank='No preference') }}</div>
 </div></fieldset>

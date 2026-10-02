@@ -1,0 +1,21 @@
+{% extends "public/layout.html" %}
+{% block title %}Email preferences · Dental Haven{% endblock %}
+{% block head %}<meta name="robots" content="noindex">{% endblock %}
+{% block content %}
+<section class="section"><div class="wrap prose" style="max-width:560px">
+<h1>Email preferences</h1>
+{% if not p %}
+<p>This link isn't valid. If you'd like to stop receiving emails, reply to any of our emails or call your Dental Haven branch.</p>
+{% elif done %}
+<p><strong>Done.</strong> {% if done == 'promotions' %}You won't receive promotions from Dental Haven anymore.{% else %}You won't receive announcements, birthday greetings or promotions from Dental Haven anymore.{% endif %}</p>
+<p>You'll still get messages about appointments you book with us. Changed your mind? Just tell us at your next visit.</p>
+{% else %}
+<p>Hi {{ p.first_name|title }}, what would you like to stop?</p>
+<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<p><button class="btn" name="choice" value="promotions">Stop promotions only</button></p>
+<p><button class="btn btn-secondary" name="choice" value="all">Stop all clinic emails (announcements, birthday greetings and promotions)</button></p>
+</form>
+<p class="hint">Messages about appointments you book are not affected.</p>
+{% endif %}
+</div></section>
+{% endblock %}

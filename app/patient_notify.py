@@ -275,6 +275,10 @@ def start_worker(app, every_seconds: int = 300) -> None:
                     n = send_due_reminders(get_db())
                     if n:
                         app.logger.info("Sent %s appointment reminder(s)", n)
+                    from . import patient_mail
+                    m = patient_mail.run(get_db())
+                    if m:
+                        app.logger.info("Sent %s patient email(s)", m)
             except Exception:  # noqa: BLE001
                 app.logger.exception("Reminder worker error")
             time.sleep(every_seconds)

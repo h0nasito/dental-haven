@@ -1,0 +1,60 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}{{ kinds[v.kind] }}{% endblock %}
+{% block content %}
+{% set draft = not c or c.status == 'draft' %}
+<div class="page-head"><div><a href="{{ url_for('emails.index') }}">← Patient emails</a>
+<h1>{{ (c.subject if c else 'New ' ~ kinds[v.kind]|lower) }}</h1>
+{% if c %}<p>{{ kinds[c.kind] }} · {{ c.status|label }}{% if c.queued_at %} · queued {{ c.queued_at|dt }} for {{ c.recipients }} patient(s){% endif %}</p>{% endif %}</div></div>
+
+{% if stats and c.status != 'draft' %}
+<div class="grid grid-4" style="margin-bottom:1rem">
+<div class="stat"><div class="label">Sent</div><div class="value">{{ stats.sent }}</div></div>
+<div class="stat"><div class="label">Waiting</div><div class="value">{{ stats.pending + stats.sending }}</div></div>
+<div class="stat {% if stats.failed %}warn{% endif %}"><div class="label">Failed</div><div class="value">{{ stats.failed }}</div></div>
+<div class="stat"><div class="label">Not sent</div><div class="value">{{ stats.cancelled }}</div><div class="sub">unsubscribed or cancelled</div></div>
+</div>
+{% if c.status == 'queued' %}<form method="post" data-confirm="Stop sending? Emails already sent can't be recalled.">{{ csrf() }}<button class="btn btn-danger btn-sm" name="action" value="cancel">Stop sending the rest</button></form>{% endif %}
+{% endif %}
+
+<div class="grid grid-2">
+<div class="card">
+<form method="post">{{ csrf() }}
+<fieldset {% if not draft %}disabled{% endif %}>
+<div class="form-grid">
+<div class="field"><label for="ck">Type</label><select id="ck" name="kind">{% for k in ('announcement', 'promotion') %}<option value="{{ k }}" {% if v.kind == k %}selected{% endif %}>{{ kinds[k] }}</option>{% endfor %}</select></div>
+<div class="field"><label for="cb">Send to</label><select id="cb" name="branch_id"><option value="">All branches</option>{% for b in branches %}<option value="{{ b.id }}" {% if v.branch_id == b.id %}selected{% endif %}>Patients of {{ b.name }}</option>{% endfor %}</select></div>
+</div>
+<div class="field {% if errors.subject %}error{% endif %}"><label for="cs">Subject</label><input id="cs" name="subject" value="{{ v.subject }}" maxlength="200" placeholder="e.g. Holiday schedule / Free consultation this October">{% if errors.subject %}<div class="field-error">{{ errors.subject }}</div>{% endif %}</div>
+<div class="field {% if errors.body %}error{% endif %}"><label for="cm">Message</label><textarea id="cm" name="body" rows="12">{{ v.body }}</textarea>
+<span class="hint">Plain text. {first_name} becomes the patient's first name. The clinic name and unsubscribe link are added at the end.</span>{% if errors.body %}<div class="field-error">{{ errors.body }}</div>{% endif %}</div>
+</fieldset>
+{% if draft %}
+<p><strong>Recipients now: {{ '{:,}'.format(count) }} patient(s)</strong> <small class="muted">({{ 'who accept promotions' if v.kind == 'promotion' else 'with privacy consent, not opted out' }}{% if v.branch_id %}, this branch only{% endif %}; save to update)</small></p>
+<input type="hidden" name="confirm_count" value="{{ count }}">
+<div class="row">
+<button class="btn btn-secondary" name="action" value="save">Save draft</button>
+<button class="btn btn-secondary" name="action" value="test">Send me a test</button>
+{% if c and count %}<button class="btn" name="action" value="send" data-confirm="Send this {{ kinds[v.kind]|lower }} to {{ count }} patient(s)? It can't be unsent once it goes out.">Send to {{ '{:,}'.format(count) }} patient(s)</button>{% endif %}
+</div>
+{% if not c %}<p class="hint">Save the draft first, then send yourself a test before sending to patients.</p>{% endif %}
+{% if not senders %}<p class="hint">Email isn't set up on the server yet: anything you send waits in the queue until it is.</p>{% endif %}
+{% endif %}
+</form>
+</div>
+<div class="card"><h2>Before you send</h2>
+<ul class="list-plain">
+<li>Send yourself a <strong>test</strong> and read it on your phone.</li>
+<li>Promotions: only offers, prices and dates the clinic has approved.</li>
+<li>Don't put patient health information in a blast.</li>
+<li>Big lists are sent a little at a time ({{ senders|length or 'no' }} Gmail account(s) set up). You can stop the rest at any time.</li>
+</ul>
+<h3 class="mt-1">Recipients by branch</h3>
+<table class="table"><tbody>
+<tr><td>All branches</td><td class="num">{{ counts.announcement[None] }} <small class="muted">announcement</small></td><td class="num">{{ counts.promotion[None] }} <small class="muted">promotion</small></td></tr>
+{% for b in branches %}<tr><td>{{ b.name }}</td><td class="num">{{ counts.announcement[b.id] }}</td><td class="num">{{ counts.promotion[b.id] }}</td></tr>{% endfor %}
+</tbody></table>
+<p class="hint">Shared patients (imported from MyMedsPH for all branches) are included only in "All branches".</p>
+</div>
+</div>
+{% endblock %}

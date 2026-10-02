@@ -81,7 +81,7 @@
       {% if current_user.can('content.manage') %}{{ nav('admin.website_sections', 'Website sections', 'admin.website_sections') }}{{ nav('admin.content', 'Website content', 'admin.content') }}{{ nav('admin.prices', 'Price list', 'admin.prices') }}{% endif %}
       {% if current_user.can('fees.manage') %}{{ nav('fees.index', 'Fee schedule (billing)', 'fees.') }}{% endif %}
       {% if current_user.can('attendance.manage') %}{{ nav('timeclock.setup', 'Time clock setup', 'timeclock.setup') }}{% endif %}
-      {% if current_user.can('system.settings') %}{{ nav('admin.system', 'System settings', 'admin.system') }}{{ nav('admin.import_data', 'Import from MyMedsPH', 'admin.import') }}{% endif %}
+      {% if current_user.is_super_admin %}{{ nav('emails.index', 'Patient emails', 'emails.') }}{% endif %}{% if current_user.can('system.settings') %}{{ nav('admin.system', 'System settings', 'admin.system') }}{{ nav('admin.import_data', 'Import from MyMedsPH', 'admin.import') }}{% endif %}
       {% if current_user.can('audit.view') %}{{ nav('admin.audit_log', 'Audit trail', 'admin.audit') }}{% endif %}
     {% endcall %}
     {% call group('Laboratory', 'lab') %}{% if nav_lab %}
