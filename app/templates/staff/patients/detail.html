@@ -9,7 +9,18 @@
 
 <section class="pt-head card" aria-label="Patient summary">
 <div class="pt-top">
-<div class="pt-avatar" aria-hidden="true">{{ (p.first_name[:1] ~ p.last_name[:1])|upper }}</div>
+<div class="pt-photo">
+{% if p.photo %}<a href="{{ url_for('patients.photo', patient_id=p.id) }}" target="_blank" rel="noopener"><img class="pt-avatar pt-avatar-img" src="{{ url_for('patients.photo', patient_id=p.id) }}" alt="Photo of {{ p.first_name }} {{ p.last_name }}"></a>
+{% else %}<div class="pt-avatar" aria-hidden="true">{{ (p.first_name[:1] ~ p.last_name[:1])|upper }}</div>{% endif %}
+{% if current_user.can('patients.manage') %}
+<details class="pt-photo-edit"><summary>{{ 'Change photo' if p.photo else 'Add photo' }}</summary>
+<form method="post" action="{{ url_for('patients.photo', patient_id=p.id) }}" enctype="multipart/form-data" class="mt-1">{{ csrf() }}
+<input type="file" name="photo" accept="image/jpeg,image/png,image/webp" required aria-label="Patient photo">
+<button class="btn btn-secondary btn-sm">Save photo</button>
+<p class="hint mb-0">On a phone you can take the photo with the camera. Take it only with the patient's permission.</p>
+{% if p.photo %}<button class="btn btn-ghost btn-sm mt-1" name="action" value="remove" formnovalidate data-confirm="Remove this photo?">Remove photo</button>{% endif %}</form>
+</details>{% endif %}
+</div>
 <div class="pt-id">
 <h1>{{ p.first_name }}{% if p.middle_name %} {{ p.middle_name }}{% endif %} {{ p.last_name }}{% if age is not none %} <span class="pt-age">· {{ age }} yrs</span>{% endif %}
 {% if p.is_demo %}<span class="badge">Demo record</span>{% endif %}</h1>

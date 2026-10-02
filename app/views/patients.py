@@ -798,6 +798,51 @@ def document_delete(patient_id, doc_id):
     return redirect(url_for("patients.detail", patient_id=patient_id, tab="documents"))
 
 
+@bp.route("/<int:patient_id>/photo", methods=["GET", "POST"])
+@require("patients.view")
+def photo(patient_id):
+    """The patient's profile photo. GET shows it (only to staff who can see the patient); POST uploads, replaces or removes it."""
+    conn = get_db()
+    p = _load(patient_id)
+    if request.method == "GET":
+        if not p["photo"]:
+            abort(404)
+        try:
+            path = document_path(p["photo"])
+        except ValueError:
+            abort(404)
+        if not path.exists():
+            abort(404)
+        resp = send_file(path, max_age=0)
+        resp.headers["Cache-Control"] = "private, no-store"
+        return resp
+    if not g.user.can("patients.manage"):
+        abort(403)
+    old = p["photo"]
+    if request.form.get("action") == "remove":
+        new = None
+    else:
+        from ..uploads import save_private_image
+        f = request.files.get("photo")
+        if not f or not f.filename:
+            flash("Choose a photo, or take one with the camera.", "error")
+            return redirect(url_for("patients.detail", patient_id=patient_id))
+        new, err = save_private_image(f, "patient_photos")
+        if err:
+            flash(err, "error")
+            return redirect(url_for("patients.detail", patient_id=patient_id))
+    conn.execute("UPDATE patients SET photo = ?, updated_at = ? WHERE id = ?", (new, now_str(), patient_id))
+    if old:
+        try:
+            document_path(old).unlink(missing_ok=True)
+        except ValueError:
+            pass
+    audit.record("patient_photo_removed" if new is None else "patient_photo_updated", "patient", patient_id,
+                 ("Removed" if new is None else "Updated") + f" profile photo of {p['chart_no']}")
+    flash("Photo removed." if new is None else "Photo saved.", "success")
+    return redirect(url_for("patients.detail", patient_id=patient_id))
+
+
 @bp.route("/<int:patient_id>/delete", methods=["POST"])
 @require("patients.delete")
 def delete_patient(patient_id):

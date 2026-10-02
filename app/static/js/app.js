@@ -529,3 +529,11 @@ document.addEventListener('DOMContentLoaded', function () {
     update();
   });
 })();
+
+/* Confirm on single buttons marked data-confirm (outside the bulk-action lists, which handle their own). */
+(function () {
+  document.querySelectorAll('button[data-confirm]').forEach(function (btn) {
+    if (btn.closest('form[data-bulk]')) return;
+    btn.addEventListener('click', function (e) { if (!window.confirm(btn.getAttribute('data-confirm'))) e.preventDefault(); });
+  });
+})();
