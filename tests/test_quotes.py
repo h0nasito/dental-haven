@@ -166,3 +166,36 @@ class TestQuotes(Base):
         self.assertEqual(self.login("staff.bocaue").get("/staff/quotes/items").status_code in (200, 403), True)
         self.conn.execute("DELETE FROM quote_presets WHERE name LIKE 'TEST %'")
         self.conn.execute("UPDATE quote_presets SET unit_price_cents = 1200000 WHERE id = ?", (rct["id"],))
+
+    def test_add_several_procedures_at_once(self):
+        c = self.login("dentist.malolos")
+        qid, _ = self._quote(c)
+        fee = self.q("SELECT * FROM fee_schedule WHERE active = 1 ORDER BY id LIMIT 1")
+        page = c.get(f"/staff/quotes/{qid}").data.decode()
+        self.assertIn('name="m_proc"', page)
+        self.assertIn("Add all", page)
+        r = c.post(f"/staff/quotes/{qid}", data={
+            "action": "add_many", "plan": "Plan A", "section": "Upper front",
+            "m_proc": ["Root Canal Therapy", fee["name"], "Gum contouring", "", "Mystery work", "Emax"],
+            "m_tooth": ["11", "12", "", "", "", "11,21"],
+            "m_qty": ["1", "2", "1", "1", "1", "2"],
+            "m_price": ["", "", "3,500", "", "", ""],
+            "m_disc": ["10%", "", "", "", "", ""],
+            "m_kind": ["item", "item", "item", "item", "item", "option"]}, follow_redirects=True)
+        html = r.data.decode()
+        self.assertIn("Added 4 procedure(s)", html)
+        self.assertIn("Mystery work", html)  # skipped: no price
+        items = self.conn.all("SELECT * FROM quotation_items WHERE quotation_id = ? ORDER BY seq", (qid,))
+        self.assertEqual([i["description"] for i in items], ["Root Canal Therapy", fee["name"].title(), "Gum contouring", "Emax"])
+        rct, fe, gum, emax = items
+        self.assertEqual((rct["unit_price_cents"], rct["discount_cents"], rct["amount_cents"], rct["unit_label"], rct["tooth"]),
+                         (1200000, 120000, 1080000, "canal", "11"))
+        self.assertEqual((fe["unit_price_cents"], fe["qty"], fe["amount_cents"]), (fee["price_cents"], 2, 2 * fee["price_cents"]))
+        self.assertEqual(gum["unit_price_cents"], 350000)
+        self.assertEqual((emax["kind"], emax["unit_price_cents"]), ("option", 3000000))
+        self.assertTrue(all(i["plan"] == "Plan A" and i["section"] == "Upper front" for i in items))
+        q = self.q("SELECT * FROM quotations WHERE id = ?", (qid,))
+        self.assertEqual(q["total_cents"], 1080000 + 2 * fee["price_cents"] + 350000)
+        # nothing chosen
+        r = c.post(f"/staff/quotes/{qid}", data={"action": "add_many", "m_proc": ["", ""]}, follow_redirects=True)
+        self.assertIn("Choose or type at least one procedure", r.data.decode())

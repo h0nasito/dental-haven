@@ -61,13 +61,36 @@
 <datalist id="q-plans">{% for n in plan_names %}<option value="{{ n }}">{% endfor %}</datalist>
 <datalist id="q-sections">{% for n in section_names %}<option value="{{ n }}">{% endfor %}</datalist>
 <datalist id="q-fees">{% for o in fees %}<option value="{{ o.name }}" data-price="{{ '%d' % (o.price // 100) }}" data-unit="{{ o.unit }}">{{ o.category }}{% if o.unit %} · {{ o.unit }}{% endif %} · ₱{{ '{:,.0f}'.format(o.price / 100) }}</option>{% endfor %}</datalist>
+<datalist id="q-procs">{% for r in presets %}<option value="{{ r.name }}" data-price="{{ '%d' % (r.unit_price_cents // 100) }}" data-kind="{{ r.kind }}">Item list · ₱{{ '{:,.0f}'.format(r.unit_price_cents / 100) }}{% if r.unit_label %}/{{ r.unit_label }}{% endif %}</option>{% endfor %}
+{% for o in fees %}<option value="{{ o.name }}" data-price="{{ '%d' % (o.price // 100) }}" data-kind="item">{{ o.category }} · ₱{{ '{:,.0f}'.format(o.price / 100) }}</option>{% endfor %}</datalist>
 {% if editable %}
+<form method="post" class="mt-1 quote-add" data-q-many>{{ csrf() }}<input type="hidden" name="action" value="add_many">
+<h3>Add procedures</h3>
+<p class="hint">Add as many procedures as you need, then click <strong>Add all</strong>. Start typing to search your quotation item list and the fee schedule; the price fills in and you can change it. Empty rows are ignored.</p>
+<div class="form-grid">
+<div class="field"><label for="mpl">Plan (for all rows)</label><input id="mpl" name="plan" list="q-plans" placeholder="Blank if only one plan"></div>
+<div class="field"><label for="mse">Section / group (for all rows)</label><input id="mse" name="section" list="q-sections" placeholder="e.g. A. Root Canal Therapy"></div>
+</div>
+<div class="table-wrap"><table class="q-many"><thead><tr><th>Procedure</th><th>Tooth no.</th><th>Units</th><th>Price/unit (₱)</th><th>Discount</th><th>Type</th><th><span class="sr-only">Remove</span></th></tr></thead>
+<tbody data-q-rows>
+{% for n in range(3) %}<tr data-q-row>
+<td><input name="m_proc" list="q-procs" placeholder="Search or type…" aria-label="Procedure {{ n + 1 }}" autocomplete="off" data-q-proc></td>
+<td><input name="m_tooth" placeholder="e.g. 14" aria-label="Tooth no. {{ n + 1 }}" class="q-sm"></td>
+<td><input name="m_qty" type="number" min="1" max="999" value="1" aria-label="Units {{ n + 1 }}" class="q-xs"></td>
+<td><input name="m_price" inputmode="decimal" aria-label="Price per unit {{ n + 1 }}" class="q-sm" data-q-mprice></td>
+<td><input name="m_disc" placeholder="₱ or %" aria-label="Discount {{ n + 1 }}" class="q-xs"></td>
+<td><select name="m_kind" aria-label="Type {{ n + 1 }}" data-q-mkind><option value="item">Treatment</option><option value="option">Option</option><option value="freebie">Freebie</option></select></td>
+<td><button type="button" class="btn btn-ghost btn-sm" data-q-del aria-label="Remove row {{ n + 1 }}">✕</button></td>
+</tr>{% endfor %}
+</tbody></table></div>
+<div class="row mt-1"><button type="button" class="btn btn-ghost btn-sm" data-q-addrow>+ Add another row</button><button class="btn">Add all</button></div>
+<p class="hint">For material choices (Emax / Zirconia / Ceramic) set the type to <strong>Option</strong>: they're lettered A, B, C and not added together. Discount can be pesos or a percent, e.g. 20%.</p>
+</form>
+<details class="mt-1"><summary>Add one line with all details (unit, red note, save to item list)</summary>
 <form method="post" class="mt-1 quote-add" data-q-add>{{ csrf() }}<input type="hidden" name="action" value="add_item">
-<h3>Add a line</h3>
 {{ line_fields(None, 'n') }}
 <button class="btn btn-secondary">Add line</button>
-<p class="hint">Use the same Plan and Section to group lines. For material choices (Emax / Zirconia / Ceramic) add each as an <strong>Option</strong> in the same section; they're lettered A, B, C and not added together. Discount can be a percent, e.g. 20%.</p>
-</form>
+</form></details>
 {% endif %}
 </div>
 </div>

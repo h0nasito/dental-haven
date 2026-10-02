@@ -481,3 +481,32 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   });
 })();
+
+/* Quotation: add several procedures at once (rows; choosing a procedure fills its price and type). */
+(function () {
+  document.querySelectorAll('form[data-q-many]').forEach(function (form) {
+    var body = form.querySelector('[data-q-rows]'), list = document.getElementById('q-procs');
+    function wire(row) {
+      var proc = row.querySelector('[data-q-proc]');
+      proc.addEventListener('change', function () {
+        var opt = null;
+        list.querySelectorAll('option').forEach(function (o) { if (o.value === proc.value && !opt) opt = o; });
+        if (!opt) return;
+        row.querySelector('[data-q-mprice]').value = opt.dataset.price;
+        row.querySelector('[data-q-mkind]').value = opt.dataset.kind || 'item';
+      });
+      row.querySelector('[data-q-del]').addEventListener('click', function () {
+        if (body.querySelectorAll('[data-q-row]').length > 1) { row.remove(); }
+        else { row.querySelectorAll('input').forEach(function (i) { i.value = i.name === 'm_qty' ? '1' : ''; }); }
+      });
+    }
+    body.querySelectorAll('[data-q-row]').forEach(wire);
+    form.querySelector('[data-q-addrow]').addEventListener('click', function () {
+      var rows = body.querySelectorAll('[data-q-row]'), clone = rows[rows.length - 1].cloneNode(true);
+      clone.querySelectorAll('input').forEach(function (i) { i.value = i.name === 'm_qty' ? '1' : ''; });
+      clone.querySelector('[data-q-mkind]').value = 'item';
+      body.appendChild(clone); wire(clone);
+      clone.querySelector('[data-q-proc]').focus();
+    });
+  });
+})();

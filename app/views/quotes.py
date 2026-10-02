@@ -207,6 +207,60 @@ def new():
     return render_template("staff/quotes/new.html", patient=patient, appt=appt, v=v, errors=errors, branches=branches, dentists=dentists)
 
 
+def _find_fee(conn, name):
+    """A fee schedule item by its picker name ("NAME" or "NAME (unit)")."""
+    if not (name or "").strip():
+        return None
+    return conn.one("SELECT * FROM fee_schedule WHERE name || CASE WHEN unit != '' THEN ' (' || unit || ')' ELSE '' END = ? "
+                    "OR name = ? ORDER BY CASE WHEN name = ? THEN 1 ELSE 0 END LIMIT 1", (name, name, name))
+
+
+def _add_many(conn, quote_id):
+    """Add several procedures at once (one row each). Plan and section apply to all of them.
+    A row can name an item from the quotation item list or the fee schedule (its price fills in), or be typed with a price.
+    Returns (number added, list of rows that were skipped with the reason)."""
+    f = request.form
+    procs, teeth, qtys = f.getlist("m_proc"), f.getlist("m_tooth"), f.getlist("m_qty")
+    prices, discs, kinds = f.getlist("m_price"), f.getlist("m_disc"), f.getlist("m_kind")
+    plan, section = clean(f.get("plan"), 60), clean(f.get("section"), 120)
+
+    def at(lst, i):
+        return lst[i] if i < len(lst) else ""
+
+    added, skipped = 0, []
+    seq = conn.scalar("SELECT MAX(seq) FROM quotation_items WHERE quotation_id = ?", (quote_id,)) or 0
+    for i, raw in enumerate(procs[:40]):
+        name = clean(raw, 200)
+        if not name:
+            continue
+        preset = conn.one("SELECT * FROM quote_presets WHERE active = 1 AND lower(name) = lower(?) ORDER BY id LIMIT 1", (name,))
+        fee = None if preset else _find_fee(conn, name)
+        desc = preset["name"] if preset else (fee["name"].title() if fee else name)
+        qty = max(1, min(999, to_int(at(qtys, i), 1) or 1))
+        unit = parse_money(at(prices, i))
+        if unit is None:
+            unit = preset["unit_price_cents"] if preset else (fee["price_cents"] if fee else None)
+        kind = at(kinds, i) if at(kinds, i) in KINDS else (preset["kind"] if preset else "item")
+        if unit is None or unit < 0:
+            skipped.append(f"“{name}” needs a price")
+            continue
+        disc = _parse_discount(at(discs, i), qty, unit)
+        if disc is None:
+            skipped.append(f"“{name}”: discount must be pesos or a percent")
+            continue
+        disc = 0 if kind == "freebie" else min(disc, qty * unit)
+        seq += 1
+        conn.insert("quotation_items", {
+            "quotation_id": quote_id, "price_item_id": None, "service_id": None, "sample_price": 0, "seq": seq,
+            "description": desc, "tooth": clean(at(teeth, i), 80), "qty": qty, "unit_price_cents": unit, "discount_cents": disc,
+            "amount_cents": 0 if kind == "freebie" else line_amount(qty, unit, disc), "plan": plan,
+            "section": section or (preset["section"] if preset else ""), "kind": kind,
+            "unit_label": preset["unit_label"] if preset else (unit_label_from(fee["unit"]) if fee else ""),
+            "note": preset["note"] if preset else ""})
+        added += 1
+    return added, skipped
+
+
 @bp.route("/<int:quote_id>", methods=["GET", "POST"])
 @require("quotes.view")
 def edit(quote_id):
@@ -272,6 +326,19 @@ def edit(quote_id):
                                                     "service_id": p["service_id"] if p else None,
                                                     "sample_price": 1 if (p and p["sample"] and unit == p["price_from_cents"]) else 0, "seq": seq})
                 _recalc(conn, quote_id)
+        elif action == "add_many" and editable:
+            added, skipped = _add_many(conn, quote_id)
+            if added:
+                _recalc(conn, quote_id)
+                audit.record("quote_items_added", "quotation", quote_id, f"Added {added} line(s) to the quotation", branch_id=q["branch_id"])
+            if added and not skipped:
+                flash(f"Added {added} procedure(s).", "success")
+            elif added:
+                flash(f"Added {added} procedure(s). Not added: " + "; ".join(skipped), "error")
+            elif skipped:
+                flash("Nothing added: " + "; ".join(skipped), "error")
+            else:
+                flash("Choose or type at least one procedure.", "error")
         elif action == "move" and editable:
             items = conn.all("SELECT id, seq FROM quotation_items WHERE quotation_id = ? ORDER BY seq, id", (quote_id,))
             ids = [i["id"] for i in items]
