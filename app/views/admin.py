@@ -457,7 +457,36 @@ def site_image_save():
                 conn.execute("INSERT INTO site_images (key, image_path, updated_at, updated_by) VALUES (?, ?, ?, ?)", (key, path, now_str(), g.user.id))
             audit.record("site_image_updated", "site_content", None, f"Updated website photo: {key}")
             flash("Photo saved. It now shows on the website.", "success")
+    back = request.form.get("next") or ""
+    if back.startswith("/staff/admin/website"):
+        return redirect(back)
     return redirect(url_for("admin.content") + "#photos")
+
+
+@bp.route("/website", methods=["GET", "POST"])
+@require("content.manage")
+def website_sections():
+    """Edit the website section by section: headings, texts, button labels, photos, and show/hide."""
+    from .. import site_sections
+    conn = get_db()
+    if request.method == "POST":
+        sid = request.form.get("section")
+        if sid not in site_sections.SECTION_BY_ID:
+            abort(400)
+        with conn.transaction():
+            changed = site_sections.save(conn, sid, request.form, g.user.id, now_str())
+            if changed:
+                audit.record("site_text_updated", "site_content", None,
+                             f"Updated website section: {site_sections.SECTION_BY_ID[sid]['label']}", {"keys": changed})
+        flash(f"Saved “{site_sections.SECTION_BY_ID[sid]['label']}”." if changed else "No changes to save.", "success")
+        return redirect(url_for("admin.website_sections") + f"#s-{sid}")
+    saved = site_sections.load(conn)
+    photos = {r["key"]: r for r in conn.all("SELECT * FROM site_images")}
+    edited = {k for k in saved if k in site_sections.FIELDS}
+    from .. import stock_photos
+    return render_template("staff/admin/website_sections.html", sections=site_sections.SECTIONS,
+                           value=lambda k: site_sections.value(saved, k), edited=edited, photos=photos,
+                           photo_info={k: (l, h) for k, l, h in SITE_IMAGE_KEYS}, stock=stock_photos.url)
 
 
 @bp.route("/branches/<int:branch_id>", methods=["GET", "POST"])

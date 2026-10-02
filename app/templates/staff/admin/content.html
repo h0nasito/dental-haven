@@ -2,7 +2,7 @@
 {% from "macros.html" import csrf %}
 {% block page_title %}Website content{% endblock %}
 {% block content %}
-<div class="page-head"><div><h1>Website content</h1><p>Edit the text on the public site. Branch details are edited under Branches, and service pages under Services.</p></div>
+<div class="page-head"><div><h1>Website content</h1><p>Gallery, patient guides, reviews and longer texts (privacy notice, consent wording). For the headings, labels, buttons and photos of each part of the home page, use <a href="{{ url_for('admin.website_sections') }}">Website sections</a>. Branch details are edited under Branches, and service pages under Services.</p></div>
 <a class="btn btn-secondary" href="{{ url_for('public.home') }}" target="_blank" rel="noopener">View site ↗</a></div>
 <div class="notice" style="margin-bottom:1rem">Placeholder text is marked "[to be confirmed]". Replace it only with copy Dental Haven has approved. Don't copy content from Facebook automatically, and don't add prices, credentials or claims until the clinic confirms them.</div>
 {% for key, label in keys %}{% set item = items.get(key) %}

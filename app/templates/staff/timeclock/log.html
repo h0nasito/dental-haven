@@ -1,20 +1,31 @@
 {% extends "staff/layout.html" %}
 {% block page_title %}Time clock log{% endblock %}
+{% from "macros.html" import csrf %}
 {% block content %}
 <div class="page-head"><div><h1>Time clock log</h1><p>Each time in and time out, with the selfie and location check. Selfies are deleted after {{ days }} days.</p></div>
 <div class="row"><a class="btn btn-secondary" href="{{ url_for('people.attendance') }}">Attendance (DTR)</a><a class="btn btn-secondary" href="{{ url_for('timeclock.setup') }}">Branch locations</a></div></div>
 <form class="toolbar" method="get">
 <div class="field"><label for="lf">From</label><input id="lf" type="date" name="from" value="{{ start.isoformat() }}"></div>
 <div class="field"><label for="lt">To</label><input id="lt" type="date" name="to" value="{{ end.isoformat() }}"></div>
-<div class="field"><label for="lg">Show</label><select id="lg" name="flag"><option value="">All</option><option value="review" {% if flag == 'review' %}selected{% endif %}>Needs review (location)</option></select></div>
+<div class="field"><label for="lg">Show</label><select id="lg" name="flag"><option value="">All</option><option value="review" {% if flag == 'review' %}selected{% endif %}>Needs review (location)</option><option value="field" {% if flag == 'field' %}selected{% endif %}>Field work to approve</option><option value="field_all" {% if flag == 'field_all' %}selected{% endif %}>All field work</option></select></div>
 <button class="btn btn-secondary">Show</button></form>
+{% if flag == 'field' %}<p class="hint">Showing every field-work day still waiting for approval, whatever the date. Approving counts the whole day for attendance and payroll; declining leaves it out.</p>{% endif %}
+{% if pending and flag != 'field' %}<div class="flash flash-info"><a href="{{ url_for('timeclock.log', flag='field') }}">{{ pending }} day(s) of field work waiting for approval</a></div>{% endif %}
 <div class="card"><div class="table-wrap"><table><thead><tr><th>Selfie</th><th>Employee</th><th>Time</th><th>Branch</th><th>Location check</th></tr></thead><tbody>
 {% for p in rows %}<tr><td>{% if p.photo %}<a href="{{ url_for('timeclock.photo', punch_id=p.id) }}" target="_blank"><img class="clock-thumb" src="{{ url_for('timeclock.photo', punch_id=p.id) }}" alt="Selfie of {{ p.full_name }}" loading="lazy"></a>{% else %}<span class="muted">Deleted</span>{% endif %}</td>
-<td><strong>{{ p.full_name }}</strong></td><td>Time {{ p.kind }}<br><small class="muted">{{ p.at|dt }}</small></td><td>{{ p.branch }}</td>
-<td>{% if p.location_ok == 1 %}<span class="badge badge-green">At the branch</span> <small class="muted">{{ '{:,}'.format(p.distance_m|int) }} m</small>
+<td><strong>{{ p.full_name }}</strong></td><td>Time {{ p.kind }}<br><small class="muted">{{ p.at|dt }}</small></td><td>{% if p.lab %}{{ p.lab }}<br><small class="muted">Lab · {{ p.branch }}</small>{% else %}{{ p.branch }}{% endif %}</td>
+<td>{% if p.location_ok == 1 %}<span class="badge badge-green">{{ 'At the lab' if p.lab else 'At the branch' }}</span> <small class="muted">{{ '{:,}'.format(p.distance_m|int) }} m</small>
 {% elif p.location_ok == 0 %}<span class="badge badge-red">{{ '{:,}'.format(p.distance_m|int) }} m away</span>
-{% elif p.b_lat is none %}<span class="badge">Branch location not set</span>
+{% elif p.field %}{% elif p.b_lat is none %}<span class="badge">Branch location not set</span>
 {% else %}<span class="badge badge-amber">Location not shared</span>{% endif %}
-{% if p.latitude is not none %}<br><a href="https://www.google.com/maps?q={{ p.latitude }},{{ p.longitude }}" target="_blank" rel="noopener"><small>Map</small></a>{% endif %}</td></tr>
+{% if p.latitude is not none %}<br><a href="https://www.google.com/maps?q={{ p.latitude }},{{ p.longitude }}" target="_blank" rel="noopener"><small>Map</small></a>{% endif %}
+{% if p.field %}<div class="field-work"><span class="badge badge-amber">On the field</span> <small>{{ p.field_reason }}</small>
+{% if p.field_status == 'pending' %}{% if p.emp_user_id != current_user.id or current_user.is_super_admin %}
+<form method="post" action="{{ url_for('timeclock.field_review', rec_id=p.time_record_id) }}" class="row mt-1">{{ csrf() }}<input type="hidden" name="next" value="{{ request.full_path }}">
+<input name="note" maxlength="200" placeholder="Note (optional)" aria-label="Note for {{ p.full_name }}">
+<button class="btn btn-sm" name="action" value="approve">Approve day</button><button class="btn btn-sm btn-secondary" name="action" value="decline">Decline</button></form>
+{% else %}<br><small class="muted">Waiting for another approver</small>{% endif %}
+{% elif p.field_status == 'approved' %}<br><span class="badge badge-green">Approved</span> <small class="muted">{{ p.reviewer }}{% if p.field_review_note %} · {{ p.field_review_note }}{% endif %}</small>
+{% elif p.field_status == 'declined' %}<br><span class="badge badge-red">Declined</span> <small class="muted">{{ p.reviewer }}{% if p.field_review_note %} · {{ p.field_review_note }}{% endif %}</small>{% endif %}</div>{% endif %}</td></tr>
 {% else %}<tr><td colspan="5" class="empty">No time clock entries for these dates.</td></tr>{% endfor %}</tbody></table></div></div>
 {% endblock %}

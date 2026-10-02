@@ -375,6 +375,8 @@ def attendance():
     if status in ("ok", "exception", "corrected", "excused"):
         where.append("t.status = ?")
         args.append(status)
+    elif status == "field":
+        where.append("t.field_status = 'pending'")
     elif status == "ot":
         where.append("t.ot_minutes > 0 AND t.ot_approved_minutes = 0")
     elif status == "late":

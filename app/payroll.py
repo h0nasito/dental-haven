@@ -145,8 +145,10 @@ def build_lines(conn, period) -> list[dict]:
     employees = conn.all(f"SELECT e.* FROM employees e WHERE {where} ORDER BY e.full_name", params)
     lines = []
     for e in employees:
-        recs = conn.all("SELECT * FROM time_records WHERE employee_id = ? AND work_date BETWEEN ? AND ?",
-                        (e["id"], period["start_date"], period["end_date"]))
+        all_recs = conn.all("SELECT * FROM time_records WHERE employee_id = ? AND work_date BETWEEN ? AND ?",
+                            (e["id"], period["start_date"], period["end_date"]))
+        # Field work counts only once approved; pending or declined field days are left out.
+        recs = [r for r in all_recs if r["field_status"] in (None, "approved")]
         days = sum(1 for r in recs if r["time_in"] and r["time_out"] and r["status"] in ("ok", "corrected", "exception"))
         minutes = sum(worked_minutes(r) for r in recs if r["status"] != "excused")
         late = sum(r["late_minutes"] or 0 for r in recs if r["status"] != "excused")
@@ -156,7 +158,7 @@ def build_lines(conn, period) -> list[dict]:
                 for part in r["exception_note"].split("; "):
                     if part.startswith("left "):
                         undertime += int(part.split(" ")[1])
-        open_exc = sum(1 for r in recs if r["status"] == "exception")
+        open_exc = sum(1 for r in all_recs if r["status"] == "exception")
         user = conn.one("SELECT id, role FROM users WHERE id = ?", (e["user_id"],)) if e["user_id"] else None
         if user and user["role"] == "dentist":
             rates = dentist_rates(conn, e["id"], period["end_date"])

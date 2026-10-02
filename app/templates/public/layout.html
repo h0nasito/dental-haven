@@ -8,13 +8,13 @@
     <input type="checkbox" id="nav-toggle" class="nav-toggle sr-only">
     <label for="nav-toggle" class="btn btn-secondary btn-sm nav-toggle-btn">Menu</label>
     <nav class="site-nav" aria-label="Main">
-      <a href="{{ url_for('public.home') }}#specialty">Smile transformations</a>
-      <a href="{{ url_for('public.home') }}#work">Our work</a>
-      <a href="{{ url_for('public.home') }}#services">Services</a>
-      <a href="{{ url_for('public.home') }}#guides">Guides</a>
-      <a href="{{ url_for('public.home') }}#branches">Branches</a>
-      <a href="{{ url_for('public.home') }}#contact">Contact</a>
-      <a class="btn" href="{{ url_for('public.book') }}">Book now</a>
+      {% if shown('specialty') %}<a href="{{ url_for('public.home') }}#specialty">{{ txt('nav.specialty') }}</a>{% endif %}
+      {% if shown('work') %}<a href="{{ url_for('public.home') }}#work">{{ txt('nav.work') }}</a>{% endif %}
+      <a href="{{ url_for('public.home') }}#services">{{ txt('nav.services') }}</a>
+      {% if shown('guides') %}<a href="{{ url_for('public.home') }}#guides">{{ txt('nav.guides') }}</a>{% endif %}
+      <a href="{{ url_for('public.home') }}#branches">{{ txt('nav.branches') }}</a>
+      <a href="{{ url_for('public.home') }}#contact">{{ txt('nav.contact') }}</a>
+      <a class="btn" href="{{ url_for('public.book') }}">{{ txt('nav.book') }}</a>
     </nav>
   </div>
 </header>
@@ -24,7 +24,7 @@
 <footer class="site-footer">
   <div class="wrap">
     <div class="cols">
-      <div><img class="footer-logo" src="{{ url_for('static', filename='img/logo-white.png') }}" alt="" width="64" height="43"><h4>Dental Haven</h4><p class="tagline-sm">Happiest your teeth will ever be.</p><p>Preventive &amp; diagnostic, restorative, prosthodontics &amp; tooth replacement, orthodontics &amp; TMJ, oral surgery, cosmetic, gum care, and pediatric &amp; special care dentistry, with our in-house Digital Solutions Dental Laboratory.</p>
+      <div><img class="footer-logo" src="{{ url_for('static', filename='img/logo-white.png') }}" alt="" width="64" height="43"><h4>Dental Haven</h4><p class="tagline-sm">{{ txt('footer.tagline') }}</p><p>{{ txt('footer.about') }}</p>
 </div>
       <div><h4>Branches</h4><ul class="list-plain">{% for b in site_branches %}<li style="border-color:rgba(255,255,255,.08)"><a href="{{ url_for('public.branch', slug=b.slug) }}">{{ b.name }}</a></li>{% endfor %}</ul></div>
       <div><h4>Services</h4><ul class="list-plain">{% for s in site_services %}<li style="border-color:rgba(255,255,255,.08)"><a href="{{ url_for('public.service', slug=s.slug) }}">{{ s.name }}</a></li>{% endfor %}</ul></div>
@@ -36,7 +36,7 @@
         <li style="border-color:rgba(255,255,255,.08)"><a href="{{ url_for('public.home') }}#careers">Careers</a></li>
         <li style="border-color:rgba(255,255,255,.08)"><a href="{{ url_for('public.privacy') }}">Privacy notice</a></li></ul></div>
     </div>
-    <div class="fine row between"><span>© Dental Haven. Website content is being finalised with the clinic.</span><a href="{{ url_for('auth.login') }}">Staff sign in</a></div>
+    <div class="fine row between"><span>{{ txt('footer.fine') }}</span><a href="{{ url_for('auth.login') }}">Staff sign in</a></div>
   </div>
 </footer>
 <div class="dh-chat" id="dh-chat" data-info="{{ url_for('public.chat_info') }}" data-send="{{ url_for('public.chat_message') }}" data-csrf="{{ csrf_token() }}">

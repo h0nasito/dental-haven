@@ -16,6 +16,24 @@
 <div class="form-actions"><button type="button" class="btn btn-secondary" data-geo-fill>Use my current location</button><button class="btn">Save</button></div>
 </form>
 {% endfor %}
+<h2 class="mt-1">Laboratories</h2>
+<p class="hint">For lab employees (technicians, lab receptionist) who time in at the laboratory instead of a branch. Stand at the lab entrance and tap <strong>Use my current location</strong>.
+Their attendance and payroll are handled by the branch you choose.</p>
+{% for l in labs %}
+<form method="post" class="card" style="margin-bottom:1rem" id="lab-{{ l.id }}" data-geo-set>{{ csrf() }}<input type="hidden" name="lab_id" value="{{ l.id }}">
+<h2>{{ l.name }} <small class="muted">· {{ l.staff }} staff</small></h2>
+<div class="form-grid">
+<div class="field"><label for="lla{{ l.id }}">Latitude</label><input id="lla{{ l.id }}" name="lat" value="{{ l.latitude if l.latitude is not none else '' }}" inputmode="decimal" data-geo-lat></div>
+<div class="field"><label for="llo{{ l.id }}">Longitude</label><input id="llo{{ l.id }}" name="lng" value="{{ l.longitude if l.longitude is not none else '' }}" inputmode="decimal" data-geo-lng></div>
+<div class="field"><label for="lra{{ l.id }}">Allowed distance (meters)</label><input id="lra{{ l.id }}" name="radius" value="{{ l.clock_radius_m or 150 }}" inputmode="numeric"></div>
+<div class="field"><label for="lbr{{ l.id }}">Attendance handled by</label><select id="lbr{{ l.id }}" name="lab_branch_id" required><option value="">Choose a branch…</option>{% for b in branches %}<option value="{{ b.id }}" {% if b.id == l.branch_id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select></div>
+</div>
+<p class="hint" data-geo-status>{% if not l.branch_id %}Not set up yet: lab staff can't time in at this lab until you choose the branch and save.{% elif l.latitude is none %}Location not set: time clock entries at this lab aren't location-checked.{% else %}<a href="https://www.google.com/maps?q={{ l.latitude }},{{ l.longitude }}" target="_blank" rel="noopener">Check on the map</a>{% endif %}</p>
+<div class="form-actions"><button type="button" class="btn btn-secondary" data-geo-fill>Use my current location</button><button class="btn">Save</button></div>
+</form>
+{% else %}
+<div class="card" style="margin-bottom:1rem"><p class="muted">No laboratory has staff yet. Assign lab employees to their laboratory in Administration → Users (Authorized laboratories), then set the lab's location here.</p></div>
+{% endfor %}
 {% if current_user.is_super_admin %}
 <form method="post" class="card">{{ csrf() }}<input type="hidden" name="action" value="retention"><h2>Selfie retention</h2>
 <div class="field" style="max-width:260px"><label for="rd">Delete selfies after (days)</label><input id="rd" name="days" value="{{ days }}" inputmode="numeric"></div>

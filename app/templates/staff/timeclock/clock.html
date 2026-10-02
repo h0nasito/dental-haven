@@ -12,10 +12,17 @@
 <p class="clock-now">{{ now.strftime('%A, %B %d') }}</p>
 <form method="post" enctype="multipart/form-data" data-geo>{{ csrf() }}
 <input type="hidden" name="kind" value="{{ next_kind }}"><input type="hidden" name="lat"><input type="hidden" name="lng"><input type="hidden" name="acc">
-<div class="field"><label for="cb">Branch</label><select id="cb" name="branch_id" {% if rec %}disabled{% endif %}>{% for b in branches %}<option value="{{ b.id }}" {% if b.id == branch_id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select>
-{% if rec %}<input type="hidden" name="branch_id" value="{{ rec.branch_id }}">{% endif %}</div>
+{% if not branches and not labs %}<p class="flash flash-error">Your account has no branch or laboratory with a time clock yet. Ask your manager to set it up.</p>{% endif %}
+<div class="field"><label for="cb">{{ 'Branch or laboratory' if labs else 'Branch' }}</label><select id="cb" name="place" {% if rec %}disabled{% endif %}>
+{% if labs and branches %}<optgroup label="Branches">{% endif %}{% for b in branches %}<option value="b:{{ b.id }}" {% if place == 'b:' ~ b.id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}{% if labs and branches %}</optgroup>{% endif %}
+{% if labs %}<optgroup label="Laboratories">{% for l in labs %}<option value="l:{{ l.id }}" {% if place == 'l:' ~ l.id %}selected{% endif %}>{{ l.name }}</option>{% endfor %}</optgroup>{% endif %}
+</select>
+{% if rec %}<input type="hidden" name="place" value="{{ place }}">{% endif %}</div>
+<div class="field"><label class="check"><input type="checkbox" name="field" value="1" data-field-toggle> I'm on the field (working outside the clinic or lab)</label>
+<div data-field-box hidden><label for="cfr">Where are you and why?</label><input id="cfr" name="field_reason" maxlength="200" placeholder="e.g. Supplier pickup in Manila, home service, seminar">
+<span class="hint">Your time is recorded now and counts once your supervisor, HR or admin approves it. Choose above the branch that handles your attendance.</span></div></div>
 <div class="field"><label for="cp">Selfie in front of the clinic</label><input id="cp" type="file" name="photo" accept="image/*" capture="user" required>
-<span class="hint">Your phone's camera opens. Include the clinic entrance or signage behind you.</span></div>
+<span class="hint">Your phone's camera opens. Include the clinic entrance or signage behind you (on the field: where you are).</span></div>
 <p class="hint" data-geo-status>Checking your location… If your phone asks, tap Allow.</p>
 <button class="btn clock-btn">{{ 'Time in' if next_kind == 'in' else 'Time out' }}</button>
 </form>
@@ -25,10 +32,12 @@
 </div>
 <div class="card"><h2>Today</h2>
 {% if rec %}<dl class="dl"><dt>Time in</dt><dd>{{ rec.time_in or '—' }}</dd><dt>Time out</dt><dd>{{ rec.time_out or '—' }}</dd>
+{% if rec.field_status %}<dt>Field work</dt><dd>{% if rec.field_status == 'pending' %}<span class="badge badge-amber">Waiting for approval</span>{% elif rec.field_status == 'approved' %}<span class="badge badge-green">Approved</span>{% else %}<span class="badge badge-red">Declined</span>{% endif %}{% if rec.field_review_note %}<br><small class="muted">{{ rec.field_review_note }}</small>{% endif %}</dd>{% endif %}
 <dt>Status</dt><dd>{% if rec.status == 'ok' %}<span class="badge badge-green">OK</span>{% else %}<span class="badge badge-amber">{{ rec.status|label }}</span>{% endif %}{% if rec.exception_note %}<br><small class="muted">{{ rec.exception_note }}</small>{% endif %}</dd></dl>
 {% else %}<p class="muted">You haven't timed in yet today.</p>{% endif %}
 {% if punches %}<ul class="list-plain mt-1">{% for p in punches %}<li>Time {{ p.kind }} · {{ p.at[11:16] }} · {{ p.branch }}
-{% if p.location_ok == 1 %}<span class="badge badge-green">At the branch</span>{% elif p.location_ok == 0 %}<span class="badge badge-amber">{{ '{:,}'.format(p.distance_m|int) }} m away</span>{% endif %}</li>{% endfor %}</ul>{% endif %}
+{% if p.field %}<span class="badge badge-amber">On the field</span>{% endif %}
+{% if p.location_ok == 1 %}<span class="badge badge-green">{{ 'At the lab' if p.lab_id else 'At the branch' }}</span>{% elif p.location_ok == 0 %}<span class="badge badge-amber">{{ '{:,}'.format(p.distance_m|int) }} m away</span>{% endif %}</li>{% endfor %}</ul>{% endif %}
 <p class="hint mt-1">Privacy: your selfie and location are used only to confirm your attendance. Only managers who handle attendance can see them, and selfies are deleted automatically after a set period.</p>
 </div></div>
 {% endif %}

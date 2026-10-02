@@ -64,12 +64,12 @@
   <div class="lp-hero-bg" aria-hidden="true"></div>
   <div class="wrap lp-hero-grid">
     <div class="lp-hero-copy reveal">
-      <span class="lp-kicker">Aesthetic &amp; general dentistry</span>
-      <h1>{{ hero.title or 'Happiest your teeth will ever be' }}</h1>
+      <span class="lp-kicker">{{ txt('hero.kicker') }}</span>
+      <h1>{{ txt_em('@home_hero.title') }}</h1>
       <div class="lp-lead">{{ hero.body|richtext }}</div>
       <div class="lp-cta-row">
-        <a class="lp-btn lp-btn-gold" href="{{ url_for('public.book') }}">Book your visit</a>
-        <a class="lp-btn lp-btn-glass" href="#specialty">See before &amp; after</a>
+        <a class="lp-btn lp-btn-gold" href="{{ url_for('public.book') }}">{{ txt('hero.btn_book') }}</a>
+        {% if shown('specialty') %}<a class="lp-btn lp-btn-glass" href="#specialty">{{ txt('hero.btn_second') }}</a>{% endif %}
       </div>
       <ul class="lp-branch-chips" aria-label="Branches">
         {% for b in site_branches %}<li><a href="#branches">{{ b.name.split(' (')[0] }}</a></li>{% endfor %}
@@ -103,10 +103,10 @@
   </div>
   <div class="wrap">
     <ul class="lp-facts reveal">
-      <li><strong>4</strong><span>branches to serve you</span></li>
-      <li><strong>{{ site_services|length }}</strong><span>areas of care, one clinic</span></li>
-      <li><strong>Gentle</strong><span>care for kids &amp; special needs</span></li>
-      <li><strong>3D</strong><span>CBCT &amp; panoramic X-rays in-house</span></li>
+      <li><strong>{{ txt('hero.fact1_big') }}</strong><span>{{ txt('hero.fact1_small') }}</span></li>
+      <li><strong>{{ txt('hero.fact2_big') or site_services|length }}</strong><span>{{ txt('hero.fact2_small') }}</span></li>
+      <li><strong>{{ txt('hero.fact3_big') }}</strong><span>{{ txt('hero.fact3_small') }}</span></li>
+      <li><strong>{{ txt('hero.fact4_big') }}</strong><span>{{ txt('hero.fact4_small') }}</span></li>
     </ul>
   </div>
 </section>
@@ -115,9 +115,9 @@
 <section class="lp-section lp-services" id="services">
   <div class="wrap">
     <header class="lp-head reveal">
-      <span class="lp-eyebrow">Main services</span>
-      <h2>Everything your smile needs, <em>under one roof</em></h2>
-      <p>From a routine cleaning to a complete smile makeover, every treatment is planned around you and your goals.</p>
+      <span class="lp-eyebrow">{{ txt('services.eyebrow') }}</span>
+      <h2>{{ txt_em('services.title') }}</h2>
+      <p>{{ txt('services.intro') }}</p>
     </header>
     <div class="lp-svc-cards">
       {% for s in site_services %}
@@ -132,19 +132,20 @@
         <div class="lp-svc-body">
           <h3><a href="{{ url_for('public.service', slug=s.slug) }}">{{ s.name }}</a></h3>
           <p>{{ (s.summary|items)|join(' · ') }}</p>
-          <a class="lp-index-book" href="{{ url_for('public.book', service=s.id) }}">Book now <span aria-hidden="true">→</span></a>
+          <a class="lp-index-book" href="{{ url_for('public.book', service=s.id) }}">{{ txt('services.card_btn') }} <span aria-hidden="true">→</span></a>
         </div>
       </article>
       {% endfor %}
     </div>
     <div class="lp-cta-row reveal">
-      <a class="lp-btn lp-btn-navy" href="{{ url_for('public.book') }}">Book a consultation</a>
-      <span class="lp-index-note">Not sure where to start? We'll check your teeth and explain your options and costs before any treatment.</span>
+      <a class="lp-btn lp-btn-navy" href="{{ url_for('public.book') }}">{{ txt('services.cta_btn') }}</a>
+      <span class="lp-index-note">{{ txt('services.cta_note') }}</span>
     </div>
   </div>
 </section>
 
 {# ---------------------------------------------------------------- SMILE TRANSFORMATIONS: results across all our care, with before & after #}
+{% if shown('specialty') %}
 <section class="lp-section lp-aesthetic" id="specialty">
   <div class="wrap">
     <div class="lp-aes-grid">
@@ -163,15 +164,15 @@
         {% endif %}
       </div>
       <div class="lp-aes-copy reveal">
-        <span class="lp-eyebrow">Smile transformations</span>
-        <h2>Care for <em>every smile</em></h2>
-        <p>From your child's first check-up to fillings, braces, crowns, dentures and implants, our dentists care for every smile in the family. Restorations are crafted in our own digital lab for a precise, natural-looking fit.</p>
+        <span class="lp-eyebrow">{{ txt('specialty.eyebrow') }}</span>
+        <h2>{{ txt_em('specialty.title') }}</h2>
+        <p>{{ txt('specialty.text') }}</p>
         <ul class="lp-aes-list">
           {% for s in site_services %}<li><a href="{{ url_for('public.service', slug=s.slug) }}">{{ s.name }}</a></li>{% endfor %}
         </ul>
         <div class="lp-cta-row">
-          <a class="lp-btn lp-btn-gold" href="{{ url_for('public.book') }}">Book a consultation</a>
-          <a class="lp-btn lp-btn-outline" href="#work">See all our work</a>
+          <a class="lp-btn lp-btn-gold" href="{{ url_for('public.book') }}">{{ txt('specialty.btn_book') }}</a>
+          {% if shown('work') %}<a class="lp-btn lp-btn-outline" href="#work">{{ txt('specialty.btn_work') }}</a>{% endif %}
         </div>
       </div>
     </div>
@@ -182,18 +183,20 @@
     {% endif %}
   </div>
 </section>
+{% endif %}
 
 {# ---------------------------------------------------------------- PORTFOLIO #}
+{% if shown('work') %}
 <section class="lp-section lp-work" id="work">
   <div class="wrap">
     <header class="lp-head reveal">
-      <span class="lp-eyebrow">Our work</span>
+      <span class="lp-eyebrow">{{ txt('work.eyebrow') }}</span>
       {% if works %}
-      <h2>Real smiles. <em>Real results.</em></h2>
-      <p>Every smile here was crafted by our dentists for a Dental Haven patient: makeovers, restorations, implants and more.</p>
+      <h2>{{ txt_em('work.title') }}</h2>
+      <p>{{ txt('work.intro') }}</p>
       {% else %}
-      <h2>The smiles <em>we create</em></h2>
-      <p>Makeovers, veneers, implants, braces and restorations, planned by our dentists and crafted in our own lab.</p>
+      <h2>{{ txt_em('work.title_empty') }}</h2>
+      <p>{{ txt('work.intro_empty') }}</p>
       {% endif %}
     </header>
   </div>
@@ -201,7 +204,7 @@
     {% if works %}
       {% if filters|length > 1 %}
       <div class="lp-filters reveal" role="group" aria-label="Filter our work">
-        <button type="button" class="is-active" data-filter="all" aria-pressed="true">All work</button>
+        <button type="button" class="is-active" data-filter="all" aria-pressed="true">{{ txt('work.all_label') }}</button>
         {% for k, label in filters %}<button type="button" data-filter="{{ k }}" aria-pressed="false">{{ label }}</button>{% endfor %}
       </div>
       {% endif %}
@@ -222,7 +225,7 @@
         </figure>
         {% endfor %}
       </div>
-      <p class="lp-center reveal"><a class="lp-link" href="{{ url_for('public.gallery') }}">View the full gallery →</a></p>
+      <p class="lp-center reveal"><a class="lp-link" href="{{ url_for('public.gallery') }}">{{ txt('work.link') }}</a></p>
     {% elif stock_samples() %}
       {% set samples = stock_samples() %}
       <div class="lp-gallery">
@@ -248,40 +251,43 @@
     {% endif %}
   </div>
 </section>
+{% endif %}
 
 {# ---------------------------------------------------------------- WHY DENTAL HAVEN (the clinic) #}
-{% if guides %}
+{% if guides and shown('guides') %}
 <section class="lp-section lp-guides" id="guides">
   <div class="wrap">
     <header class="lp-head reveal">
-      <span class="lp-eyebrow">Patient guides</span>
-      <h2>Know before <em>you go</em></h2>
-      <p>Short, easy-to-read guides to help you understand your treatment and feel at ease before your visit.</p>
+      <span class="lp-eyebrow">{{ txt('guides.eyebrow') }}</span>
+      <h2>{{ txt_em('guides.title') }}</h2>
+      <p>{{ txt('guides.intro') }}</p>
     </header>
     <div class="guide-grid reveal">{% for gd in guides %}{% include "public/_guide_card.html" %}{% endfor %}</div>
-    <p class="lp-center reveal"><a class="lp-link" href="{{ url_for('public.guides') }}">See all patient guides →</a></p>
+    <p class="lp-center reveal"><a class="lp-link" href="{{ url_for('public.guides') }}">{{ txt('guides.link') }}</a></p>
   </div>
 </section>
 {% endif %}
 
+{% if shown('why') %}
 <section class="lp-why" id="clinic" aria-label="Why Dental Haven">
   <div class="wrap">
     <ul class="lp-why-strip">
-      <li class="reveal">{{ icon('general-dentistry') }}<div><strong>Everything in one place</strong><span>From cleanings to full-mouth rehabilitation</span></div></li>
-      <li class="reveal">{{ icon('pediatric-dentistry') }}<div><strong>Gentle with kids &amp; special needs</strong><span>Including conscious sedation</span></div></li>
-      <li class="reveal">{{ icon('xray') }}<div><strong>See clearly, treat precisely</strong><span>In-house 3D CBCT &amp; panoramic X-rays</span></div></li>
-      <li class="reveal">{{ icon('fit') }}<div><strong>Your new smile, sooner</strong><span>Made in our own digital lab</span></div></li>
+      {% for ic in ['general-dentistry', 'pediatric-dentistry', 'xray', 'fit'] %}
+      <li class="reveal">{{ icon(ic) }}<div><strong>{{ txt('why.' ~ loop.index ~ '_title') }}</strong><span>{{ txt('why.' ~ loop.index ~ '_text') }}</span></div></li>
+      {% endfor %}
     </ul>
   </div>
 </section>
+{% endif %}
 
 {# ---------------------------------------------------------------- REVIEWS (real, consented only) #}
+{% if shown('reviews') %}
 <section class="lp-section lp-quotes" id="reviews">
   <div class="wrap">
     <header class="lp-head reveal">
-      <span class="lp-eyebrow">Patient reviews</span>
-      <h2>Hear it from our patients</h2>
-      {% if not testimonials %}<p>Read what patients say about each branch on our Facebook pages.</p>{% endif %}
+      <span class="lp-eyebrow">{{ txt('reviews.eyebrow') }}</span>
+      <h2>{{ txt_em('reviews.title') }}</h2>
+      {% if not testimonials %}<p>{{ txt('reviews.intro_empty') }}</p>{% endif %}
     </header>
     {% if testimonials %}
     <div class="lp-quote-grid">{% for t in testimonials %}
@@ -293,19 +299,20 @@
     </div>
     {% endif %}
     <div class="lp-review-links reveal">
-      <span class="lp-review-label">{{ 'More reviews on Facebook' if testimonials else 'Facebook reviews' }}:</span>
+      <span class="lp-review-label">{{ txt('reviews.fb_label_more') if testimonials else txt('reviews.fb_label') }}:</span>
       {% for b in site_branches if b.facebook_url %}<a class="lp-btn lp-btn-navy lp-btn-sm" href="{{ b.facebook_url.rstrip('/') }}/reviews" target="_blank" rel="noopener">{{ b.name.split(' (')[0] }} <span aria-hidden="true">↗</span></a>{% endfor %}
     </div>
   </div>
 </section>
+{% endif %}
 
 {# ---------------------------------------------------------------- BRANCHES #}
 <section class="lp-section lp-branches" id="branches">
   <div class="wrap">
     <header class="lp-head reveal">
-      <span class="lp-eyebrow">Visit us</span>
-      <h2>Four branches to serve you</h2>
-      <p>Visit the branch that's most convenient for you. Book online in minutes or give us a call.</p>
+      <span class="lp-eyebrow">{{ txt('branches.eyebrow') }}</span>
+      <h2>{{ txt_em('branches.title') }}</h2>
+      <p>{{ txt('branches.intro') }}</p>
     </header>
     <div class="lp-branch-grid">
       {% for b in site_branches %}
@@ -316,7 +323,7 @@
         <p class="lp-branch-tel">{% for disp, tel in b.phone|phones %}<a href="{{ tel }}">{{ disp }}</a>{% endfor %}</p>
         {% set hl = hours_lines(b) %}{% if hl %}<ul class="lp-branch-hours" aria-label="Clinic hours">{% for h in hl %}<li>{{ h }}</li>{% endfor %}</ul>{% endif %}
         {% include "public/_branch_links.html" %}
-        <a class="lp-btn lp-btn-navy lp-btn-sm" href="{{ url_for('public.book', branch=b.id) }}">Book at {{ b.name.split(' (')[0] }}</a>
+        <a class="lp-btn lp-btn-navy lp-btn-sm" href="{{ url_for('public.book', branch=b.id) }}">{{ txt('branches.btn') }} {{ b.name.split(' (')[0] }}</a>
       </article>
       {% endfor %}
     </div>
@@ -324,17 +331,18 @@
 </section>
 
 {# ---------------------------------------------------------------- DIGITAL LAB (supporting) #}
+{% if shown('lab') %}
 <section class="lp-lab" id="lab">
   <div class="lp-lab-bg" aria-hidden="true"></div>
   <div class="wrap lp-lab-grid">
     <div class="reveal">
-      <span class="lp-eyebrow light">Behind every smile</span>
-      <h2>Your new smile, made in our own lab</h2>
-      <p class="lp-lab-lead">Experience fast turnaround times for custom dental restorations, including crowns, bridges, dentures and aligners, crafted efficiently in-house at {{ labc.title or 'Digital Solutions Dental Laboratory' }} using advanced CAD/CAM technology.</p>
+      <span class="lp-eyebrow light">{{ txt('lab.eyebrow') }}</span>
+      <h2>{{ txt_em('lab.title') }}</h2>
+      <p class="lp-lab-lead">{{ txt('lab.lead') }}</p>
     </div>
-    <figure class="lp-lab-photo reveal"><img src="{{ src(lab_img) }}" alt="{{ 'Digital Solutions Dental Laboratory' if site_images.lab else '' }}" loading="lazy"></figure>
+    <figure class="lp-lab-photo reveal"><img src="{{ src(lab_img) }}" alt="{{ txt('@lab.title') if site_images.lab else '' }}" loading="lazy"></figure>
     {% set tech = [] %}
-    {% for key, label in [('tech_xray', 'X-rays: panoramic, cephalometric & CBCT'), ('tech_scanner', 'Intraoral scanning'), ('tech_milling', 'Milling & 3D printing')] %}
+    {% for key, label in [('tech_xray', txt('lab.cap_xray')), ('tech_scanner', txt('lab.cap_scanner')), ('tech_milling', txt('lab.cap_milling'))] %}
       {% set img = site_images[key] or stock(key, 700) %}{% if img %}{% set _ = tech.append((img, label)) %}{% endif %}
     {% endfor %}
     {% if tech %}
@@ -343,18 +351,15 @@
     </div>
     {% endif %}
     <ul class="lp-tech reveal under-photo" aria-label="Technology">
-      <li>{{ icon('scan') }}<span>Intraoral scanners</span></li>
-      <li>{{ icon('design') }}<span>exocad design</span></li>
-      <li>{{ icon('print') }}<span>3D printers</span></li>
-      <li>{{ icon('mill') }}<span>CAD/CAM milling</span></li>
-      <li>{{ icon('xray') }}<span>Panoramic, cephalometric &amp; CBCT X-rays</span></li>
+      {% for ic in ['scan', 'design', 'print', 'mill', 'xray'] %}<li>{{ icon(ic) }}<span>{{ txt('lab.tech' ~ loop.index) }}</span></li>{% endfor %}
     </ul>
   </div>
 </section>
+{% endif %}
 
 {# ---------------------------------------------------------------- CAREERS #}
 {% set careers = content('careers') %}{% set careers_email = (content('careers_email').body or '')|trim %}
-{% if careers_email and '@' in careers_email and ' ' not in careers_email %}
+{% if shown('careers') and careers_email and '@' in careers_email and ' ' not in careers_email %}
 <section class="lp-section lp-careers" id="careers">
   {% set paras, perks = [], [] %}
   {% for line in (careers.body or '').replace('\r', '').split('\n') %}
@@ -366,19 +371,19 @@
     <div class="lp-careers-grid">
       <div class="reveal">
         <span class="lp-eyebrow">Careers</span>
-        <h2>{{ careers.title or 'Grow your career with us' }}</h2>
+        <h2>{{ txt_em('@careers.title') }}</h2>
         {% for para in paras[:1] %}<p class="lp-careers-lead">{{ para }}</p>{% endfor %}
       </div>
       <div class="lp-careers-card reveal">
         <span class="lp-careers-icon" aria-hidden="true">✉</span>
-        <h3>Send your application</h3>
-        <p>{{ paras[1] if paras|length > 1 else "Email your CV, the position you're applying for, and your preferred branch." }}</p>
+        <h3>{{ txt('careers.card_title') }}</h3>
+        <p>{{ paras[1] if paras|length > 1 else txt('careers.card_text') }}</p>
         <a class="lp-careers-email" href="mailto:{{ careers_email }}?subject={{ 'Job application - Dental Haven'|urlencode }}">{{ careers_email }}</a>
-        <a class="lp-btn lp-btn-navy" href="mailto:{{ careers_email }}?subject={{ 'Job application - Dental Haven'|urlencode }}">Email your CV</a>
+        <a class="lp-btn lp-btn-navy" href="mailto:{{ careers_email }}?subject={{ 'Job application - Dental Haven'|urlencode }}">{{ txt('careers.btn') }}</a>
       </div>
     </div>
     {% if perks %}
-    <h3 class="lp-perks-title reveal">Why work at Dental Haven</h3>
+    <h3 class="lp-perks-title reveal">{{ txt('careers.perks_title') }}</h3>
     <ul class="lp-perks">
       {% for title, text in perks %}<li class="reveal"><span class="lp-perk-num" aria-hidden="true">{{ '%02d' % loop.index }}</span>{% if title %}<strong>{{ title }}</strong>{% endif %}<span>{{ text }}</span></li>{% endfor %}
     </ul>
@@ -392,15 +397,15 @@
 <section class="lp-final" id="contact">
   <div class="wrap lp-final-inner reveal">
     <img src="{{ url_for('static', filename='img/logo-white.png') }}" alt="" width="72" height="48">
-    <h2>Your happiest smile <em>starts here</em></h2>
-    <p>Pick a branch and a time that suits you. Our team will call or message you to confirm your visit.</p>
+    <h2>{{ txt_em('final.title') }}</h2>
+    <p>{{ txt('final.text') }}</p>
     {% set first = hours_lines(site_branches[0]) if site_branches else [] %}
     {% if first and site_branches|selectattr('hours_text', 'equalto', site_branches[0].hours_text)|list|length == site_branches|length %}
     <p class="lp-hours-all"><span aria-hidden="true">🕘</span> All branches: {{ first|join(' · ') }}</p>
     {% endif %}
     <div class="lp-cta-row center">
-      <a class="lp-btn lp-btn-gold" href="{{ url_for('public.book') }}">Book your visit</a>
-      <a class="lp-btn lp-btn-glass" href="{{ url_for('public.inquire') }}">Ask us anything</a>
+      <a class="lp-btn lp-btn-gold" href="{{ url_for('public.book') }}">{{ txt('final.btn_book') }}</a>
+      <a class="lp-btn lp-btn-glass" href="{{ url_for('public.inquire') }}">{{ txt('final.btn_ask') }}</a>
     </div>
     <ul class="lp-contact-list">
       {% for b in site_branches %}<li><strong>{{ b.name.split(' (')[0] }}</strong>{% for disp, tel in (b.phone|phones)[:1] %}<a href="{{ tel }}">{{ disp }}</a>{% endfor %}{% if b.facebook_url %}<a href="{{ b.facebook_url }}" target="_blank" rel="noopener">Facebook</a>{% endif %}</li>{% endfor %}

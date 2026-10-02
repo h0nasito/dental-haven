@@ -59,7 +59,12 @@ def _public_ctx():
     if request.path.startswith("/staff"):
         return {}
     conn = get_db()
+    from .. import site_sections
+    texts = site_sections.load(conn)
     return {
+        "txt": lambda key: site_sections.value(texts, key),
+        "txt_em": lambda key: site_sections.accent(site_sections.value(texts, key)),
+        "shown": lambda section: site_sections.shown(texts, section),
         "site_branches": conn.all("SELECT * FROM branches WHERE active = 1 ORDER BY sort_order"),
         "site_services": conn.all("SELECT * FROM services WHERE active = 1 ORDER BY sort_order"),
         "content": content,

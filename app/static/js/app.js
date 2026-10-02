@@ -162,6 +162,14 @@ document.addEventListener('DOMContentLoaded', function () {
       say('Location is off or was not allowed. You can still time in, but your manager will review it. To fix: allow location for this site in your browser settings.');
     }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
   });
+  // Time clock: "I'm on the field" shows the reason box and makes it required.
+  document.querySelectorAll('[data-field-toggle]').forEach(function (cb) {
+    var box = cb.closest('.field').querySelector('[data-field-box]');
+    if (!box) return;
+    var input = box.querySelector('input');
+    function sync() { box.hidden = !cb.checked; if (input) input.required = cb.checked; }
+    cb.addEventListener('change', sync); sync();
+  });
   // Time clock setup: "Use my current location"
   document.querySelectorAll('form[data-geo-set]').forEach(function (form) {
     var btn = form.querySelector('[data-geo-fill]');

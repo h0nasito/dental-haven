@@ -771,3 +771,16 @@ section[id] { scroll-margin-top: 72px; }
 .q-actions details[open] { min-width: 0; }
 .tpq-table td.tpq-disc-h { white-space: normal; line-height: 1.15; }
 @media print { .demo-banner { display: none !important; } }
+
+/* Website sections editor */
+.ws-toc { display: flex; flex-wrap: wrap; gap: .4rem; padding: .8rem 1rem; margin-bottom: 1rem; }
+.ws-toc a { padding: .25em .7em; border-radius: 999px; background: var(--blue-100, #eef3fb); font-size: .85rem; text-decoration: none; }
+.ws-section { margin-bottom: 1rem; scroll-margin-top: 1rem; }
+.ws-section .ws-wide { grid-column: 1 / -1; }
+.ws-show { margin: .2rem 0 .8rem; }
+.ws-photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 1rem; }
+.ws-photo img, .ws-photo-ph { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 10px; display: block; background: #e9e4d6; }
+.ws-photo-ph { position: relative; }
+.ws-photo-ph img { opacity: .85; }
+.ws-photo-ph .badge { position: absolute; left: 8px; top: 8px; }
+.ws-photo strong { display: block; margin-top: .4rem; }
