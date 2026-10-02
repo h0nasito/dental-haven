@@ -510,3 +510,22 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   });
 })();
+
+/* Lists with checkboxes: "select all on this page", a live count, and confirm on dangerous buttons. */
+(function () {
+  document.querySelectorAll('form[data-bulk]').forEach(function (form) {
+    var all = form.querySelector('[data-check-all]'), count = form.querySelector('[data-check-count]');
+    var boxes = function () { return form.querySelectorAll('[data-check]'); };
+    function update() {
+      var n = 0; boxes().forEach(function (b) { if (b.checked) n++; });
+      if (count) count.textContent = n + ' selected';
+      if (all) { all.checked = n > 0 && n === boxes().length; all.indeterminate = n > 0 && n < boxes().length; }
+    }
+    if (all) all.addEventListener('change', function () { boxes().forEach(function (b) { b.checked = all.checked; }); update(); });
+    boxes().forEach(function (b) { b.addEventListener('change', update); });
+    form.querySelectorAll('button[data-confirm]').forEach(function (btn) {
+      btn.addEventListener('click', function (e) { if (!window.confirm(btn.getAttribute('data-confirm'))) e.preventDefault(); });
+    });
+    update();
+  });
+})();

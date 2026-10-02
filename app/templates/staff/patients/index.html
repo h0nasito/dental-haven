@@ -2,20 +2,56 @@
 {% from "macros.html" import csrf, empty %}
 {% block page_title %}Patients{% endblock %}
 {% block content %}
-<div class="page-head"><div><h1>Patients</h1><p>{% if current_user.role == 'dentist' %}Patients assigned to you{% else %}Patients in {{ 'the selected branch' if current_user.active_branch_id else 'your branches' }}{% endif %} · {{ pg.total }} record{{ '' if pg.total == 1 else 's' }}</p></div>
-{% if current_user.can('patients.manage') %}<a class="btn" href="{{ url_for('patients.new') }}">+ Register patient</a>{% endif %}</div>
-<form method="post" class="toolbar">{{ csrf() }}
+{% set bulk_delete = can_delete and show != 'deleted' %}
+{% set bulk_restore = show == 'deleted' and current_user.can('users.manage') %}
+{% set qs = {'show': show or None, 'per': per if per != 30 else None} %}
+<div class="page-head"><div><h1>{{ 'Deleted patients' if show == 'deleted' else 'Patients' }}</h1>
+<p>{% if show == 'deleted' %}Archived records, hidden from all lists. {% elif show == 'incomplete' %}Patients whose first or last name has no letters (e.g. “,,”, “-”, “...”). Check each one before deleting. {% else %}All branches · {% endif %}{{ pg.total }} record{{ '' if pg.total == 1 else 's' }}</p></div>
+{% if current_user.can('patients.manage') and show != 'deleted' %}<a class="btn" href="{{ url_for('patients.new') }}">+ Register patient</a>{% endif %}</div>
+
+<div class="tabs">
+  <a class="{{ 'active' if not show }}" href="{{ url_for('patients.index') }}">All patients</a>
+  {% if can_delete %}<a class="{{ 'active' if show == 'incomplete' }}" href="{{ url_for('patients.index', show='incomplete', per=100) }}">Clean up: incomplete names</a>
+  <a class="{{ 'active' if show == 'deleted' }}" href="{{ url_for('patients.index', show='deleted') }}">Deleted patients</a>{% endif %}
+</div>
+
+{% if show != 'deleted' %}
+<form method="post" class="toolbar" action="{{ url_for('patients.index', **qs) }}">{{ csrf() }}
 <div class="field grow"><label for="q">Search</label><input id="q" type="search" name="q" value="{{ q }}" placeholder="Name, mobile, email or chart number"></div>
-<button class="btn btn-secondary" type="submit">Search</button>{% if q %}<a class="btn btn-ghost" href="{{ url_for('patients.index') }}">Clear</a>{% endif %}
+<button class="btn btn-secondary" type="submit">Search</button>{% if q %}<a class="btn btn-ghost" href="{{ url_for('patients.index', **qs) }}">Clear</a>{% endif %}
 </form>
 <p class="hint" style="margin-top:-.5rem">We send searches privately, so patient names don't appear in web addresses or browser history.</p>
-<div class="card"><div class="table-wrap"><table>
-<thead><tr><th>Patient</th><th>Chart no.</th><th>Mobile</th><th>Preferred branch</th><th>Last visit</th><th>Next visit</th><th>Consent</th></tr></thead><tbody>
-{% for p in rows %}<tr><td><a href="{{ url_for('patients.detail', patient_id=p.id) }}"><strong>{{ p.last_name }}, {{ p.first_name }}</strong></a>{% if p.alert_flag %} <span class="badge badge-red" title="{{ p.alert_flag }}">⚠ Alert</span>{% endif %}{% if p.is_demo %} <span class="badge">Demo</span>{% endif %}</td>
-<td>{{ p.chart_no }}</td><td>{{ p.phone|contact }}</td><td>{{ p.branch or ('All branches' if p.shared else '—') }}</td><td>{{ p.last_visit|date }}</td><td>{{ p.next_visit|dt if p.next_visit else '—' }}</td>
-<td>{% if p.consent_privacy %}<span class="badge badge-green">Privacy ✓</span>{% else %}<span class="badge badge-amber">Needs consent</span>{% endif %}{% if p.opt_out_all %} <span class="badge">Opted out</span>{% endif %}</td></tr>
-{% else %}<tr><td colspan="7">{{ empty('No patients found', ' Try a different search, or register a new patient.' if current_user.can('patients.manage') else '') }}</td></tr>{% endfor %}
-</tbody></table></div>
-{% if pg.pages > 1 and not q %}<div class="row mt-1">{% if pg.page > 1 %}<a class="btn btn-secondary btn-sm" href="?page={{ pg.page - 1 }}">← Previous</a>{% endif %}<span class="muted">Page {{ pg.page }} of {{ pg.pages }}</span>{% if pg.page < pg.pages %}<a class="btn btn-secondary btn-sm" href="?page={{ pg.page + 1 }}">Next →</a>{% endif %}</div>{% endif %}
+{% endif %}
+
+<form method="post" action="{{ url_for('patients.bulk') }}" data-bulk>{{ csrf() }}
+<input type="hidden" name="next" value="{{ url_for('patients.index', page=pg.page if pg.page > 1 else None, **qs) }}">
+{% if bulk_delete or bulk_restore %}
+<div class="card bulk-bar">
+  <label class="check"><input type="checkbox" data-check-all> <strong>Select all on this page</strong></label>
+  <span class="muted" data-check-count>0 selected</span>
+  {% if bulk_delete %}
+  <input name="reason" placeholder="Reason, e.g. Junk records from the MyMedsPH import" aria-label="Reason for deleting" class="grow">
+  <button class="btn btn-danger btn-sm" name="action" value="delete" data-confirm="Delete the selected patients? They will be hidden from all lists (records are archived, not erased).">Delete selected</button>
+  {% else %}
+  <button class="btn btn-secondary btn-sm" name="action" value="restore">Restore selected</button>
+  {% endif %}
+  <span class="row" style="margin-left:auto">Show {% for n in (30, 100, 200) %}<a class="btn btn-ghost btn-sm{{ ' is-active' if per == n }}" href="{{ url_for('patients.index', show=show or None, per=n if n != 30 else None) }}">{{ n }}</a>{% endfor %} per page</span>
 </div>
+{% endif %}
+<div class="card"><div class="table-wrap"><table>
+<thead><tr>{% if bulk_delete or bulk_restore %}<th><span class="sr-only">Select</span></th>{% endif %}<th>Patient</th><th>Chart no.</th><th>Mobile</th>
+{% if show == 'deleted' %}<th>Deleted</th><th>Reason</th>{% else %}<th>Preferred branch</th><th>Last visit</th><th>Next visit</th><th>Consent</th>{% endif %}</tr></thead><tbody>
+{% for p in rows %}<tr>
+{% if bulk_delete or bulk_restore %}<td><input type="checkbox" name="ids" value="{{ p.id }}" aria-label="Select {{ p.last_name }}, {{ p.first_name }}" data-check></td>{% endif %}
+<td><a href="{{ url_for('patients.detail', patient_id=p.id) }}"><strong>{{ p.last_name }}, {{ p.first_name }}</strong></a>{% if p.alert_flag %} <span class="badge badge-red" title="{{ p.alert_flag }}">⚠ Alert</span>{% endif %}{% if p.is_demo %} <span class="badge">Demo</span>{% endif %}</td>
+<td>{{ p.chart_no }}</td><td>{{ p.phone|contact }}</td>
+{% if show == 'deleted' %}<td>{{ p.deleted_at|dt if p.deleted_at else '—' }}{% if p.deleted_by_name %}<br><small class="muted">{{ p.deleted_by_name }}</small>{% endif %}</td><td><small>{{ p.deleted_reason or '—' }}</small></td>
+{% else %}<td>{{ p.branch or ('All branches' if p.shared else '—') }}</td><td>{{ p.last_visit|date }}</td><td>{{ p.next_visit|dt if p.next_visit else '—' }}</td>
+<td>{% if p.consent_privacy %}<span class="badge badge-green">Privacy ✓</span>{% else %}<span class="badge badge-amber">Needs consent</span>{% endif %}{% if p.opt_out_all %} <span class="badge">Opted out</span>{% endif %}</td>{% endif %}</tr>
+{% else %}<tr><td colspan="8">{{ empty('No deleted patients' if show == 'deleted' else ('Nothing to clean up' if show == 'incomplete' else 'No patients found'), '' if show else (' Try a different search, or register a new patient.' if current_user.can('patients.manage') else '')) }}</td></tr>{% endfor %}
+</tbody></table></div>
+{% if pg.pages > 1 and not q %}<div class="row mt-1">{% if pg.page > 1 %}<a class="btn btn-secondary btn-sm" href="{{ url_for('patients.index', page=pg.page - 1, **qs) }}">← Previous</a>{% endif %}<span class="muted">Page {{ pg.page }} of {{ pg.pages }}</span>{% if pg.page < pg.pages %}<a class="btn btn-secondary btn-sm" href="{{ url_for('patients.index', page=pg.page + 1, **qs) }}">Next →</a>{% endif %}</div>{% endif %}
+</div>
+</form>
+{% if bulk_restore is false and show == 'deleted' %}<p class="hint">Only a super admin can restore deleted patients.</p>{% endif %}
 {% endblock %}

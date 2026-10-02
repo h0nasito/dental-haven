@@ -794,3 +794,8 @@ section[id] { scroll-margin-top: 72px; }
 .q-many .q-sm { min-width: 5.5rem; }
 .q-many .q-xs { min-width: 4rem; }
 .q-many select { min-width: 7.5rem; }
+
+/* Bulk actions bar (patient list) */
+.bulk-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; margin-bottom: .8rem; padding: .7rem 1rem; }
+.bulk-bar .grow { flex: 1; min-width: 14rem; }
+.bulk-bar .is-active { text-decoration: underline; font-weight: 700; }

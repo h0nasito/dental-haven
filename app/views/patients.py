@@ -64,7 +64,15 @@ def index():
     conn = get_db()
     frag, params = patient_scope(g.user, "p")
     q = clean(request.form.get("q"), 80) if request.method == "POST" else ""
-    where, args = [frag, "p.active = 1"], list(params)
+    show = request.args.get("show", "")
+    can_delete = g.user.can("patients.delete")
+    if show not in ("incomplete", "deleted") or (show == "deleted" and not can_delete):
+        show = ""
+    per = to_int(request.args.get("per")) if request.args.get("per") in ("30", "100", "200") else 30
+    where, args = [frag, "p.active = 0" if show == "deleted" else "p.active = 1"], list(params)
+    if show == "incomplete":
+        # first or last name without a single letter, e.g. ",,", "-", "...", "'@@@"
+        where.append("(NOT lower(p.first_name) GLOB '*[a-z]*' OR NOT lower(p.last_name) GLOB '*[a-z]*')")
     if q:
         like = f"%{q.lower()}%"
         where.append("(lower(p.first_name || ' ' || p.last_name) LIKE ? OR lower(p.last_name || ', ' || p.first_name) LIKE ? "
@@ -72,13 +80,61 @@ def index():
                      "OR lower(p.first_name || ' ' || p.middle_name || ' ' || p.last_name) LIKE ?)")
         args += [like, like, like, like, like, q, like]
     total = conn.scalar(f"SELECT COUNT(*) FROM patients p WHERE {' AND '.join(where)}", args)
-    pg = paginate(total, 30)
+    pg = paginate(total, per)
     rows = conn.all(
-        "SELECT p.*, b.name AS branch, (SELECT MAX(start_at) FROM appointments a WHERE a.patient_id = p.id AND a.status = 'completed') AS last_visit, "
+        "SELECT p.*, b.name AS branch, du.name AS deleted_by_name, "
+        "(SELECT MAX(start_at) FROM appointments a WHERE a.patient_id = p.id AND a.status = 'completed') AS last_visit, "
         "(SELECT MIN(start_at) FROM appointments a WHERE a.patient_id = p.id AND a.status IN ('requested','confirmed') AND a.start_at >= ?) AS next_visit "
-        f"FROM patients p LEFT JOIN branches b ON b.id = p.preferred_branch_id WHERE {' AND '.join(where)} "
-        "ORDER BY p.last_name, p.first_name LIMIT ? OFFSET ?", [today().isoformat(), *args, pg["limit"], pg["offset"]])
-    return render_template("staff/patients/index.html", rows=rows, pg=pg, q=q)
+        f"FROM patients p LEFT JOIN branches b ON b.id = p.preferred_branch_id LEFT JOIN users du ON du.id = p.deleted_by "
+        f"WHERE {' AND '.join(where)} "
+        + ("ORDER BY p.deleted_at DESC, p.id DESC" if show == "deleted" else "ORDER BY p.last_name, p.first_name")
+        + " LIMIT ? OFFSET ?", [today().isoformat(), *args, pg["limit"], pg["offset"]])
+    return render_template("staff/patients/index.html", rows=rows, pg=pg, q=q, show=show, per=per, can_delete=can_delete)
+
+
+@bp.route("/bulk", methods=["POST"])
+@require("patients.view")
+def bulk():
+    """Delete (archive) or restore several patients at once, e.g. to clean up junk records after an import."""
+    conn = get_db()
+    action = request.form.get("action")
+    back = request.form.get("next") or url_for("patients.index")
+    if not back.startswith("/staff/patients"):
+        back = url_for("patients.index")
+    if action == "delete" and not g.user.can("patients.delete"):
+        abort(403)
+    if action == "restore" and not g.user.can("users.manage"):
+        abort(403)
+    if action not in ("delete", "restore"):
+        abort(400)
+    ids = sorted({i for i in (to_int(x) for x in request.form.getlist("ids")) if i})[:500]
+    if not ids:
+        flash("Tick at least one patient first.", "error")
+        return redirect(back)
+    reason = clean(request.form.get("reason"), 300)
+    if action == "delete" and not reason:
+        flash("Give a reason for deleting these patients (e.g. “Junk records from the MyMedsPH import”).", "error")
+        return redirect(back)
+    frag, params = patient_scope(g.user, "p")
+    marks = ",".join("?" * len(ids))
+    rows = conn.all(f"SELECT p.id, p.chart_no FROM patients p WHERE p.id IN ({marks}) AND p.active = ? AND {frag}",
+                    [*ids, 1 if action == "delete" else 0, *params])
+    with conn.transaction():
+        for r in rows:
+            if action == "delete":
+                conn.execute("UPDATE patients SET active = 0, deleted_at = ?, deleted_by = ?, deleted_reason = ?, updated_at = ? WHERE id = ?",
+                             (now_str(), g.user.id, reason, now_str(), r["id"]))
+                conn.execute("UPDATE reminders SET status = 'cancelled', result_note = 'Patient deleted' WHERE patient_id = ? AND status = 'pending'",
+                             (r["id"],))
+                audit.record("patient_deleted", "patient", r["id"], f"Deleted patient {r['chart_no']}", {"reason": reason, "bulk": True})
+            else:
+                conn.execute("UPDATE patients SET active = 1, deleted_at = NULL, deleted_by = NULL, deleted_reason = '', updated_at = ? WHERE id = ?",
+                             (now_str(), r["id"]))
+                audit.record("patient_restored", "patient", r["id"], f"Restored patient {r['chart_no']}", {"bulk": True})
+    n = len(rows)
+    flash((f"Deleted {n} patient(s). Their records are archived; a super admin can restore them under Deleted patients."
+           if action == "delete" else f"Restored {n} patient(s)."), "success")
+    return redirect(back)
 
 
 # ---------------------------------------------------------------------------
@@ -752,7 +808,8 @@ def delete_patient(patient_id):
     if not reason:
         flash("Give a reason for deleting this patient.", "error")
         return redirect(url_for("patients.detail", patient_id=patient_id))
-    conn.execute("UPDATE patients SET active = 0, updated_at = ? WHERE id = ?", (now_str(), patient_id))
+    conn.execute("UPDATE patients SET active = 0, deleted_at = ?, deleted_by = ?, deleted_reason = ?, updated_at = ? WHERE id = ?",
+                 (now_str(), g.user.id, reason, now_str(), patient_id))
     conn.execute("UPDATE reminders SET status = 'cancelled', result_note = 'Patient deleted' WHERE patient_id = ? AND status = 'pending'", (patient_id,))
     audit.record("patient_deleted", "patient", patient_id, f"Deleted patient {p['chart_no']}", {"reason": reason})
     flash("Patient deleted from the lists. Their records are archived, and a super admin can restore them.", "success")
@@ -764,7 +821,8 @@ def delete_patient(patient_id):
 def restore_patient(patient_id):
     conn = get_db()
     p = _load(patient_id)
-    conn.execute("UPDATE patients SET active = 1, updated_at = ? WHERE id = ?", (now_str(), patient_id))
+    conn.execute("UPDATE patients SET active = 1, deleted_at = NULL, deleted_by = NULL, deleted_reason = '', updated_at = ? WHERE id = ?",
+                 (now_str(), patient_id))
     audit.record("patient_restored", "patient", patient_id, f"Restored patient {p['chart_no']}")
     flash("Patient restored.", "success")
     return redirect(url_for("patients.detail", patient_id=patient_id))
