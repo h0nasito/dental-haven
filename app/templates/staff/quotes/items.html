@@ -1,0 +1,35 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Quotation item list{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('quotes.index') }}">← Quotations</a><h1>Quotation item list</h1>
+<p>Your own list of items for treatment plan quotations, with their usual price, unit and type. When you pick one in a quotation it fills everything in; you can still change it on that quotation.</p></div></div>
+{% for kind, label, rows in groups %}
+<div class="card"><h2>{{ label }} <small class="muted">({{ rows|length }})</small></h2>
+<div class="table-wrap"><table><thead><tr><th>Item</th><th class="num">Price</th><th>Section</th><th>Note</th><th></th></tr></thead><tbody>
+{% for r in rows %}<tr {% if not r.active %}class="row-muted"{% endif %}>
+<td><strong>{{ r.name }}</strong>{% if not r.active %} <span class="badge">Hidden</span>{% endif %}</td>
+<td class="num">{{ r.unit_price_cents|peso }}{% if r.unit_label %}/{{ r.unit_label }}{% endif %}</td><td>{{ r.section or '—' }}</td><td><small class="q-note">{{ r.note }}</small></td>
+<td class="q-actions"><form method="post" class="inline-form">{{ csrf() }}<input type="hidden" name="action" value="move"><input type="hidden" name="id" value="{{ r.id }}"><button class="btn btn-ghost btn-sm" name="dir" value="up" aria-label="Move up">↑</button><button class="btn btn-ghost btn-sm" name="dir" value="down" aria-label="Move down">↓</button></form>
+<details><summary>Edit</summary><form method="post" class="form-grid mt-1">{{ csrf() }}<input type="hidden" name="action" value="save"><input type="hidden" name="id" value="{{ r.id }}">
+<div class="field"><label for="n{{ r.id }}">Name</label><input id="n{{ r.id }}" name="name" value="{{ r.name }}" required></div>
+<div class="field"><label for="p{{ r.id }}">Price (₱)</label><input id="p{{ r.id }}" name="price" inputmode="decimal" value="{{ '%d' % (r.unit_price_cents // 100) }}" required></div>
+<div class="field"><label for="u{{ r.id }}">Per</label><input id="u{{ r.id }}" name="unit_label" value="{{ r.unit_label }}" placeholder="canal, tooth, unit, arch, cc"></div>
+<div class="field"><label for="k{{ r.id }}">Type</label><select id="k{{ r.id }}" name="kind">{% for k, l in kinds.items() %}<option value="{{ k }}" {% if r.kind == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+<div class="field"><label for="s{{ r.id }}">Section</label><input id="s{{ r.id }}" name="section" value="{{ r.section }}"></div>
+<div class="field"><label for="o{{ r.id }}">Note (red)</label><input id="o{{ r.id }}" name="note" value="{{ r.note }}"></div>
+<label class="check"><input type="checkbox" name="active" value="1" {% if r.active %}checked{% endif %}> Show in the list</label>
+<button class="btn btn-secondary btn-sm">Save</button></form></details>
+<form method="post" class="inline-form" data-confirm="Remove {{ r.name }} from the list?">{{ csrf() }}<input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="{{ r.id }}"><button class="btn btn-ghost btn-sm" aria-label="Remove {{ r.name }}">✕</button></form></td></tr>
+{% else %}<tr><td colspan="5" class="empty">None yet.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endfor %}
+<div class="card"><h2>Add an item</h2>
+<form method="post" class="form-grid">{{ csrf() }}<input type="hidden" name="action" value="add">
+<div class="field"><label for="an">Name</label><input id="an" name="name" required placeholder="e.g. Tilite crown"></div>
+<div class="field"><label for="ap">Price (₱)</label><input id="ap" name="price" inputmode="decimal" required></div>
+<div class="field"><label for="au">Per</label><input id="au" name="unit_label" placeholder="canal, tooth, unit, arch, cc"></div>
+<div class="field"><label for="ak">Type</label><select id="ak" name="kind">{% for k, l in kinds.items() %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></div>
+<div class="field"><label for="as">Section (optional)</label><input id="as" name="section" placeholder="e.g. Post and Core"></div>
+<div class="field"><label for="ao">Note in red (optional)</label><input id="ao" name="note"></div>
+<button class="btn">Add to list</button></form></div>
+{% endblock %}

@@ -14,4 +14,4 @@ fi
 flask --app wsgi init-db
 flask --app wsgi seed-base
 flask --app wsgi ensure-admin
-exec gunicorn wsgi:app --bind "0.0.0.0:${PORT:-8000}" --workers 2 --threads 4 --timeout 120
+exec gunicorn wsgi:app --bind "${BIND_HOST:-0.0.0.0}:${PORT:-8000}" --workers "${WEB_WORKERS:-2}" --threads 4 --timeout 120

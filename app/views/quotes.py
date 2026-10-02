@@ -20,6 +20,10 @@ from .common import branches_for_user
 bp = Blueprint("quotes", __name__, url_prefix="/staff/quotes")
 
 STATUSES = {"draft": "Draft", "issued": "Given to patient", "accepted": "Accepted", "declined": "Declined"}
+KINDS = {"item": "Treatment (counted in total)", "option": "Option (patient picks one, e.g. Emax / Zirconia / Ceramic)",
+         "freebie": "Freebie (free; value shown)"}
+ITEM_FIELDS = ("price_item_id", "service_id", "description", "tooth", "qty", "unit_price_cents", "discount_cents", "amount_cents",
+               "sample_price", "seq", "plan", "section", "kind", "unit_label", "note")
 DEFAULT_VALID_DAYS = 30
 
 QUOTE_SELECT = ("SELECT q.*, b.name AS branch, b.address AS branch_address, b.phone AS branch_phone, "
@@ -45,9 +49,80 @@ def _load(quote_id):
     return q
 
 
+def main_plan(q, items):
+    """The plan whose treatments make up the quotation total: the recommended plan, else the first plan listed."""
+    plans = [i["plan"] for i in items if i["plan"]]
+    if not plans:
+        return ""
+    return q["recommended_plan"] if q["recommended_plan"] in plans else plans[0]
+
+
+def structure(q, items):
+    """Group lines into plans -> sections, with option letters (A, B, C...), plan totals and freebies."""
+    plans = []
+    for it in items:
+        it = dict(it)
+        name = it["plan"] or ""
+        if not plans or plans[-1]["name"] != name:
+            hit = next((p for p in plans if p["name"] == name), None)
+            if hit:
+                plan = hit
+            else:
+                plan = {"name": name, "recommended": bool(name) and name == q["recommended_plan"], "blocks": [], "freebies": [],
+                        "total": 0, "has_options": False}
+                plans.append(plan)
+        else:
+            plan = plans[-1]
+        it["full_cents"] = it["qty"] * it["unit_price_cents"]
+        if it["kind"] == "freebie":
+            plan["freebies"].append(it)
+            continue
+        if not plan["blocks"] or plan["blocks"][-1]["section"] != it["section"]:
+            plan["blocks"].append({"section": it["section"], "rows": [], "has_discount": False, "options": 0})
+        blk = plan["blocks"][-1]
+        if it["kind"] == "option":
+            blk["options"] += 1
+            it["letter"] = chr(64 + blk["options"]) if blk["options"] <= 26 else "?"
+            plan["has_options"] = True
+            if it["discount_cents"]:
+                blk["has_discount"] = True
+        else:
+            plan["total"] += it["amount_cents"]
+        blk["rows"].append(it)
+    for p in plans:
+        p["freebie_total"] = sum(f["full_cents"] for f in p["freebies"])
+    return plans
+
+
+def unit_label_from(unit: str) -> str:
+    """'Per tooth' -> 'tooth', 'Per Canal with Lesion' -> 'canal', 'Per unit / Per tooth' -> 'unit'."""
+    u = (unit or "").lower()
+    for word in ("canal", "unit", "tooth", "arch", "surface", "bracket", "scan", "cc", "quadrant", "case", "cycle", "pontic", "crown"):
+        if word in u:
+            return word
+    return ""
+
+
+def _parse_discount(text, qty, unit):
+    """'2000' (pesos) or '20%' of the line. Returns centavos or None if invalid."""
+    t = (text or "").strip()
+    if not t:
+        return 0
+    if t.endswith("%"):
+        try:
+            pct = float(t[:-1])
+        except ValueError:
+            return None
+        return round(qty * unit * pct / 100) if 0 <= pct <= 100 else None
+    v = parse_money(t)
+    return v if v is not None and v >= 0 else None
+
+
 def _recalc(conn, quote_id):
     q = conn.one("SELECT * FROM quotations WHERE id = ?", (quote_id,))
-    subtotal = sum(i["amount_cents"] for i in conn.all("SELECT amount_cents FROM quotation_items WHERE quotation_id = ?", (quote_id,)))
+    items = conn.all("SELECT * FROM quotation_items WHERE quotation_id = ? ORDER BY seq", (quote_id,))
+    plan = main_plan(q, items)
+    subtotal = sum(i["amount_cents"] for i in items if i["kind"] == "item" and (i["plan"] or "") == plan)
     discount = max(0, min(q["discount_cents"] or 0, subtotal))
     conn.update("quotations", quote_id, {"subtotal_cents": subtotal, "discount_cents": discount, "total_cents": subtotal - discount,
                                          "updated_at": now_str()})
@@ -142,25 +217,72 @@ def edit(quote_id):
             abort(403)
         action = request.form.get("action")
         editable = q["status"] == "draft"
-        if action == "add_item" and editable:
+        if action in ("add_item", "save_item") and editable:
+            item = None
+            if action == "save_item":
+                item = conn.one("SELECT * FROM quotation_items WHERE id = ? AND quotation_id = ?", (to_int(request.form.get("item_id")), quote_id))
+                if not item:
+                    abort(404)
             pid = to_int(request.form.get("price_item_id"))
             p = conn.one("SELECT * FROM price_items WHERE id = ?", (pid,)) if pid else None
-            desc = clean(request.form.get("description"), 200) or (p["name"] if p else "")
-            qty = max(1, min(99, to_int(request.form.get("qty"), 1) or 1))
+            preset = conn.one("SELECT * FROM quote_presets WHERE id = ? AND active = 1", (to_int(request.form.get("preset_id")),)) \
+                if request.form.get("preset_id") else None
+            fee = conn.one("SELECT * FROM fee_schedule WHERE name || CASE WHEN unit != '' THEN ' (' || unit || ')' ELSE '' END = ? "
+                           "OR name = ? ORDER BY CASE WHEN name = ? THEN 1 ELSE 0 END LIMIT 1",
+                           (request.form.get("fee") or "", request.form.get("fee") or "", request.form.get("fee") or "")) \
+                if (request.form.get("fee") or "").strip() else None
+            desc = clean(request.form.get("description"), 200) or (preset["name"] if preset else "") or (p["name"] if p else "") \
+                or (fee["name"].title() if fee else "")
+            qty = max(1, min(999, to_int(request.form.get("qty"), 1) or 1))
             unit = parse_money(request.form.get("unit_price"))
             if unit is None and p:
                 unit = p["price_from_cents"]
-            disc = parse_money(request.form.get("discount")) or 0
-            if not desc or unit is None:
-                flash("Choose a treatment from the price list, or type a description and a price.", "error")
+            if unit is None and fee:
+                unit = fee["price_cents"]
+            if unit is None and preset:
+                unit = preset["unit_price_cents"]
+            kind = request.form.get("kind") if request.form.get("kind") in KINDS else (preset["kind"] if preset else "item")
+            disc = _parse_discount(request.form.get("discount"), qty, unit or 0)
+            if not desc or unit is None or unit < 0:
+                flash("Choose a service from the fee schedule, or type a description and a price.", "error")
+            elif disc is None:
+                flash("Enter the discount in pesos (e.g. 2000) or as a percent (e.g. 20%).", "error")
             else:
-                seq = (conn.scalar("SELECT MAX(seq) FROM quotation_items WHERE quotation_id = ?", (quote_id,)) or 0) + 1
-                conn.insert("quotation_items", {
-                    "quotation_id": quote_id, "price_item_id": p["id"] if p else None, "service_id": p["service_id"] if p else None,
-                    "description": desc, "tooth": clean(request.form.get("tooth"), 60), "qty": qty, "unit_price_cents": unit,
-                    "discount_cents": min(disc, qty * unit), "amount_cents": line_amount(qty, unit, disc),
-                    "sample_price": 1 if (p and p["sample"] and unit == p["price_from_cents"]) else 0, "seq": seq})
+                disc = min(disc, qty * unit)
+                row = {"description": desc, "tooth": clean(request.form.get("tooth"), 80), "qty": qty, "unit_price_cents": unit,
+                       "discount_cents": 0 if kind == "freebie" else disc,
+                       "amount_cents": 0 if kind == "freebie" else line_amount(qty, unit, disc),
+                       "plan": clean(request.form.get("plan"), 60), "section": clean(request.form.get("section"), 120), "kind": kind,
+                       "unit_label": clean(request.form.get("unit_label"), 30) or (unit_label_from(fee["unit"]) if fee else ""),
+                       "note": clean(request.form.get("note"), 300)}
+                if request.form.get("save_preset") and g.user.can("quotes.manage"):
+                    hit = conn.one("SELECT id FROM quote_presets WHERE lower(name) = lower(?) AND unit_label = ? AND kind = ?",
+                                   (desc, row["unit_label"], kind))
+                    vals = {"name": desc, "unit_price_cents": unit, "unit_label": row["unit_label"], "kind": kind, "section": row["section"],
+                            "note": row["note"], "active": 1, "updated_at": now_str(), "updated_by": g.user.id}
+                    if hit:
+                        conn.update("quote_presets", hit["id"], vals)
+                    else:
+                        conn.insert("quote_presets", {**vals, "sort_order": (conn.scalar("SELECT MAX(sort_order) FROM quote_presets") or 0) + 1})
+                if item:
+                    conn.update("quotation_items", item["id"], row)
+                else:
+                    seq = (conn.scalar("SELECT MAX(seq) FROM quotation_items WHERE quotation_id = ?", (quote_id,)) or 0) + 1
+                    conn.insert("quotation_items", {**row, "quotation_id": quote_id, "price_item_id": p["id"] if p else None,
+                                                    "service_id": p["service_id"] if p else None,
+                                                    "sample_price": 1 if (p and p["sample"] and unit == p["price_from_cents"]) else 0, "seq": seq})
                 _recalc(conn, quote_id)
+        elif action == "move" and editable:
+            items = conn.all("SELECT id, seq FROM quotation_items WHERE quotation_id = ? ORDER BY seq, id", (quote_id,))
+            ids = [i["id"] for i in items]
+            iid = to_int(request.form.get("item_id"))
+            if iid in ids:
+                k = ids.index(iid)
+                j = k - 1 if request.form.get("dir") == "up" else k + 1
+                if 0 <= j < len(ids):
+                    ids[k], ids[j] = ids[j], ids[k]
+                    for n, x in enumerate(ids, start=1):
+                        conn.execute("UPDATE quotation_items SET seq = ? WHERE id = ?", (n, x))
         elif action == "remove_item" and editable:
             conn.execute("DELETE FROM quotation_items WHERE id = ? AND quotation_id = ?", (to_int(request.form.get("item_id")), quote_id))
             _recalc(conn, quote_id)
@@ -170,7 +292,8 @@ def edit(quote_id):
             conn.update("quotations", quote_id, {
                 "discount_cents": parse_money(request.form.get("discount")) or 0, "notes": clean(request.form.get("notes"), 2000),
                 "valid_until": valid.isoformat() if valid else q["valid_until"],
-                "dentist_id": did if did and any(d["id"] == did for d in _dentists(conn, q["branch_id"])) else None})
+                "dentist_id": did if did and any(d["id"] == did for d in _dentists(conn, q["branch_id"])) else None,
+                "recommended_plan": clean(request.form.get("recommended_plan"), 60), "prepared_by": clean(request.form.get("prepared_by"), 120)})
             _recalc(conn, quote_id)
             flash("Quotation updated.", "success")
         elif action == "issue" and editable:
@@ -191,13 +314,11 @@ def edit(quote_id):
         elif action == "duplicate":
             with conn.transaction():
                 nid = conn.insert("quotations", {k: q[k] for k in ("branch_id", "patient_id", "client_name", "client_contact", "dentist_id",
-                                                                   "discount_cents", "notes")}
+                                                                   "discount_cents", "notes", "recommended_plan", "prepared_by")}
                                   | {"status": "draft", "valid_until": (today() + timedelta(days=DEFAULT_VALID_DAYS)).isoformat(),
                                      "created_by": g.user.id, "created_at": now_str(), "updated_at": now_str()})
                 for it in conn.all("SELECT * FROM quotation_items WHERE quotation_id = ? ORDER BY seq", (quote_id,)):
-                    conn.insert("quotation_items", {k: it[k] for k in ("price_item_id", "service_id", "description", "tooth", "qty",
-                                                                       "unit_price_cents", "discount_cents", "amount_cents", "sample_price", "seq")}
-                                | {"quotation_id": nid})
+                    conn.insert("quotation_items", {k: it[k] for k in ITEM_FIELDS} | {"quotation_id": nid})
                 _recalc(conn, nid)
             audit.record("quote_created", "quotation", nid, f"Copied from quotation {q['number'] or q['id']}", branch_id=q["branch_id"])
             return redirect(url_for("quotes.edit", quote_id=nid))
@@ -213,10 +334,14 @@ def edit(quote_id):
                                                       "appointment_id": q["appointment_id"], "status": "draft",
                                                       "discount_cents": q["discount_cents"], "notes": f"From quotation {q['number']}",
                                                       "created_by": g.user.id, "created_at": now_str()})
-                    for it in conn.all("SELECT * FROM quotation_items WHERE quotation_id = ? ORDER BY seq", (quote_id,)):
-                        desc = it["description"] + (f" (tooth {it['tooth']})" if it["tooth"] else "")
-                        conn.insert("invoice_items", {"invoice_id": inv_id, "service_id": it["service_id"], "description": desc[:200],
-                                                      "qty": it["qty"], "unit_price_cents": it["unit_price_cents"],
+                    all_items = conn.all("SELECT * FROM quotation_items WHERE quotation_id = ? ORDER BY seq", (quote_id,))
+                    picked = {to_int(x) for x in request.form.getlist("item_ids")}
+                    plan = main_plan(q, all_items)
+                    chosen = [i for i in all_items if i["id"] in picked and i["kind"] != "freebie"] if picked else \
+                        [i for i in all_items if i["kind"] == "item" and (i["plan"] or "") == plan]
+                    for it in chosen:
+                        conn.insert("invoice_items", {"invoice_id": inv_id, "service_id": it["service_id"], "description": it["description"][:200],
+                                                      "tooth": it["tooth"][:40], "qty": it["qty"], "unit_price_cents": it["unit_price_cents"],
                                                       "discount_cents": it["discount_cents"], "amount_cents": it["amount_cents"]})
                     invoice_recalc(conn, inv_id)
                     conn.update("quotations", quote_id, {"invoice_id": inv_id, "updated_at": now_str()})
@@ -231,9 +356,15 @@ def edit(quote_id):
             flash("Draft quotation deleted.", "success")
             return redirect(url_for("quotes.index"))
         return redirect(url_for("quotes.edit", quote_id=quote_id))
+    from ..fee_schedule import picker_options
     items = conn.all("SELECT * FROM quotation_items WHERE quotation_id = ? ORDER BY seq", (quote_id,))
-    return render_template("staff/quotes/edit.html", q=q, items=items, prices=price_list(conn), statuses=STATUSES,
-                           dentists=_dentists(conn, q["branch_id"]), today=today().isoformat())
+    plans = structure(q, items)
+    return render_template("staff/quotes/edit.html", q=q, items=items, plans=plans, statuses=STATUSES, kinds=KINDS,
+                           dentists=_dentists(conn, q["branch_id"]), today=today().isoformat(), fees=picker_options(conn),
+                           presets=conn.all("SELECT * FROM quote_presets WHERE active = 1 ORDER BY CASE kind WHEN 'item' THEN 0 "
+                                            "WHEN 'option' THEN 1 ELSE 2 END, sort_order, name"),
+                           main=main_plan(q, items), plan_names=sorted({i["plan"] for i in items if i["plan"]} | {"Plan A", "Plan B"}),
+                           section_names=sorted({i["section"] for i in items if i["section"]}))
 
 
 @bp.route("/<int:quote_id>/print")
@@ -242,4 +373,50 @@ def print_view(quote_id):
     conn = get_db()
     q = _load(quote_id)
     items = conn.all("SELECT * FROM quotation_items WHERE quotation_id = ? ORDER BY seq", (quote_id,))
-    return render_template("staff/quotes/print.html", q=q, items=items, statuses=STATUSES)
+    prepared = q["prepared_by"] or (q["dentist"] if q["dentist"] else "")
+    return render_template("staff/quotes/print.html", q=q, items=items, plans=structure(q, items), statuses=STATUSES, prepared=prepared)
+
+
+@bp.route("/items", methods=["GET", "POST"])
+@require("quotes.manage")
+def presets():
+    """The clinic's own quotation item list: add, edit, hide, reorder."""
+    conn = get_db()
+    if request.method == "POST":
+        action = request.form.get("action")
+        pid = to_int(request.form.get("id"))
+        if action in ("save", "add"):
+            name = clean(request.form.get("name"), 200)
+            price = parse_money(request.form.get("price"))
+            kind = request.form.get("kind") if request.form.get("kind") in KINDS else "item"
+            if not name or price is None or price < 0:
+                flash("Enter the item name and price (e.g. 12000).", "error")
+            else:
+                vals = {"name": name, "unit_price_cents": price, "unit_label": clean(request.form.get("unit_label"), 30), "kind": kind,
+                        "section": clean(request.form.get("section"), 120), "note": clean(request.form.get("note"), 300),
+                        "active": 1 if (action == "add" or request.form.get("active")) else 0, "updated_at": now_str(), "updated_by": g.user.id}
+                if action == "save" and conn.one("SELECT id FROM quote_presets WHERE id = ?", (pid,)):
+                    conn.update("quote_presets", pid, vals)
+                    flash(f"Saved {name}.", "success")
+                else:
+                    conn.insert("quote_presets", {**vals, "sort_order": (conn.scalar("SELECT MAX(sort_order) FROM quote_presets") or 0) + 1})
+                    flash(f"Added {name} to the list.", "success")
+                audit.record("quote_item_list_changed", "quote_presets", pid, f"Quotation item list: {name}")
+        elif action == "move":
+            rows = conn.all("SELECT id FROM quote_presets ORDER BY sort_order, id")
+            ids = [r["id"] for r in rows]
+            if pid in ids:
+                k = ids.index(pid)
+                j = k - 1 if request.form.get("dir") == "up" else k + 1
+                if 0 <= j < len(ids):
+                    ids[k], ids[j] = ids[j], ids[k]
+                    for n, x in enumerate(ids):
+                        conn.execute("UPDATE quote_presets SET sort_order = ? WHERE id = ?", (n, x))
+        elif action == "delete":
+            conn.execute("DELETE FROM quote_presets WHERE id = ?", (pid,))
+            flash("Removed from the list. Quotations already made keep their lines.", "success")
+        return redirect(url_for("quotes.presets"))
+    rows = conn.all("SELECT * FROM quote_presets ORDER BY sort_order, id")
+    groups = [(k, label, [r for r in rows if r["kind"] == k])
+              for k, label in (("item", "Treatments"), ("option", "Material options (patient picks one)"), ("freebie", "Freebies"))]
+    return render_template("staff/quotes/items.html", groups=groups, kinds=KINDS)

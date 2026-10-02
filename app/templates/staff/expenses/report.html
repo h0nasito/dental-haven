@@ -1,0 +1,53 @@
+{% extends "staff/layout.html" %}
+{% block page_title %}Expense report{% endblock %}
+{% block content %}
+<div class="page-head no-print"><div><a href="{{ url_for('expenses.index') }}">← Expenses</a><h1>Expense report</h1>
+<p>Posted expenses{% if include_pending %} and drafts not yet posted{% endif %}. Voided ones are left out.</p></div>
+<div class="row"><button type="button" class="btn btn-secondary" data-print>Print</button>
+{% if current_user.can('reports.export') %}<a class="btn btn-secondary" href="{{ request.full_path ~ ('&' if '?' in request.full_path else '?') }}format=csv">Download CSV</a>{% endif %}</div></div>
+
+<form method="get" class="card no-print exp-filter">
+<div class="pills" role="radiogroup" aria-label="Report type">
+{% for k, l in [('daily', 'Daily'), ('monthly', 'Monthly'), ('range', 'By date')] %}<label class="pill-radio"><input type="radio" name="mode" value="{{ k }}" {% if mode == k %}checked{% endif %} data-autosubmit-radio> <span>{{ l }}</span></label>{% endfor %}</div>
+<div class="toolbar">
+{% if mode == 'daily' %}<div class="field"><label for="rd">Day</label><input id="rd" type="date" name="day" value="{{ start.isoformat() }}" max="{{ today.isoformat() }}"></div>
+{% elif mode == 'monthly' %}<div class="field"><label for="rm">Month</label><input id="rm" type="month" name="month" value="{{ start.strftime('%Y-%m') }}"></div>
+{% else %}<div class="field"><label for="rf">From</label><input id="rf" type="date" name="from" value="{{ start.isoformat() }}"></div>
+<div class="field"><label for="rt">To</label><input id="rt" type="date" name="to" value="{{ end.isoformat() }}"></div>{% endif %}
+<fieldset class="field"><legend>Branches</legend><div class="row">{% for b in branches %}<label class="check"><input type="checkbox" name="branch" value="{{ b.id }}" {% if b.id in chosen %}checked{% endif %}> {{ b.name }}</label>{% endfor %}</div></fieldset>
+<details class="field exp-cats" {% if picked_cats %}open{% endif %}><summary><strong>Categories</strong> <small class="muted">{{ picked_cats|join(', ') if picked_cats else 'All' }}</small></summary>
+<div class="exp-cat-list">{% for c in all_categories %}<label class="check"><input type="checkbox" name="category" value="{{ c }}" {% if c in picked_cats %}checked{% endif %}> {{ c }}</label>{% endfor %}</div>
+<small class="hint">Tick none for all categories.</small></details>
+<label class="check"><input type="checkbox" name="pending" value="1" {% if include_pending %}checked{% endif %}> Include drafts not yet posted</label>
+<button class="btn">Show report</button></div></form>
+
+<div class="print-only"><h1>Dental Haven: Expense report</h1></div>
+<h2 class="exp-label">{{ label }}{% if picked_cats %} <small class="muted">· {{ picked_cats|join(', ') }}</small>{% endif %}</h2>
+
+<div class="card"><h2>Summary per branch</h2>
+<div class="table-wrap"><table><thead><tr><th>Branch</th><th class="num">Entries</th><th class="num">Total expenses</th>{% if not include_pending %}<th class="num">Not yet posted</th>{% endif %}</tr></thead><tbody>
+{% for bid, p in per_branch.items() %}<tr><td>{{ p.name }}</td><td class="num">{{ p.n }}</td><td class="num"><strong>{{ p.total|peso }}</strong></td>{% if not include_pending %}<td class="num">{% if p.pending %}<span class="c-amber">{{ p.pending|peso }}</span> <small class="muted">({{ p.pending_n }})</small>{% else %}—{% endif %}</td>{% endif %}</tr>{% endfor %}
+</tbody><tfoot><tr><th>All branches</th><th class="num">{{ per_branch.values()|sum(attribute='n') }}</th><th class="num">{{ grand|peso }}</th>{% if not include_pending %}<th class="num">{{ per_branch.values()|sum(attribute='pending')|peso }}</th>{% endif %}</tr></tfoot></table></div></div>
+
+{% if cats %}
+<div class="card"><h2>By category</h2>
+<div class="table-wrap"><table><thead><tr><th>Category</th>{% for b in chosen %}<th class="num">{{ names[b] }}</th>{% endfor %}<th class="num">Total</th></tr></thead><tbody>
+{% for c in cats %}<tr><td>{{ c }}</td>{% for b in chosen %}<td class="num">{{ matrix[c][b]|peso if matrix[c][b] else '—' }}</td>{% endfor %}<td class="num"><strong>{{ matrix[c].values()|sum|peso }}</strong></td></tr>{% endfor %}
+</tbody><tfoot><tr><th>Total</th>{% for b in chosen %}<th class="num">{{ per_branch[b].total|peso }}</th>{% endfor %}<th class="num">{{ grand|peso }}</th></tr></tfoot></table></div></div>
+
+{% if mode != 'daily' %}
+<div class="card"><h2>Per day</h2>
+<div class="table-wrap"><table><thead><tr><th>Date</th>{% for b in chosen %}<th class="num">{{ names[b] }}</th>{% endfor %}<th class="num">Total</th></tr></thead><tbody>
+{% for d, vals in days %}<tr><td>{{ d|date }}</td>{% for b in chosen %}<td class="num">{{ vals[b]|peso if vals[b] else '—' }}</td>{% endfor %}<td class="num"><strong>{{ vals.values()|sum|peso }}</strong></td></tr>{% endfor %}
+</tbody></table></div></div>
+{% endif %}
+
+<div class="card"><h2>All entries ({{ rows|length }})</h2>
+<div class="table-wrap"><table><thead><tr><th>Date &amp; time</th><th>Branch</th><th>Item / description</th><th>Category</th><th class="num">Qty</th><th class="num">Price</th><th>Spent by</th><th>OR no.</th></tr></thead><tbody>
+{% for e in rows %}<tr><td>{{ e.expense_date|date }}{% if e.expense_time %} {{ e.expense_time }}{% endif %}{% if e.status == 'draft' %} <span class="badge badge-amber">Draft</span>{% endif %}</td><td>{{ e.branch }}</td>
+<td>{{ e.item or e.description }}{% if e.item and e.description %}<br><small class="muted">{{ e.description }}</small>{% endif %}{% if e.payee %}<br><small class="muted">Paid to {{ e.payee }}</small>{% endif %}</td>
+<td>{{ e.category }}</td><td class="num">{{ e.qty|round(2)|string|replace('.0','') }}</td><td class="num">{{ e.amount_cents|peso }}</td><td>{{ e.spent_by or e.by_name }}</td><td>{{ e.reference or '—' }}</td></tr>{% endfor %}
+</tbody><tfoot><tr><th colspan="5">Total</th><th class="num">{{ grand|peso }}</th><th colspan="2"></th></tr></tfoot></table></div></div>
+{% else %}<div class="card"><p class="muted">No expenses for this period.</p></div>{% endif %}
+<p class="muted" style="font-size:.85rem">Generated {{ today|date }} by {{ current_user.name }}.</p>
+{% endblock %}

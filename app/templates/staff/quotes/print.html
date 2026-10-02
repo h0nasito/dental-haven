@@ -1,25 +1,56 @@
 {% extends "base.html" %}
 {% block title %}{{ q.number or 'Quotation' }}{% endblock %}
+{% block fonts %}<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Poppins:wght@400;500;600;700&display=swap">{% endblock %}
 {% block body %}
-<main id="main" class="print-sheet">
-<div class="no-print row between" style="margin-bottom:1rem"><a href="{{ url_for('quotes.edit', quote_id=q.id) }}">← Back</a><span class="muted">Use your browser's Print command (or Save as PDF)</span></div>
+{% set patient_name = (q.first_name ~ ' ' ~ q.last_name) if q.patient_id else q.client_name %}
+<main id="main" class="tpq">
+<div class="no-print row between" style="margin-bottom:1rem"><a href="{{ url_for('quotes.edit', quote_id=q.id) }}">← Back</a>
+<span><button type="button" class="btn btn-secondary btn-sm" data-print>Print / Save as PDF</button></span></div>
 {% if q.status == 'draft' %}<div class="watermark">DRAFT</div>{% endif %}
-<div class="row between" style="flex-wrap:nowrap;align-items:flex-start;gap:2rem"><div style="max-width:58%"><img src="{{ url_for('static', filename='img/logo.png') }}" alt="" width="60" height="40"><h1 class="mb-0">Dental Haven</h1><p class="muted">{{ q.branch }} branch<br>{{ q.branch_address }}<br>{{ q.branch_phone }}</p></div>
-<div style="text-align:right;flex:none"><h2 class="mb-0">Price quotation</h2><p>No. <strong>{{ q.number or 'Draft' }}</strong><br>Date: {{ (q.issued_at or q.created_at)|date }}<br>Valid until: <strong>{{ q.valid_until|date }}</strong></p></div></div>
-<p><strong>Prepared for:</strong> {% if q.patient_id %}{{ q.first_name }} {{ q.last_name }} ({{ q.chart_no }}){% else %}{{ q.client_name }}{% if q.client_contact %} · {{ q.client_contact }}{% endif %}{% endif %}
-{% if q.dentist %}<br><strong>Dentist:</strong> {{ q.dentist }}{% endif %}</p>
-<table><thead><tr><th>Treatment</th><th>Tooth / area</th><th class="num">Qty</th><th class="num">Unit price</th><th class="num">Discount</th><th class="num">Amount</th></tr></thead><tbody>
-{% for it in items %}<tr><td>{{ it.description }}</td><td>{{ it.tooth or '' }}</td><td class="num">{{ it.qty }}</td><td class="num">{{ it.unit_price_cents|peso }}</td><td class="num">{{ it.discount_cents|peso if it.discount_cents else '—' }}</td><td class="num">{{ it.amount_cents|peso }}</td></tr>{% endfor %}</tbody>
-<tfoot><tr><td colspan="5">Subtotal</td><td class="num">{{ q.subtotal_cents|peso }}</td></tr>{% if q.discount_cents %}<tr><td colspan="5">Discount</td><td class="num">-{{ q.discount_cents|peso }}</td></tr>{% endif %}
-<tr><td colspan="5"><strong>Estimated total</strong></td><td class="num"><strong>{{ q.total_cents|peso }}</strong></td></tr></tfoot></table>
-{% if q.notes %}<p class="pre mt-1"><strong>Notes:</strong> {{ q.notes }}</p>{% endif %}
-<div class="mt-1" style="font-size:.85rem">
-<p><strong>Terms</strong></p>
-<ul style="margin-top:.2rem">
-<li>This is an estimate based on today's examination. The final cost may change if the treatment plan changes after further findings; your dentist will explain any change before proceeding.</li>
-<li>Prices are valid until the date shown above.</li>
-<li>This quotation is not an official receipt or a bill.</li>
-</ul></div>
-<div class="row between" style="margin-top:3rem"><div style="border-top:1px solid #999;padding-top:.3rem;min-width:220px">{{ q.dentist or 'Dentist' }}</div><div style="border-top:1px solid #999;padding-top:.3rem;min-width:220px">Patient's signature / date</div></div>
+<header class="tpq-brand">
+<div class="tpq-logo"><img src="{{ url_for('static', filename='img/logo.png') }}" alt="" width="72" height="49"><span class="tpq-bar"></span><span class="tpq-word">DENTAL<br>HAVEN</span></div>
+<div class="tpq-tag">HAPPIEST YOUR TEETH WILL EVER BE</div>
+<h1 class="tpq-title">Dental Treatment <span>Plan Quotation</span></h1>
+</header>
+<div class="tpq-who"><div><span>Patient’s Name:</span> {{ patient_name }}</div><div><span>Date:</span> {{ ((q.issued_at or q.created_at)[:10])|date }}</div></div>
+<hr class="tpq-rule">
+
+<table class="tpq-table">
+<thead><tr><th class="c-desc">Description</th><th>Tooth No.</th><th>No. of Units</th><th class="num">Price per Unit</th><th class="num">Total Price</th></tr></thead>
+{% for plan in plans %}
+<tbody>
+{% if plan.name %}<tr class="tpq-plan"><td colspan="5">{{ plan.name|upper }}{% if plan.recommended %} (RECOMMENDED){% endif %}</td></tr>{% endif %}
+{% for blk in plan.blocks %}
+{% set items_n = blk.rows|selectattr('kind', 'equalto', 'item')|list|length %}
+{% if blk.section %}<tr class="tpq-sec"><td colspan="{{ 4 if blk.has_discount else 5 }}">{{ blk.section }}</td>{% if blk.has_discount %}<td class="num tpq-disc-h">Discounted Price</td>{% endif %}</tr>{% endif %}
+{% set ns = namespace(n=0) %}
+{% for it in blk.rows %}{% if it.kind == 'item' %}{% set ns.n = ns.n + 1 %}{% endif %}
+<tr class="tpq-row {{ 'tpq-opt' if it.kind == 'option' }}">
+<td class="c-desc">{% if it.kind == 'option' %}{{ it.letter }}. {% elif blk.section and items_n > 1 %}{{ ns.n }}. {% endif %}{{ it.description }}</td>
+<td class="c-tooth">{{ it.tooth }}</td><td class="c-units">{{ it.qty }}</td>
+<td class="num">{{ '{:,.0f}'.format(it.unit_price_cents / 100) }}{% if it.unit_label %}/{{ it.unit_label }}{% endif %}</td>
+{% if blk.has_discount %}<td class="num">{{ '{:,.0f}'.format(it.full_cents / 100) }}<br><strong>{{ '{:,.0f}'.format(it.amount_cents / 100) }}</strong></td>
+{% else %}<td class="num">{{ '{:,.0f}'.format(it.amount_cents / 100) }}</td>{% endif %}</tr>
+{% if it.note %}<tr class="tpq-note-row"><td colspan="5"><span class="tpq-note">Note: {{ it.note }}</span></td></tr>{% endif %}
+{% endfor %}{% endfor %}
+{% if plan.freebies %}
+<tr class="tpq-free-h"><td colspan="5">Freebies:</td></tr>
+{% for f in plan.freebies %}<tr class="tpq-free"><td class="c-desc">{{ f.description }}</td><td class="c-tooth">{{ f.tooth or (f.qty ~ ' ' ~ (f.unit_label or 'unit') ~ ('s' if f.qty > 1 and f.unit_label not in ('cc',) else '')) }}</td><td></td>
+<td class="num">{{ '{:,.0f}'.format(f.unit_price_cents / 100) }} per {{ f.unit_label or 'unit' }}</td><td class="num">{{ '{:,.0f}'.format(f.full_cents / 100) }}</td></tr>{% endfor %}
+<tr class="tpq-free-total"><td colspan="5">TOTAL: {{ '{:,.0f}'.format(plan.freebie_total / 100) }}</td></tr>
+{% endif %}
+{% if plans|length > 1 or plan.total %}<tr class="tpq-plan-total"><td colspan="5">{% if plan.total %}{{ plan.name or 'Estimated' }} total: ₱{{ '{:,.0f}'.format(plan.total / 100) }}{% if plan.has_options %} + chosen option{% endif %}{% elif plan.has_options %}Price depends on the option chosen{% endif %}</td></tr>{% endif %}
+</tbody>
+{% endfor %}
+</table>
+{% if q.discount_cents %}<p class="tpq-overall">Overall discount: −₱{{ '{:,.0f}'.format(q.discount_cents / 100) }} · Estimated total: <strong>₱{{ '{:,.0f}'.format(q.total_cents / 100) }}</strong></p>{% endif %}
+{% if q.notes %}<p class="tpq-notes">{{ q.notes }}</p>{% endif %}
+
+<footer class="tpq-foot">
+{% if prepared %}<p class="tpq-prepared">Prepared by: {{ prepared }}</p>{% endif %}
+<p class="tpq-fine">{{ q.number or 'Draft' }} · Valid until {{ q.valid_until|date }} · Dental Haven {{ q.branch }}{% if q.branch_phone %} · {{ q.branch_phone }}{% endif %}<br>
+This is an estimate based on today’s examination; the final cost may change if the treatment plan changes. Not an official receipt.</p>
+</footer>
 </main>
 {% endblock %}

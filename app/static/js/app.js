@@ -418,3 +418,58 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   });
 })();
+
+/* Expenses: total = qty x unit price (until the total is typed by hand). */
+(function () {
+  document.querySelectorAll('form[data-expform]').forEach(function (f) {
+    var q = f.querySelector('[data-exp-qty]'), u = f.querySelector('[data-exp-unit]'), t = f.querySelector('[data-exp-total]');
+    function calc() {
+      if (t.dataset.typed) return;
+      var qq = parseFloat(q.value), uu = parseFloat(String(u.value).replace(/[^0-9.]/g, ''));
+      t.value = (qq > 0 && uu >= 0) ? (Math.round(qq * uu * 100) / 100).toFixed(2) : '';
+    }
+    q.addEventListener('input', calc); u.addEventListener('input', calc);
+    t.addEventListener('input', function () { t.dataset.typed = t.value ? '1' : ''; });
+  });
+})();
+
+/* Radio buttons that submit their form when changed (report type). */
+(function () {
+  document.querySelectorAll('input[data-autosubmit-radio]').forEach(function (r) {
+    r.addEventListener('change', function () { r.form.submit(); });
+  });
+})();
+
+/* Quotation: picking from the fee schedule fills description, price and unit. */
+(function () {
+  document.querySelectorAll('[data-q-fee]').forEach(function (inp) {
+    var form = inp.closest('form'), list = document.getElementById('q-fees');
+    inp.addEventListener('change', function () {
+      var opt = null;
+      list.querySelectorAll('option').forEach(function (o) { if (o.value === inp.value) opt = o; });
+      if (!opt) return;
+      var d = form.querySelector('[data-q-desc]'), p = form.querySelector('[data-q-price]'), u = form.querySelector('[data-q-unit]');
+      if (!d.value) d.value = inp.value.replace(/\s*\(.*\)$/, '').toLowerCase().replace(/(^|[\s\-\/(])([a-z])/g, function (m, a, b) { return a + b.toUpperCase(); });
+      p.value = opt.dataset.price;
+      var unit = (opt.dataset.unit || '').toLowerCase(), words = ['canal', 'unit', 'tooth', 'arch', 'surface', 'bracket', 'scan', 'cc', 'quadrant', 'case', 'cycle'];
+      for (var i = 0; i < words.length; i++) { if (unit.indexOf(words[i]) >= 0) { u.value = words[i]; break; } }
+    });
+  });
+})();
+
+/* Quotation: choosing from the clinic's item list fills the line (description, price, unit, type, section, note). */
+(function () {
+  document.querySelectorAll('[data-q-preset]').forEach(function (sel) {
+    var form = sel.closest('form');
+    sel.addEventListener('change', function () {
+      var o = sel.options[sel.selectedIndex];
+      if (!o || !o.value) return;
+      form.querySelector('[data-q-desc]').value = o.dataset.name;
+      form.querySelector('[data-q-price]').value = o.dataset.price;
+      form.querySelector('[data-q-unit]').value = o.dataset.unit;
+      form.querySelector('[name=kind]').value = o.dataset.kind;
+      var sec = form.querySelector('[name=section]'); if (!sec.value && o.dataset.section) sec.value = o.dataset.section;
+      var note = form.querySelector('[data-q-note]'); if (!note.value && o.dataset.note) note.value = o.dataset.note;
+    });
+  });
+})();

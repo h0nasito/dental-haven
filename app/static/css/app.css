@@ -686,3 +686,87 @@ section[id] { scroll-margin-top: 72px; }
 .fee-cats a.active, .fee-cats a:hover { background: var(--brand-700); color: #fff; border-color: var(--brand-700); }
 .fee-group h2 { font-size: 1.1rem; }
 .fee-edit[open] { min-width: 320px; }
+
+/* Expense report */
+.pill-radio { cursor: pointer; }
+.pill-radio input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.pill-radio span { display: inline-block; padding: .45em 1em; border-radius: 999px; border: 1px solid var(--line); font-weight: 600; background: var(--card); }
+.pill-radio input:checked + span { background: var(--brand-700); color: #fff; border-color: var(--brand-700); }
+.pill-radio input:focus-visible + span { outline: 3px solid rgba(42, 82, 158, .35); }
+.exp-label { margin: 1rem 0 .5rem; }
+.print-only { display: none; }
+@media print { .print-only { display: block; } .card { box-shadow: none; break-inside: avoid; } }
+.exp-cats summary { cursor: pointer; }
+.exp-cat-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: .1rem .8rem; margin-top: .4rem; }
+
+/* Quotation editor */
+.q-plan { border-top: 2px solid var(--brand-100); padding-top: .6rem; margin-top: .6rem; }
+.q-plan:first-of-type { border-top: 0; margin-top: 0; }
+.q-plan-name { margin: .2rem 0 .3rem; }
+.q-sec { margin: .7rem 0 .2rem; font-size: .95rem; }
+.q-free { color: var(--brand-700); text-transform: uppercase; letter-spacing: .05em; }
+.q-table td { vertical-align: top; }
+.q-opt td:first-child { padding-left: 1.2rem; }
+.q-note { color: var(--red-700); text-transform: uppercase; font-weight: 700; font-size: .72rem; }
+.q-plan-total { text-align: right; margin: .3rem 0; }
+.q-actions { white-space: nowrap; }
+.q-actions details[open] { min-width: 520px; white-space: normal; }
+.inline-form { display: inline; }
+
+/* Printed treatment plan quotation (clinic design) */
+.tpq { max-width: 780px; margin: 0 auto; padding: 24px 28px 32px; background: #fff; color: #1d1d1f; font-family: "Poppins", var(--font); font-size: 13.5px; position: relative; }
+.tpq-brand { text-align: center; }
+.tpq-logo { display: inline-flex; align-items: center; gap: 12px; }
+.tpq-bar { width: 3px; height: 46px; background: #111; }
+.tpq-word { text-align: left; font-size: 25px; line-height: 1.05; letter-spacing: .14em; font-weight: 400; color: #1d1d1f; }
+.tpq-tag { font-size: 10px; letter-spacing: .2em; margin-top: 4px; color: #333; }
+.tpq-title { font-family: "Anton", Impact, "Arial Narrow", sans-serif; font-weight: 400; font-size: 40px; color: #0f2747; margin: 14px 0 6px; letter-spacing: .01em; }
+.tpq-title span { color: #2c4568; }
+.tpq-who { display: flex; justify-content: space-between; gap: 1rem; font-size: 17px; margin: 18px 24px 8px; }
+.tpq-who span { margin-right: .5rem; }
+.tpq-rule { border: 0; border-top: 1px solid #555; margin: 10px 24px 22px; }
+.tpq-table { width: 100%; border-collapse: collapse; }
+.tpq-table thead th { background: linear-gradient(90deg, #0f2747, #3a5576); color: #fff; font-weight: 700; font-size: 12.5px; text-transform: uppercase; padding: 9px 10px; text-align: center; line-height: 1.15; }
+.tpq-table thead th.c-desc { text-align: left; padding-left: 20px; }
+.tpq-table td { padding: 3px 10px; border: 0; vertical-align: top; }
+.tpq-table td.c-desc { padding-left: 34px; }
+.tpq-table td.c-tooth, .tpq-table td.c-units { text-align: center; }
+.tpq-table .num { text-align: right; }
+.tpq-plan td { font-weight: 700; font-size: 14.5px; padding-top: 14px; padding-left: 14px; }
+.tpq-sec td { font-weight: 600; font-size: 14.5px; padding-top: 12px; padding-left: 14px; }
+.tpq-disc-h { color: #e53935; font-weight: 700 !important; font-size: 12px !important; text-transform: uppercase; }
+.tpq-opt td.c-desc { padding-left: 34px; }
+.tpq-note { color: #e53935; font-size: 10.5px; font-weight: 700; text-transform: uppercase; }
+.tpq-note-row td { padding-top: 0; padding-left: 34px; }
+.tpq-free-h td { color: #1f3a66; font-weight: 700; font-size: 14px; padding-top: 14px; padding-left: 14px; }
+.tpq-free td { font-size: 12.5px; padding-top: 1px; padding-bottom: 1px; }
+.tpq-free-total td, .tpq-plan-total td { text-align: right; font-weight: 700; padding-top: 6px; }
+.tpq-plan-total td { font-weight: 600; color: #0f2747; border-bottom: 1px solid #555; padding-bottom: 8px; }
+.tpq-overall, .tpq-notes { text-align: right; margin: 10px 10px 0; }
+.tpq-notes { text-align: left; white-space: pre-wrap; }
+.tpq-foot { margin-top: 48px; }
+.tpq-prepared { text-align: right; font-size: 15px; }
+.tpq-fine { font-size: 9.5px; color: #777; margin-top: 18px; }
+@media print { body { background: #fff; } .tpq { padding: 0; } @page { size: A4; margin: 12mm; } .tpq-table thead th { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+/* quotation print refinements */
+.tpq-table { table-layout: fixed; }
+.tpq-table thead tr { background: linear-gradient(90deg, #0f2747 0%, #1f3a5f 55%, #3a5576 100%); }
+.tpq-table thead th { background: transparent !important; }
+.tpq-table th:nth-child(1) { width: 36%; } .tpq-table th:nth-child(2) { width: 24%; } .tpq-table th:nth-child(3) { width: 10%; }
+.tpq-table th:nth-child(4) { width: 15%; } .tpq-table th:nth-child(5) { width: 15%; }
+.tpq-table tbody tr, .tpq-table tbody tr:nth-child(even), .tpq-table tbody tr:hover { background: transparent !important; }
+.tpq-table td.num { white-space: nowrap; }
+.tpq-table td.c-tooth { overflow-wrap: anywhere; font-size: 12.5px; }
+.tpq-title { font-family: "Anton", Impact, Haettenschweiler, "Arial Narrow Bold", "Arial Narrow", sans-serif; }
+@media print { .tpq-table thead tr { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+.tpq-table td { background: transparent !important; }
+.q-table td:first-child { min-width: 190px; overflow-wrap: anywhere; width: 100%; }
+.q-table td.num { white-space: nowrap; }
+.q-actions > form, .q-actions > details { display: inline-block; vertical-align: top; }
+.q-actions details[open] { display: block; }
+.q-actions { margin-top: .2rem; white-space: normal; }
+.q-actions .btn-sm { padding: .1em .45em; font-size: .8rem; }
+.q-actions details > summary { font-size: .8rem; cursor: pointer; color: var(--brand-700); display: inline-block; padding: .1em .45em; }
+.q-actions details[open] { min-width: 0; }
+.tpq-table td.tpq-disc-h { white-space: normal; line-height: 1.15; }
+@media print { .demo-banner { display: none !important; } }

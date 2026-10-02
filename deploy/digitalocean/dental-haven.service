@@ -1,0 +1,25 @@
+# Installed by setup.sh as /etc/systemd/system/dental-haven.service
+[Unit]
+Description=Dental Haven clinic system
+After=network.target
+
+[Service]
+User=__APP_USER__
+Group=__APP_USER__
+WorkingDirectory=__APP_DIR__
+EnvironmentFile=__ENV_FILE__
+Environment=PATH=__APP_DIR__/.venv/bin:/usr/bin:/bin
+Environment=BIND_HOST=127.0.0.1
+Environment=PORT=8000
+ExecStart=/bin/bash __APP_DIR__/start-production.sh
+Restart=always
+RestartSec=5
+# Hardening: the app can only write to its data folder.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=__DATA_DIR__ __APP_DIR__/instance
+
+[Install]
+WantedBy=multi-user.target

@@ -490,6 +490,33 @@ def seed_base(conn):
                     conn.insert("fee_schedule", {"name": name, "unit": unit, "price_cents": cents, "category": cat, "active": 1,
                                                  "sort_order": i, "updated_at": now_str()})
             _settings2.put("seed.fee_schedule_v1", True, None, conn)
+        # Starting quotation item list, from the clinic's own treatment plan quotations; editable in Quotations → Item list.
+        if not _settings2.get("seed.quote_presets_v1", conn):
+            if not conn.scalar("SELECT COUNT(*) FROM quote_presets"):
+                presets = [
+                    ("Root Canal Therapy", 12000, "canal", "item", "Root Canal Therapy", ""),
+                    ("Root Canal Therapy (Retreatment)", 15000, "canal", "item", "Root Canal Therapy", ""),
+                    ("Extraction", 950, "tooth", "item", "", "Need to heal for about a month before final restoration"),
+                    ("Restoration", 950, "tooth", "item", "", ""),
+                    ("Fiber Post", 6500, "unit", "item", "Post and Core", ""),
+                    ("Implant", 90000, "tooth", "item", "Implant", "Need to preserve socket upon extraction or upon implant placement"),
+                    ("Bone Graft", 5000, "cc", "item", "Implant", ""),
+                    ("Premium Zirconia fused to Emax", 35000, "unit", "option", "", ""),
+                    ("Emax", 30000, "unit", "option", "", ""),
+                    ("Zirconia", 25000, "unit", "option", "", ""),
+                    ("Ceramic", 20000, "unit", "option", "", ""),
+                    ("Tilite", 15000, "unit", "option", "", ""),
+                    ("PFM", 13000, "unit", "option", "", ""),
+                    ("Temporary Crown/s", 1000, "unit", "freebie", "", ""),
+                    ("Mock up Treatment", 5000, "arch", "freebie", "", ""),
+                    ("Digital Impression / Intraoral Scan", 1000, "scan", "freebie", "", ""),
+                    ("Night Guard", 10000, "arch", "freebie", "", ""),
+                    ("Water Floss", 12000, "unit", "freebie", "", ""),
+                ]
+                for i, (n, price, unit, kind, sec, note) in enumerate(presets):
+                    conn.insert("quote_presets", {"name": n, "unit_price_cents": price * 100, "unit_label": unit, "kind": kind, "section": sec,
+                                                  "note": note, "active": 1, "sort_order": i, "updated_at": now_str()})
+            _settings2.put("seed.quote_presets_v1", True, None, conn)
         # Access roles added later (HR, Supervisor, Cashier) start with their recommended access, once.
         if conn.scalar("SELECT COUNT(*) FROM role_permissions"):
             for role in ("hr", "supervisor", "cashier", "technician"):
