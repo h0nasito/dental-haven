@@ -42,6 +42,13 @@ def _env_key(slug: str) -> str:
 BREVO_URL = "https://api.brevo.com/v3/smtp/email"
 
 
+def _short_label(branch_name: str) -> str:
+    """'San Jose del Monte (SJDM)' -> 'SJDM': short sender names display better in inboxes."""
+    import re
+    m = re.search(r"\(([^)]+)\)", branch_name or "")
+    return (m.group(1) if m else (branch_name or "")).strip()
+
+
 def config(branch_slug: str | None = None, branch_name: str = "") -> dict | None:
     """Email settings for a branch (its own Gmail, else the shared default). None if neither is set.
 
@@ -56,7 +63,7 @@ def config(branch_slug: str | None = None, branch_name: str = "") -> dict | None
             user = os.environ.get(prefix + "USERNAME", "").strip() or (os.environ.get("MAIL_FROM", "").strip() if prefix == "MAIL_" else "")
             if user:
                 return {"transport": "brevo", "api_key": api_key, "username": user, "sender": user,
-                        "sender_name": os.environ.get("MAIL_FROM_NAME", f"Dental Haven {label}".strip()).strip()}
+                        "sender_name": os.environ.get("MAIL_FROM_NAME", f"Dental Haven {_short_label(label)}".strip()).strip()}
         return None
     for prefix, label in ((f"MAIL_{_env_key(branch_slug)}_", branch_name), ("MAIL_", "")):
         if prefix == "MAIL__":
@@ -69,7 +76,7 @@ def config(branch_slug: str | None = None, branch_name: str = "") -> dict | None
                 "host": os.environ.get("MAIL_HOST", "smtp.gmail.com").strip(),
                 "port": int(os.environ.get("MAIL_PORT", "587") or 587),
                 "username": user, "password": pw, "sender": user,
-                "sender_name": os.environ.get("MAIL_FROM_NAME", f"Dental Haven {label}".strip()).strip(),
+                "sender_name": os.environ.get("MAIL_FROM_NAME", f"Dental Haven {_short_label(label)}".strip()).strip(),
             }
     return None
 
