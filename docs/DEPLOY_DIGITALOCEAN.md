@@ -87,16 +87,27 @@ It ends with **Done** and the address to open.
 5. Import patient records under **Administration → Import from MyMedsPH**.
 
 ## 7. Turn on emails (when you're ready)
-For each branch Gmail: turn on 2-Step Verification and create an app password at myaccount.google.com/apppasswords. Then in the Console:
-```bash
-nano /etc/dental-haven/env
-```
-Remove the `#` at the start of that branch's two `MAIL_...` lines and paste the app password after `MAIL_..._PASSWORD=`.
-Save with **Ctrl+O, Enter**, exit with **Ctrl+X**, then run:
-```bash
-systemctl restart dental-haven
-```
-Test it with **Administration → System settings → Send me a test email**.
+DigitalOcean blocks the normal email ports, so the server can't send through Gmail directly. Emails go through
+**Brevo** instead (free up to 300 emails a day), still **from your branch Gmail addresses**.
+
+1. Sign up at **brevo.com** (free plan).
+2. In Brevo, open **Senders, domains & dedicated IPs → Senders → Add a sender**. Add each branch Gmail you want to send from
+   (e.g. dentalhavenmalolos@gmail.com) and click the confirmation link Brevo emails to that Gmail.
+3. In Brevo, open **SMTP & API → API keys → Generate a new API key**. Copy it (it starts with `xkeysib-`). Keep it private.
+4. In the Droplet Console:
+   ```bash
+   nano /etc/dental-haven/env
+   ```
+   Add the key on a new line, and remove the `#` from each branch's `MAIL_..._USERNAME` line (the `_PASSWORD` lines aren't needed with Brevo):
+   ```
+   BREVO_API_KEY=xkeysib-...
+   MAIL_MALOLOS_USERNAME=dentalhavenmalolos@gmail.com
+   ```
+   Save with **Ctrl+O, Enter**, exit with **Ctrl+X**, then run:
+   ```bash
+   systemctl restart dental-haven
+   ```
+5. Test it with **Administration → System settings → Send me a test email**.
 
 ## Updating the system later
 When there's a new version: push it to GitHub from GitHub Desktop, open the Droplet Console and type:

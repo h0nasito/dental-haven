@@ -181,7 +181,12 @@ def sender_configs(conn) -> list[dict]:
 
 
 def daily_limit(conn) -> int:
-    return int(settings.get("mail.daily_limit", conn) or DEFAULT_DAILY_LIMIT)
+    import os
+    saved = settings.get("mail.daily_limit", conn)
+    if saved:
+        return int(saved)
+    # Brevo's free plan allows 300 emails a day in total; keep a little room for appointment emails.
+    return 280 if os.environ.get("BREVO_API_KEY", "").strip() else DEFAULT_DAILY_LIMIT
 
 
 def sent_today(conn, sender: str) -> int:
@@ -191,6 +196,10 @@ def sent_today(conn, sender: str) -> int:
 
 
 def smtp_send(c: dict, to: str, subject: str, body: str, unsubscribe: str = "") -> None:
+    if c.get("transport") == "brevo":
+        from .dentist_mail import brevo_send
+        brevo_send(c, to, subject, body, {"List-Unsubscribe": f"<{unsubscribe}>"} if unsubscribe else None)
+        return
     msg = EmailMessage()
     msg["From"] = formataddr((c["sender_name"] or "Dental Haven", c["sender"]))
     msg["To"] = to
@@ -213,12 +222,19 @@ def send_queued(conn, batch: int = BATCH, sender_fn=None) -> int:
     if not configs:
         return 0
     limit = daily_limit(conn)
+    if configs[0].get("transport") == "brevo":
+        # One Brevo account sends for every branch, so the daily limit counts all senders together.
+        def limit_for(_sender):
+            return limit - (conn.scalar("SELECT COUNT(*) FROM email_outbox WHERE status IN ('sent','sending') AND claimed_at >= ?",
+                                        (today().isoformat(),)) or 0)
+    else:
+        limit_for = lambda sender: limit - sent_today(conn, sender)  # noqa: E731
     # Rows left in "sending" for over an hour (e.g. the server restarted mid-send) go back to the queue.
     conn.execute("UPDATE email_outbox SET status = 'pending' WHERE status = 'sending' AND claimed_at < ?",
                  ((now() - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S"),))
     sent = 0
     for c in configs:
-        room = min(batch - sent, limit - sent_today(conn, c["sender"]))
+        room = min(batch - sent, limit_for(c["sender"]))
         if room <= 0:
             continue
         rows = conn.all("SELECT id FROM email_outbox WHERE status = 'pending' ORDER BY CASE kind WHEN 'birthday' THEN 0 ELSE 1 END, id LIMIT ?",

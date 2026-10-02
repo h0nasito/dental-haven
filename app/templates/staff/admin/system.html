@@ -13,7 +13,7 @@
 <div class="table-wrap"><table><thead><tr><th>Branch</th><th>Sends from</th></tr></thead><tbody>
 {% for m in mail.senders %}<tr><td>{{ m.branch }}</td><td>{% if m.sender %}<span class="badge badge-green">On</span> {{ m.sender }}{% else %}<span class="badge badge-amber">Not set up</span> <small class="muted">add <code>{{ m.env }}</code> and <code>{{ m.env|replace('_USERNAME', '_PASSWORD') }}</code></small>{% endif %}</td></tr>{% endfor %}
 </tbody></table></div>
-<p class="hint">Set these in the server's environment settings (Render → Environment), then restart. The password is a Gmail app password, not the normal Gmail password. See docs/INTEGRATIONS.md.</p>{% endif %}
+<p class="hint">{% if mail.brevo %}<strong>Sending through Brevo</strong> (web API), so no Gmail passwords are needed: each sender address above must be a verified sender in your Brevo account.{% else %}Set these on the server (<code>/etc/dental-haven/env</code>), then restart. The password is a Gmail app password, not the normal Gmail password. <strong>On DigitalOcean</strong> the normal email ports are blocked, so Gmail passwords alone won't work there: add <code>BREVO_API_KEY</code> instead.{% endif %} See docs/INTEGRATIONS.md.</p>{% endif %}
 </div>
 <form method="post">{{ csrf() }}
 {% set groups = [('Online booking','booking.'),('Invoicing','invoice.'),('Messaging','messaging.'),('Payroll','payroll.'),('Privacy','privacy.')] %}

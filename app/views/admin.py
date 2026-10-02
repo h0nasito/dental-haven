@@ -1075,7 +1075,8 @@ def system():
         current.update(new)
     seqs = conn.all("SELECT b.id, b.name, s.prefix, s.next_no FROM branches b LEFT JOIN invoice_sequences s ON s.branch_id = b.id ORDER BY b.sort_order")
     from .. import dentist_mail
-    mail = {"state": dentist_mail.state(conn), "senders": dentist_mail.senders(conn)}
+    import os
+    mail = {"state": dentist_mail.state(conn), "senders": dentist_mail.senders(conn), "brevo": bool(os.environ.get("BREVO_API_KEY", "").strip())}
     return render_template("staff/admin/system.html", s=current, labels=settings.LABELS, errors=errors,
                            bool_keys=BOOL_KEYS, int_keys=INT_KEYS, seqs=seqs, mail=mail)
 
@@ -1152,7 +1153,13 @@ def email_test():
     if ok:
         flash(f"Test email sent to {g.user.email} from: {', '.join(ok)}. Check the inbox (and spam folder).", "success")
     for sender, err in bad.items():
-        flash(f"Test email from {sender} failed ({err}). Check that account's app password.", "error")
+        if "unreachable" in err.lower() or "timed out" in err.lower() or "TimeoutError" in err:
+            flash(f"Test email from {sender} failed: the server can't reach Gmail ({err}). Many hosts, including DigitalOcean, "
+                  "block the normal email ports. Use Brevo instead: add BREVO_API_KEY on the server (docs/INTEGRATIONS.md).", "error")
+        elif "Brevo" in err:
+            flash(f"Test email from {sender} failed ({err}). Check the Brevo API key, and that {sender} is a verified sender in Brevo.", "error")
+        else:
+            flash(f"Test email from {sender} failed ({err}). Check that account's app password.", "error")
     return redirect(url_for("admin.system"))
     try:
         dentist_mail.send_email(g.user.email, "Dental Haven: test email",

@@ -39,8 +39,25 @@ def _env_key(slug: str) -> str:
     return "".join(ch if ch.isalnum() else "_" for ch in (slug or "").upper())
 
 
+BREVO_URL = "https://api.brevo.com/v3/smtp/email"
+
+
 def config(branch_slug: str | None = None, branch_name: str = "") -> dict | None:
-    """SMTP settings for a branch (its own Gmail, else the shared default). None if neither is set."""
+    """Email settings for a branch (its own Gmail, else the shared default). None if neither is set.
+
+    With BREVO_API_KEY set, emails go through Brevo's web API (port 443), because many hosts, DigitalOcean included,
+    block the normal email ports. The branch Gmail address (MAIL_<BRANCH>_USERNAME, else MAIL_USERNAME or MAIL_FROM)
+    is still the sender; it must be added as a verified sender in Brevo. No Gmail password is needed then."""
+    api_key = os.environ.get("BREVO_API_KEY", "").strip()
+    if api_key:
+        for prefix, label in ((f"MAIL_{_env_key(branch_slug)}_", branch_name), ("MAIL_", "")):
+            if prefix == "MAIL__":
+                continue
+            user = os.environ.get(prefix + "USERNAME", "").strip() or (os.environ.get("MAIL_FROM", "").strip() if prefix == "MAIL_" else "")
+            if user:
+                return {"transport": "brevo", "api_key": api_key, "username": user, "sender": user,
+                        "sender_name": os.environ.get("MAIL_FROM_NAME", f"Dental Haven {label}".strip()).strip()}
+        return None
     for prefix, label in ((f"MAIL_{_env_key(branch_slug)}_", branch_name), ("MAIL_", "")):
         if prefix == "MAIL__":
             continue
@@ -79,10 +96,37 @@ def state(conn=None) -> str:
     return "on" if any(os.environ.get(p + "USERNAME") and os.environ.get(p + "PASSWORD") for p in pairs) else "off"
 
 
+def brevo_send(c: dict, to: str, subject: str, body: str, headers: dict | None = None) -> None:
+    """Send one plain-text email through Brevo's API (HTTPS). Raises on any error."""
+    import json
+    import urllib.error
+    import urllib.request
+    payload = {"sender": {"name": c["sender_name"] or "Dental Haven", "email": c["sender"]}, "to": [{"email": to}],
+               "replyTo": {"email": c["sender"]}, "subject": subject, "textContent": body}
+    if headers:
+        payload["headers"] = headers
+    req = urllib.request.Request(BREVO_URL, data=json.dumps(payload).encode(), method="POST",
+                                 headers={"api-key": c["api_key"], "content-type": "application/json", "accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            if resp.status >= 300:
+                raise RuntimeError(f"Brevo answered {resp.status}")
+    except urllib.error.HTTPError as exc:
+        detail = ""
+        try:
+            detail = json.loads(exc.read().decode() or "{}").get("message", "")
+        except ValueError:
+            pass
+        raise RuntimeError(f"Brevo refused the email ({exc.code}{': ' + detail[:120] if detail else ''})") from None
+
+
 def send_email(to: str, subject: str, body: str, c: dict | None = None) -> None:
     c = c or config()
     if not c:
         raise RuntimeError("Email is not set up")
+    if c.get("transport") == "brevo":
+        brevo_send(c, to, subject, body)
+        return
     msg = EmailMessage()
     msg["From"] = formataddr((c["sender_name"], c["sender"]))
     msg["To"] = to

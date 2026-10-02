@@ -49,6 +49,13 @@ Then sign in as super admin → **Administration → System settings**. The tabl
 
 Optional: `MAIL_USERNAME` / `MAIL_PASSWORD` set a shared fallback sender for any branch without its own. Gmail allows about 500 emails a day per account. If an app password is ever exposed, delete it in that Google Account and create a new one.
 
+### On DigitalOcean (and other hosts that block email ports): Brevo
+DigitalOcean blocks outgoing email ports 25, 465 and 587, so Gmail app passwords fail there with
+"Network is unreachable". Set `BREVO_API_KEY` (Brevo → SMTP & API → API keys) and keep the `MAIL_<BRANCH>_USERNAME`
+lines: emails then go through Brevo's web API, still from the branch Gmail addresses, which must be verified senders in
+Brevo. Brevo's free plan sends up to 300 emails a day; the patient email queue keeps to 280 a day unless you change the
+limit on the Patient emails page.
+
 ## Setting up SMS (optional, later)
 1. Create an account at semaphore.co, buy credits and apply for a sender name (e.g. `DentalHaven`). Approval can take a few days.
 2. In Render → Environment add `SEMAPHORE_API_KEY` (from the Semaphore dashboard) and `SEMAPHORE_SENDER_NAME`.
