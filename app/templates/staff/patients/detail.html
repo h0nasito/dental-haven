@@ -33,7 +33,7 @@
 <div><h2>Clinical</h2><p class="{{ 'alert-flag' if p.alert_flag else 'muted' }}">{% if p.alert_flag %}⚠ Medical alert: {{ p.alert_flag }}{% else %}No medical alert recorded{% endif %}</p></div>
 <div><h2>Contact information</h2><p>{{ p.phone|contact or '—' }}<br>{{ p.email|contact or '—' }}{% if p.occupation %}<br><span class="muted">{{ p.occupation }}</span>{% endif %}</p></div>
 <div><h2>Patient record</h2><p><span class="muted">Added</span> {{ p.created_at|date }}<br><span class="muted">Updated</span> {{ (p.updated_at or p.created_at)|date }}<br><span class="muted">Last visit</span> {{ last_visit.start_at|date if last_visit else '—' }}</p></div>
-<div><h2>Care info</h2><p><span class="muted">Clinic</span> {{ p.preferred_branch or '—' }}<br><span class="muted">Provider</span> {{ assigned|map(attribute='name')|join(', ') or (last_visit.dentist if last_visit and last_visit.dentist else '—') }}</p></div>
+<div><h2>Care info</h2><p><span class="muted">Clinic</span> {{ p.preferred_branch or ('All branches' if p.shared else '—') }}{% if p.shared and p.preferred_branch %} <small class="muted">(shared with all branches)</small>{% endif %}<br><span class="muted">Provider</span> {{ assigned|map(attribute='name')|join(', ') or (last_visit.dentist if last_visit and last_visit.dentist else '—') }}</p></div>
 </div></details>
 </section>
 

@@ -54,7 +54,8 @@ def followup_scope(user, alias="f"):
     if user.role == "dentist":
         return (f"{alias}.patient_id IN (SELECT patient_id FROM patient_assignments WHERE dentist_id = ?)", [user.id])
     bf, bp = branch_filter(user, f"{alias}.branch_id")
-    return f"({bf} OR ({alias}.branch_id IS NULL AND {alias}.assignee_id = ?))", [*bp, user.id]
+    return (f"({bf} OR ({alias}.branch_id IS NULL AND ({alias}.assignee_id = ? OR {alias}.patient_id IN "
+            f"(SELECT id FROM patients WHERE shared = 1))))", [*bp, user.id])
 
 
 def branches_for_user(user, include_all=False):

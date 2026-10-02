@@ -170,9 +170,10 @@ def _pid(row):
 # Import
 # ---------------------------------------------------------------------------
 
-def run_import(conn, data: dict, *, branch_id: int, user_id: int, commit: bool) -> dict:
+def run_import(conn, data: dict, *, branch_id: int | None, user_id: int, commit: bool) -> dict:
     """Import `data` (from read_export). With commit=False, everything is rolled back and only
-    the summary is returned (preview)."""
+    the summary is returned (preview).
+    branch_id=None: the export covers all branches, so new patients are shared (every branch's staff can see them)."""
     s = {k: 0 for k in ("patients_new", "patients_updated", "patients_unchanged", "procedures", "followups",
                         "plan_items", "notes", "bills", "skipped_existing", "rows_with_errors")}
     s["errors"] = []
@@ -231,7 +232,7 @@ def run_import(conn, data: dict, *, branch_id: int, user_id: int, commit: bool) 
                 existing = by_legacy.get(lid)
                 if existing is None:
                     pid = conn.insert("patients", {
-                        **vals, "chart_no": f"MM-{lid}", "legacy_id": lid, "preferred_branch_id": branch_id,
+                        **vals, "chart_no": f"MM-{lid}", "legacy_id": lid, "preferred_branch_id": branch_id, "shared": 0 if branch_id else 1,
                         "alert_flag": f"Allergy: {history['allergies']}"[:120] if history["allergies"] else "",
                         "consent_privacy": 0, "source": "mymedsph", "created_at": ts, "created_by": user_id, "updated_at": ts,
                     })

@@ -101,8 +101,9 @@ class TestAccessControl(Base):
         p = self.q("SELECT p.id FROM patients p WHERE p.preferred_branch_id = ? AND NOT EXISTS (SELECT 1 FROM appointments a JOIN branches b ON b.id=a.branch_id "
                    "WHERE a.patient_id = p.id AND b.slug IN ('malolos')) AND NOT EXISTS (SELECT 1 FROM invoices i JOIN branches b ON b.id=i.branch_id "
                    "WHERE i.patient_id = p.id AND b.slug = 'malolos') LIMIT 1", (bocaue,))
+        # one patient list for all branches: staff of another branch can open the patient too
         c = self.login("reception.malolos")
-        self.assertEqual(c.get(f"/staff/patients/{p['id']}").status_code, 403)
+        self.assertEqual(c.get(f"/staff/patients/{p['id']}").status_code, 200)
         c2 = self.login("reception.bocaue")
         self.assertEqual(c2.get(f"/staff/patients/{p['id']}").status_code, 200)
 
@@ -120,12 +121,13 @@ class TestAccessControl(Base):
         self.assertNotIn(b"Synthetic demo history", r.data)
         self.assertEqual(c.get(f"/staff/patients/{p['id']}?tab=clinical").status_code, 403)
 
-    def test_dentist_only_assigned_patients(self):
+    def test_dentist_sees_all_patients(self):
+        """One patient list for the whole clinic: a dentist can open any patient, not only assigned ones."""
         d = self.q("SELECT id FROM users WHERE email = ?", ("dentist.sjdm" + DOMAIN,))
         other = self.q("SELECT id FROM patients WHERE id NOT IN (SELECT patient_id FROM patient_assignments WHERE dentist_id = ?) LIMIT 1", (d["id"],))
         mine = self.q("SELECT patient_id AS id FROM patient_assignments WHERE dentist_id = ? LIMIT 1", (d["id"],))
         c = self.login("dentist.sjdm")
-        self.assertIn(c.get(f"/staff/patients/{other['id']}?tab=clinical").status_code, (403, 404))
+        self.assertEqual(c.get(f"/staff/patients/{other['id']}?tab=clinical").status_code, 200)
         r = c.get(f"/staff/patients/{mine['id']}?tab=profile")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"Synthetic demo history", r.data)

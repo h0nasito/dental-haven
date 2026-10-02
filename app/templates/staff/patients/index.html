@@ -12,7 +12,7 @@
 <div class="card"><div class="table-wrap"><table>
 <thead><tr><th>Patient</th><th>Chart no.</th><th>Mobile</th><th>Preferred branch</th><th>Last visit</th><th>Next visit</th><th>Consent</th></tr></thead><tbody>
 {% for p in rows %}<tr><td><a href="{{ url_for('patients.detail', patient_id=p.id) }}"><strong>{{ p.last_name }}, {{ p.first_name }}</strong></a>{% if p.alert_flag %} <span class="badge badge-red" title="{{ p.alert_flag }}">⚠ Alert</span>{% endif %}{% if p.is_demo %} <span class="badge">Demo</span>{% endif %}</td>
-<td>{{ p.chart_no }}</td><td>{{ p.phone|contact }}</td><td>{{ p.branch or '—' }}</td><td>{{ p.last_visit|date }}</td><td>{{ p.next_visit|dt if p.next_visit else '—' }}</td>
+<td>{{ p.chart_no }}</td><td>{{ p.phone|contact }}</td><td>{{ p.branch or ('All branches' if p.shared else '—') }}</td><td>{{ p.last_visit|date }}</td><td>{{ p.next_visit|dt if p.next_visit else '—' }}</td>
 <td>{% if p.consent_privacy %}<span class="badge badge-green">Privacy ✓</span>{% else %}<span class="badge badge-amber">Needs consent</span>{% endif %}{% if p.opt_out_all %} <span class="badge">Opted out</span>{% endif %}</td></tr>
 {% else %}<tr><td colspan="7">{{ empty('No patients found', ' Try a different search, or register a new patient.' if current_user.can('patients.manage') else '') }}</td></tr>{% endfor %}
 </tbody></table></div>

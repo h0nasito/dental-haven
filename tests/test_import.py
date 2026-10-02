@@ -139,3 +139,38 @@ class TestMyMedsImport(Base):
         r = c.post("/staff/admin/import", data={"branch_id": str(self.branch("malolos")), "files": (io.BytesIO(b"hello"), "x.zip")},
                    content_type="multipart/form-data", follow_redirects=True)
         self.assertIn(b"could not be opened", r.data)
+
+    def test_shared_import_of_separate_csv_files(self):
+        """A clinic-wide export: several CSV files uploaded together, patients shared by all branches."""
+        c = self.login("admin")
+        future = (date.today() + timedelta(days=5)).isoformat()
+        pats = [{"PATIENT ID": "950001", "FIRSTNAME": "Shared", "LASTNAME": "Synthetic", "BIRTHDAY": "1985-02-03", "GENDER": "male",
+                 "MOBILE": "09175550001"}]
+        prog = [{"patient_id": "950001", "recall_datetime": "2025-01-05", "service": "Consultation", "cost": "500.00",
+                 "followup_date": future, "followup_time": "10:00:00", "followup_reason": "Recall"}]
+        bills = [{"patient_id": "950001", "bill_dt": "2025-01-05", "service_type": "Consultation", "qty": "1", "unit": "pcs",
+                  "unit_price": "500.00", "total_amount": "500", "status": "4"}]
+        files = [(io.BytesIO(_csv(PAT_COLS, pats)), "patients.csv"), (io.BytesIO(_csv(PROG_COLS, prog)), "progress_notes.csv"),
+                 (io.BytesIO(_csv(BILL_COLS, bills)), "bills.csv"), (io.BytesIO(b"Sheet,Error\n"), "export_errors.csv")]
+        r = c.post("/staff/admin/import", data={"branch_id": "all", "files": files}, content_type="multipart/form-data")
+        self.assertIn(b"all branches (shared)", r.data)
+        token = re.search(rb'name="token" value="([^"]+)"', r.data).group(1).decode()
+        r = c.post("/staff/admin/import/confirm", data={"token": token, "action": "confirm"}, follow_redirects=True)
+        self.assertIn(b"Import finished: 1 new patients", r.data)
+        self.assertIn(b"All branches", c.get("/staff/admin/import").data)
+        p = self.q("SELECT * FROM patients WHERE legacy_id = '950001'")
+        self.assertEqual((p["shared"], p["preferred_branch_id"]), (1, None))
+        self.assertEqual(self.q("SELECT COUNT(*) AS n FROM procedures WHERE patient_id = ?", (p["id"],))["n"], 1)
+        self.assertEqual(self.q("SELECT total_cents FROM legacy_bills WHERE patient_id = ?", (p["id"],))["total_cents"], 50000)
+        # staff of any branch can open the patient and see the recall follow-up
+        for who in ("reception.malolos", "reception.sjdm"):
+            s = self.login(who)
+            self.assertEqual(s.get(f"/staff/patients/{p['id']}").status_code, 200, who)
+            self.assertIn(b"Synthetic", s.post("/staff/patients/", data={"q": "Shared"}, follow_redirects=True).data, who)
+            self.assertIn(b"Recall", s.get("/staff/followups?view=upcoming").data, who)
+        self.assertIn(b"All branches", self.login("reception.sjdm").post("/staff/patients/", data={"q": "Shared"}, follow_redirects=True).data)
+        # dentists (their role can view patients) see it too; lab-only roles can't
+        self.assertEqual(self.login("dentist.sjdm").get(f"/staff/patients/{p['id']}").status_code, 200)
+        # every patient is visible in every branch, not only imported ones
+        other = self.q("SELECT id FROM patients WHERE preferred_branch_id = ? AND shared = 0 LIMIT 1", (self.branch("malolos"),))
+        self.assertEqual(self.login("reception.sjdm").get(f"/staff/patients/{other['id']}").status_code, 200)

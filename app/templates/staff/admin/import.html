@@ -9,10 +9,10 @@
 <form method="post" enctype="multipart/form-data" {% if demo %}hidden{% endif %}>{{ csrf() }}
 <div class="field"><label for="files">MyMedsPH export (.zip, or the CSV files inside it)</label>
 <input id="files" type="file" name="files" accept=".zip,.csv,application/zip,text/csv" multiple required>
-<span class="hint">In MyMedsPH, export your patient records, then upload the downloaded file here as it is. Nothing is saved until you review the preview and confirm.</span></div>
-<div class="field"><label for="branch">File new patients under branch</label>
-<select id="branch" name="branch_id" required><option value="">Choose…</option>{% for b in branches %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}</select>
-<span class="hint">The export doesn't say which branch each patient belongs to. Patients who were already imported keep their branch, and you can change any patient's branch on their profile.</span></div>
+<span class="hint">Select all the files at once (hold Ctrl and click each one): patients, progress_notes, treatment_plans, bills, notes, prescriptions and certificates. export_errors is ignored. Or upload the export .zip as it is. Nothing is saved until you review the preview and confirm.</span></div>
+<div class="field"><label for="branch">File new patients under</label>
+<select id="branch" name="branch_id" required><option value="">Choose…</option><option value="all">All branches (shared): for an export of the whole clinic</option>{% for b in branches %}<option value="{{ b.id }}">{{ b.name }} only</option>{% endfor %}</select>
+<span class="hint">The export doesn't say which branch each patient belongs to. <strong>All branches</strong>: staff of every branch can open these patients, like in MyMedsPH, and their recall follow-ups show in every branch. Dentists still see only the patients assigned to them. Patients who were already imported keep their setting.</span></div>
 <button class="btn">Check file &amp; preview</button>
 </form></div>
 <div class="card"><h2>How updating works</h2>
@@ -27,7 +27,7 @@
 </div>
 <div class="card"><h2>Previous imports</h2>
 <div class="table-wrap"><table><thead><tr><th>When</th><th>By</th><th>Branch</th><th>Status</th><th class="num">New patients</th><th class="num">Updated</th><th class="num">Visits</th><th class="num">Bill lines</th><th class="num">Row errors</th></tr></thead><tbody>
-{% for r in runs %}<tr><td>{{ r.started_at|dt }}</td><td>{{ r.by_name }}</td><td>{{ r.branch }}</td><td>{{ status_badge(r.status) }}</td>
+{% for r in runs %}<tr><td>{{ r.started_at|dt }}</td><td>{{ r.by_name }}</td><td>{{ r.branch or 'All branches' }}</td><td>{{ status_badge(r.status) }}</td>
 <td class="num">{{ r.s.patients_new or 0 }}</td><td class="num">{{ r.s.patients_updated or 0 }}</td><td class="num">{{ r.s.procedures or 0 }}</td><td class="num">{{ r.s.bills or 0 }}</td><td class="num">{{ r.s.rows_with_errors or 0 }}</td></tr>
 {% else %}<tr><td colspan="9" class="empty">No imports yet.</td></tr>{% endfor %}</tbody></table></div></div>
 {% endblock %}

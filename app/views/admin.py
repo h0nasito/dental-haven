@@ -1229,10 +1229,11 @@ def import_data():
     for r in runs:
         r["s"] = json.loads(r["summary"] or "{}")
     if request.method == "POST":
-        branch_id = to_int(request.form.get("branch_id"))
+        shared = request.form.get("branch_id") == "all"
+        branch_id = None if shared else to_int(request.form.get("branch_id"))
         uploads = [f for f in request.files.getlist("files") if f and f.filename]
-        if not branch_id or not any(b["id"] == branch_id for b in branches):
-            flash("Choose the branch these patients belong to.", "error")
+        if not shared and (not branch_id or not any(b["id"] == branch_id for b in branches)):
+            flash("Choose the branch these patients belong to, or All branches.", "error")
             return redirect(url_for("admin.import_data"))
         if not uploads:
             flash("Choose the MyMedsPH export file (.zip) or its CSV files.", "error")
@@ -1245,7 +1246,7 @@ def import_data():
             return redirect(url_for("admin.import_data"))
         summary = run_import(conn, data, branch_id=branch_id, user_id=g.user.id, commit=False)
         token = _save_pending(files, branch_id, ", ".join(f.filename for f in uploads)[:200])
-        branch = next(b for b in branches if b["id"] == branch_id)
+        branch = next((b for b in branches if b["id"] == branch_id), None) or {"name": "all branches (shared)"}
         return render_template("staff/admin/import_preview.html", s=summary, token=token, branch=branch,
                                filename=", ".join(f.filename for f in uploads))
     return render_template("staff/admin/import.html", branches=branches, runs=runs, demo=demo)

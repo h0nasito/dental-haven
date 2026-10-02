@@ -230,49 +230,23 @@ def branch_filter(user, column: str, branch_ids: list[int] | None = None):
 
 
 def patient_scope(user, alias: str = "p"):
-    """Which patients a user may see at all.
+    """Which patients a user may see.
 
-    - super_admin: every patient
-    - dentist: patients assigned to them (assignment is created when an appointment
-      with that dentist is booked, or granted explicitly by a super admin)
-    - staff/receptionist: patients whose preferred branch, or any appointment/invoice,
-      is in the user's branches
+    Dental Haven keeps one patient list for all branches (like MyMedsPH): anyone whose access role has
+    "patients.view" sees every patient, in every branch. What they can do with a patient (edit details, clinical
+    records, billing, ...) is controlled by the other permissions of their role. Roles without "patients.view",
+    and lab-only accounts with no branch, see no patients.
     """
-    if user.role == "super_admin" and not user.branch_selected:
+    if user.role == "super_admin":
         return "1 = 1", []
-    if user.role == "dentist":
-        return (
-            f"{alias}.id IN (SELECT patient_id FROM patient_assignments WHERE dentist_id = ?)",
-            [user.id],
-        )
-    ids = user.scope_branch_ids
-    if not ids:
-        return "1 = 0", []
-    marks = ",".join("?" for _ in ids)
-    frag = (
-        f"({alias}.preferred_branch_id IN ({marks})"
-        f" OR {alias}.id IN (SELECT patient_id FROM appointments WHERE branch_id IN ({marks}))"
-        f" OR {alias}.id IN (SELECT patient_id FROM invoices WHERE branch_id IN ({marks})))"
-    )
-    return frag, list(ids) * 3
+    # Lab-only accounts (a laboratory but no branch) never see patient records, whatever their role allows.
+    if user.can("patients.view") and user.branch_ids:
+        return "1 = 1", []
+    return "1 = 0", []
 
 
 def can_see_patient(conn, user, patient_id: int) -> bool:
     frag, params = patient_scope(user, "p")
-    # Branch switcher narrows lists, but direct access uses all of the user's branches.
-    if user.role not in ("super_admin", "dentist"):
-        ids = user.branch_ids
-        if not ids:
-            return False
-        marks = ",".join("?" for _ in ids)
-        frag = (
-            f"(p.preferred_branch_id IN ({marks})"
-            f" OR p.id IN (SELECT patient_id FROM appointments WHERE branch_id IN ({marks}))"
-            f" OR p.id IN (SELECT patient_id FROM invoices WHERE branch_id IN ({marks})))"
-        )
-        params = list(ids) * 3
-    elif user.role == "super_admin":
-        frag, params = "1 = 1", []
     row = conn.one(f"SELECT p.id FROM patients p WHERE p.id = ? AND {frag}", [patient_id, *params])
     return row is not None
 
