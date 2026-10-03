@@ -12,6 +12,20 @@
       <span class="g-line"><span class="g-num">{{ '%.1f'|format(b.google_rating) }}</span>{{ gstars(b.google_rating) }}<span class="g-n">({{ '{:,}'.format(b.google_review_count) }})</span></span>
       {% if link %}<a href="{{ link }}" target="_blank" rel="noopener">{{ txt('reviews.google_btn') }} <span aria-hidden="true">↗</span><span class="sr-only"> for {{ b.name.split(' (')[0] }} on Google</span></a>{% endif %}</li>{% endfor %}
   </ul>
+  {% set items = google_review_items[:(review_limit or 100)] %}
+  {% if items %}
+  <div class="g-list">{% for r in items %}
+    <figure class="g-review">
+      <figcaption class="g-who">{% if r.author_photo %}<img src="{{ r.author_photo }}" alt="" width="36" height="36" loading="lazy" referrerpolicy="no-referrer">{% else %}<span class="g-avatar" aria-hidden="true">{{ r.author_name[:1] }}</span>{% endif %}
+        <span>{% if r.author_uri %}<a href="{{ r.author_uri }}" target="_blank" rel="noopener nofollow">{{ r.author_name }}</a>{% else %}{{ r.author_name }}{% endif %}
+        <small>{{ r.relative_time }}{% if r.branch %} · {{ r.branch.split(' (')[0] }}{% endif %}</small></span></figcaption>
+      {% if r.rating %}{{ gstars(r.rating) }}{% endif %}
+      <blockquote>{{ r.text }}</blockquote>
+      {% if r.review_uri %}<a class="g-more" href="{{ r.review_uri }}" target="_blank" rel="noopener">Read on Google <span aria-hidden="true">↗</span></a>{% endif %}
+    </figure>{% endfor %}
+  </div>
+  <p class="g-attrib">Reviews from Google</p>
+  {% endif %}
   <p class="g-note">{{ txt('reviews.google_write') }}{% if gr.as_of %} <span>Ratings from Google as of {{ gr.as_of|date }}.</span>{% endif %}</p>
 </div>
 {% endif %}

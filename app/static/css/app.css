@@ -854,3 +854,16 @@ section[id] { scroll-margin-top: 72px; }
 .act-photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: .8rem; margin: .5rem 0 1rem; }
 .act-photos figure { margin: 0; display: flex; flex-direction: column; gap: .35rem; }
 .act-photos img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 8px; }
+.g-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; margin-top: 1.3rem; }
+.g-review { margin: 0; background: #faf8f2; border: 1px solid #ece6d6; border-radius: 16px; padding: 1.1rem 1.2rem; display: flex; flex-direction: column; gap: .55rem; }
+.g-who { display: flex; align-items: center; gap: .6rem; }
+.g-who img, .g-avatar { width: 36px; height: 36px; border-radius: 50%; flex: none; object-fit: cover; }
+.g-avatar { display: grid; place-items: center; background: #e3e7ec; color: #102542; font-weight: 700; }
+.g-who span { display: flex; flex-direction: column; line-height: 1.25; font-weight: 700; color: #102542; }
+.g-who a { color: #102542; text-decoration: none; }
+.g-who small { font-weight: 400; color: #5a616b; font-size: .8rem; }
+.g-review .g-stars { font-size: .95rem; }
+.g-review blockquote { margin: 0; color: #3a4250; font-size: .93rem; line-height: 1.55; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-line; }
+.g-more { font-size: .85rem; font-weight: 600; color: #102542; margin-top: auto; }
+.g-attrib { margin: .7rem 0 0; font-size: .78rem; color: #5a616b; text-align: right; }
+.g-who span.g-avatar { display: grid; place-items: center; line-height: 1; }

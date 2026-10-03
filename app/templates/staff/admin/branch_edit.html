@@ -14,14 +14,22 @@
   {{ field('map_url', 'Google Maps link', b.map_url, errors=errors, hint='Must start with https://') }}
   {{ field('waze_url', 'Waze link', b.waze_url, errors=errors, hint='e.g. https://waze.com/ul?q=Dental%20Haven%20Malolos') }}
   {{ field('facebook_url', 'Facebook page', b.facebook_url, errors=errors) }}
-  <fieldset><legend>Google reviews (website)</legend>
-  <p class="hint">Copy these from the branch's Google Business Profile. The website shows the rating, the number of reviews and the date you last updated them, with a link to read the reviews on Google. Leave empty to hide.</p>
-  {{ field('google_reviews_url', 'Link to the Google reviews', b.google_reviews_url, errors=errors, hint='On Google Maps, open the branch → Share → Copy link. Must start with https://') }}
+  <fieldset id="google"><legend>Google reviews (website)</legend>
+  {% if places_on %}
+  <p class="hint"><strong>Automatic:</strong> with the branch's Google Place ID, the rating, number of reviews and Google's latest reviews are updated every 12 hours.
+  Find the ID with Google's <a href="https://developers.google.com/maps/documentation/places/web-service/place-id" target="_blank" rel="noopener">Place ID Finder</a> (search the branch name, copy the ID that starts with ChIJ).</p>
+  {{ field('google_place_id', 'Google Place ID', b.google_place_id, errors=errors, hint='e.g. ChIJ… Leave empty to enter the rating by hand below.') }}
+  {% if b.google_place_id %}<p class="mb-0">{% if b.google_sync_error %}<span class="badge badge-red">Not updating</span> <small>{{ b.google_sync_error }}</small>{% elif b.google_synced_at %}<span class="badge badge-green">Connected</span> <small class="muted">Last updated {{ b.google_synced_at|dt }} · {{ n_reviews }} review{{ 's' if n_reviews != 1 }} shown</small>{% else %}<span class="badge badge-amber">Not updated yet</span> <small class="muted">Save, then click Update from Google now.</small>{% endif %}</p>{% endif %}
+  {% else %}
+  <p class="hint">Copy these from the branch's Google Business Profile. The website shows the rating, the number of reviews and the date you last updated them, with a link to read the reviews on Google. Leave empty to hide.
+  To update them automatically, add a Google Places API key on the server (see docs/INTEGRATIONS.md).</p>
+  {% endif %}
+  {{ field('google_reviews_url', 'Link to the Google reviews', b.google_reviews_url, errors=errors, hint='On Google Maps, open the branch → Share → Copy link. Must start with https://' + (' Filled in automatically when empty.' if places_on else '')) }}
   <div class="form-grid">
-  {{ field('google_rating', 'Star rating', b.google_rating if b.google_rating is not none else '', errors=errors, hint='e.g. 4.7', attrs='inputmode="decimal"') }}
+  {{ field('google_rating', 'Star rating', b.google_rating if b.google_rating is not none else '', errors=errors, hint='e.g. 4.7' + (' (updated automatically)' if places_on and b.google_place_id else ''), attrs='inputmode="decimal"') }}
   {{ field('google_review_count', 'Number of reviews', b.google_review_count if b.google_review_count is not none else '', errors=errors, hint='e.g. 220', attrs='inputmode="numeric"') }}
   </div>
-  {% if b.google_rating_as_of %}<p class="hint">Last updated {{ b.google_rating_as_of|date }}. Update it now and then so it matches Google.</p>{% endif %}
+  {% if b.google_rating_as_of %}<p class="hint">Last updated {{ b.google_rating_as_of|date }}.{% if not (places_on and b.google_place_id) %} Update it now and then so it matches Google.{% endif %}</p>{% endif %}
   </fieldset>
   {{ textarea('hours_text', 'Hours as shown to the public', b.hours_text, rows=3, hint='Operating hours for booking are set below.') }}
   {{ textarea('intro', 'Short intro for the branch page', b.intro, rows=3) }}
@@ -32,7 +40,9 @@
   <div class="field {% if errors.image %}error{% endif %}"><label for="image">{{ 'Replace photo' if b.image_path else 'Upload a photo' }} (JPG, PNG or WebP)</label><input id="image" type="file" name="image" accept="image/png,image/jpeg,image/webp">
   <span class="hint">The branch front or reception works well.</span>{% if errors.image %}<div class="field-error">{{ errors.image }}</div>{% endif %}</div></fieldset>
   <button class="btn" type="submit">Save details</button>
-</form></div>
+</form>
+{% if places_on and b.google_place_id %}<form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="section" value="google_refresh"><button class="btn btn-secondary btn-sm">Update from Google now</button></form>{% endif %}
+</div>
 <div>
 <div class="card"><h2>Operating hours for booking</h2>
 {% if errors.hours %}<div class="flash flash-error">{{ errors.hours }}</div>{% endif %}

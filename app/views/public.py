@@ -54,6 +54,9 @@ def content(key: str):
 from .. import stock_photos  # noqa: E402
 
 
+from .. import google_places  # noqa: E402
+
+
 def google_summary(branches):
     """Google ratings the clinic entered for each branch (Branches → Google reviews), with the overall average weighted by
     the number of reviews. None when no branch has a rating."""
@@ -80,6 +83,7 @@ def _public_ctx():
         "shown": lambda section: site_sections.shown(texts, section),
         "site_branches": branches,
         "google_reviews": google_summary(branches),
+        "google_review_items": google_places.reviews_for_site(conn),
         "site_services": conn.all("SELECT * FROM services WHERE active = 1 ORDER BY sort_order"),
         "content": content,
         "site_images": {r["key"]: r["image_path"] for r in conn.all("SELECT key, image_path FROM site_images")},

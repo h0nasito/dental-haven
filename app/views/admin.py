@@ -513,6 +513,10 @@ def branch_edit(branch_id):
             vals["google_reviews_url"] = clean(request.form.get("google_reviews_url"), 1000)
             if vals["google_reviews_url"] and not vals["google_reviews_url"].startswith("https://"):
                 errors["google_reviews_url"] = "Link must start with https://"
+            vals["google_place_id"] = clean(request.form.get("google_place_id"), 300).strip()
+            from .. import google_places
+            if vals["google_place_id"] and not google_places.valid_place_id(vals["google_place_id"]):
+                errors["google_place_id"] = "Paste the Place ID only (it looks like ChIJ… with letters and numbers)."
             rating_raw = (request.form.get("google_rating") or "").strip().replace(",", ".")
             count_raw = (request.form.get("google_review_count") or "").strip().replace(",", "")
             try:
@@ -543,6 +547,20 @@ def branch_edit(branch_id):
                 audit.record("branch_updated", "branch", branch_id, f"Updated {vals['name']} details", changes, branch_id)
                 flash("Branch details saved.", "success")
                 return redirect(url_for("admin.branch_edit", branch_id=branch_id))
+        elif section == "google_refresh":
+            from .. import google_places
+            if not google_places.enabled():
+                flash("Google reviews aren't connected yet: add GOOGLE_PLACES_API_KEY on the server first.", "error")
+            elif not b["google_place_id"]:
+                flash("Add the branch's Google Place ID first.", "error")
+            else:
+                try:
+                    n = google_places.sync_branch(conn, b)
+                    audit.record("google_reviews_refreshed", "branch", branch_id, f"Refreshed Google reviews ({n})", branch_id=branch_id)
+                    flash(f"Updated from Google: rating, number of reviews and {n} review{'s' if n != 1 else ''}.", "success")
+                except RuntimeError as exc:
+                    flash(f"Couldn't update from Google: {exc}", "error")
+            return redirect(url_for("admin.branch_edit", branch_id=branch_id) + "#google")
         elif section == "hours":
             new_hours = []
             for wd in range(7):
@@ -579,7 +597,10 @@ def branch_edit(branch_id):
     hours = {h["weekday"]: h for h in conn.all("SELECT * FROM branch_hours WHERE branch_id = ?", (branch_id,))}
     resources = conn.all("SELECT * FROM resources WHERE branch_id = ? ORDER BY active DESC, name", (branch_id,))
     seq = conn.one("SELECT * FROM invoice_sequences WHERE branch_id = ?", (branch_id,))
-    return render_template("staff/admin/branch_edit.html", b=b, hours=hours, resources=resources, errors=errors, seq=seq)
+    from .. import google_places
+    n_reviews = conn.scalar("SELECT COUNT(*) FROM google_reviews WHERE branch_id = ?", (branch_id,))
+    return render_template("staff/admin/branch_edit.html", b=b, hours=hours, resources=resources, errors=errors, seq=seq,
+                           places_on=google_places.enabled(), n_reviews=n_reviews)
 
 
 # ---------------------------------------------------------------------------

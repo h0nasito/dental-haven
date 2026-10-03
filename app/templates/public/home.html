@@ -312,7 +312,7 @@
       <h2>{{ txt_em('reviews.title') }}</h2>
       {% if not testimonials and not google_reviews %}<p>{{ txt('reviews.intro_empty') }}</p>{% endif %}
     </header>
-    {% include "public/_google_reviews.html" %}
+    {% set review_limit = 6 %}{% include "public/_google_reviews.html" %}
     {% if testimonials %}
     <div class="lp-quote-grid">{% for t in testimonials %}
       <figure class="lp-quote reveal">

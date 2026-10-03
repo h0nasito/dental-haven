@@ -56,6 +56,32 @@ lines: emails then go through Brevo's web API, still from the branch Gmail addre
 Brevo. Brevo's free plan sends up to 300 emails a day; the patient email queue keeps to 280 a day unless you change the
 limit on the Patient emails page.
 
+## Google reviews on the website (optional)
+
+The website can show each branch's Google star rating, number of reviews and Google's latest reviews, updated
+automatically every 12 hours. Until this is set up, staff can type the rating by hand (Branches & chairs → branch →
+Google reviews).
+
+1. Go to **console.cloud.google.com** with the clinic's Google account and create a project (e.g. "Dental Haven website").
+2. **Billing**: link a billing account (a card). Google requires it even when usage stays within the free monthly
+   allowance. Check the current prices and free allowance at developers.google.com/maps/billing-and-pricing/pricing.
+   The system makes one request per branch every 12 hours (about 240 a month for 4 branches).
+3. **APIs & Services → Library**: enable **Places API (New)**.
+4. **APIs & Services → Credentials → Create credentials → API key**. Then edit the key:
+   - **API restrictions**: Restrict key → only **Places API (New)**.
+   - **Application restrictions**: IP addresses → your server's IP (143.198.222.125).
+   - Optional but recommended: **Quotas** → set a daily cap (e.g. 50 requests a day) so a mistake can't cost money.
+5. On the server: `nano /etc/dental-haven/env`, add `GOOGLE_PLACES_API_KEY=` followed by the key, save, then
+   `systemctl restart dental-haven`. Never send the key in chat or email.
+6. For each branch, get its **Place ID** from Google's Place ID Finder
+   (developers.google.com/maps/documentation/places/web-service/place-id): search the branch, copy the ID (starts with
+   `ChIJ`). Paste it in **Administration → Branches & chairs → branch → Google reviews**, save, and click
+   **Update from Google now**. The badge shows *Connected* or the error Google returned.
+
+What the website shows: the reviews Google returns for each branch (Google picks them, usually up to 5), with the
+reviewer's name, photo and link, stars, how long ago, and "Reviews from Google". They are replaced on every update and
+hidden if the system couldn't update for 2 days. Review Google's Maps Platform terms for showing Places content.
+
 ## Setting up SMS (optional, later)
 1. Create an account at semaphore.co, buy credits and apply for a sender name (e.g. `DentalHaven`). Approval can take a few days.
 2. In Render → Environment add `SEMAPHORE_API_KEY` (from the Semaphore dashboard) and `SEMAPHORE_SENDER_NAME`.
