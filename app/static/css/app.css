@@ -810,3 +810,47 @@ section[id] { scroll-margin-top: 72px; }
 .pt-photo-edit[open] > form + form { top: auto; position: static; box-shadow: none; padding: 0; width: auto; background: none; }
 /* Imported notes keep their line breaks and bullet points */
 .pn-lines li > span:first-child { white-space: pre-line; }
+
+/* Lab case: trial fitting agreements */
+.fit-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; padding: .6rem 0; border-bottom: 1px solid var(--line, #e6e9ef); }
+
+/* Lab stage tracker */
+.stage-track { list-style: none; margin: .25rem 0 .75rem; padding: 0; display: flex; flex-wrap: wrap; gap: .35rem; counter-reset: st; }
+.stage-track li { counter-increment: st; font-size: .8rem; padding: .3rem .6rem .3rem .45rem; border-radius: 999px; border: 1px solid var(--line);
+  color: var(--ink-3); background: transparent; white-space: nowrap; }
+.stage-track li::before { content: counter(st); display: inline-block; min-width: 1.15rem; height: 1.15rem; line-height: 1.15rem; margin-right: .3rem;
+  border-radius: 50%; text-align: center; font-size: .7rem; background: var(--line-2); color: inherit; }
+.stage-track li.is-done { color: var(--green-700); border-color: currentColor; }
+.stage-track li.is-done::before { content: "✓"; background: transparent; }
+.stage-track li.is-now { color: #fff; background: var(--brand-900); border-color: transparent; font-weight: 600; }
+.stage-track li.is-now::before { background: rgba(255,255,255,.25); }
+.stage-help { display: grid; grid-template-columns: max-content 1fr; gap: .3rem 1rem; font-size: .85rem; margin: .5rem 0 0; }
+.stage-help dt { font-weight: 600; }
+.stage-help dd { margin: 0; color: var(--ink-3); }
+@media (max-width: 600px) { .stage-help { grid-template-columns: 1fr; } .stage-help dd { margin-bottom: .4rem; } }
+
+/* Google rating on the website (reviews section and feedback page) */
+.g-reviews { background: #fff; border: 1px solid #e4ddcb; border-radius: 20px; padding: 1.5rem 1.6rem; margin: 0 0 1.8rem; }
+.g-total { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .7rem; padding-bottom: 1.1rem; border-bottom: 1px solid #ece6d6; }
+.g-label { width: 100%; font-size: .78rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #88692f; }
+.g-score { font-family: "Playfair Display", Georgia, serif; font-size: 2.6rem; line-height: 1; color: #102542; }
+.g-count { color: #5a616b; font-size: .95rem; }
+.g-stars { position: relative; display: inline-block; font-size: 1.15rem; line-height: 1; letter-spacing: .12em; color: #d9d3c3; }
+.g-stars::before { content: "★★★★★"; }
+.g-stars > span { position: absolute; inset: 0 auto 0 0; overflow: hidden; white-space: nowrap; color: #e0a82e; }
+.g-stars > span::before { content: "★★★★★"; }
+.g-branches { list-style: none; margin: 0; padding: 1rem 0 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .9rem 1.2rem; }
+.g-branches li { display: flex; flex-direction: column; gap: .2rem; }
+.g-branches strong { color: #102542; }
+.g-line { display: flex; align-items: center; gap: .4rem; }
+.g-line .g-stars { font-size: .95rem; }
+.g-num { font-weight: 700; color: #102542; }
+.g-n { color: #5a616b; font-size: .88rem; }
+.g-branches a { font-size: .9rem; font-weight: 600; color: #102542; }
+.g-note { margin: 1.1rem 0 0; color: #5a616b; font-size: .9rem; }
+.g-note span { display: block; font-size: .8rem; margin-top: .2rem; }
+
+/* About us admin: activity photos */
+.act-photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: .8rem; margin: .5rem 0 1rem; }
+.act-photos figure { margin: 0; display: flex; flex-direction: column; gap: .35rem; }
+.act-photos img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 8px; }

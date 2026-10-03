@@ -54,6 +54,18 @@ def content(key: str):
 from .. import stock_photos  # noqa: E402
 
 
+def google_summary(branches):
+    """Google ratings the clinic entered for each branch (Branches → Google reviews), with the overall average weighted by
+    the number of reviews. None when no branch has a rating."""
+    rated = [b for b in branches if b["google_rating"] is not None and b["google_review_count"]]
+    if not rated:
+        return None
+    total = sum(b["google_review_count"] for b in rated)
+    avg = sum(b["google_rating"] * b["google_review_count"] for b in rated) / total
+    as_of = min((b["google_rating_as_of"] for b in rated if b["google_rating_as_of"]), default=None)
+    return {"branches": rated, "count": total, "rating": round(avg, 1), "as_of": as_of}
+
+
 @bp.app_context_processor
 def _public_ctx():
     if request.path.startswith("/staff"):
@@ -61,11 +73,13 @@ def _public_ctx():
     conn = get_db()
     from .. import site_sections
     texts = site_sections.load(conn)
+    branches = conn.all("SELECT * FROM branches WHERE active = 1 ORDER BY sort_order")
     return {
         "txt": lambda key: site_sections.value(texts, key),
         "txt_em": lambda key: site_sections.accent(site_sections.value(texts, key)),
         "shown": lambda section: site_sections.shown(texts, section),
-        "site_branches": conn.all("SELECT * FROM branches WHERE active = 1 ORDER BY sort_order"),
+        "site_branches": branches,
+        "google_reviews": google_summary(branches),
         "site_services": conn.all("SELECT * FROM services WHERE active = 1 ORDER BY sort_order"),
         "content": content,
         "site_images": {r["key"]: r["image_path"] for r in conn.all("SELECT key, image_path FROM site_images")},
@@ -119,6 +133,43 @@ def richtext(text: str):
     return Markup("\n".join(out))
 
 
+def about_data(conn, limit_activities=None):
+    """Published team members (by group, with their branches) and published activities with their cover photo."""
+    members = conn.all("SELECT * FROM team_members WHERE published = 1 ORDER BY sort_order, name")
+    branches = {}
+    for r in conn.all("SELECT mb.member_id, b.name FROM team_member_branches mb JOIN branches b ON b.id = mb.branch_id "
+                      "WHERE b.active = 1 ORDER BY b.sort_order"):
+        branches.setdefault(r["member_id"], []).append(r["name"].split(" (")[0])
+    team = {"dentist": [], "staff": [], "lab": []}
+    for m in members:
+        team[m["grp"]].append({**dict(m), "branches": branches.get(m["id"], [])})
+    q = ("SELECT a.*, b.name AS branch, (SELECT image_path FROM activity_photos p WHERE p.activity_id = a.id "
+         "ORDER BY p.sort_order, p.id LIMIT 1) AS cover, (SELECT COUNT(*) FROM activity_photos p WHERE p.activity_id = a.id) AS n_photos "
+         "FROM activities a LEFT JOIN branches b ON b.id = a.branch_id WHERE a.published = 1 ORDER BY a.happened_on DESC, a.id DESC")
+    acts = conn.all(q + (f" LIMIT {int(limit_activities)}" if limit_activities else ""))
+    return team, acts
+
+
+@bp.route("/about")
+def about():
+    from .about import KINDS
+    team, acts = about_data(get_db())
+    return render_template("public/about.html", team=team, acts=acts, kinds=KINDS)
+
+
+@bp.route("/about/activities/<int:act_id>")
+def activity(act_id):
+    from .about import KINDS
+    conn = get_db()
+    a = conn.one("SELECT a.*, b.name AS branch FROM activities a LEFT JOIN branches b ON b.id = a.branch_id "
+                 "WHERE a.id = ? AND a.published = 1", (act_id,))
+    if not a:
+        abort(404)
+    photos = conn.all("SELECT * FROM activity_photos WHERE activity_id = ? ORDER BY sort_order, id", (act_id,))
+    more = conn.all("SELECT id, title, happened_on FROM activities WHERE published = 1 AND id != ? ORDER BY happened_on DESC LIMIT 4", (act_id,))
+    return render_template("public/activity.html", a=a, photos=photos, more=more, kinds=KINDS)
+
+
 @bp.route("/")
 def home():
     conn = get_db()
@@ -145,7 +196,9 @@ def home():
         if gd["service_id"] not in seen:
             seen.add(gd["service_id"]); firsts.append(gd)
     guides = (firsts + [gd for gd in all_guides if gd not in firsts])[:6]
+    about_team, about_acts = about_data(conn, limit_activities=3)
     return render_template("public/home.html", guides=guides, testimonials=testimonials, works=works, filters=filters,
+                           about_team=about_team, about_acts=about_acts,
                            featured=featured, ba_cases=ba_cases,
                            **_booking_defaults(conn),
                            category_labels=dict(PORTFOLIO_CATEGORIES))

@@ -1,0 +1,47 @@
+{% extends "public/layout.html" %}
+{% block title %}About us · Dental Haven{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/landing.css') }}">{% endblock %}
+{% block body_class %}landing{% endblock %}
+{% block content %}
+{% set story = txt('about.story') %}
+<section class="lp-section ab-page-top">
+  <div class="wrap">
+    <div class="ab-intro{% if site_images.get('about') %} has-photo{% endif %}">
+      <header class="lp-head">
+        <span class="lp-eyebrow">{{ txt('about.eyebrow') }}</span>
+        <h1 class="ab-h1">{{ txt_em('about.title') }}</h1>
+        {% for para in story|paras %}<p>{{ para }}</p>{% endfor %}
+        {% if not story %}<p>Dental Haven serves patients at {{ site_branches|length }} branch{{ 'es' if site_branches|length != 1 }}: {{ site_branches|map(attribute='name')|map('replace', ' (SJDM)', '')|join(', ') }}.</p>{% endif %}
+      </header>
+      {% if site_images.get('about') %}<figure class="ab-hero-photo"><img src="{{ url_for('static', filename=site_images['about']) }}" alt="The Dental Haven team"></figure>{% endif %}
+    </div>
+    {% if txt('about.mission') or txt('about.vision') or txt('about.values') %}
+    <div class="ab-mvv">
+      {% if txt('about.mission') %}<div><h2>{{ txt('about.mission_title') }}</h2><p>{{ txt('about.mission') }}</p></div>{% endif %}
+      {% if txt('about.vision') %}<div><h2>{{ txt('about.vision_title') }}</h2><p>{{ txt('about.vision') }}</p></div>{% endif %}
+      {% if txt('about.values') %}<div><h2>{{ txt('about.values_title') }}</h2><ul>{% for v in txt('about.values').splitlines() if v.strip() %}<li>{{ v.strip() }}</li>{% endfor %}</ul></div>{% endif %}
+    </div>{% endif %}
+  </div>
+</section>
+
+{% set show_bio = True %}
+{% for grp, key in [('dentist', 'about.dentists_title'), ('staff', 'about.staff_title'), ('lab', 'about.lab_title')] if team[grp] %}
+<section class="lp-section ab-group{% if loop.index is even %} ab-alt{% endif %}" id="{{ grp }}">
+  <div class="wrap">
+    <h2 class="ab-h2">{{ txt(key) }}</h2>
+    <div class="ab-team">{% for m in team[grp] %}{% include "public/_team_card.html" %}{% endfor %}</div>
+  </div>
+</section>
+{% endfor %}
+
+{% if acts %}
+<section class="lp-section ab-group" id="activities">
+  <div class="wrap">
+    <h2 class="ab-h2">{{ txt('about.activities_title') }}</h2>
+    <div class="ab-acts">{% for a in acts %}{% include "public/_activity_card.html" %}{% endfor %}</div>
+  </div>
+</section>
+{% endif %}
+
+<section class="lp-section ab-cta"><div class="wrap"><p>Ready to meet us?</p><a class="lp-btn lp-btn-navy" href="{{ url_for('public.book') }}">{{ txt('nav.book') }}</a></div></section>
+{% endblock %}

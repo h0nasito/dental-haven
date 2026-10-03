@@ -12,6 +12,7 @@
       {% if shown('work') %}<a href="{{ url_for('public.home') }}#work">{{ txt('nav.work') }}</a>{% endif %}
       <a href="{{ url_for('public.home') }}#services">{{ txt('nav.services') }}</a>
       {% if shown('guides') %}<a href="{{ url_for('public.home') }}#guides">{{ txt('nav.guides') }}</a>{% endif %}
+      <a href="{{ url_for('public.about') }}">{{ txt('nav.about') }}</a>
       <a href="{{ url_for('public.home') }}#branches">{{ txt('nav.branches') }}</a>
       <a href="{{ url_for('public.home') }}#contact">{{ txt('nav.contact') }}</a>
       <a class="btn" href="{{ url_for('public.book') }}">{{ txt('nav.book') }}</a>
@@ -32,6 +33,7 @@
         <li style="border-color:rgba(255,255,255,.08)"><a href="{{ url_for('public.book') }}">Request an appointment</a></li>
         <li style="border-color:rgba(255,255,255,.08)"><a href="{{ url_for('public.inquire') }}">Send an inquiry</a></li>
         <li style="border-color:rgba(255,255,255,.08)"><a href="{{ url_for('public.guides') }}">Patient guides</a></li>
+        <li style="border-color:rgba(255,255,255,.08)"><a href="{{ url_for('public.about') }}">About us</a></li>
         <li style="border-color:rgba(255,255,255,.08)"><a href="{{ url_for('public.feedback') }}">Patient feedback</a></li>
         <li style="border-color:rgba(255,255,255,.08)"><a href="{{ url_for('public.home') }}#careers">Careers</a></li>
         <li style="border-color:rgba(255,255,255,.08)"><a href="{{ url_for('public.privacy') }}">Privacy notice</a></li></ul></div>

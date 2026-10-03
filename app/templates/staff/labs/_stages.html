@@ -1,0 +1,8 @@
+{# Production tracker. Needs: cur (status key), statuses (dict of the statuses that apply). #}
+{% set track = ['sent','accepted','setting','designing','fabricating','trimming','polishing','quality_control','ready','delivered'] %}
+{% set track = track|select('in', statuses)|list %}
+{% set pos = track.index(cur) if cur in track else -1 %}
+<ol class="stage-track" aria-label="Lab stages">
+{% for k in track %}<li class="{% if k == cur %}is-now{% elif pos > loop.index0 or cur == 'delivered' %}is-done{% endif %}" title="{{ LAB_HELP[k] }}"{% if k == cur %} aria-current="step"{% endif %}><span>{{ statuses[k] }}</span></li>{% endfor %}
+</ol>
+{% if cur not in track %}<p class="mb-0"><span class="badge {{ lab_badge(cur) }}">{{ statuses.get(cur, cur) }}</span> <small class="muted">{{ LAB_HELP.get(cur, '') }}</small></p>{% endif %}

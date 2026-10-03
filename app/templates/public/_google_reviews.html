@@ -1,0 +1,17 @@
+{# Google rating per branch, entered by the clinic from each Google Business Profile. Needs google_reviews (or None). #}
+{% macro gstars(r) -%}<span class="g-stars" role="img" aria-label="{{ '%.1f'|format(r) }} out of 5 stars"><span style="width:{{ (r / 5 * 100)|round(1) }}%"></span></span>{%- endmacro %}
+{% if google_reviews %}{% set gr = google_reviews %}
+<div class="g-reviews reveal">
+  <div class="g-total">
+    <span class="g-label">{{ txt('reviews.google_label') }}</span>
+    <span class="g-score">{{ '%.1f'|format(gr.rating) }}</span>{{ gstars(gr.rating) }}
+    <span class="g-count">{{ '{:,}'.format(gr.count) }} Google review{{ 's' if gr.count != 1 }}{% if gr.branches|length > 1 %} across {{ gr.branches|length }} branches{% endif %}</span>
+  </div>
+  <ul class="g-branches">{% for b in gr.branches %}{% set link = b.google_reviews_url or b.map_url %}
+    <li><strong>{{ b.name.split(' (')[0] }}</strong>
+      <span class="g-line"><span class="g-num">{{ '%.1f'|format(b.google_rating) }}</span>{{ gstars(b.google_rating) }}<span class="g-n">({{ '{:,}'.format(b.google_review_count) }})</span></span>
+      {% if link %}<a href="{{ link }}" target="_blank" rel="noopener">{{ txt('reviews.google_btn') }} <span aria-hidden="true">↗</span><span class="sr-only"> for {{ b.name.split(' (')[0] }} on Google</span></a>{% endif %}</li>{% endfor %}
+  </ul>
+  <p class="g-note">{{ txt('reviews.google_write') }}{% if gr.as_of %} <span>Ratings from Google as of {{ gr.as_of|date }}.</span>{% endif %}</p>
+</div>
+{% endif %}

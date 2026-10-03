@@ -3,7 +3,8 @@
 {% block page_title %}Lab case #{{ c.id }}{% endblock %}
 {% block content %}
 <div class="page-head"><div><a href="{{ url_for('labs.index') }}">← Lab cases</a><h1>{{ c.case_type }} · {{ c.last_name }}, {{ c.first_name }}</h1>
-<p>Case #{{ c.id }} · {{ c.lab }} · from {{ c.branch }}</p></div><span class="badge badge-blue">{{ statuses[c.status] }}</span></div>
+<p>Case #{{ c.id }} · {{ c.lab }} · from {{ c.branch }}</p></div><span class="badge {{ lab_badge(c.status) }}">{{ c.status|lab_status }}</span></div>
+{% set cur = c.status %}{% include "staff/labs/_stages.html" %}
 <div class="grid grid-2">
 <div class="card"><h2>Details</h2>
 <dl class="kv"><dt>Patient</dt><dd>{% if patient_link %}<a href="{{ url_for('patients.detail', patient_id=c.patient_id) }}">{{ c.last_name }}, {{ c.first_name }}</a>{% else %}{{ c.last_name }}, {{ c.first_name }}{% endif %} <small class="muted">{{ c.chart_no }}</small></dd>
@@ -12,12 +13,51 @@
 <dt>Lab fee</dt><dd>{{ c.lab_fee_cents|peso if c.lab_fee_cents is not none else '—' }}</dd><dt>Instructions</dt><dd class="pre">{{ c.instructions or '—' }}</dd></dl></div>
 <div>
 {% if can_update %}<div class="card"><h2>Update status</h2><form method="post">{{ csrf() }}
-<div class="form-grid"><div class="field"><label for="st">Status</label><select id="st" name="status">{% for k, l in statuses.items() %}<option value="{{ k }}" {% if c.status == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+<div class="form-grid"><div class="field"><label for="st">Status</label>{% set cur = c.status %}{% include "staff/labs/_status_select.html" %}</div>
 <div class="field"><label for="du">Due back</label><input id="du" type="date" name="due_on" value="{{ c.due_on or '' }}"></div>
 <div class="field"><label for="lf">Lab fee (₱)</label><input id="lf" name="lab_fee" value="{{ (c.lab_fee_cents / 100) if c.lab_fee_cents is not none else '' }}"></div></div>
 <div class="field"><label for="nt">Note</label><input id="nt" name="note" placeholder="e.g. Try-in done, needs shade adjustment"></div>
-<button class="btn">Save</button></form></div>{% endif %}
-<div class="card"><h2>History</h2><ul class="list-plain">{% for e in events %}<li><strong>{{ statuses.get(e.status, e.status) }}</strong>{% if e.note %} — {{ e.note }}{% endif %}<br><small class="muted">{{ e.created_at|dt }} · {{ e.by_name }}</small></li>{% endfor %}</ul></div>
+<button class="btn">Save</button></form>{% include "staff/labs/_stage_help.html" %}</div>{% endif %}
+<div class="card"><h2>History</h2><ul class="list-plain">{% for e in events %}<li><strong>{{ e.status|lab_status }}</strong>{% if e.note %} — {{ e.note }}{% endif %}<br><small class="muted">{{ e.created_at|dt }} · {{ e.by_name }}</small></li>{% endfor %}</ul></div>
 </div></div>
+<div class="card" id="fitting"><div class="card-head"><h2>Trial fitting agreement</h2></div>
+<p class="hint">After the try-in, the patient and the dentist sign that the case may go on to final processing. The lab is notified right away.</p>
+{% for ft in fittings %}
+<div class="fit-row">
+  <div><strong>{{ ft.fitted_on|date }}</strong> · {% if ft.result == 'approved' %}<span class="badge badge-green">Approved: proceed</span>{% elif ft.result == 'adjust' %}<span class="badge badge-amber">Adjustments needed</span>{% else %}<span class="badge badge-red">Remake</span>{% endif %}
+  {% if ft.notes %}<br><small>{{ ft.notes }}</small>{% endif %}
+  <br><small class="muted">{% if ft.patient_signature %}✓ Signed by {{ ft.signer_name }}{% if ft.signer_relation != 'patient' %} ({{ ft.signer_relation }}){% endif %}{% else %}Patient didn't sign: {{ ft.not_signed_reason }}{% endif %}
+  · {% if ft.dentist_signature %}✓ Dentist {{ ft.dentist_name }}{% else %}Dentist {{ ft.dentist_name or '—' }} (not signed){% endif %} · recorded by {{ ft.by_name }}</small></div>
+  {% if patient_link %}<a class="btn btn-secondary btn-sm" href="{{ url_for('labs.fitting_print', fid=ft.id) }}" target="_blank" rel="noopener">View / print</a>{% endif %}
+</div>
+{% else %}<p class="muted">No trial fitting recorded yet.</p>{% endfor %}
+{% if can_fit and c.status not in ('cancelled', 'delivered') %}
+<details class="mt-1" {% if not fittings %}open{% endif %}><summary><strong>+ Record trial fitting</strong></summary>
+<form method="post" action="{{ url_for('labs.fitting', case_id=c.id) }}" class="mt-1" data-fitform>{{ csrf() }}
+<div class="form-grid">
+<div class="field"><label for="fo">Date of trial fitting</label><input id="fo" type="date" name="fitted_on" value="{{ today }}" max="{{ today }}"></div>
+<div class="field"><label for="fr">Result</label><select id="fr" name="result" required><option value="">Choose…</option>{% for k, l in fit_results.items() %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></div>
+<div class="field"><label for="fd">Dentist</label><select id="fd" name="dentist_id">{% for d in fit_dentists %}<option value="{{ d.id }}" {% if d.id == (c.dentist_id or (current_user.id if current_user.role == 'dentist' else 0)) %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select></div>
+</div>
+<fieldset class="pay-box"><legend>Checked during the trial fitting</legend><div class="row">{% for ck in fit_checks %}<label class="check"><input type="checkbox" name="checks" value="{{ ck }}"> {{ ck }}</label>{% endfor %}</div></fieldset>
+<div class="field"><label for="fn">Changes / notes for the lab</label><textarea id="fn" name="notes" rows="2" placeholder="e.g. Reduce occlusal height on 36; shade slightly lighter"></textarea></div>
+<div class="field"><label for="fa">Agreement</label><textarea id="fa" name="agreement" rows="7">{{ agreement }}</textarea>
+<span class="hint">Read it to the patient before they sign. The default wording is set in System settings → Laboratory.</span></div>
+<fieldset class="pay-box"><legend>Patient signature</legend>
+<div class="form-grid"><div class="field"><label for="fsn">Signed by</label><input id="fsn" name="signer_name" value="{{ c.first_name }} {{ c.last_name }}"></div>
+<div class="field"><label for="fsr">Relationship</label><select id="fsr" name="signer_relation"><option value="patient">Patient</option><option value="parent">Parent</option><option value="guardian">Guardian</option><option value="representative">Authorized representative</option></select></div></div>
+<div class="sigpad"><canvas data-sigpad width="600" height="180" aria-label="Patient signature pad"></canvas><input type="hidden" name="patient_signature" data-sig-out></div>
+<div class="row between"><small class="muted">The patient signs above with a finger, stylus or mouse.</small><button type="button" class="btn btn-ghost btn-sm" data-sig-clear>Clear</button></div>
+<details class="mt-1"><summary><small>Patient can't sign</small></summary><input name="not_signed_reason" placeholder="Reason, e.g. patient left before signing" aria-label="Reason the patient didn't sign"></details>
+</fieldset>
+<fieldset class="pay-box"><legend>Dentist signature</legend>
+<div class="sigpad"><canvas data-sigpad width="600" height="180" aria-label="Dentist signature pad"></canvas><input type="hidden" name="dentist_signature" data-sig-out></div>
+<div class="row between"><small class="muted">The dentist signs to agree that the case may proceed.</small><button type="button" class="btn btn-ghost btn-sm" data-sig-clear>Clear</button></div>
+</fieldset>
+<button class="btn mt-1">Save trial fitting</button>
+</form></details>
+{% endif %}
+</div>
+
 {% if comm_entries is defined %}{% set comm_field, comm_id, comm_delivered = 'case_id', c.id, (c.completed_on if c.status == 'delivered' else None) %}{% include "staff/lab_works/_commission.html" %}{% endif %}
 {% endblock %}

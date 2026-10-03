@@ -36,7 +36,8 @@ def run_lab_due_checks(conn):
         return
     settings.put("notify.lab_due_checked", day, None, conn)
     tomorrow = (today() + timedelta(days=1)).isoformat()
-    open_works = "('received','in_progress','remake')"
+    from .lab_status import LATE, sql_list
+    open_works = sql_list(LATE)
     for w in conn.all(f"SELECT * FROM lab_works WHERE status IN {open_works} AND due_on = ? AND due_soon_notified = 0", (tomorrow,)):
         notify(conn, lab_staff(conn, w["lab_id"]), "lab_due", f"Due tomorrow: {w['number']}",
                f"{w['case_type']} for {w['clinic_name']}", f"/staff/lab/works/{w['id']}")
@@ -46,7 +47,7 @@ def run_lab_due_checks(conn):
                f"{w['case_type']} for {w['clinic_name']} was due {w['due_on']}", f"/staff/lab/works/{w['id']}")
         conn.execute("UPDATE lab_works SET overdue_notified = 1 WHERE id = ?", (w["id"],))
     # Branch cases sent to the lab: a daily summary per lab (no patient details).
-    for r in conn.all("SELECT c.lab_id, COUNT(*) AS n FROM lab_cases c WHERE c.status IN ('sent','received','in_progress','remake') "
+    for r in conn.all(f"SELECT c.lab_id, COUNT(*) AS n FROM lab_cases c WHERE c.status IN {open_works} "
                       "AND c.due_on IS NOT NULL AND c.due_on <= ? GROUP BY c.lab_id", (tomorrow,)):
         notify(conn, lab_staff(conn, r["lab_id"]), "lab_cases_due", f"{r['n']} branch lab case(s) due by tomorrow or overdue",
                "Open Lab cases to see them.", "/staff/lab/")

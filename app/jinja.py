@@ -72,8 +72,17 @@ def _opts(rows, key="id", label="name"):
     return [(r[key], r[label]) for r in rows]
 
 
+def _paras(text):
+    """Text typed in a box → paragraphs (split on blank lines, Windows or Unix line breaks)."""
+    import re
+    return [p.strip() for p in re.split(r"\r?\n\s*\r?\n", text or "") if p.strip()]
+
+
 def register_jinja(app):
-    app.jinja_env.globals.update(
+    from . import lab_status
+    from .views.about import KINDS as ABOUT_KINDS
+    app.jinja_env.globals.update(ABOUT_KINDS=ABOUT_KINDS, LAB_LATE=lab_status.LATE, LAB_HELP=lab_status.HELP, lab_badge=lab_status.badge,
         csrf_token=csrf_token, ROLES=ROLES, POSITIONS=POSITIONS, APPT_STATUSES=STATUSES, SOURCES=SOURCES, WEEKDAYS=WEEKDAYS,
     )
-    app.jinja_env.filters.update(contact=_contact, phones=_phones, opts=_opts, peso=peso, nl2br=_nl2br, dt=_dt, time=_time, date=_date, label=_label)
+    app.jinja_env.filters.update(contact=_contact, phones=_phones, opts=_opts, peso=peso, nl2br=_nl2br, dt=_dt, time=_time, date=_date, label=_label, paras=_paras,
+                               lab_status=lab_status.label)

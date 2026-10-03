@@ -280,6 +280,29 @@
 </section>
 {% endif %}
 
+{# ---------------------------------------------------------------- ABOUT US (only what the clinic has added) #}
+{% set about_story = txt('about.story') %}{% set about_people = about_team.dentist or about_team.staff %}
+{% if shown('about') and (about_story or about_people or about_acts) %}{% set kinds = ABOUT_KINDS %}
+<section class="lp-section ab-section" id="about">
+  <div class="wrap">
+    <div class="ab-intro{% if site_images.get('about') %} has-photo{% endif %}">
+      <header class="lp-head reveal">
+        <span class="lp-eyebrow">{{ txt('about.eyebrow') }}</span>
+        <h2>{{ txt_em('about.title') }}</h2>
+        {% for para in (about_story|paras)[:2] %}<p>{{ para }}</p>{% endfor %}
+        <p><a class="lp-link" href="{{ url_for('public.about') }}">{{ txt('about.link') }}</a></p>
+      </header>
+      {% if site_images.get('about') %}<figure class="ab-hero-photo reveal"><img src="{{ url_for('static', filename=site_images['about']) }}" alt="The Dental Haven team" loading="lazy"></figure>{% endif %}
+    </div>
+    {% set people = about_team.dentist or about_team.staff %}
+    {% if people %}<h3 class="ab-sub reveal">{{ txt('about.dentists_title') if about_team.dentist else txt('about.staff_title') }}</h3>
+    <div class="ab-team">{% for m in people[:4] %}{% include "public/_team_card.html" %}{% endfor %}</div>{% endif %}
+    {% if about_acts %}<h3 class="ab-sub reveal">{{ txt('about.activities_title') }}</h3>
+    <div class="ab-acts">{% for a in about_acts %}{% include "public/_activity_card.html" %}{% endfor %}</div>{% endif %}
+  </div>
+</section>
+{% endif %}
+
 {# ---------------------------------------------------------------- REVIEWS (real, consented only) #}
 {% if shown('reviews') %}
 <section class="lp-section lp-quotes" id="reviews">
@@ -287,8 +310,9 @@
     <header class="lp-head reveal">
       <span class="lp-eyebrow">{{ txt('reviews.eyebrow') }}</span>
       <h2>{{ txt_em('reviews.title') }}</h2>
-      {% if not testimonials %}<p>{{ txt('reviews.intro_empty') }}</p>{% endif %}
+      {% if not testimonials and not google_reviews %}<p>{{ txt('reviews.intro_empty') }}</p>{% endif %}
     </header>
+    {% include "public/_google_reviews.html" %}
     {% if testimonials %}
     <div class="lp-quote-grid">{% for t in testimonials %}
       <figure class="lp-quote reveal">

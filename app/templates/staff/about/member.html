@@ -1,0 +1,33 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, field %}
+{% block page_title %}{{ m.name if m else 'Add person' }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('about_admin.index') }}#team">← About us</a><h1>{{ m.name if m else 'Add a dentist or staff member' }}</h1></div></div>
+<div class="card" style="max-width:760px">
+<form method="post" enctype="multipart/form-data">{{ csrf() }}
+<div class="form-grid">
+{{ field('name', 'Name (as shown on the website)', v.name, errors=errors, required=True, hint='e.g. Dr. Ana Reyes') }}
+{{ field('title', 'Position', v.title, hint='e.g. Head Dentist, Orthodontist, Front Desk') }}
+</div>
+<div class="form-grid">
+<div class="field"><label for="grp">Group</label><select id="grp" name="grp">{% for k, l in groups.items() %}<option value="{{ k }}" {% if v.grp == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+{{ field('credentials', 'Credentials / specialty (optional)', v.credentials, hint='e.g. DMD · Fellow, Philippine Prosthodontic Society. Only what the person can show.') }}
+</div>
+<fieldset><legend>Branches</legend><div class="row" style="flex-wrap:wrap;gap:.3rem 1rem">
+{% for b in branches %}<label class="check"><input type="checkbox" name="branches" value="{{ b.id }}" {% if b.id in chosen %}checked{% endif %}> {{ b.name }}</label>{% endfor %}</div>
+<span class="hint">None ticked = shown as serving all branches.</span></fieldset>
+<div class="field"><label for="bio">Short bio (optional)</label><textarea id="bio" name="bio" rows="4" maxlength="1500" placeholder="A few sentences in their own words: what they enjoy about dentistry, their focus, languages spoken.">{{ v.bio }}</textarea></div>
+<fieldset><legend>Photo</legend>
+{% if v.photo_path %}<img src="{{ url_for('static', filename=v.photo_path) }}" alt="" style="width:120px;height:120px;object-fit:cover;border-radius:50%;margin-bottom:.5rem">
+<label class="check"><input type="checkbox" name="remove_photo" value="1"> Remove photo</label>{% endif %}
+<div class="field {% if errors.photo %}error{% endif %}"><label for="photo">{{ 'Replace photo' if v.photo_path else 'Upload a photo' }} (JPG, PNG or WebP)</label><input id="photo" type="file" name="photo" accept="image/png,image/jpeg,image/webp">
+<span class="hint">A clear head-and-shoulders photo, ideally square, in uniform or clinic attire.</span>{% if errors.photo %}<div class="field-error">{{ errors.photo }}</div>{% endif %}</div></fieldset>
+<div class="form-grid">
+{{ field('consent_note', 'Consent record', v.consent_note, errors=errors, hint='How they agreed to appear on the website, e.g. "Agreed in writing, 2026-10-03"') }}
+{{ field('sort_order', 'Order (smaller first)', v.sort_order, type='number') }}
+</div>
+<label class="check"><input type="checkbox" name="published" value="1" {% if v.published %}checked{% endif %}> <strong>Publish on the website</strong></label>
+<div class="row between mt-1"><button class="btn" name="action" value="save">Save</button>
+{% if m %}<button class="btn btn-ghost" name="action" value="delete" data-confirm="Remove {{ m.name }} from the website?">Remove</button>{% endif %}</div>
+</form></div>
+{% endblock %}

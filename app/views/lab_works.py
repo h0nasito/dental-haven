@@ -26,9 +26,9 @@ from .labs import CASE_TYPES
 
 bp = Blueprint("lab_works", __name__, url_prefix="/staff/lab")
 
-STATUSES = {"received": "Received", "in_progress": "In progress", "ready": "Ready for delivery", "delivered": "Delivered",
-            "remake": "Remake", "cancelled": "Cancelled"}
-OPEN = ("received", "in_progress", "ready", "remake")
+from ..lab_status import WORK_STATUSES as STATUSES, label as status_label, sql_list  # noqa: E402
+from ..lab_status import OPEN as _OPEN  # noqa: E402
+OPEN = sql_list(k for k in _OPEN if k != "sent")
 ARCHES = {"": "—", "upper": "Upper", "lower": "Lower", "both": "Upper & lower"}
 METHODS = {"cash": "Cash", "gcash": "GCash", "maya": "Maya", "bank": "Bank transfer", "check": "Check", "card": "Card"}
 LAB_FULL_NAMES = {"DSDL": "Digital Solutions Dental Laboratory"}
@@ -217,9 +217,9 @@ def work_new():
             with conn.transaction():
                 cid = _client_for(conn, data["lab_id"], data["clinic_name"], data["doctor"], data["contact_number"])
                 number = _next_number(conn, "lab_works", "LW")
-                wid = conn.insert("lab_works", {**data, "number": number, "client_id": cid, "status": "received", "created_by": g.user.id,
+                wid = conn.insert("lab_works", {**data, "number": number, "client_id": cid, "status": "accepted", "created_by": g.user.id,
                                                 "created_at": now_str(), "updated_at": now_str()})
-                conn.insert("lab_work_events", {"work_id": wid, "user_id": g.user.id, "status": "received", "note": "Work received", "created_at": now_str()})
+                conn.insert("lab_work_events", {"work_id": wid, "user_id": g.user.id, "status": "accepted", "note": "Work received", "created_at": now_str()})
                 notify(conn, lab_staff(conn, data["lab_id"]), "lab_new", f"New work {number}: {data['case_type']}",
                        f"From {data['clinic_name']}" + (f", due {data['due_on']}" if data["due_on"] else ""), f"/staff/lab/works/{wid}",
                        exclude=g.user.id)
@@ -311,7 +311,7 @@ def works_export():
     safe = lambda x: ("'" + x) if isinstance(x, str) and x[:1] in ("=", "+", "-", "@") else x  # noqa: E731
     for r in rows:
         wr.writerow([safe(x) for x in (r["number"], r["clinic_name"], r["doctor"], r["contact_number"], r["case_type"], r["units"], ARCHES[r["arch"]],
-                                        r["teeth"], r["shade"], r["received_on"], r["due_on"] or "", r["delivered_on"] or "", STATUSES[r["status"]],
+                                        r["teeth"], r["shade"], r["received_on"], r["due_on"] or "", r["delivered_on"] or "", status_label(r["status"]),
                                         "" if r["price_cents"] is None else r["price_cents"] / 100, r["invoice_number"] or "")])
     audit.record("lab_works_exported", "lab_work", None, f"Exported outside works {start} to {end}")
     return Response("﻿" + buf.getvalue(), mimetype="text/csv",

@@ -4,9 +4,10 @@
 {% block content %}
 <div class="page-head"><div><a href="{{ url_for('lab_works.works') }}">← Outside clinic works</a>
 <h1>{{ w.number }} · {{ w.case_type }}</h1><p>{{ w.clinic_name }}{% if w.doctor %} · {{ w.doctor }}{% endif %}{% if w.contact_number %} · {{ w.contact_number }}{% endif %}</p></div>
-<div class="row"><span class="badge {{ {'ready':'badge-green','delivered':'badge-teal','remake':'badge-amber','cancelled':'badge-red'}.get(w.status, 'badge-blue') }}">{{ statuses[w.status] }}</span>
+<div class="row"><span class="badge {{ lab_badge(w.status) }}">{{ w.status|lab_status }}</span>
 <a class="btn btn-secondary" href="{{ url_for('lab_works.work_edit', work_id=w.id) }}">Edit</a>
 {% if can_bill %}{% if w.invoice_id %}<a class="btn btn-secondary" href="{{ url_for('lab_works.invoice', invoice_id=w.invoice_id) }}">Invoice {{ w.invoice_number or '(draft)' }}</a>{% elif w.status != 'cancelled' %}<a class="btn btn-secondary" href="{{ url_for('lab_works.invoice_new', client=w.client_id) }}">Create invoice</a>{% endif %}{% endif %}</div></div>
+{% set cur = w.status %}{% include "staff/labs/_stages.html" %}
 <div class="grid grid-2">
 <div class="card"><h2>Details</h2>
 <dl class="dl">
@@ -22,19 +23,19 @@
 {% if w.material %}<dt>Material</dt><dd>{{ w.material }}</dd>{% endif %}
 <dt>Price per unit</dt><dd>{{ w.price_cents|peso if w.price_cents is not none else '—' }}{% if w.price_cents %} · total {{ (w.price_cents * w.units)|peso }}{% endif %}</dd>
 <dt>Date received</dt><dd>{{ w.received_on|date }}</dd>
-<dt>Due date</dt><dd>{{ w.due_on|date if w.due_on else '—' }}{% if w.due_on and w.due_on < today and w.status in ('received','in_progress','remake') %} <span class="badge badge-red">Overdue</span>{% endif %}</dd>
+<dt>Due date</dt><dd>{{ w.due_on|date if w.due_on else '—' }}{% if w.due_on and w.due_on < today and w.status in LAB_LATE %} <span class="badge badge-red">Overdue</span>{% endif %}</dd>
 <dt>Date delivered</dt><dd>{{ w.delivered_on|date if w.delivered_on else '—' }}</dd>
 </dl>
 {% if w.instructions %}<p class="pre"><strong>Instructions:</strong> {{ w.instructions }}</p>{% endif %}
 </div>
 <div class="card"><h2>Update status</h2>
 <form method="post">{{ csrf() }}
-<div class="field"><label for="st">Status</label><select id="st" name="status">{% for k, l in statuses.items() %}<option value="{{ k }}" {% if w.status == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+<div class="field"><label for="st">Status</label>{% set cur = w.status %}{% include "staff/labs/_status_select.html" %}</div>
 <div class="field"><label for="dd">Date delivered <span class="hint">Used when status is Delivered</span></label><input id="dd" type="date" name="delivered_on" value="{{ w.delivered_on or today }}"></div>
 <div class="field"><label for="nt">Note <span class="hint">Optional</span></label><input id="nt" name="note" maxlength="500"></div>
-<button class="btn">Update</button></form>
+<button class="btn">Update</button></form>{% include "staff/labs/_stage_help.html" %}
 <h2 class="mt-1">History</h2>
-<ul class="list-plain">{% for e in events %}<li><strong>{{ statuses.get(e.status, e.status) }}</strong> · {{ e.created_at|dt }} · {{ e.by_name or '—' }}{% if e.note %}<br><small class="muted">{{ e.note }}</small>{% endif %}</li>{% endfor %}</ul>
+<ul class="list-plain">{% for e in events %}<li><strong>{{ e.status|lab_status }}</strong> · {{ e.created_at|dt }} · {{ e.by_name or '—' }}{% if e.note %}<br><small class="muted">{{ e.note }}</small>{% endif %}</li>{% endfor %}</ul>
 </div></div>
 {% set comm_field, comm_id, comm_delivered = 'work_id', w.id, (w.delivered_on if w.status == 'delivered' else None) %}{% include "staff/lab_works/_commission.html" %}
 {% endblock %}

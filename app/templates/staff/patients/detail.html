@@ -105,7 +105,7 @@
 {% endif %}
 {% if lab_cases is defined %}
 <div class="card"><div class="card-head"><h2>Lab cases</h2>{% if current_user.can('lab.manage') %}<a class="btn btn-secondary btn-sm" href="{{ url_for('labs.new', patient_id=p.id) }}">+ Lab case</a>{% endif %}</div>
-<ul class="list-plain">{% for c in lab_cases %}<li class="row between"><a href="{{ url_for('labs.case', case_id=c.id) }}">{{ c.case_type }}{% if c.teeth %} · {{ c.teeth }}{% endif %}</a><small class="muted">{{ c.lab }} · {{ c.status|label }}</small></li>{% else %}<li class="muted">No lab cases.</li>{% endfor %}</ul></div>
+<ul class="list-plain">{% for c in lab_cases %}<li class="row between"><a href="{{ url_for('labs.case', case_id=c.id) }}">{{ c.case_type }}{% if c.teeth %} · {{ c.teeth }}{% endif %}</a><small class="muted">{{ c.lab }} · {{ c.status|lab_status }}</small></li>{% else %}<li class="muted">No lab cases.</li>{% endfor %}</ul></div>
 {% endif %}
 {% if current_user.can('patients.delete') and p.active %}
 <details class="card"><summary><strong>Delete patient</strong></summary>

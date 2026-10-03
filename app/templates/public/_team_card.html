@@ -1,0 +1,9 @@
+{# One team member card. Needs: m (with branches list). #}
+<article class="ab-person reveal">
+  <div class="ab-photo">{% if m.photo_path %}<img src="{{ url_for('static', filename=m.photo_path) }}" alt="{{ m.name }}" loading="lazy">{% else %}<span aria-hidden="true">{{ m.name.replace('Dr. ', '').replace('Dra. ', '')[:1] }}</span>{% endif %}</div>
+  <h3>{{ m.name }}</h3>
+  {% if m.title %}<p class="ab-role">{{ m.title }}</p>{% endif %}
+  {% if m.credentials %}<p class="ab-cred">{{ m.credentials }}</p>{% endif %}
+  {% if show_bio and m.bio %}<p class="ab-bio">{{ m.bio }}</p>{% endif %}
+  <p class="ab-branches">{{ m.branches|join(' · ') if m.branches else 'All branches' }}</p>
+</article>

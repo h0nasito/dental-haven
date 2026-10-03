@@ -397,6 +397,14 @@ def seed_base(conn):
                         conn.execute("INSERT INTO role_permissions (role, permission) VALUES (?, ?)", (role, perm))
         if new_perms:
             _settings2.put("seed.perms_granted", sorted(granted | new_perms), None, conn)
+        # Once: dentists, receptionists and supervisors can follow the lab workload of every branch (view only).
+        if not _settings2.get("seed.lab_workload_v1", conn):
+            if conn.scalar("SELECT COUNT(*) FROM role_permissions"):
+                for role, perm in (("dentist", "lab.all_branches"), ("supervisor", "lab.all_branches"),
+                                   ("receptionist", "lab.view"), ("receptionist", "lab.all_branches")):
+                    if not conn.one("SELECT 1 AS x FROM role_permissions WHERE role = ? AND permission = ?", (role, perm)):
+                        conn.execute("INSERT INTO role_permissions (role, permission) VALUES (?, ?)", (role, perm))
+            _settings2.put("seed.lab_workload_v1", True, None, conn)
         # The clinic's Assistant Checklist, created once (closed until the admin opens it).
         if not _settings2.get("seed.eval_assistant_v1", conn):
             import json as _json
@@ -825,7 +833,7 @@ def seed_demo(conn, password: str | None = None) -> str:
                                      "status": "posted" if i % 5 else "draft", "created_by": admin, "created_at": ts,
                                      "posted_by": admin if i % 5 else None, "posted_at": ts if i % 5 else None})
         lab = conn.scalar("SELECT id FROM laboratories WHERE name = 'DSDL'")
-        for i, (ctype, st) in enumerate((("Crown (zirconia / all-ceramic)", "in_progress"), ("Complete denture", "sent"),
+        for i, (ctype, st) in enumerate((("Crown (zirconia / all-ceramic)", "designing"), ("Complete denture", "sent"),
                                          ("Bridge", "ready"), ("Partial denture (flexible)", "delivered"))):
             pp = patients[i + 1]
             ddent = conn.scalar("SELECT dentist_id FROM patient_assignments WHERE patient_id = ? LIMIT 1", (pp["id"],)) or None

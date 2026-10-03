@@ -25,7 +25,7 @@ class TestTechCommission(Base):
             return conn.insert("lab_works", {"number": f"LW-T-{status}-{delivered}", "lab_id": lab, "client_id": client, "clinic_name": "Commission Test Clinic",
                                              "case_type": "Bridge", "units": 3, "status": status, "received_on": "2025-05-01", "delivered_on": delivered,
                                              "created_at": now_str(), "updated_at": now_str()})
-        done, pending, later = work("delivered", "2025-05-08"), work("in_progress", None), work("delivered", "2025-05-20")
+        done, pending, later = work("delivered", "2025-05-08"), work("fabricating", None), work("delivered", "2025-05-20")
         patient = self.q("SELECT id FROM patients LIMIT 1")["id"]
         case = conn.insert("lab_cases", {"lab_id": lab, "branch_id": mal, "patient_id": patient, "case_type": "Crown (PFM)", "status": "delivered",
                                          "sent_on": "2025-05-01", "completed_on": "2025-05-10", "created_at": now_str()})

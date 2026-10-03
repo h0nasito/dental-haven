@@ -1,0 +1,16 @@
+{% extends "public/layout.html" %}
+{% block title %}{{ a.title }} · Dental Haven{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/landing.css') }}">{% endblock %}
+{% block body_class %}landing{% endblock %}
+{% block content %}
+<section class="lp-section ab-page-top">
+  <div class="wrap ab-article">
+    <a class="ab-back" href="{{ url_for('public.about') }}#activities">← {{ txt('about.activities_title') }}</a>
+    <span class="lp-eyebrow">{{ a.happened_on|date }} · {{ kinds.get(a.kind, '') }}{% if a.branch %} · {{ a.branch.split(' (')[0] }}{% endif %}</span>
+    <h1 class="ab-h1">{{ a.title }}</h1>
+    {% for para in a.body|paras %}<p>{{ para }}</p>{% endfor %}
+    {% if photos %}<div class="ab-gallery">{% for p in photos %}<figure{% if loop.first %} class="ab-first"{% endif %}><img src="{{ url_for('static', filename=p.image_path) }}" alt="{{ p.caption or a.title }}" loading="{{ 'eager' if loop.first else 'lazy' }}">{% if p.caption %}<figcaption>{{ p.caption }}</figcaption>{% endif %}</figure>{% endfor %}</div>{% endif %}
+    {% if more %}<h2 class="ab-h2 mt-1">More activities</h2><ul class="ab-more">{% for m in more %}<li><a href="{{ url_for('public.activity', act_id=m.id) }}">{{ m.title }}</a> <span>{{ m.happened_on|date }}</span></li>{% endfor %}</ul>{% endif %}
+  </div>
+</section>
+{% endblock %}

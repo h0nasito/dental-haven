@@ -14,6 +14,15 @@
   {{ field('map_url', 'Google Maps link', b.map_url, errors=errors, hint='Must start with https://') }}
   {{ field('waze_url', 'Waze link', b.waze_url, errors=errors, hint='e.g. https://waze.com/ul?q=Dental%20Haven%20Malolos') }}
   {{ field('facebook_url', 'Facebook page', b.facebook_url, errors=errors) }}
+  <fieldset><legend>Google reviews (website)</legend>
+  <p class="hint">Copy these from the branch's Google Business Profile. The website shows the rating, the number of reviews and the date you last updated them, with a link to read the reviews on Google. Leave empty to hide.</p>
+  {{ field('google_reviews_url', 'Link to the Google reviews', b.google_reviews_url, errors=errors, hint='On Google Maps, open the branch → Share → Copy link. Must start with https://') }}
+  <div class="form-grid">
+  {{ field('google_rating', 'Star rating', b.google_rating if b.google_rating is not none else '', errors=errors, hint='e.g. 4.7', attrs='inputmode="decimal"') }}
+  {{ field('google_review_count', 'Number of reviews', b.google_review_count if b.google_review_count is not none else '', errors=errors, hint='e.g. 220', attrs='inputmode="numeric"') }}
+  </div>
+  {% if b.google_rating_as_of %}<p class="hint">Last updated {{ b.google_rating_as_of|date }}. Update it now and then so it matches Google.</p>{% endif %}
+  </fieldset>
   {{ textarea('hours_text', 'Hours as shown to the public', b.hours_text, rows=3, hint='Operating hours for booking are set below.') }}
   {{ textarea('intro', 'Short intro for the branch page', b.intro, rows=3) }}
   <fieldset><legend>Branch photo (website)</legend>

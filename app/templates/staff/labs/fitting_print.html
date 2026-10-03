@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Trial fitting agreement · Case #{{ c.id }}{% endblock %}
+{% block body %}
+<main id="main" class="print-sheet" style="max-width:760px">
+<div class="no-print row between" style="margin-bottom:1rem"><a href="{{ url_for('labs.case', case_id=c.id) }}#fitting">← Back to the lab case</a><span class="muted">Use your browser's Print command (or Save as PDF)</span></div>
+<div class="row between" style="flex-wrap:nowrap;align-items:flex-start;gap:2rem">
+<div><img src="{{ url_for('static', filename='img/logo.png') }}" alt="" width="60" height="40"><h2 class="mb-0">Dental Haven</h2><p class="muted">{{ branch.name }}{% if branch.address %}<br>{{ branch.address }}{% endif %}</p></div>
+<div style="text-align:right;flex:none"><h2 class="mb-0">Trial Fitting Agreement</h2><p>Lab case #{{ c.id }}<br>Date: {{ f.fitted_on|date }}</p></div></div>
+
+<table class="fit-table"><tbody>
+<tr><th>Patient</th><td>{{ c.first_name }} {{ c.last_name }} <small class="muted">({{ c.chart_no }})</small></td><th>Dentist</th><td>{{ dentist.name if dentist else '—' }}{% if dentist and dentist.license_no %}<br><small class="muted">License no. {{ dentist.license_no }}</small>{% endif %}</td></tr>
+<tr><th>Case</th><td>{{ c.case_type }}</td><th>Laboratory</th><td>{{ c.lab }}</td></tr>
+<tr><th>Teeth</th><td>{{ c.teeth or '—' }}</td><th>Shade / material</th><td>{{ c.shade or '—' }}{% if c.material %} · {{ c.material }}{% endif %}</td></tr>
+<tr><th>Result</th><td colspan="3"><strong>{{ results[f.result] }}</strong></td></tr>
+{% if f.notes %}<tr><th>Changes / notes</th><td colspan="3">{{ f.notes }}</td></tr>{% endif %}
+</tbody></table>
+
+<div class="fit-agreement pre">{{ f.agreement_text }}</div>
+
+<div class="fit-signs">
+<div class="fit-sign">
+{% if f.patient_signature %}<img src="{{ url_for('labs.fitting_signature', fid=f.id, who='patient') }}" alt="Signature of {{ f.signer_name }}">{% else %}<div class="fit-nosig">Not signed: {{ f.not_signed_reason }}</div>{% endif %}
+<div class="fit-line">{{ f.signer_name }}<br><small>{{ relations.get(f.signer_relation, 'Patient') }} · {{ f.fitted_on|date }}</small></div></div>
+<div class="fit-sign">
+{% if f.dentist_signature %}<img src="{{ url_for('labs.fitting_signature', fid=f.id, who='dentist') }}" alt="Signature of the dentist">{% else %}<div class="fit-nosig">Not signed</div>{% endif %}
+<div class="fit-line">{{ dentist.name if dentist else 'Dentist' }}<br><small>Dentist · {{ f.fitted_on|date }}</small></div></div>
+</div>
+<p class="muted" style="font-size:.8rem;margin-top:2rem">Recorded in the Dental Haven clinic system on {{ f.created_at|dt }}. This document contains patient information: keep it confidential.</p>
+</main>
+<style>
+.fit-table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: .95rem; }
+.fit-table th, .fit-table td { border: 1px solid #d5d9e0; padding: .45rem .6rem; text-align: left; vertical-align: top; }
+.fit-table th { background: #f4f6f9; width: 16%; font-weight: 600; }
+.fit-agreement { border: 1px solid #d5d9e0; border-radius: 8px; padding: 1rem 1.2rem; line-height: 1.6; white-space: pre-line; }
+.fit-signs { display: grid; grid-template-columns: 1fr 1fr; gap: 2.5rem; margin-top: 2rem; }
+.fit-sign img { width: 100%; max-height: 110px; object-fit: contain; display: block; }
+.fit-nosig { height: 110px; display: flex; align-items: flex-end; color: #8a5a00; font-size: .85rem; }
+.fit-line { border-top: 1px solid #333; padding-top: .3rem; }
+</style>
+{% endblock %}

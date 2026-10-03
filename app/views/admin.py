@@ -13,7 +13,7 @@ from ..auth import hash_password, require, revoke_user_sessions
 from ..db import get_db
 from ..permissions import (ACCESS_FOR_POSITION, CATALOG, LOCKED, PERM_KEYS, POSITION_FOR_ROLE, POSITIONS, ROLE_DEFAULTS, ROLES,
                            base_role, grantable)
-from ..util import WEEKDAYS, clean, hm_to_min, now_str, parse_money, to_int
+from ..util import WEEKDAYS, clean, hm_to_min, now_str, parse_money, to_int, today
 from .common import paginate
 
 bp = Blueprint("admin", __name__, url_prefix="/staff/admin")
@@ -432,6 +432,7 @@ SITE_IMAGE_KEYS = [
     ("tech_xray", "Technology: CBCT & panoramic X-ray", "Your CBCT / panoramic X-ray machine. Portrait or square works best."),
     ("tech_scanner", "Technology: intraoral scanner", "Your intraoral scanner in use, or on its cart."),
     ("tech_milling", "Technology: milling machine", "Your milling machine or 3D printer in the lab."),
+    ("about", "About us", "Your team together, or the clinic front. Everyone in it should have agreed to be on the website."),
 ]
 
 
@@ -508,6 +509,27 @@ def branch_edit(branch_id):
                     errors[k] = "Link must start with https://"
             if not vals["name"]:
                 errors["name"] = "Name is required."
+            # Google rating: copied by hand from the branch's Google Business Profile (no Google account is connected).
+            vals["google_reviews_url"] = clean(request.form.get("google_reviews_url"), 1000)
+            if vals["google_reviews_url"] and not vals["google_reviews_url"].startswith("https://"):
+                errors["google_reviews_url"] = "Link must start with https://"
+            rating_raw = (request.form.get("google_rating") or "").strip().replace(",", ".")
+            count_raw = (request.form.get("google_review_count") or "").strip().replace(",", "")
+            try:
+                rating = round(float(rating_raw), 1) if rating_raw else None
+                if rating is not None and not 1 <= rating <= 5:
+                    raise ValueError
+            except ValueError:
+                rating = None
+                errors["google_rating"] = "Enter the star rating from Google, from 1.0 to 5.0 (e.g. 4.7)."
+            count = int(count_raw) if count_raw.isdigit() else None
+            if count_raw and count is None:
+                errors["google_review_count"] = "Enter the number of reviews, e.g. 220."
+            if (rating is None) != (count is None) and "google_rating" not in errors and "google_review_count" not in errors:
+                errors["google_rating"] = "Enter both the rating and the number of reviews, or leave both empty."
+            vals["google_rating"], vals["google_review_count"] = rating, count
+            if (rating, count) != (b["google_rating"], b["google_review_count"]):
+                vals["google_rating_as_of"] = today().isoformat() if rating is not None else None
             img, img_err = _uploaded_image()
             if img_err:
                 errors["image"] = img_err
@@ -1043,7 +1065,7 @@ def system():
                     errors[key] = "Enter a whole number."
                 new[key] = val
             else:
-                new[key] = clean(request.form.get(key), 500)
+                new[key] = clean(request.form.get(key), 3000 if key == "lab.fitting_agreement" else 500)
         if new.get("payroll.dentist_commission_basis") not in ("payment", "procedure"):
             errors["payroll.dentist_commission_basis"] = "Choose how dentist commission is counted."
         if new.get("messaging.provider") != "manual":

@@ -63,7 +63,7 @@ class TestLabWorks(Base):
             c = self.tech(1)
             w = self.new_work(c)
             self.assertTrue(w["number"].startswith("LW-"))
-            self.assertEqual((w["units"], w["arch"], w["price_cents"], w["status"]), (2, "upper", 350000, "received"))
+            self.assertEqual((w["units"], w["arch"], w["price_cents"], w["status"]), (2, "upper", 350000, "accepted"))
             client = self.q("SELECT * FROM lab_clients WHERE id = ?", (w["client_id"],))
             self.assertEqual((client["clinic_name"], client["doctor"]), ("Smile Bright Dental", "Dr. Ana Reyes"))
             # the other tech is notified, not the one who saved it; no patient reference in the notice

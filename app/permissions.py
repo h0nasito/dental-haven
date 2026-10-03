@@ -108,6 +108,7 @@ CATALOG: list[Perm] = [
     Perm("cert.edit", "Edit patient certificate", "Patient certificates", True),
     # Laboratory
     Perm("lab.view", "View lab cases", "Laboratory"),
+    Perm("lab.all_branches", "View lab cases and lab workload of all branches (view only; updates stay with each branch)", "Laboratory"),
     Perm("lab.manage", "Create and update lab cases", "Laboratory"),
     Perm("lab.works", "Outside-clinic lab works: add, edit and update works from other clinics (for users assigned to the lab)", "Laboratory"),
     Perm("lab.billing", "Lab invoices, discounts and payment receipts for outside clinics", "Laboratory", True),
@@ -161,7 +162,7 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
     "dentist": {
         "dashboard.view", "appointments.view", "appointments.complete", "calendar.birthdays", "calendar.events",
         "followups.view", "followups.manage", "patients.view", "clinical.view", "clinical.edit", *_CLINICAL_WRITE,
-        "documents.upload", "lab.view", "lab.manage", "reportcards.generate", "reportcards.review",
+        "documents.upload", "lab.view", "lab.all_branches", "lab.manage", "reportcards.generate", "reportcards.review",
         "quotes.view", "quotes.manage", "attendance.clock", "evaluations.answer",
     },
     "staff": {
@@ -181,7 +182,7 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
         "dashboard.view", "dashboard.balances", "appointments.view", "calendar.associates", "calendar.birthdays", "calendar.events",
         "bookings.view", "appointments.manage", "appointments.complete", "bookings.manage", "patients.view", "patients.contact",
         "patients.manage", "documents.upload", "leads.view", "leads.manage", "followups.view", "followups.manage", "reminders.view",
-        "reminders.send", "billing.view", "quotes.view", "lab.view", "reports.operations", "attendance.view", "attendance.manage",
+        "reminders.send", "billing.view", "quotes.view", "lab.view", "lab.all_branches", "reports.operations", "attendance.view", "attendance.manage",
         "attendance.clock", "overtime.approve", "inventory.view",
     },
     "technician": {
@@ -197,7 +198,7 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
         "bookings.view", "appointments.manage", "appointments.complete", "bookings.manage",
         "patients.view", "patients.contact", "patients.manage", "documents.upload",
         "leads.view", "leads.manage", "followups.view", "followups.manage", "reminders.view", "reminders.send",
-        "quotes.view", "quotes.manage", "attendance.clock",
+        "quotes.view", "quotes.manage", "attendance.clock", "lab.view", "lab.all_branches",
     },
 }
 

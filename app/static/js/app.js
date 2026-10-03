@@ -283,7 +283,8 @@ document.addEventListener('DOMContentLoaded', function () {
 /* Signature pads: <canvas data-sigpad> + hidden [data-sig-out] + [data-sig-clear], inside a form. */
 (function () {
   document.querySelectorAll('canvas[data-sigpad]').forEach(function (canvas) {
-    var form = canvas.closest('form'), out = form.querySelector('[data-sig-out]');
+    // Each pad uses the hidden field and Clear button of its own fieldset, so a form can hold several pads.
+    var form = canvas.closest('form'), box = canvas.closest('fieldset') || form, out = box.querySelector('[data-sig-out]');
     var ctx = canvas.getContext('2d'), drawing = false, last = null;
     ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#111';
     function pos(e) {
@@ -298,7 +299,7 @@ document.addEventListener('DOMContentLoaded', function () {
       last = p; canvas.dataset.drawn = '1'; e.preventDefault();
     });
     ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (ev) { canvas.addEventListener(ev, function () { drawing = false; }); });
-    var clear = form.querySelector('[data-sig-clear]');
+    var clear = box.querySelector('[data-sig-clear]');
     if (clear) clear.addEventListener('click', function () { ctx.clearRect(0, 0, canvas.width, canvas.height); canvas.dataset.drawn = ''; out.value = ''; });
     // capture phase: fill the hidden field before other submit handlers look at it
     form.addEventListener('submit', function (e) {

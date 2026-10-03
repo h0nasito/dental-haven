@@ -32,6 +32,15 @@ DEFAULTS: dict[str, object] = {
     # 'payment': the cashier records the dentist's commission on each payment (counted on the payment date);
     # 'procedure': commission is counted from bill lines on the date the procedure was done.
     "payroll.dentist_commission_basis": "payment",
+    # Laboratory: trial fitting agreement signed by the patient and the dentist ({case_type}, {teeth}, {shade} are filled in).
+    # The clinic should review this wording.
+    "lab.fitting_agreement": ("Case: {case_type} · Teeth: {teeth} · Shade: {shade}\n\n"
+                              "Today I tried in my {case_type} with my dentist. We checked the fit, shape, color and bite together, "
+                              "and the dentist explained the result to me.\n\n"
+                              "By signing, the dentist and I agree that the laboratory may proceed with the final processing of this "
+                              "case as fitted today, including the changes written on this form (if any).\n\n"
+                              "I understand that changes I ask for after signing may need extra time, and possibly an additional fee, "
+                              "which my dentist will discuss with me before any work is done."),
     # Privacy
     "privacy.retention_note": "Retention period to be confirmed by the clinic (see docs/PRIVACY_CHECKLIST.md).",
 }
@@ -56,6 +65,7 @@ LABELS = {
     "payroll.late_applies_dentists": "Also deduct lates from dentists",
     "payroll.pay_unworked_regular_holiday": "Pay 1 day for a regular holiday not worked (staff on daily rate)",
     "payroll.dentist_commission_basis": "Dentist commission is counted",
+    "lab.fitting_agreement": "Trial fitting agreement (patient and dentist sign it on the lab case)",
     "privacy.retention_note": "Record retention note",
 }
 

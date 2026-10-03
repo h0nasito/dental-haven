@@ -1,0 +1,24 @@
+{% extends "staff/layout.html" %}
+{% block page_title %}About us{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>About us (website)</h1>
+<p>Your dentists and staff, and the clinic's activities, for the website's About us section and page. Your story, mission and vision are edited in <a href="{{ url_for('admin.website_sections') }}#about">Website sections → About us</a>.</p></div>
+<a class="btn btn-secondary" href="{{ url_for('public.about') }}" target="_blank" rel="noopener">View About us page ↗</a></div>
+<p class="notice">Only publish people who agreed to be on the website (name, photo and bio), and activity photos where everyone recognisable agreed. Patients need written consent.</p>
+
+<div class="card" id="team"><div class="card-head"><h2>Dentists &amp; staff</h2><a class="btn btn-sm" href="{{ url_for('about_admin.member') }}">+ Add person</a></div>
+{% if members %}<div class="table-wrap"><table><thead><tr><th></th><th>Name</th><th>Group</th><th>Branches</th><th>Website</th></tr></thead><tbody>
+{% for m in members %}<tr><td style="width:56px">{% if m.photo_path %}<img src="{{ url_for('static', filename=m.photo_path) }}" alt="" width="44" height="44" style="border-radius:50%;object-fit:cover">{% endif %}</td>
+<td><a href="{{ url_for('about_admin.member', member_id=m.id) }}"><strong>{{ m.name }}</strong></a>{% if m.title %}<br><small class="muted">{{ m.title }}</small>{% endif %}</td>
+<td>{{ groups[m.grp] }}</td><td>{{ (member_branches.get(m.id) or ['All branches'])|join(', ') }}</td>
+<td>{% if m.published %}<span class="badge badge-green">Published</span>{% else %}<span class="badge">Not published</span>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div>{% else %}<p class="muted">No one added yet. Add your dentists first: they appear on the home page too.</p>{% endif %}</div>
+
+<div class="card" id="activities"><div class="card-head"><h2>Activities</h2><a class="btn btn-sm" href="{{ url_for('about_admin.activity') }}">+ Add activity</a></div>
+<p class="hint">Dental missions, school visits, trainings and seminars, anniversaries, team building: each with a date, a short story and photos.</p>
+{% if acts %}<div class="table-wrap"><table><thead><tr><th>Date</th><th>Activity</th><th>Type</th><th>Photos</th><th>Website</th></tr></thead><tbody>
+{% for a in acts %}<tr><td>{{ a.happened_on|date }}</td><td><a href="{{ url_for('about_admin.activity', act_id=a.id) }}"><strong>{{ a.title }}</strong></a>{% if a.branch %}<br><small class="muted">{{ a.branch }}</small>{% endif %}</td>
+<td>{{ kinds.get(a.kind, a.kind) }}</td><td>{{ a.photos }}</td>
+<td>{% if a.published %}<span class="badge badge-green">Published</span>{% else %}<span class="badge">Not published</span>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div>{% else %}<p class="muted">No activities yet.</p>{% endif %}</div>
+{% endblock %}

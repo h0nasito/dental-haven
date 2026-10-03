@@ -1,0 +1,28 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, field %}
+{% block page_title %}{{ a.title if a else 'Add activity' }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('about_admin.index') }}#activities">← About us</a><h1>{{ a.title if a else 'Add an activity' }}</h1></div>
+{% if a and a.published %}<a class="btn btn-secondary" href="{{ url_for('public.activity', act_id=a.id) }}" target="_blank" rel="noopener">View on website ↗</a>{% endif %}</div>
+<form method="post" enctype="multipart/form-data">{{ csrf() }}
+<div class="card" style="max-width:860px">
+<div class="form-grid">
+{{ field('title', 'Title', v.title, errors=errors, required=True, hint='e.g. Free dental check-ups at a local school') }}
+{{ field('happened_on', 'Date', v.happened_on, type='date', errors=errors, required=True) }}
+</div>
+<div class="form-grid">
+<div class="field"><label for="kind">Type</label><select id="kind" name="kind">{% for k, l in kinds.items() %}<option value="{{ k }}" {% if v.kind == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+<div class="field"><label for="br">Branch</label><select id="br" name="branch_id"><option value="">All branches / clinic-wide</option>{% for b in branches %}<option value="{{ b.id }}" {% if v.branch_id == b.id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select></div>
+</div>
+<div class="field"><label for="body">Story</label><textarea id="body" name="body" rows="6" maxlength="6000" placeholder="What happened, who joined, and what it meant. Don't name patients.">{{ v.body }}</textarea></div>
+<div class="field {% if errors.photos %}error{% endif %}"><label for="photos">Add photos (JPG, PNG or WebP; you can pick several)</label><input id="photos" type="file" name="photos" multiple accept="image/png,image/jpeg,image/webp">
+<span class="hint">Up to {{ max_photos }} photos. The first one is the cover.</span>{% if errors.photos %}<div class="field-error">{{ errors.photos }}</div>{% endif %}</div>
+{% if photos %}<div id="photos" class="act-photos">{% for p in photos %}<figure><img src="{{ url_for('static', filename=p.image_path) }}" alt="">
+<label class="sr-only" for="cap{{ p.id }}">Caption</label><input id="cap{{ p.id }}" name="caption_{{ p.id }}" value="{{ p.caption }}" placeholder="Caption (optional)" maxlength="200">
+<button class="btn btn-ghost btn-sm" name="remove_photo" value="{{ p.id }}" formnovalidate>Remove</button></figure>{% endfor %}</div>{% endif %}
+{{ field('consent_note', 'Photo consent', v.consent_note, errors=errors, hint='e.g. "Staff agreed; parents of the children signed photo consent forms on file"') }}
+<label class="check"><input type="checkbox" name="published" value="1" {% if v.published %}checked{% endif %}> <strong>Publish on the website</strong></label>
+<div class="row between mt-1"><button class="btn" name="action" value="save">Save</button>
+{% if a %}<button class="btn btn-ghost" name="action" value="delete" formnovalidate data-confirm="Delete this activity and its photos?">Delete activity</button>{% endif %}</div>
+</div></form>
+{% endblock %}

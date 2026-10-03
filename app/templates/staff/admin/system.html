@@ -16,7 +16,7 @@
 <p class="hint">{% if mail.brevo %}<strong>Sending through Brevo</strong> (web API), so no Gmail passwords are needed: each sender address above must be a verified sender in your Brevo account.{% else %}Set these on the server (<code>/etc/dental-haven/env</code>), then restart. The password is a Gmail app password, not the normal Gmail password. <strong>On DigitalOcean</strong> the normal email ports are blocked, so Gmail passwords alone won't work there: add <code>BREVO_API_KEY</code> instead.{% endif %} See docs/INTEGRATIONS.md.</p>{% endif %}
 </div>
 <form method="post">{{ csrf() }}
-{% set groups = [('Online booking','booking.'),('Invoicing','invoice.'),('Messaging','messaging.'),('Payroll','payroll.'),('Privacy','privacy.')] %}
+{% set groups = [('Online booking','booking.'),('Invoicing','invoice.'),('Messaging','messaging.'),('Payroll','payroll.'),('Laboratory','lab.'),('Privacy','privacy.')] %}
 <div class="grid grid-2">
 {% for title, prefix in groups %}
 <div class="card"><h2>{{ title }}</h2>
@@ -28,6 +28,9 @@
     <option value="payment" {% if s[key] == 'payment' %}selected{% endif %}>Per payment: the cashier records it on each payment</option>
     <option value="procedure" {% if s[key] == 'procedure' %}selected{% endif %}>Per procedure: from bill lines on the date done</option></select>
     <span class="hint">Only one is counted, so the dentist is never paid twice. Manual entries always count.</span></div>
+  {% elif key == 'lab.fitting_agreement' %}
+    <div class="field"><label for="{{ key }}">{{ label }}</label><textarea id="{{ key }}" name="{{ key }}" rows="5">{{ s[key] or '' }}</textarea>
+    <span class="hint">{case_type}, {teeth} and {shade} are filled in from the lab case. Have the clinic review this wording. It's copied into each signed agreement, so changing it later doesn't change agreements already signed.</span></div>
   {% elif key == 'messaging.provider' %}
     <div class="field"><label for="{{ key }}">{{ label }}</label><select id="{{ key }}" name="{{ key }}"><option value="manual" selected>Manual (preview and copy; staff send from the clinic phone)</option></select>
     <span class="hint">No SMS, email or Messenger provider is set up. See docs/INTEGRATIONS.md.</span></div>

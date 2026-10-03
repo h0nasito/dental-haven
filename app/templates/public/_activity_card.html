@@ -1,0 +1,6 @@
+{# One activity card. Needs: a (with cover, n_photos), kinds. #}
+<a class="ab-act reveal" href="{{ url_for('public.activity', act_id=a.id) }}">
+  <div class="ab-act-media">{% if a.cover %}<img src="{{ url_for('static', filename=a.cover) }}" alt="" loading="lazy">{% endif %}{% if a.n_photos > 1 %}<span class="ab-count">{{ a.n_photos }} photos</span>{% endif %}</div>
+  <div class="ab-act-body"><span class="ab-act-meta">{{ a.happened_on|date }} · {{ kinds.get(a.kind, '') }}</span><h3>{{ a.title }}</h3>
+  {% if a.branch %}<span class="ab-act-branch">{{ a.branch.split(' (')[0] }}</span>{% endif %}</div>
+</a>

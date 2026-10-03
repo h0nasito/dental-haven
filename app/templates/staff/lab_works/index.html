@@ -6,7 +6,7 @@
 {% set active = 'works' %}{% include "staff/lab_works/_nav.html" %}
 <nav class="tabs" aria-label="Status">
   <a href="{{ url_for('lab_works.works', status='open', client=client or '', q=q) }}" class="{{ 'active' if status == 'open' else '' }}">Open</a>
-  {% for k, l in statuses.items() %}<a href="{{ url_for('lab_works.works', status=k, client=client or '', q=q) }}" class="{{ 'active' if status == k else '' }}">{{ l }}{% if counts.get(k) %} ({{ counts[k] }}){% endif %}</a>{% endfor %}
+  {% for k, l in statuses.items() if counts.get(k) or status == k or k == 'delivered' %}<a href="{{ url_for('lab_works.works', status=k, client=client or '', q=q) }}" class="{{ 'active' if status == k else '' }}">{{ l }}{% if counts.get(k) %} ({{ counts[k] }}){% endif %}</a>{% endfor %}
   <a href="{{ url_for('lab_works.works', status='all', client=client or '', q=q) }}" class="{{ 'active' if status == 'all' else '' }}">All</a>
 </nav>
 <form class="toolbar" method="get"><input type="hidden" name="status" value="{{ status }}">
@@ -14,13 +14,13 @@
   <div class="field"><label for="wc">Clinic</label><select id="wc" name="client"><option value="">All clinics</option>{% for c in clients %}<option value="{{ c.id }}" {% if client == c.id %}selected{% endif %}>{{ c.clinic_name }}</option>{% endfor %}</select></div>
   <button class="btn btn-secondary">Show</button></form>
 <div class="card"><div class="table-wrap"><table><thead><tr><th>Due</th><th>Work</th><th>Dental clinic · Doctor</th><th>Type of case</th><th class="num">Units</th><th>Arch</th><th>Received</th><th>Delivered</th><th>Status</th></tr></thead><tbody>
-{% for w in rows %}{% set late = w.due_on and w.due_on < today and w.status in ('received','in_progress','remake') %}
-<tr><td>{% if w.due_on %}<span class="{{ 'text-danger' if late else '' }}"><strong>{{ w.due_on|date }}</strong></span>{% if late %}<br><span class="badge badge-red">Overdue</span>{% elif w.due_on == soon and w.status in ('received','in_progress','remake') %}<br><span class="badge badge-amber">Due tomorrow</span>{% endif %}{% else %}—{% endif %}</td>
+{% for w in rows %}{% set late = w.due_on and w.due_on < today and w.status in LAB_LATE %}
+<tr><td>{% if w.due_on %}<span class="{{ 'text-danger' if late else '' }}"><strong>{{ w.due_on|date }}</strong></span>{% if late %}<br><span class="badge badge-red">Overdue</span>{% elif w.due_on == soon and w.status in LAB_LATE %}<br><span class="badge badge-amber">Due tomorrow</span>{% endif %}{% else %}—{% endif %}</td>
 <td><a href="{{ url_for('lab_works.work', work_id=w.id) }}"><strong>{{ w.number }}</strong></a>{% if w.patient_ref %}<br><small class="muted">Ref: {{ w.patient_ref }}</small>{% endif %}</td>
 <td>{{ w.clinic_name }}<br><small class="muted">{{ w.doctor or '—' }}{% if w.contact_number %} · {{ w.contact_number }}{% endif %}</small></td>
 <td>{{ w.case_type }}{% if w.teeth or w.shade %}<br><small class="muted">{{ w.teeth }}{% if w.shade %} · Shade {{ w.shade }}{% endif %}</small>{% endif %}</td>
 <td class="num">{{ w.units }}</td><td>{{ arches[w.arch] }}</td><td>{{ w.received_on|date }}</td><td>{{ w.delivered_on|date if w.delivered_on else '—' }}</td>
-<td><span class="badge {{ {'ready':'badge-green','delivered':'badge-teal','remake':'badge-amber','cancelled':'badge-red'}.get(w.status, 'badge-blue') }}">{{ statuses[w.status] }}</span>{% if w.invoice_number %}<br><small class="muted">{{ w.invoice_number }}</small>{% endif %}</td></tr>
+<td><span class="badge {{ lab_badge(w.status) }}">{{ w.status|lab_status }}</span>{% if w.invoice_number %}<br><small class="muted">{{ w.invoice_number }}</small>{% endif %}</td></tr>
 {% else %}<tr><td colspan="9" class="empty">No works here yet. Use <strong>+ New work</strong> when a clinic sends you a case.</td></tr>{% endfor %}
 </tbody></table></div></div>
 {% endblock %}

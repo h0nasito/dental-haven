@@ -1,0 +1,5 @@
+{# Status menu grouped by stage. Needs: cur, statuses. #}
+<select id="st" name="status">
+<optgroup label="Lab stages">{% for k in ['sent','accepted','setting','designing','fabricating','trimming','polishing','quality_control','ready','delivered'] if k in statuses %}<option value="{{ k }}" {% if cur == k %}selected{% endif %}>{{ loop.index }}. {{ statuses[k] }}</option>{% endfor %}</optgroup>
+<optgroup label="Other">{% for k in ['try_in','on_hold','remake','cancelled'] %}<option value="{{ k }}" {% if cur == k %}selected{% endif %}>{{ statuses[k] }}</option>{% endfor %}</optgroup>
+</select>
