@@ -868,3 +868,11 @@ section[id] { scroll-margin-top: 72px; }
 .g-attrib { margin: .7rem 0 0; font-size: .78rem; color: #5a616b; text-align: right; }
 .g-who span.g-avatar { display: grid; place-items: center; line-height: 1; }
 .row-changed td { background: var(--blue-100); }
+
+/* Daily collection report */
+.dc { width: 100%; border-collapse: collapse; }
+.dc td, .dc th { padding: .35rem .2rem; border-bottom: 1px solid var(--line-2); text-align: left; vertical-align: top; }
+.dc .num { text-align: right; white-space: nowrap; }
+.dc-h th { padding-top: .9rem; font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+.dc-t td { font-weight: 700; }
+.dc-net td { font-weight: 800; font-size: 1.1rem; border-top: 2px solid var(--ink); border-bottom: 0; }

@@ -1134,7 +1134,13 @@ def system():
                     errors[key] = "Enter a whole number."
                 new[key] = val
             else:
-                new[key] = clean(request.form.get(key), 3000 if key == "lab.fitting_agreement" else 500)
+                new[key] = clean(request.form.get(key), 3000 if key in ("lab.fitting_agreement", "report.daily_recipients") else 500)
+        from ..daily_report import EMAIL_RE
+        bad = [x for x in re.split(r"[\s,;]+", new.get("report.daily_recipients") or "") if x and not EMAIL_RE.match(x)]
+        if bad:
+            errors["report.daily_recipients"] = "Check these addresses: " + ", ".join(bad[:5])
+        if new.get("report.daily_enabled") and not (new.get("report.daily_recipients") or "").strip():
+            errors["report.daily_recipients"] = "Add at least one email address."
         if new.get("payroll.dentist_commission_basis") not in ("payment", "procedure"):
             errors["payroll.dentist_commission_basis"] = "Choose how dentist commission is counted."
         if new.get("messaging.provider") != "manual":
@@ -1143,7 +1149,7 @@ def system():
             new["invoice.number_format"].format(prefix="MAL", year=2026, seq=1)
         except (KeyError, ValueError, IndexError):
             errors["invoice.number_format"] = "Use only {prefix}, {year} and {seq} placeholders, e.g. {prefix}-{year}-{seq:05d}."
-        for k in ("messaging.quiet_start", "messaging.quiet_end", "payroll.staff_start_time", "payroll.staff_end_time"):
+        for k in ("messaging.quiet_start", "messaging.quiet_end", "payroll.staff_start_time", "payroll.staff_end_time", "report.daily_time"):
             if not TIME_RE.match(new.get(k) or ""):
                 errors[k] = "Use HH:MM (24-hour)."
         if not errors:

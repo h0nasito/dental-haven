@@ -36,6 +36,9 @@ DEFAULTS: dict[str, object] = {
     # 'payment': the cashier records the dentist's commission on each payment (counted on the payment date);
     # 'procedure': commission is counted from bill lines on the date the procedure was done.
     "payroll.dentist_commission_basis": "payment",
+    "report.daily_enabled": False,            # email the daily collection report automatically
+    "report.daily_time": "23:00",
+    "report.daily_recipients": "",
     # Laboratory: trial fitting agreement signed by the patient and the dentist ({case_type}, {teeth}, {shade} are filled in).
     # The clinic should review this wording.
     "lab.fitting_agreement": ("Case: {case_type} · Teeth: {teeth} · Shade: {shade}\n\n"
@@ -73,6 +76,9 @@ LABELS = {
     "payroll.late_applies_dentists": "Also deduct lates from dentists",
     "payroll.pay_unworked_regular_holiday": "Pay 1 day for a regular holiday not worked (staff on daily rate)",
     "payroll.dentist_commission_basis": "Dentist commission is counted",
+    "report.daily_enabled": "Email the daily collection report automatically",
+    "report.daily_time": "Send at (HH:MM, 24-hour)",
+    "report.daily_recipients": "Send to (email addresses, one per line)",
     "lab.fitting_agreement": "Trial fitting agreement (patient and dentist sign it on the lab case)",
     "privacy.retention_note": "Record retention note",
 }

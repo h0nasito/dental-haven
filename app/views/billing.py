@@ -598,6 +598,31 @@ def _outstanding(conn, ids):
     return out
 
 
+@bp.route("/reports/daily-collection", methods=["GET", "POST"])
+@require("reports.sales")
+def daily_collection():
+    """The daily collection report (the same as the automatic email), for any day; super admins can send it now."""
+    from .. import daily_report, settings as _settings
+    conn = get_db()
+    d = parse_date(request.values.get("date")) or today()
+    if d > today():
+        d = today()
+    if request.method == "POST":
+        if not g.user.is_super_admin:
+            abort(403)
+        sent, msg = daily_report.send(conn, d.isoformat())
+        audit.record("daily_report_sent", "report", None, f"Daily collection report {d.isoformat()} sent manually", {"result": msg})
+        flash(msg, "success" if sent else "error")
+        return redirect(url_for("billing.daily_collection", date=d.isoformat()))
+    branch_ids = set(g.user.branch_ids)
+    reports = [r for r, b in zip(daily_report.build(conn, d.isoformat()),
+                                 conn.all("SELECT * FROM branches WHERE active = 1 ORDER BY sort_order")) if g.user.is_super_admin or b["id"] in branch_ids]
+    sends = conn.all("SELECT * FROM report_sends ORDER BY id DESC LIMIT 10") if g.user.is_super_admin else []
+    return render_template("staff/billing/daily_collection.html", d=d, reports=reports, sends=sends,
+                           auto=_settings.get("report.daily_enabled", conn), at=_settings.get("report.daily_time", conn) or "23:00",
+                           to=daily_report.recipients(conn))
+
+
 @bp.route("/reports/sales")
 @require("reports.sales")
 def sales():

@@ -279,6 +279,9 @@ def start_worker(app, every_seconds: int = 300) -> None:
                     m = patient_mail.run(get_db())
                     if m:
                         app.logger.info("Sent %s patient email(s)", m)
+                    from . import daily_report
+                    if daily_report.run(get_db()):
+                        app.logger.info("Sent the daily collection report")
                     from . import google_places
                     if google_places.run(get_db()):
                         app.logger.info("Refreshed Google reviews")

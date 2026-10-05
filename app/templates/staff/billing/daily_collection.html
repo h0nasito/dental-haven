@@ -1,0 +1,40 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Daily collection report{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Daily collection report</h1>
+<p>{% if auto %}Emailed automatically every day at {{ at }} to {{ to|length }} recipient{{ 's' if to|length != 1 }}.{% else %}Automatic email is off.{% endif %}
+{% if current_user.is_super_admin %} <a href="{{ url_for('admin.system') }}#report">Change in System settings</a>.{% endif %}</p></div>
+<form method="get" class="row" style="gap:.5rem;align-items:end"><div class="field mb-0"><label for="dd">Day</label><input id="dd" type="date" name="date" value="{{ d.isoformat() }}" max="{{ d.today().isoformat() }}" data-autosubmit></div>
+<button class="btn btn-secondary btn-sm js-hide">Show</button></form></div>
+{% set all_g = reports|sum(attribute='gross_total') %}{% set all_r = reports|sum(attribute='refunds') %}{% set all_e = reports|sum(attribute='expenses_total') %}
+<div class="grid grid-2">
+{% for r in reports %}
+<div class="card dc-card"><h2>{{ r.branch }}</h2>
+<table class="dc"><tbody>
+<tr class="dc-h"><th colspan="2">Gross</th></tr>
+{% for m, a in r.gross %}<tr><td>{{ m }}</td><td class="num">{{ a|peso }}</td></tr>{% else %}<tr><td colspan="2" class="muted">No collections</td></tr>{% endfor %}
+<tr class="dc-t"><td>Total gross amount</td><td class="num">{{ r.gross_total|peso }}</td></tr>
+{% if r.refunds %}<tr><td>Less refunds</td><td class="num">−{{ r.refunds|peso }}</td></tr>{% endif %}
+<tr class="dc-h"><th colspan="2">Expenses</th></tr>
+{% for label, det, a in r.expenses %}<tr><td>{{ label }}{% if det %}<br><small class="muted">{{ det }}</small>{% endif %}</td><td class="num">{{ a|peso }}</td></tr>{% else %}<tr><td colspan="2" class="muted">None</td></tr>{% endfor %}
+<tr class="dc-t"><td>Total expenses</td><td class="num">{{ r.expenses_total|peso }}</td></tr>
+<tr class="dc-net"><td>Net</td><td class="num">{{ r.net|peso }}</td></tr>
+</tbody></table></div>
+{% endfor %}
+</div>
+{% if reports|length > 1 %}<div class="card dc-card"><h2>All branches</h2><table class="dc"><tbody>
+<tr class="dc-t"><td>Total gross</td><td class="num">{{ all_g|peso }}</td></tr>
+{% if all_r %}<tr><td>Less refunds</td><td class="num">−{{ all_r|peso }}</td></tr>{% endif %}
+<tr class="dc-t"><td>Total expenses</td><td class="num">{{ all_e|peso }}</td></tr>
+<tr class="dc-net"><td>Net</td><td class="num">{{ (all_g - all_r - all_e)|peso }}</td></tr></tbody></table></div>{% endif %}
+<p class="hint">Gross: payments and deposits received that day, by payment method (paying with account credit isn't new money). Expenses: expenses entered for that day,
+the lab fee share of each payment (from the lab fee on bill lines), and dentist commission counted the same way as payroll. Net = gross − refunds − expenses.</p>
+{% if current_user.is_super_admin %}
+<div class="card"><div class="card-head"><h2>Send</h2>
+<form method="post">{{ csrf() }}<input type="hidden" name="date" value="{{ d.isoformat() }}"><button class="btn btn-secondary btn-sm" {% if not to %}disabled{% endif %}
+ data-confirm="Email this report ({{ d.isoformat() }}) to {{ to|join(', ') }} now?">Send this report now</button></form></div>
+{% if not to %}<p class="muted">Add recipients in System settings → Daily collection report.</p>{% endif %}
+{% if sends %}<ul class="list-plain">{% for s in sends %}<li><strong>{{ s.report_day|date }}</strong> · sent {{ s.created_at|dt }} · {{ s.sent }} email{{ 's' if s.sent != 1 }}{% if s.error %} · <span class="text-danger">{{ s.error }}</span>{% endif %}<br><small class="muted">{{ s.recipients }}</small></li>{% endfor %}</ul>{% endif %}</div>
+{% endif %}
+{% endblock %}
