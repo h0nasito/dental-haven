@@ -288,7 +288,8 @@
 {% if invoices is defined %}
 <div class="card" id="billing"><div class="card-head"><h2>Bills &amp; payments</h2>{% if current_user.can('billing.manage') %}<a class="btn btn-secondary btn-sm" href="{{ url_for('billing.invoice_new', patient_id=p.id) }}">+ New bill</a>{% endif %}</div>
 <div class="table-wrap"><table class="bills"><thead><tr><th>Date</th><th>Services</th><th>Created by</th><th class="num">Net amount</th><th class="num">Paid amount</th><th>Remarks</th><th>Actions</th></tr></thead><tbody>
-{% for i in invoices %}{% set bal = i.total_cents - i.paid %}<tr>
+{% set show_void = request.args.get('void') == '1' %}{% set n_void = invoices|selectattr('status', 'equalto', 'void')|list|length %}
+{% for i in invoices if show_void or i.status != 'void' %}{% set bal = i.total_cents - i.paid %}<tr>
 <td><a href="{{ url_for('billing.invoice', invoice_id=i.id) }}"><strong>{{ (i.issued_at or i.created_at)|date }}</strong></a>
 {% if i.status == 'issued' and bal <= 0 %}<br><span class="tag-paid">PAID</span>{% elif i.status == 'issued' and i.paid > 0 %}<br><span class="tag-part">PARTIAL</span>{% elif i.status != 'issued' %}<br>{{ status_badge(i.status) }}{% endif %}</td>
 <td>{{ i.lines or '—' }}<br><small class="muted">{{ i.number or 'Draft' }} · {{ i.branch }}</small></td>
@@ -298,7 +299,9 @@
 <p class="kebab-h">Record</p><a href="{{ url_for('billing.invoice', invoice_id=i.id) }}">{{ 'Edit' if i.status == 'draft' and current_user.can('billing.manage') else 'Open' }}</a>
 {% if i.status != 'draft' %}<p class="kebab-h">Share / output</p><a href="{{ url_for('billing.invoice_print', invoice_id=i.id) }}" target="_blank">Print</a>{% endif %}
 </div></details></td></tr>
-{% else %}<tr><td colspan="7" class="empty">No bills yet.</td></tr>{% endfor %}</tbody></table></div>
+{% else %}<tr><td colspan="7" class="empty">{{ 'No bills yet.' if not n_void else 'No active bills.' }}</td></tr>{% endfor %}</tbody></table></div>
+{% if n_void %}<p class="mt-1"><small>{% if show_void %}<a href="?tab=billing">Hide voided bills</a>{% else %}<a href="?tab=billing&amp;void=1">Show voided bills ({{ n_void }})</a>{% endif %}
+<span class="muted"> · Voided bills are kept for the audit trail and the invoice numbering; they don't count in balances or sales.</span></small></p>{% endif %}
 {% for i in invoices if i.status == 'issued' and i.total_cents - i.paid > 0 and current_user.can('payments.add') %}
 <dialog id="pay-{{ i.id }}" class="dlg dlg-wide" aria-labelledby="pay-{{ i.id }}-t"><div class="dlg-head"><h2 id="pay-{{ i.id }}-t">Add payment</h2><button type="button" class="btn btn-ghost" data-close aria-label="Close">✕</button></div>
 {{ pay_form(i, i.total_cents - i.paid, i.paid, today_iso, p.first_name ~ ' ' ~ p.last_name, 'patient', comm_dentists, i.comm_info) }}</dialog>

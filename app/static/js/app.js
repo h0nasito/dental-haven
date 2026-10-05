@@ -280,6 +280,24 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 })();
 
+/* Action menus (⋯) inside scrolling tables: make room below so the open menu isn't cut off. Also re-measures when a
+   section inside the menu (e.g. "Edit …") opens. */
+(function () {
+  document.addEventListener('toggle', function (e) {
+    var k = e.target.closest && e.target.closest('details.kebab');
+    if (!k) return;
+    var wrap = k.closest('.table-wrap');
+    if (!wrap) return;
+    wrap.style.paddingBottom = '';
+    if (!k.open) return;
+    var menu = k.querySelector('.kebab-menu');
+    if (!menu) return;
+    var need = menu.getBoundingClientRect().bottom - wrap.getBoundingClientRect().bottom + 16;
+    if (need > 0) wrap.style.paddingBottom = need + 'px';
+    if (menu.getBoundingClientRect().bottom > window.innerHeight) menu.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, true);
+})();
+
 /* Signature pads: <canvas data-sigpad> + hidden [data-sig-out] + [data-sig-clear], inside a form. */
 (function () {
   document.querySelectorAll('canvas[data-sigpad]').forEach(function (canvas) {

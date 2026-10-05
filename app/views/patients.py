@@ -339,7 +339,10 @@ def progress_groups(conn, patient_id, procedures, notes):
     for gr in out:
         gr["attachments"] = docs.get(gr["date"], 0) + sum(by_visit.get(v["id"], 0) for v in gr.get("visits", []))
         gr["branch"] = ", ".join(sorted(b for b in gr["branches"] if b))
-    return out
+    # Leave out rows with nothing left to show, e.g. a progress note whose bill was voided (no procedures, notes,
+    # files, recall or patient signature). The voided bill itself stays under Bills ("Show voided bills").
+    return [gr for gr in out if gr["lines"] or gr["notes"] or gr["attachments"]
+            or any(v["recall_date"] or v["signature_name"] for v in gr.get("visits", []))]
 
 
 @bp.route("/<int:patient_id>")
