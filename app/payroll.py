@@ -1,6 +1,7 @@
 """Attendance exception detection and draft payroll summaries.
 
-Clinic-confirmed rules: cutoffs 1-15 and 16-end of month; late = ₱1 per minute (staff); overtime paid only when a
+Clinic-confirmed rules: cutoffs 1-15 and 16-end of month; staff hours 8:00-17:00; late = ₱1 per minute from 8:01
+(staff); overtime = time after 17:00 in whole 30-min blocks (+30 min for a short lunch), only for employees eligible for overtime, paid only when a
 supervisor approves it, at daily rate / 8 x 1.25 per hour; regular holiday worked = double pay, special non-working
 day worked = +30%; unworked regular holiday = 1 day (setting). Night differential and statutory deductions
 (SSS, PhilHealth, Pag-IBIG, tax) are NOT computed. This module aggregates attendance and shows *estimates*: rate x days or hours
@@ -29,21 +30,23 @@ def evaluate_record(conn, rec: dict) -> tuple[str, str]:
         issues.append("missing time-in")
     if not rec.get("time_out"):
         issues.append("missing time-out")
-    day = parse_date(rec["work_date"])
-    if rec.get("time_in") and rec.get("time_out"):
-        if hm_to_min(rec["time_out"]) <= hm_to_min(rec["time_in"]):
-            issues.append("time-out before time-in")
-        hours = conn.one("SELECT * FROM branch_hours WHERE branch_id = ? AND weekday = ?", (rec["branch_id"], day.weekday()))
-        grace = int(settings.get("payroll.grace_minutes", conn) or 0)
-        if hours and not hours["closed"]:
-            late = hm_to_min(rec["time_in"]) - hm_to_min(hours["open_time"]) - grace
-            if late > 0:
-                issues.append(f"late {late} min vs branch opening")
-            early = hm_to_min(hours["close_time"]) - hm_to_min(rec["time_out"])
-            if early > 0:
-                issues.append(f"left {early} min before closing")
-        elif hours and hours["closed"]:
+    if rec.get("time_in") and rec.get("time_out") and hm_to_min(rec["time_out"]) <= hm_to_min(rec["time_in"]):
+        issues.append("time-out before time-in")
+    from .attendance_rules import schedule
+    sch = schedule(conn, rec)
+    if sch is None and rec.get("work_date") and rec.get("branch_id"):
+        day = parse_date(rec["work_date"])
+        hours = conn.one("SELECT closed FROM branch_hours WHERE branch_id = ? AND weekday = ?", (rec["branch_id"], day.weekday()))
+        if hours and hours["closed"]:
             issues.append("worked on a day the branch is closed")
+    elif sch and rec.get("time_in") and rec.get("time_out") and hm_to_min(rec["time_out"]) > hm_to_min(rec["time_in"]):
+        grace = int(settings.get("payroll.grace_minutes", conn) or 0)
+        late = hm_to_min(rec["time_in"]) - hm_to_min(sch["start"]) - grace
+        if late > 0:
+            issues.append(f"late {late} min vs {'branch opening' if sch['dentist'] else sch['start']}")
+        early = hm_to_min(sch["end"]) - hm_to_min(rec["time_out"])
+        if early > 0:
+            issues.append(f"left {early} min before {'closing' if sch['dentist'] else sch['end']}")
     return ("exception", "; ".join(issues)) if issues else ("ok", "")
 
 

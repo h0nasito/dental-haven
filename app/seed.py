@@ -405,6 +405,20 @@ def seed_base(conn):
                     if not conn.one("SELECT 1 AS x FROM role_permissions WHERE role = ? AND permission = ?", (role, perm)):
                         conn.execute("INSERT INTO role_permissions (role, permission) VALUES (?, ?)", (role, perm))
             _settings2.put("seed.lab_workload_v1", True, None, conn)
+        # Once (Oct 2026): recount lates and overtime with the staff hours 8:00-17:00, from the 1st of last month.
+        # No late-warning emails are sent by this recount.
+        if not _settings2.get("seed.staff_hours_v2", conn):
+            from datetime import date as _d
+            from .attendance_rules import day_metrics
+            t = _d.today()
+            since = (_d(t.year - 1, 12, 1) if t.month == 1 else _d(t.year, t.month - 1, 1)).isoformat()
+            for r in conn.all("SELECT * FROM time_records WHERE work_date >= ?", (since,)):
+                late, ot = day_metrics(conn, dict(r))
+                if r["status"] == "excused":
+                    late = 0
+                conn.execute("UPDATE time_records SET late_minutes = ?, ot_minutes = ?, ot_approved_minutes = MIN(ot_approved_minutes, ?) "
+                             "WHERE id = ?", (late, ot, ot, r["id"]))
+            _settings2.put("seed.staff_hours_v2", True, None, conn)
         # The clinic's Assistant Checklist, created once (closed until the admin opens it).
         if not _settings2.get("seed.eval_assistant_v1", conn):
             import json as _json

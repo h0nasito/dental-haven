@@ -1095,7 +1095,7 @@ def system():
             new["invoice.number_format"].format(prefix="MAL", year=2026, seq=1)
         except (KeyError, ValueError, IndexError):
             errors["invoice.number_format"] = "Use only {prefix}, {year} and {seq} placeholders, e.g. {prefix}-{year}-{seq:05d}."
-        for k in ("messaging.quiet_start", "messaging.quiet_end"):
+        for k in ("messaging.quiet_start", "messaging.quiet_end", "payroll.staff_start_time", "payroll.staff_end_time"):
             if not TIME_RE.match(new.get(k) or ""):
                 errors[k] = "Use HH:MM (24-hour)."
         if not errors:

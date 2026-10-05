@@ -261,6 +261,11 @@ def _pct_bp(raw):
     return int(round(v * 100)) if 0 <= v <= 100 else None
 
 
+def _fmt12(hm: str) -> str:
+    h, m = (int(x) for x in hm.split(":"))
+    return f"{(h - 1) % 12 + 1}:{m:02d} {'AM' if h < 12 else 'PM'}"
+
+
 @bp.route("/employees/<int:emp_id>", methods=["GET", "POST"])
 @require("attendance.manage", "compensation.manage", any_of=True)
 def employee(emp_id):
@@ -288,7 +293,12 @@ def employee(emp_id):
                                                    "created_by": g.user.id, "created_at": now_str()})
                 audit.record("compensation_set", "employee", emp_id, "Compensation setting added",
                              {"compensation_id": cid, "basis": basis, "effective_from": eff.isoformat()}, e["primary_branch_id"])
-                flash("Compensation setting saved (effective-dated history is kept).", "success")
+                commission = basis in ("percentage", "per_case", "daily_commission")
+                if commission and e["ot_eligible"]:
+                    conn.execute("UPDATE employees SET ot_eligible = 0 WHERE id = ?", (emp_id,))
+                flash("Compensation setting saved (effective-dated history is kept)."
+                      + (" Commission-based, so overtime was switched off for this employee (you can turn it back on under Details)."
+                         if commission and e["ot_eligible"] else ""), "success")
         elif action in ("dentist_pay", "service_rate"):
             if not g.user.can("compensation.manage"):
                 abort(403)
@@ -331,8 +341,15 @@ def employee(emp_id):
             if pos not in POSITIONS and pos != e["position"]:
                 pos = e["position"]
             upd = {"position": pos, "employment_type": request.form.get("employment_type", "regular"),
-                   "primary_branch_id": branch_id, "active": 1 if request.form.get("active") else 0}
+                   "primary_branch_id": branch_id, "active": 1 if request.form.get("active") else 0,
+                   "ot_eligible": 1 if request.form.get("ot_eligible") else 0}
             conn.update("employees", emp_id, upd)
+            if upd["ot_eligible"] != e["ot_eligible"]:
+                # Recount overtime on this employee's records from the last 31 days.
+                from ..attendance_rules import refresh_record
+                since = (today() - timedelta(days=31)).isoformat()
+                for rec in conn.all("SELECT id FROM time_records WHERE employee_id = ? AND work_date >= ?", (emp_id, since)):
+                    refresh_record(conn, rec["id"])
             audit.record("employee_updated", "employee", emp_id, "Updated employee", audit.diff(dict(e), upd, upd.keys()), branch_id)
             flash("Employee updated.", "success")
         return redirect(url_for("people.employee", emp_id=emp_id))
@@ -346,7 +363,8 @@ def employee(emp_id):
                         "ORDER BY effective_from DESC, id DESC", (emp_id,))
         svc_rates = conn.all("SELECT r.*, s.name AS service FROM dentist_service_rates r JOIN services s ON s.id = r.service_id WHERE employee_id = ? "
                              "ORDER BY s.sort_order", (emp_id,))
-    return render_template("staff/people/employee.html", e=e, comps=comps, branches=branches_for_user(g.user), is_dentist=is_dentist,
+    from .. import settings as _settings
+    return render_template("staff/people/employee.html", ot_end=_fmt12(_settings.get("payroll.staff_end_time", conn) or "17:00"), e=e, comps=comps, branches=branches_for_user(g.user), is_dentist=is_dentist,
                            dpay=dpay, svc_rates=svc_rates, all_services=conn.all("SELECT id, name FROM services WHERE active = 1 ORDER BY sort_order"),
                            today=today().isoformat())
 
@@ -385,7 +403,7 @@ def attendance():
     if emp and manage:
         where.append("t.employee_id = ?")
         args.append(emp)
-    rows = conn.all("SELECT t.*, e.full_name, b.name AS branch, u.name AS corrected_by_name FROM time_records t JOIN employees e ON e.id = t.employee_id "
+    rows = conn.all("SELECT t.*, e.full_name, e.ot_eligible, b.name AS branch, u.name AS corrected_by_name FROM time_records t JOIN employees e ON e.id = t.employee_id "
                     "JOIN branches b ON b.id = t.branch_id LEFT JOIN users u ON u.id = t.corrected_by "
                     f"WHERE {' AND '.join(where)} ORDER BY t.work_date DESC, e.full_name LIMIT 500", args)
     for r in rows:
@@ -439,13 +457,25 @@ def attendance_record():
 @require("overtime.approve")
 def attendance_overtime(rec_id):
     conn = get_db()
-    r = conn.one("SELECT t.*, e.full_name FROM time_records t JOIN employees e ON e.id = t.employee_id WHERE t.id = ?", (rec_id,))
+    r = conn.one("SELECT t.*, e.full_name, e.ot_eligible FROM time_records t JOIN employees e ON e.id = t.employee_id WHERE t.id = ?", (rec_id,))
     if not r or not g.user.in_branch(r["branch_id"]):
         abort(404)
+    if request.form.get("action") == "short_lunch":
+        if not r["ot_eligible"]:
+            flash("This employee isn't eligible for overtime (see Employees).", "error")
+            return redirect(url_for("people.attendance"))
+        on = 1 if request.form.get("short_lunch") == "1" else 0
+        conn.execute("UPDATE time_records SET short_lunch = ? WHERE id = ?", (on, rec_id))
+        from ..attendance_rules import refresh_record
+        refresh_record(conn, rec_id)
+        audit.record("short_lunch_set", "time_record", rec_id, f"Short lunch {'marked' if on else 'removed'} for {r['full_name']} {r['work_date']}",
+                     branch_id=r["branch_id"])
+        flash("Short lunch marked: 30 minutes added to overtime for approval." if on else "Short lunch removed.", "success")
+        return redirect(request.referrer if (request.referrer or "").startswith(request.host_url) else url_for("people.attendance"))
     minutes = to_int(request.form.get("minutes"))
     note = clean(request.form.get("note"), 200)
     if minutes is None or minutes < 0 or minutes > r["ot_minutes"]:
-        flash(f"Approve between 0 and {r['ot_minutes']} minutes (the time after closing).", "error")
+        flash(f"Approve between 0 and {r['ot_minutes']} minutes (time after 5:00 PM, plus any short lunch).", "error")
     else:
         conn.execute("UPDATE time_records SET ot_approved_minutes = ?, ot_approved_by = ?, ot_approved_at = ?, ot_note = ? WHERE id = ?",
                      (minutes, g.user.id, now_str(), note, rec_id))

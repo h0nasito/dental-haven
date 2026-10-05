@@ -26,6 +26,10 @@ DEFAULTS: dict[str, object] = {
     "payroll.rules_confirmed": False,       # estimates are labelled unconfirmed until this is true
     "payroll.standard_day_minutes": 480,
     "payroll.grace_minutes": 0,
+    "payroll.staff_start_time": "08:00",      # staff are late from 08:01 (dentists: from the branch opening time)
+    "payroll.staff_end_time": "17:00",        # time after this is overtime (only for employees eligible for overtime)
+    "payroll.short_lunch_minutes": 30,
+    "payroll.ot_block_minutes": 30,           # overtime after 5 PM counts in whole blocks: under 30 min = 0, 45 min = 30        # extra overtime when a staff member took a 30-minute lunch instead of 1 hour
     "payroll.late_peso_per_minute": 1,        # ₱ deducted per late minute (clinic rule: 1 minute = ₱1)
     "payroll.late_applies_dentists": False,
     "payroll.pay_unworked_regular_holiday": True,
@@ -61,6 +65,10 @@ LABELS = {
     "payroll.rules_confirmed": "Clinic pay rules confirmed and configured",
     "payroll.standard_day_minutes": "Standard working day (minutes)",
     "payroll.grace_minutes": "Late grace period (minutes)",
+    "payroll.staff_start_time": "Staff start time (late from the next minute), HH:MM",
+    "payroll.staff_end_time": "Staff end time (overtime after this), HH:MM",
+    "payroll.short_lunch_minutes": "Overtime added for a short lunch (minutes)",
+    "payroll.ot_block_minutes": "Overtime counts in blocks of (minutes): less than one block = none, the rest is rounded down",
     "payroll.late_peso_per_minute": "Late deduction per minute (₱)",
     "payroll.late_applies_dentists": "Also deduct lates from dentists",
     "payroll.pay_unworked_regular_holiday": "Pay 1 day for a regular holiday not worked (staff on daily rate)",

@@ -4,7 +4,11 @@
   ₱1 per late minute (setting payroll.late_rate_cents; dentists only if payroll.late_applies_dentists).
 - 3rd late in a calendar month: the employee gets a warning email (when email is set up) and HR / super admins get an
   in-app notification. Once per employee per month.
-- Overtime: minutes after the branch closing time are detected, but only overtime a supervisor approves is paid.
+- Staff hours (Oct 2026): 8:00 AM to 5:00 PM (settings payroll.staff_start_time / staff_end_time). Staff are late from
+  8:01 (no grace period); dentists are late from the branch opening time.
+- Overtime: time after 5:00 PM in whole 30-minute blocks (under 30 min = none, 45 min = 30), plus 30 minutes when the staff member took only a 30-minute lunch (ticked at time-out).
+  Only for employees marked "Eligible for overtime" (not commission-based staff or dentists). Late minutes and
+  overtime are counted separately. Only overtime a supervisor approves is paid, at daily rate / 8 x 1.25 per hour.
 """
 from __future__ import annotations
 
@@ -15,20 +19,48 @@ from .notices import notify
 from .util import hm_to_min, now_str, parse_date
 
 
-def day_metrics(conn, rec) -> tuple[int, int]:
-    """(late minutes, overtime minutes) for a time record, against the branch's hours that weekday."""
+def schedule(conn, rec) -> dict | None:
+    """The working hours that apply to this time record: {start, end, ot_eligible, dentist}, or None on a day off.
+
+    Staff use the clinic's staff hours (8:00-17:00). Dentists use the branch's opening hours. A day the branch is closed
+    has no schedule (no lates, no overtime; the record is flagged for review instead)."""
     if not rec.get("work_date"):
-        return 0, 0
+        return None
     day = parse_date(rec["work_date"])
-    hours = conn.one("SELECT * FROM branch_hours WHERE branch_id = ? AND weekday = ?", (rec["branch_id"], day.weekday()))
-    if not hours or hours["closed"]:
+    hours = conn.one("SELECT * FROM branch_hours WHERE branch_id = ? AND weekday = ?", (rec.get("branch_id"), day.weekday())) \
+        if rec.get("branch_id") else None
+    if hours and hours["closed"]:
+        return None
+    emp = conn.one("SELECT e.ot_eligible, u.role FROM employees e LEFT JOIN users u ON u.id = e.user_id WHERE e.id = ?",
+                   (rec.get("employee_id"),)) if rec.get("employee_id") else None
+    dentist = bool(emp and emp["role"] == "dentist")
+    if dentist:
+        if not hours:
+            return None
+        start, end = hours["open_time"], hours["close_time"]
+    else:
+        start = settings.get("payroll.staff_start_time", conn) or "08:00"
+        end = settings.get("payroll.staff_end_time", conn) or "17:00"
+    # Dentists are paid by commission and never earn overtime.
+    return {"start": start, "end": end, "dentist": dentist, "ot_eligible": bool(emp and emp["ot_eligible"] and not dentist)}
+
+
+def day_metrics(conn, rec) -> tuple[int, int]:
+    """(late minutes, overtime minutes) for a time record."""
+    sch = schedule(conn, rec)
+    if not sch:
         return 0, 0
     grace = int(settings.get("payroll.grace_minutes", conn) or 0)
     late = ot = 0
     if rec.get("time_in"):
-        late = max(0, hm_to_min(rec["time_in"]) - hm_to_min(hours["open_time"]) - grace)
-    if rec.get("time_out") and rec.get("time_in") and hm_to_min(rec["time_out"]) > hm_to_min(rec["time_in"]):
-        ot = max(0, hm_to_min(rec["time_out"]) - hm_to_min(hours["close_time"]))
+        late = max(0, hm_to_min(rec["time_in"]) - hm_to_min(sch["start"]) - grace)
+    if sch["ot_eligible"] and rec.get("time_out") and rec.get("time_in") and hm_to_min(rec["time_out"]) > hm_to_min(rec["time_in"]):
+        ot = max(0, hm_to_min(rec["time_out"]) - hm_to_min(sch["end"]))
+        block = int(settings.get("payroll.ot_block_minutes", conn) or 0)
+        if block > 1:
+            ot = ot // block * block   # minimum one block (30 min), then whole blocks: 25 -> 0, 45 -> 30, 70 -> 60
+        if rec.get("short_lunch"):
+            ot += int(settings.get("payroll.short_lunch_minutes", conn) or 0)
     return late, ot
 
 

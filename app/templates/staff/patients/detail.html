@@ -140,8 +140,17 @@
 <label class="sr-only" for="ed{{ pr.id }}">Description</label><input id="ed{{ pr.id }}" name="description" value="{{ pr.description }}">
 <label class="sr-only" for="et{{ pr.id }}">Tooth</label><input id="et{{ pr.id }}" name="tooth" value="{{ pr.tooth }}" placeholder="Tooth" class="mt-1">
 <label class="sr-only" for="edt{{ pr.id }}">Date</label><input id="edt{{ pr.id }}" type="date" name="performed_at" value="{{ (pr.performed_at or '')[:10] }}" class="mt-1">
-<div class="row mt-1"><button class="btn btn-secondary btn-sm" name="action" value="edit">Save</button><button class="btn btn-danger btn-sm" name="action" value="delete" formnovalidate>Delete</button></div></form></details>{% endfor %}{% endif %}
+<div class="row mt-1"><button class="btn btn-secondary btn-sm" name="action" value="edit">Save</button><button class="btn btn-danger btn-sm" name="action" value="delete" formnovalidate data-confirm="Delete “{{ pr.description|truncate(40) }}” from the progress notes?">Delete</button></div></form></details>{% endfor %}{% endif %}
+{% if gr.billed and current_user.can('billing.view') %}<p class="kebab-h">Billed items</p>{% for b in gr.billed %}
+{% if b.status == 'draft' and current_user.can('bills.edit') %}<form method="post" action="{{ url_for('billing.invoice_edit', invoice_id=b.inv_id) }}">{{ csrf() }}
+<input type="hidden" name="action" value="remove_item"><input type="hidden" name="item_id" value="{{ b.item_id }}"><input type="hidden" name="next" value="{{ url_for('patients.detail', patient_id=p.id, tab='notes') }}">
+<button class="btn btn-ghost btn-sm" data-confirm="Remove “{{ b.text|truncate(40) }}” from the draft invoice?">Remove “{{ b.text|truncate(26) }}” from draft</button></form>
+{% else %}<small class="muted">“{{ b.text|truncate(26) }}” is on issued invoice {{ b.number }}: to remove it, void the invoice and issue a new one.</small>{% endif %}{% endfor %}{% endif %}
 {% if current_user.can('progress.add') and gr.notes %}<p class="kebab-h">Notes</p><small class="muted">Notes can't be edited. Add an amendment with “Amends note #{{ gr.notes[0].id }}”.</small>{% endif %}
+{% if current_user.is_super_admin and gr.notes %}{% for n in gr.notes %}<details><summary>Delete note #{{ n.id }}</summary>
+<form method="post" action="{{ url_for('patients.note_delete', patient_id=p.id, note_id=n.id) }}" class="mt-1">{{ csrf() }}
+<label for="dr{{ n.id }}">Reason</label><input id="dr{{ n.id }}" name="reason" required minlength="3" maxlength="300" placeholder="e.g. duplicate, wrong patient">
+<button class="btn btn-danger btn-sm mt-1" data-confirm="Delete note #{{ n.id }}? The text is kept in the audit trail.">Delete note</button></form></details>{% endfor %}{% endif %}
 </div></details></td></tr>
 {% else %}<tr><td colspan="4" class="empty">No progress notes recorded.</td></tr>{% endfor %}</tbody></table></div>
 {% set planned = procedures|selectattr('status', 'equalto', 'planned')|list %}

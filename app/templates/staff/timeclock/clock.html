@@ -21,6 +21,8 @@
 <div class="field"><label class="check"><input type="checkbox" name="field" value="1" data-field-toggle> I'm on the field (working outside the clinic or lab)</label>
 <div data-field-box hidden><label for="cfr">Where are you and why?</label><input id="cfr" name="field_reason" maxlength="200" placeholder="e.g. Supplier pickup in Manila, home service, seminar">
 <span class="hint">Your time is recorded now and counts once your supervisor, HR or admin approves it. Choose above the branch that handles your attendance.</span></div></div>
+{% if next_kind == 'out' and emp.ot_eligible %}<div class="field"><label class="check"><input type="checkbox" name="short_lunch" value="1"> I only took a 30-minute lunch today (not 1 hour)</label>
+<span class="hint">The other 30 minutes count as overtime once your supervisor approves it.</span></div>{% endif %}
 <div class="field"><label for="cp">Selfie in front of the clinic</label><input id="cp" type="file" name="photo" accept="image/*" capture="user" required>
 <span class="hint">Your phone's camera opens. Include the clinic entrance or signage behind you (on the field: where you are).</span></div>
 <p class="hint" data-geo-status>Checking your location… If your phone asks, tap Allow.</p>

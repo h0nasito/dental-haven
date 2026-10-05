@@ -35,10 +35,10 @@ class TestPayrollRules(Base):
         admin.post("/staff/holidays", data={"action": "add", "day": "2025-04-02", "name": "Test special", "kind": "special"})
         admin.post("/staff/holidays", data={"action": "add", "day": "2025-04-09", "name": "Araw ng Kagitingan", "kind": "regular"})
         admin.post("/staff/holidays", data={"action": "add", "day": "2025-04-10", "name": "Test regular", "kind": "regular"})
-        r1 = self._record(admin, eid, bid, "2025-04-01", "09:05", "19:00")   # 5 min late, 60 min after closing
+        r1 = self._record(admin, eid, bid, "2025-04-01", "08:05", "18:00")   # staff hours 8-5: 5 min late, 60 min overtime
         self.assertEqual((r1["late_minutes"], r1["ot_minutes"], r1["ot_approved_minutes"]), (5, 60, 0))
-        self._record(admin, eid, bid, "2025-04-02", "09:00", "18:00")
-        self._record(admin, eid, bid, "2025-04-09", "09:00", "18:00")
+        self._record(admin, eid, bid, "2025-04-02", "08:00", "17:00")
+        self._record(admin, eid, bid, "2025-04-09", "08:00", "17:00")
         # overtime counts only once approved
         r = admin.post(f"/staff/attendance/{r1['id']}/overtime", data={"minutes": "90", "note": "x"})
         self.assertEqual(self.q("SELECT ot_approved_minutes FROM time_records WHERE id = ?", (r1["id"],))["ot_approved_minutes"], 0)  # > detected
@@ -127,3 +127,49 @@ class TestPayrollRules(Base):
         hr.post(f"/staff/employees/{emp['id']}", data={"action": "details", "position": "Chief", "employment_type": "regular",
                                                        "primary_branch_id": self.branch("malolos"), "active": "1"})
         self.assertEqual(self.q("SELECT position FROM employees WHERE id = ?", (emp["id"],))["position"], "Supervisor")  # not in the list
+
+
+class TestStaffHours(TestPayrollRules):
+    """Staff hours 8:00-17:00: late from 8:01, overtime after 17:00 (+30 min for a short lunch), only if eligible."""
+
+    def test_late_from_801_and_overtime_after_5(self):
+        admin = self.login("admin")
+        eid, bid = self._employee("Staff Hours (demo)")
+        r = self._record(admin, eid, bid, "2025-07-01", "08:01", "17:45")
+        self.assertEqual((r["late_minutes"], r["ot_minutes"]), (1, 30))   # 45 min -> one 30-min block
+        r = self._record(admin, eid, bid, "2025-07-04", "08:00", "17:25")
+        self.assertEqual(r["ot_minutes"], 0)                               # under 30 min is not counted
+        r = self._record(admin, eid, bid, "2025-07-07", "08:00", "18:10")
+        self.assertEqual(r["ot_minutes"], 60)                              # 70 min -> 60
+        r = self._record(admin, eid, bid, "2025-07-02", "08:00", "17:00")
+        self.assertEqual((r["late_minutes"], r["ot_minutes"], r["status"]), (0, 0, "ok"))
+        r = self._record(admin, eid, bid, "2025-07-03", "08:30", "18:00")   # late and overtime are counted separately
+        self.assertEqual((r["late_minutes"], r["ot_minutes"]), (30, 60))
+
+    def test_short_lunch_adds_30_minutes(self):
+        admin = self.login("admin")
+        eid, bid = self._employee("Short Lunch (demo)")
+        r = self._record(admin, eid, bid, "2025-07-08", "08:00", "17:20")
+        admin.post(f"/staff/attendance/{r['id']}/overtime", data={"action": "short_lunch", "short_lunch": "1"})
+        r = self.q("SELECT * FROM time_records WHERE id = ?", (r["id"],))
+        self.assertEqual((r["short_lunch"], r["ot_minutes"]), (1, 30))
+        admin.post(f"/staff/attendance/{r['id']}/overtime", data={"minutes": "30", "note": "Worked through lunch"})
+        self.assertEqual(self.q("SELECT ot_approved_minutes FROM time_records WHERE id = ?", (r["id"],))["ot_approved_minutes"], 30)
+
+    def test_not_eligible_gets_no_overtime(self):
+        admin = self.login("admin")
+        eid, bid = self._employee("Commission Staff (demo)")
+        self.conn.execute("UPDATE employees SET ot_eligible = 0 WHERE id = ?", (eid,))
+        r = self._record(admin, eid, bid, "2025-07-15", "08:00", "19:00")
+        self.assertEqual((r["late_minutes"], r["ot_minutes"]), (0, 0))
+        admin.post(f"/staff/attendance/{r['id']}/overtime", data={"action": "short_lunch", "short_lunch": "1"})
+        self.assertEqual(self.q("SELECT short_lunch FROM time_records WHERE id = ?", (r["id"],))["short_lunch"], 0)
+
+    def test_dentists_late_from_branch_opening_no_overtime(self):
+        from app.attendance_rules import day_metrics
+        d = self.q("SELECT e.id, e.primary_branch_id FROM employees e JOIN users u ON u.id = e.user_id WHERE u.role = 'dentist' LIMIT 1")
+        if not d:
+            self.skipTest("no dentist employee in the demo data")
+        late, ot = day_metrics(self.conn, {"employee_id": d["id"], "branch_id": d["primary_branch_id"], "work_date": "2025-07-01",
+                                           "time_in": "09:10", "time_out": "19:00"})
+        self.assertEqual((late, ot), (10, 0))

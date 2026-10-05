@@ -260,7 +260,7 @@ def invoice_edit(invoice_id):
         elif action == "issue":
             items = conn.all("SELECT * FROM invoice_items WHERE invoice_id = ?", (invoice_id,))
             if not items:
-                flash("Add at least one line before issuing.", "error")
+                flash("Add at least one item (a service or procedure) with the Add button below before issuing the invoice.", "error")
             else:
                 _recalc(conn, invoice_id)
                 number = next_invoice_number(conn, inv["branch_id"])
@@ -276,6 +276,10 @@ def invoice_edit(invoice_id):
             flash("Draft deleted.", "success")
             return redirect(url_for("patients.detail", patient_id=inv["patient_id"]))
         _recalc(conn, invoice_id)
+    back = request.form.get("next") or ""
+    if action == "remove_item" and back.startswith(f"/staff/patients/{inv['patient_id']}") and "//" not in back:
+        flash("Item removed from the draft invoice.", "success")
+        return redirect(back)
     return redirect(url_for("billing.invoice", invoice_id=invoice_id))
 
 

@@ -11,6 +11,8 @@
 {{ select('primary_branch_id', 'Primary branch', branches|opts, e.primary_branch_id) }}
 {{ select('employment_type', 'Type', [('regular','Regular'),('probationary','Probationary'),('associate','Associate dentist'),('part_time','Part-time'),('contractual','Contractual')], e.employment_type) }}
 <label class="check"><input type="checkbox" name="active" value="1" {% if e.active %}checked{% endif %}> Active</label>
+<label class="check"><input type="checkbox" name="ot_eligible" value="1" {% if e.ot_eligible %}checked{% endif %}> Eligible for overtime</label>
+<span class="hint">Untick for commission-based staff and dentists. Overtime is time after {{ ot_end }} plus a 30-minute short lunch, paid at daily rate ÷ 8 × 1.25 once a supervisor approves it.</span>
 <button class="btn btn-secondary mt-1">Save</button></form></div>
 {% endif %}
 {% if current_user.can('compensation.manage') and is_dentist %}

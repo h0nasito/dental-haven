@@ -274,7 +274,8 @@ def progress_groups(conn, patient_id, procedures, notes):
 
     def grp(day, dentist, branch=""):
         key = (day or "", dentist or "")
-        gr = groups.setdefault(key, {"date": day, "dentist": dentist, "branches": set(), "lines": [], "notes": [], "invoices": {}, "procs": []})
+        gr = groups.setdefault(key, {"date": day, "dentist": dentist, "branches": set(), "lines": [], "notes": [], "invoices": {}, "procs": [],
+                                     "billed": []})
         if branch:
             gr["branches"].add(branch)
         return gr
@@ -310,6 +311,8 @@ def progress_groups(conn, patient_id, procedures, notes):
                 continue
             gr = grp(day, dentist, it["branch"])
             gr["lines"].append({"text": it["description"], "tooth": "", "price": it["amount_cents"], "proc": None})
+            gr["billed"].append({"item_id": it["id"], "inv_id": it["inv_id"], "number": it["number"], "status": it["inv_status"],
+                                 "text": it["description"]})
             gr["invoices"][it["inv_id"]] = it["number"] or "Draft invoice"
     from_visit = {r["note_id"]: (r["visit_date"], r["dentist"]) for r in conn.all(
         "SELECT v.note_id, v.visit_date, u.name AS dentist FROM visit_notes v LEFT JOIN users u ON u.id = v.dentist_id "
@@ -397,7 +400,7 @@ def detail(patient_id):
         ctx["history"] = conn.one("SELECT h.*, u.name AS updated_by_name FROM patient_history h LEFT JOIN users u ON u.id = h.updated_by "
                                   "WHERE h.patient_id = ?", (patient_id,)) or {}
         ctx["notes"] = conn.all("SELECT n.*, u.name AS author, a.start_at AS appt_at FROM clinical_notes n JOIN users u ON u.id = n.author_id "
-                                "LEFT JOIN appointments a ON a.id = n.appointment_id WHERE n.patient_id = ? ORDER BY n.created_at DESC",
+                                "LEFT JOIN appointments a ON a.id = n.appointment_id WHERE n.patient_id = ? AND n.deleted_at IS NULL ORDER BY n.created_at DESC",
                                 (patient_id,))
         ctx["procedures"] = conn.all("SELECT pr.*, u.name AS dentist, s.name AS service FROM procedures pr LEFT JOIN users u ON u.id = pr.performed_by "
                                      "LEFT JOIN services s ON s.id = pr.service_id WHERE pr.patient_id = ? ORDER BY COALESCE(pr.performed_at, pr.created_at) DESC",
@@ -780,6 +783,30 @@ def procedure_action(patient_id, proc_id):
         audit.record("progress_edited", "patient", patient_id, "Edited progress note", audit.diff(dict(pr), vals, vals.keys()))
         flash("Progress note updated.", "success")
     return redirect(url_for("patients.detail", patient_id=patient_id, tab="clinical"))
+
+
+@bp.route("/<int:patient_id>/notes/<int:note_id>/delete", methods=["POST"])
+@require("progress.actions")
+def note_delete(patient_id, note_id):
+    """Remove a written progress note (super admin only, with a reason). It's hidden, not erased: the audit trail keeps
+    the text, and a MyMedsPH re-import won't bring it back."""
+    if not g.user.is_super_admin:
+        abort(403)
+    conn = get_db()
+    _load(patient_id)
+    n = conn.one("SELECT * FROM clinical_notes WHERE id = ? AND patient_id = ? AND deleted_at IS NULL", (note_id, patient_id))
+    if not n:
+        abort(404)
+    reason = clean(request.form.get("reason"), 300)
+    if len(reason) < 3:
+        flash("Write why this note is being deleted (for example: duplicate, wrong patient).", "error")
+        return redirect(url_for("patients.detail", patient_id=patient_id, tab="notes"))
+    conn.execute("UPDATE clinical_notes SET deleted_at = ?, deleted_by = ?, deleted_reason = ? WHERE id = ?",
+                 (now_str(), g.user.id, reason, note_id))
+    audit.record("progress_note_deleted", "patient", patient_id, f"Deleted written progress note #{note_id}",
+                 {"reason": reason, "body": n["body"], "created_at": n["created_at"]})
+    flash("Note deleted. The original text is kept in the audit trail.", "success")
+    return redirect(url_for("patients.detail", patient_id=patient_id, tab="notes"))
 
 
 @bp.route("/<int:patient_id>/documents/<int:doc_id>/delete", methods=["POST"])
