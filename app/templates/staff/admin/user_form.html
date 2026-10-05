@@ -52,6 +52,9 @@
 </div>
 {% if not is_new %}
 <div>
+  {% if user.role != 'super_admin' and current_user.can('roles.manage') %}<div class="card"><h3>Access</h3>
+    <p class="muted">Uses the {{ ROLES[user.access_role or user.role] }} role{% if n_overrides %}, with <strong>{{ n_overrides }}</strong> individual change{{ 's' if n_overrides != 1 }}{% endif %}.</p>
+    <a class="btn btn-secondary" href="{{ url_for('admin.user_access', user_id=user.id) }}">Individual access</a></div>{% endif %}
   <div class="card"><h3>Password</h3><p class="muted">Generates a new temporary password and signs the user out everywhere.</p>
     <form method="post" action="{{ url_for('admin.user_reset_password', user_id=user.id) }}" data-confirm="Reset this user's password?">{{ csrf() }}<button class="btn btn-secondary" type="submit">Reset password</button></form></div>
   <div class="card"><h3>History</h3>

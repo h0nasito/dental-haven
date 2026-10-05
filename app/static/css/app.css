@@ -867,3 +867,4 @@ section[id] { scroll-margin-top: 72px; }
 .g-more { font-size: .85rem; font-weight: 600; color: #102542; margin-top: auto; }
 .g-attrib { margin: .7rem 0 0; font-size: .78rem; color: #5a616b; text-align: right; }
 .g-who span.g-avatar { display: grid; place-items: center; line-height: 1; }
+.row-changed td { background: var(--blue-100); }

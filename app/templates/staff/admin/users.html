@@ -31,7 +31,7 @@
       <td>{{ u.specialization or '—' }}</td>
       {% else %}
       <td>{% if u.position %}{{ u.position }}{% elif u.role != 'super_admin' %}<a href="{{ url_for('admin.user_edit', user_id=u.id) }}" class="c-red">Set position</a>{% else %}—{% endif %}</td>
-      <td><span class="badge {% if u.role == 'super_admin' %}badge-red{% else %}badge-teal{% endif %}">{{ ROLES[u.access_role or u.role] }}</span></td>
+      <td><span class="badge {% if u.role == 'super_admin' %}badge-red{% else %}badge-teal{% endif %}">{{ ROLES[u.access_role or u.role] }}</span>{% if u.id in custom %} <span class="badge badge-blue" title="Has individual access changes">+ individual</span>{% endif %}</td>
       <td>{% if u.role == 'super_admin' %}<span class="muted">All branches</span>{% else %}{{ (user_branches.get(u.id) or ['—'])|join(', ') }}{% endif %}</td>
       {% endif %}
       <td>{{ u.email }}</td><td>{{ u.mobile or '—' }}</td>

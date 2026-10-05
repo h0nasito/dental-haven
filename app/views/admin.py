@@ -49,7 +49,8 @@ def users():
     rows = [u for u in rows if is_associate(u) == (tab == "associates")]
     if q:
         rows = [u for u in rows if q in (u["name"] or "").lower() or q in (u["email"] or "").lower() or q in (u["position"] or "").lower()]
-    return render_template("staff/admin/users.html", users=rows, user_branches=ub, tab=tab, q=q, counts=counts)
+    custom = {r["user_id"] for r in conn.all("SELECT DISTINCT user_id FROM user_permissions")}
+    return render_template("staff/admin/users.html", users=rows, user_branches=ub, tab=tab, q=q, counts=counts, custom=custom)
 
 
 @bp.route("/users/<int:user_id>/active", methods=["POST"])
@@ -300,8 +301,9 @@ def user_edit(user_id):
             return redirect(url_for("admin.users"))
     history = conn.all("SELECT a.*, u.name AS actor FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id "
                        "WHERE entity_type='user' AND entity_id = ? ORDER BY a.id DESC LIMIT 20", (user_id,))
+    n_overrides = conn.scalar("SELECT COUNT(*) FROM user_permissions WHERE user_id = ?", (user_id,))
     return render_template("staff/admin/user_form.html", v=v, errors=errors, branches=branches, labs=labs, is_new=False,
-                           user=row, history=history)
+                           user=row, history=history, n_overrides=n_overrides)
 
 
 @bp.route("/users/<int:user_id>/reset-password", methods=["POST"])
@@ -322,6 +324,52 @@ def user_reset_password(user_id):
 # ---------------------------------------------------------------------------
 # Role access (super admin only)
 # ---------------------------------------------------------------------------
+
+@bp.route("/users/<int:user_id>/access", methods=["GET", "POST"])
+@require("roles.manage")
+def user_access(user_id):
+    """Individual access: start from the user's role and switch single permissions on or off for this person."""
+    from ..permissions import load_role_permissions, user_overrides
+    conn = get_db()
+    row = conn.one("SELECT * FROM users WHERE id = ?", (user_id,))
+    if not row:
+        abort(404)
+    role = row["access_role"] or row["role"]
+    if role == "super_admin":
+        flash("Super admins always have full access.", "error")
+        return redirect(url_for("admin.user_edit", user_id=user_id))
+    role_perms = load_role_permissions(conn, role)
+    overrides = user_overrides(conn, user_id)
+    if request.method == "POST":
+        if request.form.get("action") == "reset":
+            conn.execute("DELETE FROM user_permissions WHERE user_id = ?", (user_id,))
+            audit.record("user_access_reset", "user", user_id, f"Individual access reset to {ROLES[role]} for {row['email']}",
+                         {"removed_overrides": overrides})
+            flash(f"Access reset: {row['name']} now has exactly the {ROLES[role]} access.", "success")
+        else:
+            wanted = {p for p in request.form.getlist("perm") if p in PERM_KEYS and p not in LOCKED}
+            new = {}
+            for p in PERM_KEYS - LOCKED:
+                if (p in wanted) != (p in role_perms):
+                    new[p] = p in wanted
+            with conn.transaction():
+                conn.execute("DELETE FROM user_permissions WHERE user_id = ?", (user_id,))
+                for p, on in new.items():
+                    conn.execute("INSERT INTO user_permissions (user_id, permission, granted) VALUES (?, ?, ?)", (user_id, p, 1 if on else 0))
+                added = sorted(p for p, on in new.items() if on and overrides.get(p) is not True)
+                removed = sorted(p for p, on in new.items() if not on and overrides.get(p) is not False)
+                back = sorted(p for p in overrides if p not in new)
+                if added or removed or back:
+                    audit.record("user_access_changed", "user", user_id, f"Changed individual access for {row['email']}",
+                                 {"added": added, "removed": removed, "back_to_role": back})
+            flash("Individual access saved. It applies on the user's next page load.", "success")
+        return redirect(url_for("admin.user_access", user_id=user_id))
+    groups = {}
+    for p in CATALOG:
+        groups.setdefault(p.group, []).append(p)
+    return render_template("staff/admin/user_access.html", user=row, role=role, role_perms=role_perms, overrides=overrides,
+                           groups=groups, locked=LOCKED)
+
 
 @bp.route("/roles", methods=["GET", "POST"])
 @require("roles.manage")

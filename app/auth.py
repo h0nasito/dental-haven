@@ -11,7 +11,7 @@ from flask import abort, current_app, g, redirect, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .db import get_db
-from .permissions import load_role_permissions
+from .permissions import load_user_permissions
 from .util import now, now_str, parse_dt
 
 SESSION_KEY = "sid"
@@ -112,7 +112,7 @@ def load_user():
                 (row["id"],),
             )
         ]
-    perms = load_role_permissions(conn, row["access_role"] or row["role"])
+    perms = load_user_permissions(conn, row["id"], row["access_role"] or row["role"])
     g.user = CurrentUser(row, perms, branch_ids, s["active_branch_id"])
     g.session_hash = s["id_hash"]
     conn.execute("UPDATE sessions SET last_seen_at = ? WHERE id_hash = ?", (now_str(), s["id_hash"]))

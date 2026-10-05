@@ -217,6 +217,27 @@ def load_role_permissions(conn, role: str) -> set[str]:
     return {r["permission"] for r in rows if r["permission"] in PERM_KEYS and r["permission"] not in LOCKED}
 
 
+def user_overrides(conn, user_id: int) -> dict[str, bool]:
+    """Individual access for one user: {permission: True (added) / False (removed)}, on top of their role."""
+    return {r["permission"]: bool(r["granted"]) for r in conn.all("SELECT permission, granted FROM user_permissions WHERE user_id = ?",
+                                                                   (user_id,))
+            if r["permission"] in PERM_KEYS and r["permission"] not in LOCKED}
+
+
+def load_user_permissions(conn, user_id: int, role: str) -> set[str]:
+    """The role's access, plus permissions added for this user, minus permissions removed for this user.
+    Super admins always have everything; super-admin-only permissions can never be added to anyone else."""
+    perms = load_role_permissions(conn, role)
+    if role == "super_admin":
+        return perms
+    for perm, on in user_overrides(conn, user_id).items():
+        if on:
+            perms.add(perm)
+        else:
+            perms.discard(perm)
+    return perms
+
+
 # ---------------------------------------------------------------------------
 # Scope helpers. Each returns (sql_fragment, params) to AND into a WHERE clause.
 # ---------------------------------------------------------------------------
