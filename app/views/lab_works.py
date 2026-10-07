@@ -88,14 +88,16 @@ def case_label(c) -> str:
 
 
 def item_groups(conn, items) -> list[dict]:
-    """Invoice lines grouped by branch lab case (each with a heading and subtotal); lines without a case come last."""
+    """Invoice lines grouped by branch lab case or outside clinic work (each with a heading and subtotal); other lines come last."""
     order, groups = [], {}
     for it in items:
-        key = it["case_id"]
+        key = ("c", it["case_id"]) if it["case_id"] else (("w", it["work_id"]) if it["work_id"] else None)
         if key not in groups:
             c = conn.one("SELECT c.id, c.case_type, c.teeth, p.chart_no, u.name AS dentist FROM lab_cases c JOIN patients p ON p.id = c.patient_id "
-                         "LEFT JOIN users u ON u.id = c.dentist_id WHERE c.id = ?", (key,)) if key else None
-            groups[key] = {"case": c, "items": [], "subtotal": 0}
+                         "LEFT JOIN users u ON u.id = c.dentist_id WHERE c.id = ?", (key[1],)) if key and key[0] == "c" else None
+            w = conn.one("SELECT id, number, case_type, teeth, patient_ref, doctor FROM lab_works WHERE id = ?", (key[1],)) \
+                if key and key[0] == "w" else None
+            groups[key] = {"case": c, "work": w, "items": [], "subtotal": 0}
             order.append(key)
         groups[key]["items"].append(it)
         groups[key]["subtotal"] += it["amount_cents"]
@@ -192,6 +194,18 @@ def _recalc(conn, invoice_id):
     paid = conn.scalar("SELECT COALESCE(SUM(amount_cents), 0) FROM lab_payments WHERE invoice_id = ? AND status = 'ok'", (invoice_id,)) or 0
     conn.update("lab_invoices", invoice_id, {"subtotal_cents": sub, "discount_cents": disc, "total_cents": sub - disc, "paid_cents": paid,
                                              "updated_at": now_str()})
+
+
+KINDS = {"outside": "Outside clinics", "branch": "Dental Haven branches"}
+
+
+def _kind_sql(kind, alias="i"):
+    """SQL to keep only invoices to outside clinics or only to our own branches."""
+    if kind == "outside":
+        return f" AND {alias}.client_id IN (SELECT id FROM lab_clients WHERE branch_id IS NULL)"
+    if kind == "branch":
+        return f" AND {alias}.client_id IN (SELECT id FROM lab_clients WHERE branch_id IS NOT NULL)"
+    return ""
 
 
 def pay_status(inv):
@@ -412,7 +426,8 @@ def invoices():
     conn = get_db()
     ids = _lab_ids()
     show = request.args.get("show", "open")
-    rows = conn.all(f"SELECT * FROM lab_invoices WHERE lab_id IN ({_in(ids)}) ORDER BY id DESC LIMIT 400", ids)
+    kind = request.args.get("kind") if request.args.get("kind") in KINDS else ""
+    rows = conn.all(f"SELECT i.* FROM lab_invoices i WHERE i.lab_id IN ({_in(ids)}){_kind_sql(kind)} ORDER BY i.id DESC LIMIT 400", ids)
     for r in rows:
         r["pay"] = pay_status(r)
     if show == "open":
@@ -420,11 +435,18 @@ def invoices():
     branch_clients(conn, ids)
     uninvoiced = conn.all(f"SELECT c.id, c.clinic_name, COUNT(w.id) AS n FROM lab_works w JOIN lab_clients c ON c.id = w.client_id "
                           f"WHERE w.lab_id IN ({_in(ids)}) AND w.invoice_id IS NULL AND w.status != 'cancelled' GROUP BY c.id ORDER BY c.clinic_name", ids)
-    uninvoiced += conn.all(f"SELECT cl.id, cl.clinic_name, COUNT(lc.id) AS n FROM lab_cases lc JOIN lab_clients cl ON cl.lab_id = lc.lab_id "
+    branch_uninvoiced = conn.all(f"SELECT cl.id, cl.clinic_name, COUNT(lc.id) AS n FROM lab_cases lc JOIN lab_clients cl ON cl.lab_id = lc.lab_id "
                            f"AND cl.branch_id = lc.branch_id WHERE lc.lab_id IN ({_in(ids)}) AND lc.invoice_id IS NULL AND lc.status != 'cancelled' "
                            "GROUP BY cl.id ORDER BY cl.clinic_name", ids)
+    n_branch_uninvoiced = len(branch_uninvoiced)
+    uninvoiced += branch_uninvoiced
     outstanding = sum(r["total_cents"] - r["paid_cents"] for r in rows if r["pay"] in ("unpaid", "partial"))
-    return render_template("staff/lab_works/invoices.html", rows=rows, show=show, labels=PAY_LABELS, uninvoiced=uninvoiced, outstanding=outstanding)
+    if kind == "outside":
+        uninvoiced = uninvoiced[:len(uninvoiced) - n_branch_uninvoiced]
+    elif kind == "branch":
+        uninvoiced = uninvoiced[len(uninvoiced) - n_branch_uninvoiced:]
+    return render_template("staff/lab_works/invoices.html", rows=rows, show=show, kind=kind, kinds=KINDS, labels=PAY_LABELS,
+                           uninvoiced=uninvoiced, outstanding=outstanding)
 
 
 @bp.route("/invoices/new", methods=["GET", "POST"])
@@ -556,6 +578,39 @@ def bill_case(case_id):
     return redirect(url_for("lab_works.invoice", invoice_id=iid))
 
 
+def _work_line(w) -> str:
+    return (w["case_type"] + (f" · {w['teeth']}" if w["teeth"] else "") + (f" · {ARCHES[w['arch']]}" if w["arch"] else "")
+            + (f" · {w['material']}" if w["material"] else ""))[:200]
+
+
+@bp.route("/works/<int:work_id>/bill", methods=["POST"])
+@login_required
+def bill_work(work_id):
+    """Start an invoice to the outside clinic for one work (or open the one it's already on)."""
+    _need("lab.billing")
+    conn = get_db()
+    w = _work(conn, work_id)
+    if w["invoice_id"]:
+        return redirect(url_for("lab_works.invoice", invoice_id=w["invoice_id"]))
+    if w["status"] == "cancelled":
+        abort(400)
+    client = conn.one("SELECT * FROM lab_clients WHERE id = ?", (w["client_id"],))
+    with conn.transaction():
+        iid = conn.insert("lab_invoices", {"lab_id": w["lab_id"], "client_id": w["client_id"], "clinic_name": w["clinic_name"],
+                                           "doctor": w["doctor"] or (client["doctor"] if client else ""),
+                                           "contact_number": w["contact_number"] or (client["contact_number"] if client else ""), "status": "draft",
+                                           "due_on": (today() + timedelta(days=30)).isoformat(), "created_by": g.user.id,
+                                           "created_at": now_str(), "updated_at": now_str()})
+        price = w["price_cents"] or 0
+        conn.insert("lab_invoice_items", {"invoice_id": iid, "work_id": w["id"], "description": _work_line(w), "qty": w["units"] or 1,
+                                          "unit_price_cents": price, "discount_cents": 0, "amount_cents": price * (w["units"] or 1)})
+        conn.update("lab_works", w["id"], {"invoice_id": iid, "updated_at": now_str()})
+        _recalc(conn, iid)
+        audit.record("lab_invoice_created", "lab_invoice", iid, f"Draft lab invoice for {w['number']} ({w['clinic_name']})")
+    flash("Draft invoice started for this work. Check the units and price per unit, then add extras (e.g. casts) and any “less” lines.", "success")
+    return redirect(url_for("lab_works.invoice", invoice_id=iid))
+
+
 @bp.route("/invoices/<int:invoice_id>", methods=["GET", "POST"])
 @login_required
 def invoice(invoice_id):
@@ -573,13 +628,17 @@ def invoice(invoice_id):
                 idisc = parse_money(request.form.get("item_discount")) if request.form.get("item_discount") else 0
                 less = 1 if request.form.get("is_less") else 0
                 case_ids = {r["case_id"] for r in conn.all("SELECT case_id FROM lab_invoice_items WHERE invoice_id = ? AND case_id IS NOT NULL", (inv["id"],))}
-                case_id = to_int(request.form.get("case_id"))
+                work_ids = {r["work_id"] for r in conn.all("SELECT work_id FROM lab_invoice_items WHERE invoice_id = ? AND work_id IS NOT NULL", (inv["id"],))}
+                target = request.form.get("for") or ""
+                case_id = to_int(target[1:]) if target.startswith("c") else to_int(request.form.get("case_id"))
+                work_id = to_int(target[1:]) if target.startswith("w") else to_int(request.form.get("work_id"))
                 case_id = case_id if case_id in case_ids else None
+                work_id = work_id if work_id in work_ids and not case_id else None
                 if len(desc) < 2 or price is None or price < 0 or qty < 1 or qty > 999 or idisc is None or idisc < 0 or idisc > price * qty:
                     flash("Enter a description, a quantity of 1 or more, a price, and a discount no bigger than the amount.", "error")
                 else:
                     amount = price * qty - idisc
-                    conn.insert("lab_invoice_items", {"invoice_id": inv["id"], "case_id": case_id, "description": desc, "qty": qty,
+                    conn.insert("lab_invoice_items", {"invoice_id": inv["id"], "case_id": case_id, "work_id": work_id, "description": desc, "qty": qty,
                                                       "unit_price_cents": price, "discount_cents": 0 if less else idisc, "is_less": less,
                                                       "amount_cents": -amount if less else amount})
             elif action == "update_item" and draft:
@@ -597,11 +656,14 @@ def invoice(invoice_id):
             elif action == "remove_item" and draft:
                 it = conn.one("SELECT * FROM lab_invoice_items WHERE id = ? AND invoice_id = ?", (to_int(request.form.get("item_id")), inv["id"]))
                 if it:
-                    if it["work_id"]:
-                        conn.update("lab_works", it["work_id"], {"invoice_id": None, "updated_at": now_str()})
-                    if it["case_id"]:
-                        conn.execute("UPDATE lab_cases SET invoice_id = NULL WHERE id = ?", (it["case_id"],))
                     conn.execute("DELETE FROM lab_invoice_items WHERE id = ?", (it["id"],))
+                    # the case or work is free again only when none of its lines are left on this invoice
+                    if it["work_id"] and not conn.scalar("SELECT COUNT(*) FROM lab_invoice_items WHERE invoice_id = ? AND work_id = ?",
+                                                         (inv["id"], it["work_id"])):
+                        conn.update("lab_works", it["work_id"], {"invoice_id": None, "updated_at": now_str()})
+                    if it["case_id"] and not conn.scalar("SELECT COUNT(*) FROM lab_invoice_items WHERE invoice_id = ? AND case_id = ?",
+                                                         (inv["id"], it["case_id"])):
+                        conn.execute("UPDATE lab_cases SET invoice_id = NULL WHERE id = ?", (it["case_id"],))
             elif action == "details" and draft:
                 raw = clean(request.form.get("discount"), 20)
                 sub = conn.scalar("SELECT COALESCE(SUM(amount_cents), 0) FROM lab_invoice_items WHERE invoice_id = ?", (inv["id"],)) or 0
@@ -786,36 +848,43 @@ def collections():
     if start > end:
         start, end = end, start
     client = to_int(request.args.get("client"))
+    kind = request.args.get("kind") if request.args.get("kind") in KINDS else ""
     where, args = [f"i.lab_id IN ({_in(ids)})", "p.status = 'ok'", "p.received_on BETWEEN ? AND ?"], [*ids, start.isoformat(), end.isoformat()]
+    if kind:
+        where.append(_kind_sql(kind)[5:])
     if client:
         where.append("i.client_id = ?")
         args.append(client)
-    rows = conn.all("SELECT p.*, i.number AS invoice_number, i.clinic_name, i.client_id, u.name AS by_name FROM lab_payments p "
+    rows = conn.all("SELECT p.*, i.number AS invoice_number, i.clinic_name, i.client_id, u.name AS by_name, "
+                    "(SELECT branch_id FROM lab_clients WHERE id = i.client_id) AS branch_id FROM lab_payments p "
                     "JOIN lab_invoices i ON i.id = p.invoice_id LEFT JOIN users u ON u.id = p.received_by "
                     f"WHERE {' AND '.join(where)} ORDER BY p.received_on, p.id", args)
     if request.args.get("format") == "csv":
         buf = io.StringIO()
         wr = csv.writer(buf)
-        wr.writerow(["Date", "Receipt", "Invoice", "Dental clinic", "Method", "Reference", "Amount (PHP)", "Received by"])
+        wr.writerow(["Date", "Receipt", "Invoice", "Dental clinic", "Type", "Method", "Reference", "Amount (PHP)", "Received by"])
         safe = lambda x: ("'" + x) if isinstance(x, str) and x[:1] in ("=", "+", "-", "@") else x  # noqa: E731
         for r in rows:
-            wr.writerow([safe(x) for x in (r["received_on"], r["receipt_no"], r["invoice_number"], r["clinic_name"], METHODS.get(r["method"], r["method"]),
+            wr.writerow([safe(x) for x in (r["received_on"], r["receipt_no"], r["invoice_number"], r["clinic_name"],
+                                            "Branch" if r["branch_id"] else "Outside clinic", METHODS.get(r["method"], r["method"]),
                                             r["reference"], r["amount_cents"] / 100, r["by_name"] or "")])
-        wr.writerow(["", "", "", "", "", "Total", sum(r["amount_cents"] for r in rows) / 100, ""])
+        wr.writerow(["", "", "", "", "", "", "Total", sum(r["amount_cents"] for r in rows) / 100, ""])
         audit.record("lab_collections_exported", "lab_invoice", None, f"Exported lab collections {start} to {end}")
         return Response("\ufeff" + buf.getvalue(), mimetype="text/csv",
-                        headers={"Content-Disposition": f'attachment; filename="lab-collections-{start}-to-{end}.csv"', "Cache-Control": "no-store"})
+                        headers={"Content-Disposition": f'attachment; filename="lab-collections{"-" + kind if kind else ""}-{start}-to-{end}.csv"', "Cache-Control": "no-store"})
     by_method, by_clinic, by_day = {}, {}, {}
+    by_kind = {"outside": 0, "branch": 0}
     for r in rows:
+        by_kind["branch" if r["branch_id"] else "outside"] += r["amount_cents"]
         by_method[r["method"]] = by_method.get(r["method"], 0) + r["amount_cents"]
         by_clinic[r["clinic_name"]] = by_clinic.get(r["clinic_name"], 0) + r["amount_cents"]
         by_day[r["received_on"]] = by_day.get(r["received_on"], 0) + r["amount_cents"]
     invoiced = conn.scalar(f"SELECT COALESCE(SUM(total_cents), 0) FROM lab_invoices WHERE lab_id IN ({_in(ids)}) AND status = 'issued' "
-                           "AND issued_on BETWEEN ? AND ?" + (" AND client_id = ?" if client else ""),
+                           "AND issued_on BETWEEN ? AND ?" + (" AND client_id = ?" if client else "") + _kind_sql(kind, "lab_invoices"),
                            [*ids, start.isoformat(), end.isoformat()] + ([client] if client else [])) or 0
     # Outstanding balances as of today, with age from the invoice's due date
     open_rows = conn.all(f"SELECT * FROM lab_invoices WHERE lab_id IN ({_in(ids)}) AND status = 'issued' AND total_cents > paid_cents"
-                         + (" AND client_id = ?" if client else "") + " ORDER BY clinic_name, issued_on", [*ids] + ([client] if client else []))
+                         + (" AND client_id = ?" if client else "") + _kind_sql(kind, "lab_invoices") + " ORDER BY clinic_name, issued_on", [*ids] + ([client] if client else []))
     t = today().isoformat()
     outstanding = {}
     for i in open_rows:
@@ -823,8 +892,11 @@ def collections():
         o = outstanding.setdefault(i["clinic_name"], {"client_id": i["client_id"], "current": 0, "overdue": 0, "invoices": 0})
         o["invoices"] += 1
         o["overdue" if i["due_on"] and i["due_on"] < t else "current"] += bal
-    clients = conn.all(f"SELECT id, clinic_name FROM lab_clients WHERE lab_id IN ({_in(ids)}) ORDER BY clinic_name", ids)
+    clients = conn.all(f"SELECT id, clinic_name FROM lab_clients WHERE lab_id IN ({_in(ids)})"
+                       + (" AND branch_id IS NULL" if kind == "outside" else " AND branch_id IS NOT NULL" if kind == "branch" else "")
+                       + " ORDER BY clinic_name", ids)
     return render_template("staff/lab_works/collections.html", rows=rows, start=start, end=end, client=client, clients=clients, methods=METHODS,
+                           kind=kind, kinds=KINDS, by_kind=by_kind,
                            by_method=sorted(by_method.items(), key=lambda x: -x[1]), by_clinic=sorted(by_clinic.items(), key=lambda x: -x[1]),
                            by_day=sorted(by_day.items()), total=sum(r["amount_cents"] for r in rows), invoiced=invoiced,
                            outstanding=sorted(outstanding.items()), out_total=sum(o["current"] + o["overdue"] for o in outstanding.values()))

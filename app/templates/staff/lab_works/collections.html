@@ -1,12 +1,13 @@
 {% extends "staff/layout.html" %}
 {% block page_title %}Lab collection report{% endblock %}
 {% block content %}
-<div class="page-head"><div><h1>Lab collection report</h1><p>Payments received from dental clinics for laboratory work, {{ start|date }} – {{ end|date }}.</p></div>
-<a class="btn btn-secondary" href="{{ url_for('lab_works.collections', format='csv', client=client or '', **{'from': start.isoformat(), 'to': end.isoformat()}) }}">Export CSV</a></div>
+<div class="page-head"><div><h1>Lab collection report</h1><p>Payments received for laboratory work{% if kind %} from {{ 'outside clinics' if kind == 'outside' else 'our Dental Haven branches' }}{% else %} from outside clinics and our branches{% endif %}, {{ start|date }} – {{ end|date }}.</p></div>
+<a class="btn btn-secondary" href="{{ url_for('lab_works.collections', format='csv', client=client or '', kind=kind or None, **{'from': start.isoformat(), 'to': end.isoformat()}) }}">Export CSV</a></div>
 {% set active = 'collections' %}{% include "staff/lab_works/_nav.html" %}
 <form class="toolbar" method="get">
 <div class="field"><label for="cf">From</label><input id="cf" type="date" name="from" value="{{ start.isoformat() }}"></div>
 <div class="field"><label for="ct">To</label><input id="ct" type="date" name="to" value="{{ end.isoformat() }}"></div>
+<div class="field"><label for="ck">Type of clinic</label><select id="ck" name="kind"><option value="">All</option>{% for k, l in kinds.items() %}<option value="{{ k }}" {% if kind == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
 <div class="field"><label for="cc">Clinic</label><select id="cc" name="client"><option value="">All clinics</option>{% for c in clients %}<option value="{{ c.id }}" {% if client == c.id %}selected{% endif %}>{{ c.clinic_name }}</option>{% endfor %}</select></div>
 <button class="btn btn-secondary">Show</button></form>
 <div class="grid grid-4" style="margin-bottom:1rem">
@@ -15,6 +16,10 @@
 <div class="stat {{ 'warn' if out_total else '' }}"><div class="label">Outstanding today</div><div class="value">{{ out_total|peso }}</div><div class="sub">Unpaid balances, all dates</div></div>
 <div class="stat"><div class="label">Clinics that paid</div><div class="value">{{ by_clinic|length }}</div></div>
 </div>
+{% if not kind and not client %}<div class="card" style="margin-bottom:1rem"><h2>By type of clinic</h2><table><tbody>
+<tr><td><a href="{{ url_for('lab_works.collections', kind='outside', **{'from': start.isoformat(), 'to': end.isoformat()}) }}">Outside clinics</a></td><td class="num">{{ by_kind.outside|peso }}</td></tr>
+<tr><td><a href="{{ url_for('lab_works.collections', kind='branch', **{'from': start.isoformat(), 'to': end.isoformat()}) }}">Dental Haven branches</a></td><td class="num">{{ by_kind.branch|peso }}</td></tr></tbody>
+<tfoot><tr><td><strong>Total</strong></td><td class="num"><strong>{{ total|peso }}</strong></td></tr></tfoot></table></div>{% endif %}
 <div class="grid grid-2">
 <div class="card"><h2>By payment method</h2>{% if by_method %}<table><tbody>{% for m, amt in by_method %}<tr><td>{{ methods.get(m, m) }}</td><td class="num">{{ amt|peso }}</td></tr>{% endfor %}</tbody>
 <tfoot><tr><td><strong>Total</strong></td><td class="num"><strong>{{ total|peso }}</strong></td></tr></tfoot></table>{% else %}<p class="muted">No payments in this period.</p>{% endif %}</div>

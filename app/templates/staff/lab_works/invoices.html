@@ -1,12 +1,13 @@
 {% extends "staff/layout.html" %}
 {% block page_title %}Lab invoices{% endblock %}
 {% block content %}
-<div class="page-head"><div><h1>Invoices &amp; receipts</h1><p>Invoices for outside clinics, with discounts and payment acknowledgment receipts.</p></div>
+<div class="page-head"><div><h1>Invoices &amp; receipts</h1><p>Invoices to outside clinics and to our branches, with discounts and payment acknowledgment receipts. Bill a single work from its page with “Bill this work”.</p></div>
 <a class="btn" href="{{ url_for('lab_works.invoice_new') }}">+ New invoice</a></div>
 {% set active = 'invoices' %}{% include "staff/lab_works/_nav.html" %}
+<nav class="tabs" style="margin:0 0 .75rem"><a href="{{ url_for('lab_works.invoices', show=show) }}" class="{{ 'active' if not kind else '' }}">All</a>{% for k, l in kinds.items() %}<a href="{{ url_for('lab_works.invoices', show=show, kind=k) }}" class="{{ 'active' if kind == k else '' }}">{{ l }}</a>{% endfor %}</nav>
 {% if uninvoiced %}<div class="notice" style="margin-bottom:1rem"><strong>Works not yet invoiced:</strong>
 {% for c in uninvoiced %}<a href="{{ url_for('lab_works.invoice_new', client=c.id) }}">{{ c.clinic_name }} ({{ c.n }})</a>{{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}
-<div class="row between" style="margin-bottom:.75rem"><nav class="tabs" style="margin:0;border:0"><a href="{{ url_for('lab_works.invoices', show='open') }}" class="{{ 'active' if show == 'open' else '' }}">Draft &amp; unpaid</a><a href="{{ url_for('lab_works.invoices', show='all') }}" class="{{ 'active' if show == 'all' else '' }}">All</a></nav>
+<div class="row between" style="margin-bottom:.75rem"><nav class="tabs" style="margin:0;border:0"><a href="{{ url_for('lab_works.invoices', show='open', kind=kind or None) }}" class="{{ 'active' if show == 'open' else '' }}">Draft &amp; unpaid</a><a href="{{ url_for('lab_works.invoices', show='all', kind=kind or None) }}" class="{{ 'active' if show == 'all' else '' }}">All</a></nav>
 <span><strong>Outstanding:</strong> {{ outstanding|peso }}</span></div>
 <div class="card"><div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Dental clinic</th><th>Issued</th><th>Due</th><th class="num">Total</th><th class="num">Paid</th><th class="num">Balance</th><th>Status</th></tr></thead><tbody>
 {% for r in rows %}<tr><td><a href="{{ url_for('lab_works.invoice', invoice_id=r.id) }}"><strong>{{ r.number or 'Draft' }}</strong></a></td><td>{{ r.clinic_name }}<br><small class="muted">{{ r.doctor }}</small></td>

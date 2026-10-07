@@ -163,3 +163,43 @@ class TestLabWorks(Base):
             self.assertEqual(self.tech(1).get("/staff/lab/collections").status_code, 403)
         finally:
             self.revoke()
+
+
+class TestOutsideWorkBilling(TestLabWorks):
+    """Bill one outside clinic work like a branch case: units x price, extra lines and 'Less' lines; report split by type of clinic."""
+    test_access_needs_permission_and_lab = test_work_status_and_notifications = None
+    test_due_checks_run_once_a_day = test_invoice_discount_payment_receipt = test_collection_report = None
+
+    def test_bill_one_work_with_extras_and_collect(self):
+        self.grant("lab.works", "lab.billing")
+        c = self.tech()
+        wid = self.new_work(c, clinic_name="Smile Partner Clinic OWB", units="10", price="5500")["id"]
+        self.assertIn("Bill this work", c.get(f"/staff/lab/works/{wid}").data.decode())
+        r = c.post(f"/staff/lab/works/{wid}/bill")
+        iid = int(r.headers["Location"].rstrip("/").split("/")[-1])
+        line = self.conn.one("SELECT * FROM lab_invoice_items WHERE invoice_id = ?", (iid,))
+        self.assertEqual((line["work_id"], line["qty"], line["amount_cents"]), (wid, 10, 5500000))
+        # posting again opens the same invoice
+        self.assertTrue(c.post(f"/staff/lab/works/{wid}/bill").headers["Location"].endswith(f"/{iid}"))
+        c.post(f"/staff/lab/invoices/{iid}", data={"action": "add_item", "for": f"w{wid}", "description": "Cast (upper and lower)", "qty": "2", "unit_price": "500"})
+        c.post(f"/staff/lab/invoices/{iid}", data={"action": "add_item", "for": f"w{wid}", "description": "1 free unit", "qty": "1", "unit_price": "5500", "is_less": "1"})
+        inv = self.conn.one("SELECT * FROM lab_invoices WHERE id = ?", (iid,))
+        self.assertEqual(inv["total_cents"], 5050000)
+        page = c.get(f"/staff/lab/invoices/{iid}").data.decode()
+        self.assertIn("open work", page)
+        # removing an extra line keeps the work on the invoice
+        extra = self.conn.one("SELECT id FROM lab_invoice_items WHERE invoice_id = ? AND description LIKE 'Cast%'", (iid,))
+        c.post(f"/staff/lab/invoices/{iid}", data={"action": "remove_item", "item_id": extra["id"]})
+        self.assertEqual(self.conn.one("SELECT invoice_id FROM lab_works WHERE id = ?", (wid,))["invoice_id"], iid)
+        c.post(f"/staff/lab/invoices/{iid}", data={"action": "issue"})
+        total = self.conn.one("SELECT total_cents FROM lab_invoices WHERE id = ?", (iid,))["total_cents"]
+        c.post(f"/staff/lab/invoices/{iid}", data={"action": "pay", "amount": f"{total / 100:.2f}", "method": "cash", "received_on": ""})
+        # the collection report splits outside clinics and branches
+        rep = c.get("/staff/lab/collections?kind=outside").data.decode()
+        self.assertIn("Smile Partner Clinic OWB", rep)
+        self.assertNotIn("Smile Partner Clinic OWB", c.get("/staff/lab/collections?kind=branch").data.decode())
+        self.assertIn("By type of clinic", c.get("/staff/lab/collections").data.decode())
+        csv = c.get("/staff/lab/collections?format=csv&kind=outside").data.decode()
+        self.assertIn("Outside clinic", csv)
+        self.assertIn("Smile Partner Clinic OWB", c.get("/staff/lab/invoices?show=all&kind=outside").data.decode())
+        self.assertNotIn("Smile Partner Clinic OWB", c.get("/staff/lab/invoices?show=all&kind=branch").data.decode())

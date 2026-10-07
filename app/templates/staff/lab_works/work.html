@@ -6,7 +6,8 @@
 <h1>{{ w.number }} · {{ w.case_type }}</h1><p>{{ w.clinic_name }}{% if w.doctor %} · {{ w.doctor }}{% endif %}{% if w.contact_number %} · {{ w.contact_number }}{% endif %}</p></div>
 <div class="row"><span class="badge {{ lab_badge(w.status) }}">{{ w.status|lab_status }}</span>
 <a class="btn btn-secondary" href="{{ url_for('lab_works.work_edit', work_id=w.id) }}">Edit</a>
-{% if can_bill %}{% if w.invoice_id %}<a class="btn btn-secondary" href="{{ url_for('lab_works.invoice', invoice_id=w.invoice_id) }}">Invoice {{ w.invoice_number or '(draft)' }}</a>{% elif w.status != 'cancelled' %}<a class="btn btn-secondary" href="{{ url_for('lab_works.invoice_new', client=w.client_id) }}">Create invoice</a>{% endif %}{% endif %}</div></div>
+{% if can_bill %}{% if w.invoice_id %}<a class="btn btn-secondary" href="{{ url_for('lab_works.invoice', invoice_id=w.invoice_id) }}">Invoice {{ w.invoice_number or '(draft)' }}</a>{% elif w.status != 'cancelled' %}<form method="post" action="{{ url_for('lab_works.bill_work', work_id=w.id) }}">{{ csrf() }}<button class="btn">Bill this work</button></form>
+<a class="btn btn-ghost" href="{{ url_for('lab_works.invoice_new', client=w.client_id) }}" title="One invoice for several works of this clinic">Bill with other works</a>{% endif %}{% endif %}</div></div>
 {% set cur = w.status %}{% include "staff/labs/_stages.html" %}
 <div class="grid grid-2">
 <div class="card"><h2>Details</h2>
