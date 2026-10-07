@@ -9,17 +9,32 @@
 <div class="card"><h2>Details</h2>
 <dl class="kv"><dt>Patient</dt><dd>{% if patient_link %}<a href="{{ url_for('patients.detail', patient_id=c.patient_id) }}">{{ c.last_name }}, {{ c.first_name }}</a>{% else %}{{ c.last_name }}, {{ c.first_name }}{% endif %} <small class="muted">{{ c.chart_no }}</small></dd>
 <dt>Dentist</dt><dd>{{ c.dentist or '—' }}</dd><dt>Teeth</dt><dd>{{ c.teeth or '—' }}</dd><dt>Shade</dt><dd>{{ c.shade or '—' }}</dd><dt>Material</dt><dd>{{ c.material or '—' }}</dd>
-<dt>Sent</dt><dd>{{ c.sent_on|date }}</dd><dt>Due back</dt><dd>{{ c.due_on|date if c.due_on else '—' }}</dd>{% if c.completed_on %}<dt>Delivered</dt><dd>{{ c.completed_on|date }}</dd>{% endif %}
-<dt>Lab fee</dt><dd>{{ c.lab_fee_cents|peso if c.lab_fee_cents is not none else '—' }}</dd><dt>Instructions</dt><dd class="pre">{{ c.instructions or '—' }}</dd></dl></div>
+<dt>Sent</dt><dd>{{ c.sent_on|date }}</dd><dt>Due back</dt><dd>{{ c.due_on|date if c.due_on else '—' }}</dd>
+<dt>Trial fitting target</dt><dd>{% if c.no_try_in %}<span class="badge">None: direct to installation</span>{% else %}{{ c.try_in_on|date if c.try_in_on else '—' }}{% if c.try_in_on and c.try_in_on == c.install_on %} <small class="muted">(same day as installation)</small>{% endif %}{% endif %}</dd>
+<dt>Final installation target</dt><dd>{{ c.install_on|date if c.install_on else '—' }}</dd>{% if c.completed_on %}<dt>Delivered</dt><dd>{{ c.completed_on|date }}</dd>{% endif %}
+<dt>Lab price</dt><dd>{{ c.lab_fee_cents|peso if c.lab_fee_cents is not none else '—' }}{% if lab_invoice %}<br><small class="muted">Billed to the branch on lab invoice {{ lab_invoice.number or '(draft)' }}{% if lab_invoice.status == 'issued' %} · {{ 'paid' if lab_invoice.paid_cents >= lab_invoice.total_cents else 'unpaid' }}{% endif %}</small>{% elif c.lab_fee_cents %}<br><small class="muted">Not invoiced yet</small>{% endif %}
+{% if can_bill %}<br>{% if c.invoice_id %}<a class="btn btn-secondary btn-sm mt-1" href="{{ url_for('lab_works.invoice', invoice_id=c.invoice_id) }}">Open lab invoice</a>{% else %}<form method="post" action="{{ url_for('lab_works.bill_case', case_id=c.id) }}" class="mt-1">{{ csrf() }}<button class="btn btn-secondary btn-sm">Bill this case</button></form>{% endif %}{% endif %}</dd><dt>Instructions</dt><dd class="pre">{{ c.instructions or '—' }}</dd></dl></div>
 <div>
 {% if can_update %}<div class="card"><h2>Update status</h2><form method="post">{{ csrf() }}
 <div class="form-grid"><div class="field"><label for="st">Status</label>{% set cur = c.status %}{% include "staff/labs/_status_select.html" %}</div>
 <div class="field"><label for="du">Due back</label><input id="du" type="date" name="due_on" value="{{ c.due_on or '' }}"></div>
-<div class="field"><label for="lf">Lab fee (₱)</label><input id="lf" name="lab_fee" value="{{ (c.lab_fee_cents / 100) if c.lab_fee_cents is not none else '' }}"></div></div>
+<div class="field"><label for="lf">Lab price (₱) <span class="hint">what the branch pays the lab</span></label><input id="lf" name="lab_fee" value="{{ (c.lab_fee_cents / 100) if c.lab_fee_cents is not none else '' }}"></div></div>
+{% set t = c %}{% include "staff/labs/_target_dates.html" %}
 <div class="field"><label for="nt">Note</label><input id="nt" name="note" placeholder="e.g. Try-in done, needs shade adjustment"></div>
 <button class="btn">Save</button></form>{% include "staff/labs/_stage_help.html" %}</div>{% endif %}
 <div class="card"><h2>History</h2><ul class="list-plain">{% for e in events %}<li><strong>{{ e.status|lab_status }}</strong>{% if e.note %} — {{ e.note }}{% endif %}<br><small class="muted">{{ e.created_at|dt }} · {{ e.by_name }}</small></li>{% endfor %}</ul></div>
 </div></div>
+<div class="card" id="photos"><div class="card-head"><h2>Reference photos</h2>{% if photos %}<small class="muted">{{ photos|length }} photo{{ 's' if photos|length != 1 }} · click to open full size</small>{% endif %}</div>
+{% if photos %}<div class="case-photos">{% for ph in photos %}<figure>
+<a href="{{ url_for('labs.case_photo', case_id=c.id, photo_id=ph.id) }}" target="_blank" rel="noopener"><img src="{{ url_for('labs.case_photo', case_id=c.id, photo_id=ph.id) }}" alt="{{ ph.caption or 'Case photo' }}" loading="lazy"></a>
+<figcaption>{% if ph.caption %}{{ ph.caption }}<br>{% endif %}<small class="muted">{{ ph.by_name or '—' }} · {{ ph.created_at|dt }}</small>
+{% if current_user.is_super_admin or ph.uploaded_by == current_user.id or current_user.can('lab.manage') %}<form method="post" action="{{ url_for('labs.case_photos', case_id=c.id) }}">{{ csrf() }}<input type="hidden" name="action" value="remove"><input type="hidden" name="photo_id" value="{{ ph.id }}"><button class="btn btn-ghost btn-sm" data-confirm="Remove this photo?">Remove</button></form>{% endif %}</figcaption></figure>{% endfor %}</div>
+{% else %}<p class="muted">No photos yet.</p>{% endif %}
+{% if photos|length < max_photos and c.status not in ('cancelled',) %}<form method="post" action="{{ url_for('labs.case_photos', case_id=c.id) }}" enctype="multipart/form-data" class="row mt-1" style="gap:.5rem;flex-wrap:wrap;align-items:end">{{ csrf() }}
+<div class="field mb-0"><label for="cph">Add photos</label><input id="cph" type="file" name="photos" accept="image/png,image/jpeg,image/webp" multiple required></div>
+<div class="field mb-0"><label for="cpc">Caption <span class="hint">optional</span></label><input id="cpc" name="caption" maxlength="200" placeholder="e.g. Shade A2, upper arch"></div>
+<button class="btn btn-secondary">Upload</button></form>{% endif %}
+</div>
 <div class="card" id="fitting"><div class="card-head"><h2>Trial fitting agreement</h2></div>
 <p class="hint">After the try-in, the patient and the dentist sign that the case may go on to final processing. The lab is notified right away.</p>
 {% for ft in fittings %}

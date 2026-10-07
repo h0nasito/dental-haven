@@ -279,6 +279,8 @@ def start_worker(app, every_seconds: int = 300) -> None:
                     m = patient_mail.run(get_db())
                     if m:
                         app.logger.info("Sent %s patient email(s)", m)
+                    from .views.inventory_orders import run_reminders
+                    run_reminders(get_db())
                     from . import daily_report
                     if daily_report.run(get_db()):
                         app.logger.info("Sent the daily collection report")

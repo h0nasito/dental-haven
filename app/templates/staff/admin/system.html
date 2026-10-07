@@ -16,7 +16,7 @@
 <p class="hint">{% if mail.brevo %}<strong>Sending through Brevo</strong> (web API), so no Gmail passwords are needed: each sender address above must be a verified sender in your Brevo account.{% else %}Set these on the server (<code>/etc/dental-haven/env</code>), then restart. The password is a Gmail app password, not the normal Gmail password. <strong>On DigitalOcean</strong> the normal email ports are blocked, so Gmail passwords alone won't work there: add <code>BREVO_API_KEY</code> instead.{% endif %} See docs/INTEGRATIONS.md.</p>{% endif %}
 </div>
 <form method="post">{{ csrf() }}
-{% set groups = [('Online booking','booking.'),('Invoicing','invoice.'),('Messaging','messaging.'),('Payroll','payroll.'),('Daily collection report','report.'),('Laboratory','lab.'),('Privacy','privacy.')] %}
+{% set groups = [('Online booking','booking.'),('Invoicing','invoice.'),('Messaging','messaging.'),('Payroll','payroll.'),('Daily collection report','report.'),('Laboratory','lab.'),('Inventory','inventory.'),('Privacy','privacy.')] %}
 <div class="grid grid-2">
 {% for title, prefix in groups %}
 <div class="card" id="{{ prefix.rstrip('.') }}"><h2>{{ title }}</h2>

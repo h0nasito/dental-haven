@@ -18,7 +18,9 @@
 <div class="tabs"><a class="{% if status == 'open' %}active{% endif %}" href="?status=open{{ bq }}">Open</a>
 {% for k, l in statuses.items() if counts.get(k) or status == k or k == 'delivered' %}<a class="{% if status == k %}active{% endif %}" href="?status={{ k }}{{ bq }}">{{ l }}{% if counts.get(k) %} ({{ counts[k] }}){% endif %}</a>{% endfor %}</div>
 <div class="card"><div class="table-wrap"><table><thead><tr><th>Due</th><th>Patient</th><th>Case</th><th>Teeth / shade</th><th>Branch · dentist</th><th>Lab</th><th>Status</th></tr></thead><tbody>
-{% for c in rows %}<tr><td>{% if c.due_on %}{% if c.due_on < today and c.status in LAB_LATE %}<strong style="color:var(--red-700)">{{ c.due_on|date }}</strong><br><span class="badge badge-red">Overdue</span>{% else %}{{ c.due_on|date }}{% endif %}{% else %}—{% endif %}</td>
+{% for c in rows %}<tr><td>{% if c.due_on %}{% if c.due_on < today and c.status in LAB_LATE %}<strong style="color:var(--red-700)">{{ c.due_on|date }}</strong><br><span class="badge badge-red">Overdue</span>{% else %}{{ c.due_on|date }}{% endif %}{% else %}—{% endif %}
+{% if c.no_try_in %}<br><small class="muted">No trial fitting</small>{% elif c.try_in_on %}<br><small class="muted">Try-in {{ c.try_in_on|date }}</small>{% endif %}
+{% if c.install_on %}<br><small class="muted">Install {{ c.install_on|date }}</small>{% endif %}</td>
 <td><a href="{{ url_for('labs.case', case_id=c.id) }}"><strong>{{ c.last_name }}, {{ c.first_name }}</strong></a><br><small class="muted">{{ c.chart_no }} · sent {{ c.sent_on|date }}</small></td>
 <td>{{ c.case_type }}{% if c.material %}<br><small class="muted">{{ c.material }}</small>{% endif %}</td><td>{{ c.teeth or '—' }}{% if c.shade %}<br><small class="muted">Shade {{ c.shade }}</small>{% endif %}</td>
 <td>{{ c.branch }}<br><small class="muted">{{ c.dentist or '—' }}</small></td><td>{{ c.lab }}</td>

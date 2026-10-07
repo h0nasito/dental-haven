@@ -62,6 +62,7 @@
     {% endcall %}
     {% call group('Inventory', 'box') %}
       {% if current_user.can('inventory.view') or current_user.can('inventory.manage') %}{{ nav('inventory.index', 'Stock', 'inventory.location') }}{% endif %}
+      {% if current_user.can('inventory.order') or current_user.can('inventory.order_approve') %}{{ nav('inv_orders.index', 'Order lists', 'inv_orders.') }}{% endif %}
       {% if current_user.can('inventory.manage') %}{{ nav('inventory.items', 'Items & prices', 'inventory.items') }}{% endif %}
     {% endcall %}
     {% call group('Staff & payroll', 'staff') %}

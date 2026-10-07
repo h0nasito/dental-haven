@@ -191,3 +191,40 @@ class TestLabStages(TestLabFitting):
         page = self.d.get("/staff/lab/").data.decode()
         return next(tr for tr in page.split("<tr>") if f'href="/staff/lab/{self.case}"' in tr)
 
+
+
+class TestLabTargetDates(TestLabFitting):
+    """Trial fitting and final installation target dates; a case can go direct to installation."""
+
+    def _update(self, **form):
+        return self.d.post(f"/staff/lab/{self.case}", data={"status": "sent", "note": "", **form}, follow_redirects=True)
+
+    def test_targets(self):
+        from datetime import date, timedelta
+        t1, t2 = (date.today() + timedelta(days=5)).isoformat(), (date.today() + timedelta(days=12)).isoformat()
+        self._update(try_in_on=t2, install_on=t1)               # try-in after installation: refused
+        c = self.q("SELECT * FROM lab_cases WHERE id = ?", (self.case,))
+        self.assertIsNone(c["install_on"])
+        self._update(try_in_on=t1, install_on=t2)
+        c = self.q("SELECT * FROM lab_cases WHERE id = ?", (self.case,))
+        self.assertEqual((c["try_in_on"], c["install_on"], c["no_try_in"]), (t1, t2, 0))
+        self._update(try_in_on=t2, install_on=t2)               # same day is fine
+        self.assertEqual(self.q("SELECT try_in_on FROM lab_cases WHERE id = ?", (self.case,))["try_in_on"], t2)
+        self._update(try_in_on=t1, install_on=t2, no_try_in="1")   # direct to installation
+        c = self.q("SELECT * FROM lab_cases WHERE id = ?", (self.case,))
+        self.assertEqual((c["try_in_on"], c["no_try_in"]), (None, 1))
+        page = self.d.get(f"/staff/lab/{self.case}").data.decode()
+        self.assertIn("direct to installation", page)
+        self.assertIn("Final installation target", page)
+        self.assertIn("No trial fitting", self.d.get("/staff/lab/").data.decode())
+        self.assertIsNotNone(self.q("SELECT id FROM lab_case_events WHERE case_id = ? AND note LIKE 'Targets:%'", (self.case,)))
+
+    def test_new_case_with_targets(self):
+        from datetime import date, timedelta
+        t = (date.today() + timedelta(days=7)).isoformat()
+        r = self.d.post("/staff/lab/new", data={"patient_id": self.pid, "lab_id": self.lab, "branch_id": self.branch("malolos"),
+                                                "dentist_id": self.doc, "case_type": "Bridge", "teeth": "", "shade": "", "sent_on": date.today().isoformat(),
+                                                "due_on": "", "lab_fee": "", "material": "", "instructions": "", "try_in_on": t, "install_on": t})
+        cid = int(r.headers["Location"].rstrip("/").split("/")[-1])
+        c = self.q("SELECT * FROM lab_cases WHERE id = ?", (cid,))
+        self.assertEqual((c["try_in_on"], c["install_on"]), (t, t))

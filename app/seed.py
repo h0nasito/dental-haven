@@ -389,7 +389,8 @@ def seed_base(conn):
         from . import settings as _settings2
         granted = set(_settings2.get("seed.perms_granted", conn) or [])
         new_perms = {"quotes.view", "quotes.manage", "inventory.view", "inventory.manage", "lab.works", "lab.billing", "attendance.clock",
-                     "overtime.approve", "lab.commission", "commission.record", "evaluations.answer", "evaluations.manage"} - granted
+                     "overtime.approve", "lab.commission", "commission.record", "evaluations.answer", "evaluations.manage",
+                     "inventory.order", "inventory.order_approve"} - granted
         if new_perms and conn.scalar("SELECT COUNT(*) FROM role_permissions"):
             for role, perms in ROLE_DEFAULTS.items():
                 for perm in new_perms & set(perms):
@@ -419,6 +420,29 @@ def seed_base(conn):
                 conn.execute("UPDATE time_records SET late_minutes = ?, ot_minutes = ?, ot_approved_minutes = MIN(ot_approved_minutes, ?) "
                              "WHERE id = ?", (late, ot, ot, r["id"]))
             _settings2.put("seed.staff_hours_v2", True, None, conn)
+        # Once: shrink lab case photos uploaded before photos were made smaller on upload (Oct 2026).
+        if not _settings2.get("seed.lab_photos_shrunk_v1", conn):
+            try:
+                from flask import current_app as _app
+                if conn.scalar("SELECT COUNT(*) FROM sqlite_master WHERE name = 'lab_case_photos'") and _app:
+                    from .uploads import document_path, shrink_photo
+                    import secrets as _secrets
+                    for ph in conn.all("SELECT id, stored_name FROM lab_case_photos"):
+                        try:
+                            old = document_path(ph["stored_name"])
+                            data = old.read_bytes()
+                            small = shrink_photo(data)
+                            if small is None or len(small) >= len(data):
+                                continue
+                            new_name = f"{ph['stored_name'].rsplit('/', 1)[0]}/{_secrets.token_hex(16)}.jpg"
+                            document_path(new_name).write_bytes(small)
+                            conn.execute("UPDATE lab_case_photos SET stored_name = ? WHERE id = ?", (new_name, ph["id"]))
+                            old.unlink(missing_ok=True)
+                        except (OSError, ValueError):
+                            continue
+                _settings2.put("seed.lab_photos_shrunk_v1", True, None, conn)
+            except RuntimeError:
+                pass   # no app context (e.g. command line); try again next start
         # The clinic's Assistant Checklist, created once (closed until the admin opens it).
         if not _settings2.get("seed.eval_assistant_v1", conn):
             import json as _json

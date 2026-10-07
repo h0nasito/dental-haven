@@ -9,7 +9,13 @@
 <div style="text-align:right;flex:none"><h2 class="mb-0">Invoice</h2><p>No. <strong>{{ inv.number or 'Draft' }}</strong><br>Date: {{ (inv.issued_on or inv.created_at)|date }}{% if inv.due_on %}<br>Payment due: <strong>{{ inv.due_on|date }}</strong>{% endif %}</p></div></div>
 <p><strong>Bill to:</strong> {{ inv.clinic_name }}{% if inv.doctor %}<br><strong>Doctor:</strong> {{ inv.doctor }}{% endif %}{% if inv.contact_number %}<br><strong>Contact:</strong> {{ inv.contact_number }}{% endif %}</p>
 <table><thead><tr><th>Description</th><th class="num">Qty</th><th class="num">Unit price</th><th class="num">Discount</th><th class="num">Amount</th></tr></thead><tbody>
-{% for it in items %}<tr><td>{{ it.description }}</td><td class="num">{{ it.qty }}</td><td class="num">{{ it.unit_price_cents|peso }}</td><td class="num">{{ it.discount_cents|peso if it.discount_cents else '' }}</td><td class="num">{{ it.amount_cents|peso }}</td></tr>{% endfor %}</tbody>
+{% set multi = groups|length > 1 or (groups and groups[0].case) %}
+{% for gr in groups %}
+{% if gr.case %}<tr class="li-case"><td colspan="5"><strong>Case #{{ gr.case.id }} · {{ gr.case.case_type }}</strong>{% if gr.case.teeth %} · {{ gr.case.teeth }}{% endif %} · {{ gr.case.chart_no }}{% if gr.case.dentist %} · {{ gr.case.dentist }}{% endif %}</td></tr>
+{% elif multi %}<tr class="li-case"><td colspan="5"><strong>Other items</strong></td></tr>{% endif %}
+{% for it in gr["items"] %}<tr><td>{% if it.is_less %}Less: {% endif %}{{ it.description }}</td><td class="num">{{ it.qty }}</td><td class="num">{{ it.unit_price_cents|peso }}</td><td class="num">{{ it.discount_cents|peso if it.discount_cents else '' }}</td><td class="num">{% if it.amount_cents < 0 %}−{{ (-it.amount_cents)|peso }}{% else %}{{ it.amount_cents|peso }}{% endif %}</td></tr>{% endfor %}
+{% if groups|length > 1 %}<tr class="li-sub"><td colspan="4">Subtotal{% if gr.case %} case #{{ gr.case.id }}{% endif %}</td><td class="num">{{ gr.subtotal|peso }}</td></tr>{% endif %}
+{% endfor %}</tbody>
 <tfoot><tr><td colspan="4">Subtotal</td><td class="num">{{ inv.subtotal_cents|peso }}</td></tr>
 {% if inv.discount_cents %}<tr><td colspan="4">Discount{% if inv.discount_note %} ({{ inv.discount_note }}){% endif %}</td><td class="num">-{{ inv.discount_cents|peso }}</td></tr>{% endif %}
 <tr><td colspan="4"><strong>Total</strong></td><td class="num"><strong>{{ inv.total_cents|peso }}</strong></td></tr>
@@ -18,4 +24,5 @@
 <p class="mt-1" style="font-size:.85rem">This invoice is a statement of charges for laboratory work. It is not a BIR official receipt.</p>
 <div class="row between" style="margin-top:3rem"><div style="border-top:1px solid #999;padding-top:.3rem;min-width:220px">Prepared by</div><div style="border-top:1px solid #999;padding-top:.3rem;min-width:220px">Received by (clinic)</div></div>
 </main>
+<style>.li-case td { padding-top: .8rem; border-bottom: 1px solid #ccc; } .li-sub td { font-style: italic; border-top: 1px solid #ddd; }</style>
 {% endblock %}

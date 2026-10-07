@@ -9,7 +9,7 @@
 {% if results is not none %}<ul class="list-plain mt-1">{% for r in results %}<li class="row between"><span><strong>{{ r.last_name }}, {{ r.first_name }}</strong> <small class="muted">{{ r.chart_no }}</small></span><a class="btn btn-sm" href="{{ url_for('labs.new', patient_id=r.id) }}">Select</a></li>{% else %}<li class="muted">No matching patients.</li>{% endfor %}</ul>{% endif %}
 </div>
 {% else %}
-<form method="post" class="card" style="max-width:900px">{{ csrf() }}<input type="hidden" name="patient_id" value="{{ patient.id }}">
+<form method="post" class="card" style="max-width:900px" enctype="multipart/form-data">{{ csrf() }}<input type="hidden" name="patient_id" value="{{ patient.id }}">
 <p><strong>{{ patient.last_name }}, {{ patient.first_name }}</strong> <small class="muted">{{ patient.chart_no }}</small> · <a href="{{ url_for('labs.new') }}">change</a></p>
 {% if errors %}<div class="flash flash-error"><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
 <div class="form-grid">
@@ -22,9 +22,12 @@
 <div class="field"><label for="mt">Material</label><input id="mt" name="material" value="{{ v.material }}"></div>
 <div class="field"><label for="so">Date sent</label><input id="so" type="date" name="sent_on" value="{{ v.sent_on }}"></div>
 <div class="field"><label for="du">Due back</label><input id="du" type="date" name="due_on" value="{{ v.due_on }}"></div>
-<div class="field"><label for="lf">Lab fee (₱, optional)</label><input id="lf" name="lab_fee" value="{{ v.lab_fee }}" inputmode="decimal"></div>
+<div class="field"><label for="lf">Lab price (₱, optional; the lab can set it)</label><input id="lf" name="lab_fee" value="{{ v.lab_fee }}" inputmode="decimal"></div>
 </div>
+{% set t = v %}{% include "staff/labs/_target_dates.html" %}
 <div class="field"><label for="ins">Instructions to the lab</label><textarea id="ins" name="instructions" rows="3">{{ v.instructions }}</textarea></div>
+<div class="field"><label for="lph">Reference photos (optional)</label><input id="lph" type="file" name="photos" accept="image/png,image/jpeg,image/webp" multiple>
+<span class="hint">Shade photo, intraoral photos, models. You can pick several (up to 12) and add more later on the case.</span></div>
 <button class="btn">Create lab case</button></form>
 {% endif %}
 {% endblock %}

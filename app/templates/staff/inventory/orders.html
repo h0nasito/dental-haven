@@ -1,0 +1,22 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Order lists{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Order lists</h1>
+<p>Each branch makes next month's order list before the end of the month (due {{ due|date }}). It starts with the items that are low or out of stock.
+After approval it's ordered from the supplier, and receiving it adds the items to the branch's stock.</p></div></div>
+{% if can_make %}<div class="card"><h2>Make an order list</h2>
+<form method="post" class="row" style="gap:.6rem;align-items:end;flex-wrap:wrap">{{ csrf() }}
+<div class="field mb-0"><label for="ol">Branch / location</label><select id="ol" name="location_id">{% for l in locs %}<option value="{{ l.id }}">{{ l.name }}</option>{% endfor %}</select></div>
+<div class="field mb-0"><label for="om">For the month of</label><input id="om" type="month" name="for_month" value="{{ next_month }}"></div>
+<button class="btn">Start order list</button></form>
+{% if missing %}<p class="mt-1 mb-0"><span class="badge badge-amber">Not started for {{ month_label(next_month) }}</span> {{ missing|map(attribute='name')|join(', ') }}</p>{% endif %}
+</div>{% endif %}
+<div class="tabs"><a class="{% if status == 'open' %}active{% endif %}" href="?status=open">Open</a>
+{% for k, v in statuses.items() %}<a class="{% if status == k %}active{% endif %}" href="?status={{ k }}">{{ v[0].split(',')[0] }}</a>{% endfor %}</div>
+<div class="card"><div class="table-wrap"><table><thead><tr><th>Month</th><th>Branch / location</th><th>Status</th><th class="num">Items</th><th class="num">Estimated cost</th><th>Made by</th></tr></thead><tbody>
+{% for r in rows %}<tr><td><a href="{{ url_for('inv_orders.order', order_id=r.id) }}"><strong>{{ month_label(r.for_month) }}</strong></a></td><td>{{ r.location }}</td>
+<td><span class="badge {{ statuses[r.status][1] }}">{{ statuses[r.status][0] }}</span></td><td class="num">{{ r.n_lines }}</td>
+<td class="num">{{ r.est|peso if r.est else '—' }}</td><td>{{ r.created_by_name or '—' }}<br><small class="muted">{{ r.created_at|dt }}</small></td></tr>
+{% else %}<tr><td colspan="6" class="empty">No order lists here.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

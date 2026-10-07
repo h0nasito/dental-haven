@@ -118,6 +118,8 @@ CATALOG: list[Perm] = [
     Perm("evaluations.manage", "Manage evaluation forms: open/close, edit questions, see all answers and results", "Staff evaluations"),
     Perm("inventory.view", "View inventory (stock, expiry, history)", "Inventory"),
     Perm("inventory.manage", "Update inventory: stock counts, receive and use items, edit items and prices", "Inventory"),
+    Perm("inventory.order", "Make the monthly order list for their branch (before month end)", "Inventory"),
+    Perm("inventory.order_approve", "Approve order lists, mark them ordered and received (adds to stock)", "Inventory", True),
     # Expenses
     Perm("expenses.view", "View Expenses", "Expenses", True),
     Perm("expenses.post", "Post Expenses", "Expenses", True),
@@ -172,7 +174,7 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
         "leads.view", "followups.view", "followups.manage", "reminders.view", "reminders.send",
         "billing.view", "billing.manage", "bills.edit", "payments.add", "credit.apply", "commission.record",
         "expenses.view", "expenses.add", "lab.view", "reports.operations", "attendance.view",
-        "quotes.view", "quotes.manage", "inventory.view", "attendance.clock",
+        "quotes.view", "quotes.manage", "inventory.view", "inventory.order", "attendance.clock",
     },
     "hr": {
         "dashboard.view", "attendance.view", "attendance.manage", "attendance.clock", "overtime.approve", "compensation.manage",
@@ -183,7 +185,7 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
         "bookings.view", "appointments.manage", "appointments.complete", "bookings.manage", "patients.view", "patients.contact",
         "patients.manage", "documents.upload", "leads.view", "leads.manage", "followups.view", "followups.manage", "reminders.view",
         "reminders.send", "billing.view", "quotes.view", "lab.view", "lab.all_branches", "reports.operations", "attendance.view", "attendance.manage",
-        "attendance.clock", "overtime.approve", "inventory.view",
+        "attendance.clock", "overtime.approve", "inventory.view", "inventory.order", "inventory.order_approve",
     },
     "technician": {
         "dashboard.view", "lab.view", "attendance.clock", "inventory.view",

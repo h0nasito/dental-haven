@@ -33,7 +33,7 @@ def sniff(head: bytes) -> str | None:
     return None
 
 
-def _read_checked(file_storage, allowed: set[str]):
+def _read_checked(file_storage, allowed: set[str], limit_mb: int | None = None):
     head = file_storage.stream.read(16)
     file_storage.stream.seek(0)
     kind = sniff(head)
@@ -42,7 +42,7 @@ def _read_checked(file_storage, allowed: set[str]):
     data = file_storage.stream.read()
     if not data:
         return None, None, "The file is empty."
-    limit = current_app.config.get("MAX_DOCUMENT_MB", 10)
+    limit = limit_mb or current_app.config.get("MAX_DOCUMENT_MB", 10)
     if len(data) > limit * 1024 * 1024:
         return None, None, f"The file is larger than {limit} MB."
     return kind, data, None
@@ -86,6 +86,51 @@ def save_private_image(file_storage, subfolder: str):
     kind, data, err = _read_checked(file_storage, IMAGE_TYPES)
     if err:
         return None, err
+    folder = Path(current_app.config["UPLOAD_DIR"]) / subfolder
+    folder.mkdir(parents=True, exist_ok=True)
+    name = f"{secrets.token_hex(16)}.{kind}"
+    (folder / name).write_bytes(data)
+    return f"{subfolder}/{name}", None
+
+
+PHOTO_MAX_SIDE = 1600      # px, long side: plenty for shade and fit photos on screen and in print
+PHOTO_QUALITY = 80
+
+
+def shrink_photo(data: bytes, max_side: int = PHOTO_MAX_SIDE, quality: int = PHOTO_QUALITY) -> bytes | None:
+    """A phone photo made small: turned upright, at most max_side px, JPEG, with no metadata (removes GPS location).
+    Returns None if it can't be read (the original is kept then)."""
+    try:
+        import io
+        from PIL import Image, ImageOps
+        with Image.open(io.BytesIO(data)) as im:
+            im = ImageOps.exif_transpose(im)
+            if im.mode in ("RGBA", "LA", "P"):
+                im = im.convert("RGBA")
+                bg = Image.new("RGB", im.size, (255, 255, 255))
+                bg.paste(im, mask=im.split()[-1])
+                im = bg
+            elif im.mode != "RGB":
+                im = im.convert("RGB")
+            im.thumbnail((max_side, max_side), Image.LANCZOS)
+            out = io.BytesIO()
+            im.save(out, "JPEG", quality=quality, optimize=True, progressive=True)
+            small = out.getvalue()
+        return small
+    except Exception:  # noqa: BLE001 - never lose an upload because shrinking failed
+        return None
+
+
+def save_private_photo(file_storage, subfolder: str):
+    """Like save_private_image, but the photo is shrunk first (smaller files, no GPS metadata). Returns (name, error)."""
+    kind, data, err = _read_checked(file_storage, IMAGE_TYPES, limit_mb=30)   # big phone photos are fine: they're shrunk
+    if err:
+        return None, err
+    small = shrink_photo(data)
+    if small is not None and len(small) < len(data):
+        data, kind = small, "jpg"
+    elif small is not None and kind == "jpg":
+        data = small            # same size or bigger, but without the location metadata
     folder = Path(current_app.config["UPLOAD_DIR"]) / subfolder
     folder.mkdir(parents=True, exist_ok=True)
     name = f"{secrets.token_hex(16)}.{kind}"

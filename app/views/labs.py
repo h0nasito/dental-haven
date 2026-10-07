@@ -51,6 +51,43 @@ def _scope(alias="c"):
     return "(" + " OR ".join(parts) + ")", params
 
 
+def target_dates(form, sent=None) -> tuple[dict, list[str]]:
+    """Trial fitting and final installation target dates from a form. No trial fitting = direct to installation."""
+    no_try = 1 if form.get("no_try_in") else 0
+    try_in = None if no_try else parse_date(form.get("try_in_on"))
+    install = parse_date(form.get("install_on"))
+    errors = []
+    if form.get("try_in_on") and not no_try and not try_in or form.get("install_on") and not install:
+        errors.append("Check the target dates.")
+    if try_in and install and try_in > install:
+        errors.append("The trial fitting can't be after the final installation (it can be the same day).")
+    if sent and any(d and d < sent for d in (try_in, install)):
+        errors.append("Target dates can't be before the date sent.")
+    return {"try_in_on": try_in.isoformat() if try_in else None, "install_on": install.isoformat() if install else None,
+            "no_try_in": no_try}, errors
+
+
+MAX_CASE_PHOTOS = 12
+
+
+def save_case_photos(conn, case_id: int, files) -> tuple[int, list[str]]:
+    """Save reference photos for a lab case (private storage). Returns (saved, errors)."""
+    from ..uploads import save_private_photo as save_private_image
+    have = conn.scalar("SELECT COUNT(*) FROM lab_case_photos WHERE case_id = ?", (case_id,)) or 0
+    saved, errors = 0, []
+    for f in [x for x in files if x and x.filename]:
+        if have + saved >= MAX_CASE_PHOTOS:
+            errors.append(f"Up to {MAX_CASE_PHOTOS} photos per case.")
+            break
+        name, err = save_private_image(f, "labcases")
+        if err:
+            errors.append(f"{f.filename}: {err}")
+            continue
+        conn.insert("lab_case_photos", {"case_id": case_id, "stored_name": name, "caption": "", "uploaded_by": g.user.id, "created_at": now_str()})
+        saved += 1
+    return saved, errors
+
+
 def _can_access():
     return g.user.is_super_admin or g.user.can("lab.view") or bool(_my_labs())
 
@@ -152,14 +189,21 @@ def new():
         fee = parse_money(v["lab_fee"]) if v["lab_fee"] else None
         if v["lab_fee"] and fee is None:
             errors.append("Enter the lab fee like 3500 or 3500.00.")
+        targets, terr = target_dates(request.form, sent)
+        errors += terr
+        v.update({k: request.form.get(k, "") for k in ("try_in_on", "install_on")}, no_try_in=targets["no_try_in"])
         if not errors:
             with conn.transaction():
                 cid = conn.insert("lab_cases", {"lab_id": lab_id, "branch_id": branch_id, "patient_id": patient["id"], "dentist_id": dentist_id,
                                                 "case_type": v["case_type"], "teeth": v["teeth"][:60], "shade": v["shade"][:30],
                                                 "material": v["material"][:80], "instructions": v["instructions"], "status": "sent",
                                                 "sent_on": sent.isoformat(), "due_on": due.isoformat() if due else None, "lab_fee_cents": fee,
+                                                **targets,
                                                 "created_by": g.user.id, "created_at": now_str(), "updated_at": now_str()})
                 conn.insert("lab_case_events", {"case_id": cid, "user_id": g.user.id, "status": "sent", "note": "Case created", "created_at": now_str()})
+                n_photos, photo_errors = save_case_photos(conn, cid, request.files.getlist("photos"))
+                for e_ in photo_errors:
+                    flash(e_, "error")
                 audit.record("lab_case_created", "patient", patient["id"], f"Lab case #{cid}: {v['case_type']}", {"lab_case_id": cid}, branch_id)
                 branch = conn.one("SELECT name FROM branches WHERE id = ?", (branch_id,))
                 notify(conn, lab_staff(conn, lab_id), "lab_case_new", f"New lab case #{cid}: {v['case_type']}",
@@ -197,6 +241,18 @@ def case(case_id):
         fee = parse_money(request.form.get("lab_fee")) if request.form.get("lab_fee") else None
         if fee is not None:
             upd["lab_fee_cents"] = fee
+        if "install_on" in request.form:
+            targets, terr = target_dates(request.form, parse_date(c["sent_on"]))
+            if terr:
+                for e_ in terr:
+                    flash(e_, "error")
+                return redirect(url_for("labs.case", case_id=case_id))
+            if (targets["try_in_on"], targets["install_on"], targets["no_try_in"]) != (c["try_in_on"], c["install_on"], c["no_try_in"]):
+                upd.update(targets)
+                fmt = lambda d: d or "not set"  # noqa: E731
+                tnote = ("Targets: direct to installation" if targets["no_try_in"] else f"Targets: trial fitting {fmt(targets['try_in_on'])}") + \
+                        f", installation {fmt(targets['install_on'])}"
+                note = f"{note}; {tnote}" if note else tnote
         conn.update("lab_cases", case_id, upd)
         conn.insert("lab_case_events", {"case_id": case_id, "user_id": g.user.id, "status": st, "note": note, "created_at": now_str()})
         if st != c["status"]:
@@ -211,12 +267,64 @@ def case(case_id):
     fittings = conn.all("SELECT f.*, d.name AS dentist_name, u.name AS by_name FROM lab_case_fittings f LEFT JOIN users d ON d.id = f.dentist_id "
                         "LEFT JOIN users u ON u.id = f.created_by WHERE f.case_id = ? ORDER BY f.id DESC", (case_id,))
     from ..lab_commission import entries, technicians
-    return render_template("staff/labs/case.html", c=c, events=events, statuses=STATUSES, can_update=can_update,
+    lab_invoice = conn.one("SELECT number, status, total_cents, paid_cents FROM lab_invoices WHERE id = ?", (c["invoice_id"],)) if c["invoice_id"] else None
+    photos = conn.all("SELECT ph.*, u.name AS by_name FROM lab_case_photos ph LEFT JOIN users u ON u.id = ph.uploaded_by WHERE ph.case_id = ? ORDER BY ph.id",
+                      (case_id,))
+    return render_template("staff/labs/case.html", c=c, events=events, statuses=STATUSES, can_update=can_update, lab_invoice=lab_invoice, photos=photos, max_photos=MAX_CASE_PHOTOS,
+                           can_bill=g.user.is_super_admin or (lab_user and g.user.can("lab.billing")),
                            comm_entries=entries(conn, case_id=c["id"]), comm_techs=technicians(conn),
                            patient_link=can_see_patient(conn, g.user, c["patient_id"]), fittings=fittings,
                            can_fit=_can_record_fitting(conn, c), fit_results=FIT_RESULTS, fit_checks=FIT_CHECKS,
                            agreement=agreement_text(conn, c), today=today().isoformat(),
                            fit_dentists=dentists([c["branch_id"]]))
+
+
+@bp.route("/<int:case_id>/photos", methods=["POST"])
+@login_required
+def case_photos(case_id):
+    """Add reference photos to a case, or remove one (the uploader, lab managers and super admins)."""
+    if not _can_access():
+        abort(403)
+    conn = get_db()
+    c = _load(case_id)
+    if request.form.get("action") == "remove":
+        ph = conn.one("SELECT * FROM lab_case_photos WHERE id = ? AND case_id = ?", (to_int(request.form.get("photo_id")), case_id))
+        if not ph:
+            abort(404)
+        if not (g.user.is_super_admin or ph["uploaded_by"] == g.user.id or g.user.can("lab.manage")):
+            abort(403)
+        conn.execute("DELETE FROM lab_case_photos WHERE id = ?", (ph["id"],))
+        audit.record("lab_case_photo_removed", "patient", c["patient_id"], f"Removed a photo from lab case #{case_id}", branch_id=c["branch_id"])
+        flash("Photo removed.", "success")
+    else:
+        saved, errors = save_case_photos(conn, case_id, request.files.getlist("photos"))
+        for e_ in errors:
+            flash(e_, "error")
+        if saved:
+            caption = clean(request.form.get("caption"), 200)
+            if caption:
+                conn.execute("UPDATE lab_case_photos SET caption = ? WHERE id IN (SELECT id FROM lab_case_photos WHERE case_id = ? ORDER BY id DESC LIMIT ?)",
+                             (caption, case_id, saved))
+            conn.insert("lab_case_events", {"case_id": case_id, "user_id": g.user.id, "status": c["status"],
+                                            "note": f"Added {saved} photo{'s' if saved != 1 else ''}", "created_at": now_str()})
+            audit.record("lab_case_photo_added", "patient", c["patient_id"], f"Added {saved} photo(s) to lab case #{case_id}", branch_id=c["branch_id"])
+            flash(f"{saved} photo{'s' if saved != 1 else ''} added.", "success")
+    return redirect(url_for("labs.case", case_id=case_id) + "#photos")
+
+
+@bp.route("/<int:case_id>/photos/<int:photo_id>")
+@login_required
+def case_photo(case_id, photo_id):
+    from ..uploads import document_path
+    if not _can_access():
+        abort(403)
+    _load(case_id)   # same access as the case itself (branch staff and the lab)
+    ph = get_db().one("SELECT * FROM lab_case_photos WHERE id = ? AND case_id = ?", (photo_id, case_id))
+    if not ph:
+        abort(404)
+    resp = send_file(document_path(ph["stored_name"]), max_age=0)
+    resp.headers["Cache-Control"] = "private, no-store"
+    return resp
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,9 @@
+{# Target dates. Needs: t (dict-like with try_in_on, install_on, no_try_in). #}
+<fieldset class="mt-1"><legend>Target dates (with the patient)</legend>
+<div class="form-grid">
+<div class="field"><label for="tio">Trial fitting target date</label><input id="tio" type="date" name="try_in_on" value="{{ t.try_in_on or '' }}">
+<span class="hint">Can be the same day as the installation.</span></div>
+<div class="field"><label for="ino">Final installation target date</label><input id="ino" type="date" name="install_on" value="{{ t.install_on or '' }}"></div>
+</div>
+<label class="check"><input type="checkbox" name="no_try_in" value="1" {% if t.no_try_in %}checked{% endif %}> No trial fitting: direct to installation</label>
+</fieldset>

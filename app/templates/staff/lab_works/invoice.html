@@ -9,25 +9,37 @@
 {% if new_receipt %}<div class="notice" style="margin-bottom:1rem">Payment saved. <a href="{{ url_for('lab_works.receipt_print', payment_id=new_receipt) }}" target="_blank"><strong>Print the acknowledgment receipt</strong></a></div>{% endif %}
 {% if inv.status == 'void' %}<div class="notice" style="margin-bottom:1rem">This invoice was voided: {{ inv.void_reason }}</div>{% endif %}
 <div class="card"><h2>Items</h2><div class="table-wrap"><table><thead><tr><th>Description</th><th class="num">Qty</th><th class="num">Unit price</th><th class="num">Discount</th><th class="num">Amount</th>{% if draft %}<th></th>{% endif %}</tr></thead><tbody>
-{% for it in items %}<tr>
-{% if draft %}<td>{{ it.description }}</td>
-<td colspan="4"><form method="post" class="row" style="justify-content:flex-end;gap:.4rem">{{ csrf() }}<input type="hidden" name="action" value="update_item"><input type="hidden" name="item_id" value="{{ it.id }}">
-<input name="qty" value="{{ it.qty }}" inputmode="numeric" style="width:4em;text-align:right" aria-label="Quantity"><input name="unit_price" value="{{ '%.2f' % (it.unit_price_cents / 100) }}" inputmode="decimal" style="width:8em;text-align:right" aria-label="Unit price">
-<input name="item_discount" value="{{ '%.2f' % (it.discount_cents / 100) if it.discount_cents else '' }}" placeholder="Discount" inputmode="decimal" style="width:7em;text-align:right" aria-label="Item discount">
-<span style="min-width:7em;text-align:right">{{ it.amount_cents|peso }}</span><button class="btn btn-secondary btn-sm">Update</button></form></td>
+{% set case_ids = groups|map(attribute='case')|select|map(attribute='id')|list %}
+{% for gr in groups %}
+{% if gr.case %}<tr class="li-case"><td colspan="6"><strong>Case #{{ gr.case.id }} · {{ gr.case.case_type }}</strong>{% if gr.case.teeth %} · {{ gr.case.teeth }}{% endif %} · {{ gr.case.chart_no }}{% if gr.case.dentist %} · {{ gr.case.dentist }}{% endif %}
+<a href="{{ url_for('labs.case', case_id=gr.case.id) }}" class="muted" style="margin-left:.4rem">open case</a></td></tr>
+{% elif groups|length > 1 %}<tr class="li-case"><td colspan="6"><strong>Other items</strong></td></tr>{% endif %}
+{% for it in gr["items"] %}<tr>
+{% if draft %}<td colspan="5"><form method="post" class="row" style="gap:.4rem;flex-wrap:wrap;align-items:center">{{ csrf() }}<input type="hidden" name="action" value="update_item"><input type="hidden" name="item_id" value="{{ it.id }}">
+{% if it.is_less %}<span class="badge badge-red">Less</span>{% endif %}<input name="description" value="{{ it.description }}" maxlength="200" aria-label="Description" style="flex:1;min-width:14em">
+<input name="qty" value="{{ it.qty }}" inputmode="numeric" style="width:4em;text-align:right" aria-label="Quantity" title="Quantity / units"> ×
+<input name="unit_price" value="{{ '%.2f' % (it.unit_price_cents / 100) }}" inputmode="decimal" style="width:7em;text-align:right" aria-label="Unit price" title="Price per unit">
+{% if not it.is_less %}<input name="item_discount" value="{{ '%.2f' % (it.discount_cents / 100) if it.discount_cents else '' }}" placeholder="Discount" inputmode="decimal" style="width:6em;text-align:right" aria-label="Item discount">{% endif %}
+<strong style="min-width:7em;text-align:right">{% if it.amount_cents < 0 %}−{{ (-it.amount_cents)|peso }}{% else %}{{ it.amount_cents|peso }}{% endif %}</strong><button class="btn btn-secondary btn-sm">Update</button></form></td>
 <td><form method="post">{{ csrf() }}<input type="hidden" name="action" value="remove_item"><input type="hidden" name="item_id" value="{{ it.id }}"><button class="btn btn-ghost btn-sm" aria-label="Remove {{ it.description }}">✕</button></form></td>
-{% else %}<td>{{ it.description }}</td><td class="num">{{ it.qty }}</td><td class="num">{{ it.unit_price_cents|peso }}</td><td class="num">{{ it.discount_cents|peso if it.discount_cents else '—' }}</td><td class="num">{{ it.amount_cents|peso }}</td>{% endif %}
-</tr>{% else %}<tr><td colspan="6" class="empty">No items yet.</td></tr>{% endfor %}</tbody>
+{% else %}<td>{% if it.is_less %}Less: {% endif %}{{ it.description }}</td><td class="num">{{ it.qty }}</td><td class="num">{{ it.unit_price_cents|peso }}</td><td class="num">{{ it.discount_cents|peso if it.discount_cents else '—' }}</td>
+<td class="num">{% if it.amount_cents < 0 %}−{{ (-it.amount_cents)|peso }}{% else %}{{ it.amount_cents|peso }}{% endif %}</td>{% endif %}
+</tr>{% endfor %}
+{% if groups|length > 1 %}<tr class="li-sub"><td colspan="4">Subtotal{% if gr.case %} case #{{ gr.case.id }}{% endif %}</td><td class="num">{{ gr.subtotal|peso }}</td>{% if draft %}<td></td>{% endif %}</tr>{% endif %}
+{% else %}<tr><td colspan="6" class="empty">No items yet.</td></tr>{% endfor %}</tbody>
 <tfoot><tr><td colspan="4">Subtotal</td><td class="num">{{ inv.subtotal_cents|peso }}</td></tr>
 {% if inv.discount_cents %}<tr><td colspan="4">Discount{% if inv.discount_note %} ({{ inv.discount_note }}){% endif %}</td><td class="num">-{{ inv.discount_cents|peso }}</td></tr>{% endif %}
 <tr><td colspan="4"><strong>Total</strong></td><td class="num"><strong>{{ inv.total_cents|peso }}</strong></td></tr>
 {% if inv.status == 'issued' %}<tr><td colspan="4">Paid</td><td class="num">{{ inv.paid_cents|peso }}</td></tr><tr><td colspan="4"><strong>Balance</strong></td><td class="num"><strong>{{ (inv.total_cents - inv.paid_cents)|peso }}</strong></td></tr>{% endif %}</tfoot></table></div>
 {% if draft %}
-<form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="add_item"><h3>Add an item</h3>
-<div class="form-grid"><div class="field span-2"><label for="ad">Description</label><input id="ad" name="description" maxlength="200" placeholder="e.g. Zirconia crown #16, rush fee, delivery" required></div>
+<form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="add_item"><h3>Add a line</h3>
+<p class="hint">For example: <em>Zirconia bridge</em> 10 × ₱5,500 · <em>Cast (upper and lower)</em> 2 × ₱500 · tick “Less” for <em>1 free unit</em> 1 × ₱5,500.</p>
+<div class="form-grid">{% if case_ids %}<div class="field"><label for="acs">For case</label><select id="acs" name="case_id">{% for cid in case_ids %}<option value="{{ cid }}">Case #{{ cid }}</option>{% endfor %}<option value="">Not for a case</option></select></div>{% endif %}
+<div class="field span-2"><label for="ad">Description</label><input id="ad" name="description" maxlength="200" placeholder="e.g. Cast, rush fee, delivery, free unit" required></div>
 <div class="field"><label for="aq">Qty</label><input id="aq" name="qty" value="1" inputmode="numeric"></div><div class="field"><label for="ap">Unit price (₱)</label><input id="ap" name="unit_price" inputmode="decimal" required></div>
 <div class="field"><label for="ai">Item discount (₱) <span class="hint">Optional</span></label><input id="ai" name="item_discount" inputmode="decimal"></div></div>
-<button class="btn btn-secondary">Add item</button></form>{% endif %}
+<label class="check"><input type="checkbox" name="is_less" value="1"> <strong>Less</strong>: deduct this line from the total (e.g. 1 free unit, ₱5,500)</label>
+<button class="btn btn-secondary mt-1">Add line</button></form>{% endif %}
 </div>
 
 {% if draft %}
@@ -66,3 +78,4 @@
 </div></div>
 {% endif %}
 {% endblock %}
+<style>.li-case td { background: var(--line-2); } .li-sub td { font-style: italic; color: var(--ink-3); }</style>

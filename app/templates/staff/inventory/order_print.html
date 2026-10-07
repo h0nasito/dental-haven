@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Order list · {{ o.location }} · {{ month_label(o.for_month) }}{% endblock %}
+{% block body %}
+<main id="main" class="print-sheet" style="max-width:820px">
+<div class="no-print row between" style="margin-bottom:1rem"><a href="{{ url_for('inv_orders.order', order_id=o.id) }}">← Back</a><span class="muted">Use your browser's Print command</span></div>
+<h2 class="mb-0">Dental Haven · Order list</h2>
+<p>{{ o.location }} · for {{ month_label(o.for_month) }} · {{ statuses[o.status][0] }}<br><small>Made by {{ o.created_by_name or '—' }} on {{ o.created_at|dt }}{% if o.approved_by_name %} · approved by {{ o.approved_by_name }}{% endif %}</small></p>
+<table style="width:100%;border-collapse:collapse;font-size:.92rem"><thead><tr style="text-align:left;border-bottom:2px solid #333"><th style="padding:.3rem">#</th><th>Item</th><th>Unit</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit price</th><th style="text-align:right">Amount</th><th>Note</th></tr></thead><tbody>
+{% set ns = namespace(total=0) %}
+{% for ln in lines %}{% set q = ln.approved_qty if ln.approved_qty is not none else ln.qty %}{% set amt = (q * ln.unit_price_cents)|round|int if ln.unit_price_cents is not none else 0 %}{% set ns.total = ns.total + amt %}
+<tr style="border-bottom:1px solid #ddd"><td style="padding:.3rem">{{ loop.index }}</td><td>{{ ln.name }}</td><td>{{ ln.unit }}</td><td style="text-align:right">{{ fmt_qty(q) }}</td>
+<td style="text-align:right">{{ ln.unit_price_cents|peso if ln.unit_price_cents is not none else '' }}</td><td style="text-align:right">{{ amt|peso if ln.unit_price_cents is not none else '' }}</td><td>{{ ln.note }}</td></tr>{% endfor %}
+</tbody><tfoot><tr><th colspan="5" style="text-align:right;padding:.4rem">Estimated total</th><th style="text-align:right">{{ ns.total|peso }}</th><th></th></tr></tfoot></table>
+{% if o.notes %}<p><strong>Notes:</strong> {{ o.notes }}</p>{% endif %}
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:3rem;margin-top:3rem"><div style="border-top:1px solid #333;padding-top:.3rem">Prepared by</div><div style="border-top:1px solid #333;padding-top:.3rem">Approved by</div></div>
+</main>
+{% endblock %}
