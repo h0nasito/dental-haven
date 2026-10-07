@@ -1,0 +1,30 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Lab price list{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Lab price list</h1><p>Prices used when billing lab cases and outside clinic works. When adding an invoice line or a work price, pick the item and its price fills in.</p></div></div>
+{% if nav_lab_works or nav_lab_billing %}{% set active = 'prices' %}{% include "staff/lab_works/_nav.html" %}{% endif %}
+{% if can_edit %}<form method="post" class="card">{{ csrf() }}<input type="hidden" name="action" value="save">{% endif %}
+{% for (lab_id, cat), items in groups.items() %}
+{% if loop.first or loop.previtem[0][0] != lab_id %}{% if labs|length > 1 %}<h2 class="mt-1">{{ lab_names[lab_id] }}</h2>{% endif %}{% endif %}
+<div class="{{ '' if can_edit else 'card' }}"><h3 class="mt-1">{{ cat }}</h3>
+<div class="table-wrap"><table class="price-tbl"><thead><tr><th>Item</th><th class="num">Price (₱)</th><th>Per</th><th>Note</th>{% if can_edit %}<th>In use</th>{% endif %}</tr></thead><tbody>
+{% for it in items %}<tr{% if not it.active %} class="muted"{% endif %}>
+{% if can_edit %}<td><input name="name_{{ it.id }}" value="{{ it.name }}" maxlength="120" aria-label="Item name" style="min-width:14em"></td>
+<td class="num"><input name="price_{{ it.id }}" value="{{ '%.2f'|format(it.price_cents / 100) }}" inputmode="decimal" style="width:7em;text-align:right" aria-label="Price"></td>
+<td><input name="unit_{{ it.id }}" value="{{ it.unit }}" maxlength="30" placeholder="unit, arch…" style="width:7em" aria-label="Per"></td>
+<td><input name="note_{{ it.id }}" value="{{ it.note }}" maxlength="200" aria-label="Note"></td>
+<td><input type="checkbox" name="active_{{ it.id }}" value="1" {% if it.active %}checked{% endif %} aria-label="In use"></td>
+{% else %}<td>{{ it.name }}</td><td class="num">{{ it.price_cents|peso }}</td><td>{{ it.unit }}</td><td><small class="muted">{{ it.note }}</small></td>{% endif %}
+</tr>{% endfor %}</tbody></table></div></div>
+{% else %}<div class="card"><p class="muted mb-0">No prices yet.</p></div>{% endfor %}
+{% if can_edit %}<button class="btn mt-1">Save price list</button></form>
+<form method="post" class="card">{{ csrf() }}<input type="hidden" name="action" value="add"><h2>Add an item</h2>
+<div class="form-grid">{% if labs|length > 1 %}<div class="field"><label for="pl">Laboratory</label><select id="pl" name="lab_id">{% for l in labs %}<option value="{{ l.id }}">{{ lab_names[l.id] }}</option>{% endfor %}</select></div>{% else %}<input type="hidden" name="lab_id" value="{{ labs[0].id }}">{% endif %}
+<div class="field"><label for="pc">Category</label><input id="pc" name="category" list="price-cats" maxlength="80"><datalist id="price-cats">{% for (lid, cat) in groups %}<option value="{{ cat }}">{% endfor %}</datalist></div>
+<div class="field"><label for="pn">Item</label><input id="pn" name="name" maxlength="120" required></div>
+<div class="field"><label for="pp">Price (₱)</label><input id="pp" name="price" inputmode="decimal" required></div>
+<div class="field"><label for="pu">Per (optional)</label><input id="pu" name="unit" maxlength="30" placeholder="unit, arch"></div>
+<div class="field"><label for="pno">Note (optional)</label><input id="pno" name="note" maxlength="200"></div></div>
+<button class="btn btn-secondary">Add</button></form>{% endif %}
+{% endblock %}

@@ -23,6 +23,8 @@
 <div class="field"><label for="fte">Teeth</label><input id="fte" name="teeth" value="{{ v.teeth }}" maxlength="60" placeholder="e.g. 11, 21"></div>
 <div class="field"><label for="fs">Shade</label><input id="fs" name="shade" value="{{ v.shade }}" maxlength="30" placeholder="e.g. A2"></div>
 <div class="field"><label for="fm">Material</label><input id="fm" name="material" value="{{ v.material }}" maxlength="80" placeholder="e.g. Zirconia"></div>
+{% if price_list %}<div class="field"><label for="fpl">Price from the price list</label><select id="fpl" data-price-pick data-price="#fpr"><option value="">— Pick an item —</option>
+{% for cat, its in price_list|groupby('category') %}<optgroup label="{{ cat }}">{% for it in its %}<option data-price="{{ '%.2f'|format(it.price_cents / 100) }}">{{ it.name }} · {{ it.price_cents|peso }}{% if it.unit %} {{ it.unit }}{% endif %}</option>{% endfor %}</optgroup>{% endfor %}</select></div>{% endif %}
 <div class="field {{ 'error' if errors.price }}"><label for="fpr">Price per unit (₱) <span class="hint">Used for the invoice</span></label><input id="fpr" name="price" value="{{ v.price }}" inputmode="decimal">{{ err('price') }}</div>
 <div class="field span-2"><label for="fi">Instructions</label><textarea id="fi" name="instructions" rows="3" maxlength="1000">{{ v.instructions }}</textarea></div>
 </div>

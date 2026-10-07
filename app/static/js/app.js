@@ -298,6 +298,20 @@ document.addEventListener('DOMContentLoaded', function () {
   }, true);
 })();
 
+/* Price list pickers: <select data-price-pick data-desc="#input" data-price="#input"> fills the description and price. */
+(function () {
+  document.querySelectorAll('select[data-price-pick]').forEach(function (sel) {
+    sel.addEventListener('change', function () {
+      var opt = sel.options[sel.selectedIndex];
+      if (!opt || !opt.getAttribute('data-price')) return;
+      var d = sel.getAttribute('data-desc') && document.querySelector(sel.getAttribute('data-desc'));
+      var p = sel.getAttribute('data-price') && document.querySelector(sel.getAttribute('data-price'));
+      if (d && opt.getAttribute('data-name')) d.value = opt.getAttribute('data-name');
+      if (p) p.value = opt.getAttribute('data-price');
+    });
+  });
+})();
+
 /* Signature pads: <canvas data-sigpad> + hidden [data-sig-out] + [data-sig-clear], inside a form. */
 (function () {
   document.querySelectorAll('canvas[data-sigpad]').forEach(function (canvas) {

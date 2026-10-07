@@ -2,6 +2,7 @@
   <a href="{{ url_for('labs.index') }}" class="{{ 'active' if active == 'cases' else '' }}">Branch cases</a>
   {% if nav_lab_works %}<a href="{{ url_for('lab_works.works') }}" class="{{ 'active' if active == 'works' else '' }}">Outside clinic works</a>
   <a href="{{ url_for('lab_works.clients') }}" class="{{ 'active' if active == 'clients' else '' }}">Clinics</a>{% endif %}
+  <a href="{{ url_for('lab_works.prices') }}" class="{{ 'active' if active == 'prices' else '' }}">Price list</a>
   {% if nav_lab_billing %}<a href="{{ url_for('lab_works.invoices') }}" class="{{ 'active' if active == 'invoices' else '' }}">Invoices &amp; receipts</a>
   <a href="{{ url_for('lab_works.collections') }}" class="{{ 'active' if active == 'collections' else '' }}">Collection report</a>{% endif %}
 </nav>

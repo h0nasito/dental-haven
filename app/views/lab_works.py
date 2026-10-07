@@ -64,6 +64,13 @@ def _in(ids):
     return ",".join("?" for _ in ids) or "NULL"
 
 
+def price_items(conn, lab_ids, active_only=True):
+    if not lab_ids:
+        return []
+    return conn.all(f"SELECT * FROM lab_price_items WHERE lab_id IN ({_in(lab_ids)})" + (" AND active = 1" if active_only else "")
+                    + " ORDER BY lab_id, sort_order, id", list(lab_ids))
+
+
 def branch_clients(conn, lab_ids) -> None:
     """Each active branch is a client of each lab, so the lab can bill the branch for its lab cases."""
     for lab_id in lab_ids:
@@ -269,6 +276,7 @@ def work_new():
     clinics = conn.all(f"SELECT clinic_name, doctor, contact_number FROM lab_clients WHERE lab_id IN ({_in(_lab_ids())}) AND active = 1 ORDER BY clinic_name",
                        _lab_ids())
     return render_template("staff/lab_works/form.html", v=v, errors=errors, labs=labs, case_types=CASE_TYPES, arches=ARCHES, clinics=clinics,
+                           price_list=price_items(conn, [l["id"] for l in labs]),
                            work=None, lab_display=lab_display)
 
 
@@ -331,6 +339,7 @@ def work_edit(work_id):
     clinics = conn.all(f"SELECT clinic_name, doctor, contact_number FROM lab_clients WHERE lab_id IN ({_in(_lab_ids())}) AND active = 1 ORDER BY clinic_name",
                        _lab_ids())
     return render_template("staff/lab_works/form.html", v=v, errors=errors, labs=labs, case_types=CASE_TYPES, arches=ARCHES, clinics=clinics,
+                           price_list=price_items(conn, [l["id"] for l in labs]),
                            work=w, lab_display=lab_display)
 
 
@@ -459,6 +468,61 @@ def invoice_new():
                          f"Draft lab invoice for {client['clinic_name']} ({len(chosen)} works, {len(chosen_cases)} branch cases)")
         return redirect(url_for("lab_works.invoice", invoice_id=iid))
     return render_template("staff/lab_works/invoice_new.html", client=client, clients=clients, works=works, cases=cases, arches=ARCHES)
+
+
+@bp.route("/prices", methods=["GET", "POST"])
+@login_required
+def prices():
+    """The lab's price list. Lab users and branch staff with lab access can see it; lab billing users edit it."""
+    conn = get_db()
+    labs = my_labs(conn)
+    if not labs and (g.user.can("lab.view") or g.user.can("lab.manage")):
+        labs = conn.all("SELECT * FROM laboratories WHERE active = 1 ORDER BY id")
+    if not labs:
+        abort(403)
+    can_edit = g.user.is_super_admin or (g.user.can("lab.billing") and bool(my_labs(conn)))
+    lab_ids = [l["id"] for l in labs]
+    if request.method == "POST":
+        if not can_edit:
+            abort(403)
+        f = request.form
+        with conn.transaction():
+            if f.get("action") == "add":
+                lab_id = to_int(f.get("lab_id"))
+                price = parse_money(f.get("price"))
+                name = clean(f.get("name"), 120)
+                if lab_id not in lab_ids or not name or price is None or price < 0:
+                    flash("Enter the item name and its price.", "error")
+                else:
+                    n = conn.scalar("SELECT COALESCE(MAX(sort_order), 0) + 1 FROM lab_price_items WHERE lab_id = ?", (lab_id,))
+                    conn.insert("lab_price_items", {"lab_id": lab_id, "category": clean(f.get("category"), 80), "name": name, "price_cents": price,
+                                                    "unit": clean(f.get("unit"), 30), "note": clean(f.get("note"), 200), "sort_order": n,
+                                                    "updated_at": now_str()})
+                    audit.record("lab_price_added", "lab_price", None, f"Price list: added {name} ({price / 100:,.2f})")
+                    flash("Added to the price list.", "success")
+            else:
+                changed = 0
+                for it in price_items(conn, lab_ids, active_only=False):
+                    if f"price_{it['id']}" not in f:
+                        continue
+                    price = parse_money(f.get(f"price_{it['id']}"))
+                    vals = {"name": clean(f.get(f"name_{it['id']}"), 120) or it["name"], "unit": clean(f.get(f"unit_{it['id']}"), 30),
+                            "note": clean(f.get(f"note_{it['id']}"), 200), "active": 1 if f.get(f"active_{it['id']}") else 0,
+                            "price_cents": price if price is not None and price >= 0 else it["price_cents"]}
+                    if any(vals[k] != it[k] for k in vals):
+                        conn.update("lab_price_items", it["id"], {**vals, "updated_at": now_str()})
+                        changed += 1
+                        if vals["price_cents"] != it["price_cents"]:
+                            audit.record("lab_price_changed", "lab_price", it["id"],
+                                         f"Price list: {vals['name']} {it['price_cents'] / 100:,.2f} -> {vals['price_cents'] / 100:,.2f}")
+                flash(f"Saved {changed} change{'s' if changed != 1 else ''}." if changed else "No changes.", "success")
+        return redirect(url_for("lab_works.prices"))
+    rows = price_items(conn, lab_ids, active_only=not can_edit)
+    groups = {}
+    for r in rows:
+        groups.setdefault((r["lab_id"], r["category"] or "Other"), []).append(r)
+    return render_template("staff/lab_works/prices.html", labs=labs, groups=groups, can_edit=can_edit,
+                           lab_names={l["id"]: lab_display(l["name"]) for l in labs})
 
 
 @bp.route("/cases/<int:case_id>/bill", methods=["POST"])
@@ -626,7 +690,8 @@ def invoice(invoice_id):
     groups = item_groups(conn, items)
     payments = conn.all("SELECT p.*, u.name AS by_name FROM lab_payments p LEFT JOIN users u ON u.id = p.received_by WHERE p.invoice_id = ? ORDER BY p.id",
                         (inv["id"],))
-    return render_template("staff/lab_works/invoice.html", inv=inv, items=items, groups=groups, payments=payments, pay=pay_status(inv), labels=PAY_LABELS,
+    return render_template("staff/lab_works/invoice.html", inv=inv, items=items, groups=groups, payments=payments,
+                           price_list=price_items(conn, [inv["lab_id"]]), pay=pay_status(inv), labels=PAY_LABELS,
                            methods=METHODS, today=today().isoformat(), new_receipt=to_int(request.args.get("receipt")))
 
 

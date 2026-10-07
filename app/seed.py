@@ -443,6 +443,25 @@ def seed_base(conn):
                 _settings2.put("seed.lab_photos_shrunk_v1", True, None, conn)
             except RuntimeError:
                 pass   # no app context (e.g. command line); try again next start
+        # Once: the DSDL price list and contact details from the lab's printed price list (Oct 2026).
+        if not _settings2.get("seed.dsdl_prices_v1", conn):
+            from .lab_prices import DSDL_CONTACT, DSDL_PRICES
+            lab = conn.one("SELECT * FROM laboratories WHERE name = 'DSDL' ORDER BY id LIMIT 1")
+            if lab:
+                if not conn.scalar("SELECT COUNT(*) FROM lab_price_items WHERE lab_id = ?", (lab["id"],)):
+                    for i, (cat, name, price, unit, note) in enumerate(DSDL_PRICES):
+                        conn.insert("lab_price_items", {"lab_id": lab["id"], "category": cat, "name": name, "price_cents": price * 100,
+                                                        "unit": unit, "note": note, "sort_order": i, "updated_at": now_str()})
+                upd = {}
+                if (lab["address"] or "") in ("", "Liang, Malolos, Bulacan"):
+                    upd["address"] = DSDL_CONTACT["address"]
+                if not lab["phone"]:
+                    upd["phone"] = DSDL_CONTACT["phone"]
+                if not lab["email"]:
+                    upd["email"] = DSDL_CONTACT["email"]
+                if upd:
+                    conn.update("laboratories", lab["id"], upd)
+                _settings2.put("seed.dsdl_prices_v1", True, None, conn)
         # The clinic's Assistant Checklist, created once (closed until the admin opens it).
         if not _settings2.get("seed.eval_assistant_v1", conn):
             import json as _json

@@ -35,6 +35,8 @@
 <form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="add_item"><h3>Add a line</h3>
 <p class="hint">For example: <em>Zirconia bridge</em> 10 × ₱5,500 · <em>Cast (upper and lower)</em> 2 × ₱500 · tick “Less” for <em>1 free unit</em> 1 × ₱5,500.</p>
 <div class="form-grid">{% if case_ids %}<div class="field"><label for="acs">For case</label><select id="acs" name="case_id">{% for cid in case_ids %}<option value="{{ cid }}">Case #{{ cid }}</option>{% endfor %}<option value="">Not for a case</option></select></div>{% endif %}
+{% if price_list %}<div class="field span-2"><label for="apl">From the price list (fills in the description and price)</label><select id="apl" data-price-pick data-desc="#ad" data-price="#ap"><option value="">— Pick an item —</option>
+{% for cat, its in price_list|groupby('category') %}<optgroup label="{{ cat }}">{% for it in its %}<option data-name="{{ it.name }}{% if it.unit %} ({{ it.unit }}){% endif %}" data-price="{{ '%.2f'|format(it.price_cents / 100) }}">{{ it.name }} · {{ it.price_cents|peso }}{% if it.unit %} {{ it.unit }}{% endif %}</option>{% endfor %}</optgroup>{% endfor %}</select></div>{% endif %}
 <div class="field span-2"><label for="ad">Description</label><input id="ad" name="description" maxlength="200" placeholder="e.g. Cast, rush fee, delivery, free unit" required></div>
 <div class="field"><label for="aq">Qty</label><input id="aq" name="qty" value="1" inputmode="numeric"></div><div class="field"><label for="ap">Unit price (₱)</label><input id="ap" name="unit_price" inputmode="decimal" required></div>
 <div class="field"><label for="ai">Item discount (₱) <span class="hint">Optional</span></label><input id="ai" name="item_discount" inputmode="decimal"></div></div>

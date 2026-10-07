@@ -88,6 +88,7 @@
     {% call group('Laboratory', 'lab') %}{% if nav_lab %}
       {{ nav('labs.index', 'Branch lab cases', 'labs.') }}
       {% if nav_lab_works %}{{ nav('lab_works.works', 'Outside clinic works', 'lab_works.work') }}{{ nav('lab_works.clients', 'Clinics', 'lab_works.clients') }}{% endif %}
+      {{ nav('lab_works.prices', 'Lab price list', 'lab_works.prices') }}
       {% if nav_lab_billing %}{{ nav('lab_works.invoices', 'Lab invoices & receipts', 'lab_works.invoice') }}{{ nav('lab_works.collections', 'Lab collection report', 'lab_works.collections') }}{% endif %}
     {% endif %}{% endcall %}
     <div class="nav-group">
