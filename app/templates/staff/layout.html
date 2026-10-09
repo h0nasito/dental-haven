@@ -56,9 +56,10 @@
     {% call group('Billing & reports', 'billing') %}
       {% if current_user.can('quotes.view') %}{{ nav('quotes.index', 'Quotations', 'quotes.') }}{% endif %}
       {% if current_user.can('billing.view') %}{{ nav('billing.invoices', 'Invoices', 'billing.invoice') }}{% endif %}
-      {% if current_user.can('reports.sales') %}{{ nav('billing.sales', 'Sales & collections', 'billing.sales') }}{{ nav('billing.daily_collection', 'Daily collection report', 'billing.daily_collection') }}{% endif %}
+      {% if current_user.can('reports.sales') %}{{ nav('billing.sales', 'Sales & collections', 'billing.sales') }}{{ nav('billing.daily_collection', 'Daily collection report', 'billing.daily_collection') }}{{ nav('billing.financial', 'Financial report', 'billing.financial') }}{% endif %}
       {% if current_user.can('reports.operations') %}{{ nav('billing.operations', 'Operations report', 'billing.operations') }}{% endif %}
       {% if current_user.can('expenses.view') or current_user.can('expenses.add') %}{{ nav('expenses.index', 'Expenses', 'expenses.') }}{% endif %}
+      {% if current_user.can('deposits.view') or current_user.can('deposits.manage') %}{{ nav('deposits.index', 'Bank deposits', 'deposits.') }}{% endif %}
     {% endcall %}
     {% call group('Inventory', 'box') %}
       {% if current_user.can('inventory.view') or current_user.can('inventory.manage') %}{{ nav('inventory.index', 'Stock', 'inventory.location') }}{% endif %}

@@ -124,6 +124,9 @@ CATALOG: list[Perm] = [
     Perm("expenses.view", "View Expenses", "Expenses", True),
     Perm("expenses.post", "Post Expenses", "Expenses", True),
     Perm("expenses.add", "Add Expenses", "Expenses"),
+    # Cash deposits
+    Perm("deposits.view", "View bank deposits and undeposited cash", "Bank deposits", True),
+    Perm("deposits.manage", "Record bank deposits with the deposit slip, and void them", "Bank deposits", True),
     # Report cards
     Perm("reportcards.generate", "Generate patient report cards", "Report cards", True),
     Perm("reportcards.review", "Review and approve patient report cards", "Report cards", True),
@@ -185,7 +188,7 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
         "bookings.view", "appointments.manage", "appointments.complete", "bookings.manage", "patients.view", "patients.contact",
         "patients.manage", "documents.upload", "leads.view", "leads.manage", "followups.view", "followups.manage", "reminders.view",
         "reminders.send", "billing.view", "quotes.view", "lab.view", "lab.all_branches", "reports.operations", "attendance.view", "attendance.manage",
-        "attendance.clock", "overtime.approve", "inventory.view", "inventory.order", "inventory.order_approve",
+        "attendance.clock", "overtime.approve", "inventory.view", "inventory.order", "inventory.order_approve", "deposits.view",
     },
     "technician": {
         "dashboard.view", "lab.view", "attendance.clock", "inventory.view",
@@ -193,7 +196,7 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
     "cashier": {
         "dashboard.view", "dashboard.balances", "appointments.view", "calendar.associates", "patients.view", "patients.contact",
         "billing.view", "billing.manage", "bills.edit", "payments.add", "credit.apply", "commission.record", "quotes.view", "reports.sales",
-        "expenses.view", "expenses.add", "attendance.clock",
+        "expenses.view", "expenses.add", "attendance.clock", "deposits.view", "deposits.manage",
     },
     "receptionist": {
         "dashboard.view", "appointments.view", "calendar.associates", "calendar.birthdays", "calendar.events",

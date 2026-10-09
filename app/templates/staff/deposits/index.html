@@ -1,0 +1,75 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, empty %}
+{% block page_title %}Bank deposits<style>.cashbook td.num { white-space: nowrap; }
+.slip-thumbs { display: flex; gap: .35rem; flex-wrap: wrap; margin-top: .35rem; }
+.slip-thumbs img, .slip-pdf { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); display: grid; place-items: center; font-size: .75rem; font-weight: 700; background: var(--line-2); }
+.slip-add { margin-top: .3rem; }</style>
+{% endblock %}
+{% block content %}
+{% set bname = (branches|selectattr('id', 'equalto', bid)|first).name %}
+<div class="page-head"><div><h1>Bank deposits &amp; cash on hand</h1><p>{{ bname }} · Cash collected, minus cash refunds and cash expenses, minus what was deposited in the bank.</p></div>
+<a class="btn btn-secondary btn-sm" href="{{ url_for('deposits.index', branch=bid, format='csv', **{'from': start.isoformat(), 'to': end.isoformat()}) }}">CSV export</a></div>
+<form class="toolbar" method="get">
+{% if branches|length > 1 %}<div class="field"><label for="db">Branch</label><select id="db" name="branch">{% for b in branches %}<option value="{{ b.id }}" {% if b.id == bid %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select></div>{% endif %}
+<div class="field"><label for="df">From</label><input id="df" type="date" name="from" value="{{ start.isoformat() }}"></div>
+<div class="field"><label for="dt">To</label><input id="dt" type="date" name="to" value="{{ end.isoformat() }}"></div>
+<button class="btn btn-secondary">Show</button></form>
+<div class="grid grid-4" style="margin-bottom:1rem">
+<div class="stat {{ 'warn' if on_hand > 0 else '' }}"><div class="label">Cash on hand now</div><div class="value">{{ on_hand|peso }}</div><div class="sub">Not yet deposited</div></div>
+<div class="stat"><div class="label">Net cash in this period</div><div class="value">{{ cb.totals.net|peso }}</div><div class="sub">Collected {{ cb.totals.in|peso }}</div></div>
+<div class="stat"><div class="label">Deposited in this period</div><div class="value">{{ cb.totals.deposited|peso }}</div><div class="sub">{{ deposits|selectattr('status', 'equalto', 'ok')|list|length }} deposit slip(s)</div></div>
+<div class="stat"><div class="label">Ready to deposit</div><div class="value">{{ sugg_amount|peso }}</div><div class="sub">Cash of {{ sugg_from|date }}{% if sugg_to != sugg_from %} – {{ sugg_to|date }}{% endif %}</div></div>
+</div>
+<div class="grid" style="grid-template-columns:minmax(0,2fr) minmax(280px,1fr)">
+<div>
+<div class="card"><h2>Deposits</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Bank / slip</th><th>Cash of</th><th class="num">Deposited</th><th class="num">Difference</th><th></th></tr></thead><tbody>
+{% for d in deposits %}<tr {% if d.status == 'void' %}style="opacity:.6"{% endif %}>
+<td>{{ d.deposit_date|date }}{% if d.status == 'void' %} <span class="badge badge-red">Void</span>{% endif %}</td>
+<td><strong>{{ d.bank }}</strong>{% if d.account %} · {{ d.account }}{% endif %}{% if d.slip_no %}<br><small>Slip {{ d.slip_no }}</small>{% endif %}
+<br><small class="muted">By {{ d.deposited_by }}{% if d.by_name and d.by_name != d.deposited_by %} · entered by {{ d.by_name }}{% endif %}</small>
+{% set phs = photos.get(d.id, []) %}{% if phs %}<div class="slip-thumbs">{% for ph in phs %}<a href="{{ url_for('deposits.slip', deposit_id=d.id, photo_id=ph.id) }}" target="_blank" rel="noopener" title="Open full size">{% if ph.stored_name.endswith('.pdf') %}<span class="slip-pdf">PDF</span>{% else %}<img src="{{ url_for('deposits.slip', deposit_id=d.id, photo_id=ph.id) }}" alt="Deposit slip picture {{ loop.index }}" loading="lazy">{% endif %}</a>{% endfor %}</div>
+{% elif d.status == 'ok' %}<br><span class="badge badge-amber">No picture yet</span>{% endif %}
+{% if can_manage and d.status == 'ok' and phs|length < max_photos %}<form method="post" action="{{ url_for('deposits.add_photos', deposit_id=d.id) }}" enctype="multipart/form-data" class="slip-add">{{ csrf() }}<label class="btn btn-ghost btn-sm" for="sa{{ d.id }}">+ Add picture</label><input id="sa{{ d.id }}" type="file" name="slip" accept="image/*,application/pdf" multiple data-autosubmit class="sr-only"></form>{% endif %}
+{% if d.notes %}<br><small>{{ d.notes }}</small>{% endif %}{% if d.void_reason %}<br><small class="muted">Void: {{ d.void_reason }}</small>{% endif %}</td>
+<td>{% if d.cash_from %}{{ d.cash_from|date }}{% if d.cash_to != d.cash_from %} –<br>{{ d.cash_to|date }}{% endif %}<br><small class="muted">expected {{ d.expected_cents|peso }}</small>{% else %}—{% endif %}</td>
+<td class="num"><strong>{{ d.amount_cents|peso }}</strong></td>
+<td class="num">{% if d.cash_from %}{% set diff = d.amount_cents - d.expected_cents %}{% if diff == 0 %}<span class="badge badge-green">Matches</span>{% elif diff < 0 %}<span class="text-danger">Short {{ (-diff)|peso }}</span>{% else %}Over {{ diff|peso }}{% endif %}{% else %}—{% endif %}</td>
+<td>{% if can_manage and d.status == 'ok' %}<details><summary class="btn btn-ghost btn-sm">Void</summary><form method="post" action="{{ url_for('deposits.void', deposit_id=d.id) }}">{{ csrf() }}<label class="sr-only" for="vr{{ d.id }}">Reason</label><input id="vr{{ d.id }}" name="reason" placeholder="Reason" required><button class="btn btn-danger btn-sm mt-1">Void</button></form></details>{% endif %}</td></tr>
+{% else %}<tr><td colspan="6">{{ empty('No deposits in this period') }}</td></tr>{% endfor %}</tbody></table></div></div>
+
+<div class="card mt-1 cashbook"><h2>Cash book</h2>
+<div class="table-wrap"><table><thead><tr><th>Date</th><th class="num">Cash collected</th><th class="num">Cash refunds</th><th class="num">Cash expenses</th><th class="num">Deposited</th><th class="num">Cash on hand</th></tr></thead><tbody>
+<tr><td colspan="5"><em>Opening balance</em></td><td class="num">{{ cb.opening|peso }}</td></tr>
+{% for r in cb.rows %}<tr><td>{{ r.day|date }}</td><td class="num">{{ r.in|peso if r.in else '—' }}</td><td class="num">{{ ('−' ~ (r.refunds|peso)) if r.refunds else '—' }}</td>
+<td class="num">{{ ('−' ~ (r.expenses|peso)) if r.expenses else '—' }}</td><td class="num">{{ ('−' ~ (r.deposited|peso)) if r.deposited else '—' }}</td><td class="num"><strong>{{ r.balance|peso }}</strong></td></tr>
+{% else %}<tr><td colspan="6" class="empty">No cash movement in this period.</td></tr>{% endfor %}</tbody>
+<tfoot><tr><td><strong>Total</strong></td><td class="num">{{ cb.totals.in|peso }}</td><td class="num">{{ cb.totals.refunds|peso }}</td><td class="num">{{ cb.totals.expenses|peso }}</td><td class="num">{{ cb.totals.deposited|peso }}</td><td class="num"><strong>{{ cb.closing|peso }}</strong></td></tr></tfoot></table></div>
+<p class="hint">Cash only: GCash, Maya, card, bank transfer and checks are not counted. Cash expenses (not voided) are taken out because they were paid from the cash collected. Counting starts {{ cb.since|date }}.</p></div>
+</div>
+<div>
+{% if can_manage %}
+<div class="card"><h2>Record a deposit</h2><form method="post" enctype="multipart/form-data">{{ csrf() }}<input type="hidden" name="branch" value="{{ bid }}">
+<div class="field"><label for="ddd">Date deposited</label><input id="ddd" type="date" name="deposit_date" value="{{ today }}" max="{{ today }}" required></div>
+<div class="form-grid">
+<div class="field"><label for="dcf">Cash of (from)</label><input id="dcf" type="date" name="cash_from" value="{{ sugg_from }}" max="{{ today }}"></div>
+<div class="field"><label for="dct">to</label><input id="dct" type="date" name="cash_to" value="{{ sugg_to }}" max="{{ today }}"></div></div>
+<p class="hint mt-0">The collection days this deposit is for. The system compares it with the cash of those days ({{ sugg_amount|peso }} for the days filled in).</p>
+<div class="field"><label for="dam">Amount deposited (₱)</label><input id="dam" name="amount" inputmode="decimal" value="{{ '%.2f' % (sugg_amount / 100) if sugg_amount > 0 else '' }}" required></div>
+<div class="field"><label for="dbk">Bank</label><select id="dbk" name="bank" required>{% for b in bank_list %}<option {% if last and last.bank == b %}selected{% endif %}>{{ b }}</option>{% endfor %}</select></div>
+<div class="field"><label for="dac">Account <span class="hint">Last 4 digits only, e.g. ••1234</span></label><input id="dac" name="account" maxlength="40" value="{{ last.account if last else '' }}"></div>
+<div class="field"><label for="dsn">Deposit slip / reference no.</label><input id="dsn" name="slip_no" maxlength="60"></div>
+<div class="field"><label for="dby">Deposited by</label><input id="dby" name="deposited_by" maxlength="120" value="{{ current_user.name }}"></div>
+<div class="field"><label for="dsl">Picture of the deposit slip <span class="hint">Required · take a photo or choose up to {{ max_photos }} (photo or PDF)</span></label><input id="dsl" type="file" name="slip" accept="image/*,application/pdf" multiple required></div>
+<div class="field"><label for="dno">Notes <span class="hint">Optional, e.g. why it is short or over</span></label><textarea id="dno" name="notes" rows="2" maxlength="500"></textarea></div>
+<button class="btn">Save deposit</button></form></div>
+{% endif %}
+{% if current_user.is_super_admin %}<form method="post" class="card mt-1">{{ csrf() }}<input type="hidden" name="action" value="since"><input type="hidden" name="branch" value="{{ bid }}"><h2>Start counting from</h2>
+<p class="hint mt-0">Cash before this date is treated as already deposited (all branches).</p>
+<div class="field"><label for="dsi">Count cash on hand from</label><input id="dsi" type="date" name="since" value="{{ cb.since }}" max="{{ today }}"></div>
+<button class="btn btn-secondary btn-sm">Save</button></form>{% endif %}
+</div></div>
+<style>.cashbook td.num { white-space: nowrap; }
+.slip-thumbs { display: flex; gap: .35rem; flex-wrap: wrap; margin-top: .35rem; }
+.slip-thumbs img, .slip-pdf { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); display: grid; place-items: center; font-size: .75rem; font-weight: 700; background: var(--line-2); }
+.slip-add { margin-top: .3rem; }</style>
+{% endblock %}

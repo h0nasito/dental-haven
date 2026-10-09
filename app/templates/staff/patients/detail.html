@@ -313,7 +313,7 @@
 <div class="form-grid">
 <div class="field"><label for="cr-kind">Type</label><select id="cr-kind" name="action">{% if current_user.can('payments.add') %}<option value="deposit">Deposit (advance payment)</option>{% endif %}{% if current_user.can('billing.void') and credit > 0 %}<option value="refund">Refund credit to patient</option>{% endif %}</select></div>
 <div class="field"><label for="cr-amt">Amount (₱)</label><input id="cr-amt" name="amount" inputmode="decimal" required></div>
-<div class="field"><label for="cr-m">Method</label><select id="cr-m" name="method">{% for k, l in PAYMENT_METHODS.items() %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></div>
+<div class="field"><label for="cr-m">Method</label><select id="cr-m" name="method">{% for k, l in pay_options() %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></div>
 <div class="field"><label for="cr-b">Branch</label><select id="cr-b" name="branch_id">{% for b in my_branches %}<option value="{{ b.id }}" {% if b.id == p.preferred_branch_id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select></div>
 <div class="field"><label for="cr-ref">Reference no.</label><input id="cr-ref" name="reference"></div>
 <div class="field"><label for="cr-n">Note / reason</label><input id="cr-n" name="notes"></div></div>

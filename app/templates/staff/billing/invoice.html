@@ -83,7 +83,7 @@
 <div class="card"><h2>Payments</h2>
 {% set show_comm = current_user.can('commission.record') or current_user.can('bills.edit') %}
 <div class="table-wrap"><table><thead><tr><th>Date</th><th>Method</th><th class="num">Amount</th><th>Status / remarks</th>{% if show_comm %}<th>Dentist commission</th>{% endif %}<th></th></tr></thead><tbody>
-{% for p in payments %}<tr {% if p.status == 'void' %}style="opacity:.6"{% endif %}><td>{{ p.received_at|date }}<br><small class="muted">{{ p.received_by_name }}</small>{% if p.kind != 'payment' %}<br><span class="badge">{{ p.kind|label }}</span>{% endif %}</td><td>{{ PAYMENT_LABELS.get(p.method, p.method) }}{% if p.reference %}<br><small class="muted">Ref {{ p.reference }}</small>{% endif %}{% if p.signature_id %}<br><a href="{{ url_for('billing.signature', invoice_id=inv.id, sig_id=p.signature_id) }}" target="_blank" rel="noopener"><small>Signature</small></a>{% endif %}</td>
+{% for p in payments %}<tr {% if p.status == 'void' %}style="opacity:.6"{% endif %}><td>{{ p.received_at|date }}<br><small class="muted">{{ p.received_by_name }}</small>{% if p.kind != 'payment' %}<br><span class="badge">{{ p.kind|label }}</span>{% endif %}</td><td>{{ pay_label(p.method, p.account) }}{% if p.reference %}<br><small class="muted">Ref {{ p.reference }}</small>{% endif %}{% if p.signature_id %}<br><a href="{{ url_for('billing.signature', invoice_id=inv.id, sig_id=p.signature_id) }}" target="_blank" rel="noopener"><small>Signature</small></a>{% endif %}</td>
 <td class="num">{{ ('-' if p.kind == 'refund' else '') }}{{ p.amount_cents|peso }}</td><td>{{ status_badge(p.status) }}{% if p.void_reason %}<br><small class="muted">{{ p.void_reason }}</small>{% endif %}{% if p.notes %}<br><small class="muted">{{ p.notes }}</small>{% endif %}</td>
 {% if show_comm %}<td>{% set pc = manual_comm|selectattr('payment_id', 'equalto', p.id)|list %}
 {% for c in pc %}<strong>{{ c.amount_cents|peso }}</strong>{% if c.rate_bp is not none %} <small class="muted">({{ c.rate_bp / 100 }}%)</small>{% endif %}<br><small class="muted">{{ c.dentist }}</small><br>{% endfor %}
@@ -105,7 +105,7 @@
 {% if inv.status == 'issued' and current_user.can('billing.void') %}
 <details class="mt-1"><summary>Refund</summary><form method="post" action="{{ url_for('billing.payment', invoice_id=inv.id) }}" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="refund">
 <div class="form-grid"><div class="field"><label for="ra">Amount (₱)</label><input id="ra" name="amount" required></div>
-<div class="field"><label for="rm">Method</label><select id="rm" name="method">{% for k, l in PAYMENT_METHODS.items() %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></div>
+<div class="field"><label for="rm">Method</label><select id="rm" name="method">{% for k, l in pay_options() %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></div>
 <div class="field"><label for="rd">Date</label><input id="rd" type="date" name="received_at" value="{{ today }}" max="{{ today }}"></div></div>
 <div class="field"><label for="rn">Reason</label><input id="rn" name="notes" required></div><button class="btn btn-danger">Record refund</button></form></details>
 <details class="mt-1"><summary>Void invoice</summary><form method="post" action="{{ url_for('billing.invoice_void', invoice_id=inv.id) }}" class="mt-1">{{ csrf() }}

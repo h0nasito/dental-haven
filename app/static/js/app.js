@@ -12,6 +12,10 @@ document.addEventListener('DOMContentLoaded', function () {
     var btn = sel.form.querySelector('.js-hide');
     if (btn) btn.hidden = true;
   });
+  // File pickers that upload as soon as a file is chosen (e.g. "+ Add picture")
+  document.querySelectorAll('input[type=file][data-autosubmit]').forEach(function (inp) {
+    inp.addEventListener('change', function () { if (inp.files.length) inp.form.submit(); });
+  });
   // Copy-to-clipboard buttons for templates/reminders
   document.querySelectorAll('[data-copy]').forEach(function (btn) {
     btn.addEventListener('click', function () {

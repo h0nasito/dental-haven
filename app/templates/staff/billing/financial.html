@@ -1,0 +1,31 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Financial report{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Financial report</h1><p>Where the payments went, {{ start|date }} – {{ end|date }}. Refunds are taken out. Payments from a patient's account credit aren't counted again.</p></div>
+{% if current_user.can('reports.export') %}<a class="btn btn-secondary btn-sm" href="{{ url_for('billing.financial', format='csv', branch=bid, **{'from': start.isoformat(), 'to': end.isoformat()}) }}">CSV export</a>{% endif %}</div>
+<form class="toolbar" method="get">
+<div class="field"><label for="ff">From</label><input id="ff" type="date" name="from" value="{{ start.isoformat() }}"></div>
+<div class="field"><label for="ft">To</label><input id="ft" type="date" name="to" value="{{ end.isoformat() }}"></div>
+{% if mine|length > 1 %}<div class="field"><label for="fb">Branch</label><select id="fb" name="branch"><option value="">All my branches</option>{% for b in mine %}<option value="{{ b.id }}" {% if bid == b.id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select></div>{% endif %}
+<button class="btn btn-secondary">Show</button></form>
+
+<div class="card"><h2>Collections by where the payment went</h2>
+<div class="table-wrap"><table class="fin"><thead><tr><th>Payment went to</th>{% if shown|length > 1 %}{% for b in shown %}<th class="num">{{ b.name }}</th>{% endfor %}{% endif %}<th class="num">Total</th></tr></thead><tbody>
+{% for r in rep.rows %}<tr><td>{{ r.label }}{% if r.refunds %}<br><small class="muted">collected {{ r.collected|peso }} · refunds −{{ r.refunds|peso }}</small>{% endif %}</td>
+{% if shown|length > 1 %}{% for b in shown %}<td class="num">{{ r.net[b.id]|peso if r.net[b.id] else '—' }}</td>{% endfor %}{% endif %}<td class="num"><strong>{{ r.total|peso }}</strong></td></tr>
+{% else %}<tr><td colspan="{{ shown|length + 2 }}" class="empty">No payments in this period.</td></tr>{% endfor %}</tbody>
+<tfoot><tr><td><strong>Total</strong></td>{% if shown|length > 1 %}{% for b in shown %}<td class="num">{{ rep.branch_totals[b.id]|peso }}</td>{% endfor %}{% endif %}<td class="num"><strong>{{ rep.total|peso }}</strong></td></tr></tfoot></table></div></div>
+
+<div class="card mt-1"><h2>Money in each account</h2>
+<div class="table-wrap"><table class="fin"><thead><tr><th>Account</th><th class="num">Paid in directly</th><th class="num">Cash deposited</th><th class="num">Total</th></tr></thead><tbody>
+{% for a in rep.accounts %}<tr><td>{{ a.name }}</td><td class="num">{{ a.direct|peso if a.direct else '—' }}</td><td class="num">{{ a.cash_deposited|peso if a.cash_deposited else '—' }}</td><td class="num"><strong>{{ a.total|peso }}</strong></td></tr>{% endfor %}
+<tr><td>Cash collected, not yet deposited <small class="muted">(this period)</small></td><td class="num" colspan="2"><small class="muted">cash {{ rep.cash_net|peso }} − deposited {{ rep.cash_deposited|peso }}</small></td><td class="num"><strong>{{ (rep.cash_net - rep.cash_deposited)|peso }}</strong></td></tr></tbody></table></div>
+<p class="hint">“Paid in directly”: GCash and bank transfers. “Cash deposited”: from <a href="{{ url_for('deposits.index') }}">Bank deposits</a>. Card payments go to the card terminal's bank when the bank settles them, so they are shown above under Credit/debit card. Cash expenses are not taken out here; see Bank deposits for cash on hand.</p></div>
+
+{% if current_user.is_super_admin %}
+<details class="card mt-1"><summary><strong>Bank accounts</strong> <small class="muted">({{ banks|join(', ') }})</small></summary>
+<form method="post" class="mt-1">{{ csrf() }}<div class="field"><label for="fbk">One bank per line <span class="hint">These show as “Bank transfer – …” in the payment form and in Bank deposits. GCash is always there.</span></label>
+<textarea id="fbk" name="banks" rows="6">{{ banks|join('\n') }}</textarea></div><button class="btn btn-secondary btn-sm">Save</button></form></details>{% endif %}
+<style>.fin td.num, .fin th.num { white-space: nowrap; }</style>
+{% endblock %}

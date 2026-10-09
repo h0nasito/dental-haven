@@ -390,7 +390,7 @@ def seed_base(conn):
         granted = set(_settings2.get("seed.perms_granted", conn) or [])
         new_perms = {"quotes.view", "quotes.manage", "inventory.view", "inventory.manage", "lab.works", "lab.billing", "attendance.clock",
                      "overtime.approve", "lab.commission", "commission.record", "evaluations.answer", "evaluations.manage",
-                     "inventory.order", "inventory.order_approve"} - granted
+                     "inventory.order", "inventory.order_approve", "deposits.view", "deposits.manage"} - granted
         if new_perms and conn.scalar("SELECT COUNT(*) FROM role_permissions"):
             for role, perms in ROLE_DEFAULTS.items():
                 for perm in new_perms & set(perms):
@@ -398,6 +398,10 @@ def seed_base(conn):
                         conn.execute("INSERT INTO role_permissions (role, permission) VALUES (?, ?)", (role, perm))
         if new_perms:
             _settings2.put("seed.perms_granted", sorted(granted | new_perms), None, conn)
+        # Cash on hand is counted from the day bank deposits were installed (older cash isn't shown as undeposited).
+        if not _settings2.get("deposits.since", conn):
+            from datetime import date as _dd
+            _settings2.put("deposits.since", _dd.today().isoformat(), None, conn)
         # Once: dentists, receptionists and supervisors can follow the lab workload of every branch (view only).
         if not _settings2.get("seed.lab_workload_v1", conn):
             if conn.scalar("SELECT COUNT(*) FROM role_permissions"):
@@ -764,8 +768,10 @@ def seed_demo(conn, password: str | None = None) -> str:
             else:
                 paid = 0
             if paid:
+                m = rnd.choice(methods)
                 conn.insert("payments", {"invoice_id": inv, "branch_id": b_id, "kind": "payment", "amount_cents": paid,
-                                         "method": rnd.choice(methods), "reference": "", "received_at": (s.date() + timedelta(days=rnd.choice([0, 0, 1, 3]))).isoformat()
+                                         "method": m, "account": rnd.choice(["BDO", "BPI"]) if m == "bank_transfer" else ("GCash" if m == "gcash" else ""),
+                                         "reference": "", "received_at": (s.date() + timedelta(days=rnd.choice([0, 0, 1, 3]))).isoformat()
                                          if s.date() + timedelta(days=3) <= today() else s.date().isoformat(),
                                          "received_by": admin, "status": "valid", "created_at": fmt_dt(s)})
 

@@ -5,7 +5,7 @@
 <div class="pay-top"><div><span class="pay-lbl">Patient</span><div>{{ patient_name }}</div></div><div><span class="pay-lbl">Bill date</span><div>{{ (inv.issued_at or inv.created_at)|date }} · {{ inv.number or 'Draft' }}</div></div></div>
 <fieldset class="pay-box"><legend>Payment lines</legend>
 <div class="pay-lines" data-pay-lines>
-<div class="pay-line" data-pay-line><div class="field"><label>Payment type</label><select name="method" aria-label="Payment type">{% for k, l in PAYMENT_METHODS.items() %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></div>
+<div class="pay-line" data-pay-line><div class="field"><label>Payment type</label><select name="method" aria-label="Payment type">{% for k, l in pay_options() %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></div>
 <div class="field"><label>Amount (₱)</label><input name="amount" inputmode="decimal" value="{{ '%.2f'|format(balance / 100) }}" data-pay-amt aria-label="Amount"></div>
 <button type="button" class="btn btn-ghost btn-sm" data-pay-del title="Remove line" aria-label="Remove line">🗑</button></div>
 </div>

@@ -29,24 +29,27 @@ def recipients(conn) -> list[str]:
     return out
 
 
-def _method(m: str) -> str:
-    return PAYMENT_METHODS.get(m, (m or "Other").replace("_", " ").title())
+def _method(m: str, account: str = "") -> str:
+    from .billing import BANK_METHODS
+    label = PAYMENT_METHODS.get(m, (m or "Other").replace("_", " ").title())
+    return f"{label} – {account}" if account and m in BANK_METHODS else label
 
 
 def branch_report(conn, branch, day: str) -> dict:
     bid = branch["id"]
     gross: dict[str, int] = {}
     refunds = 0
-    for r in conn.all("SELECT kind, method, amount_cents FROM payments WHERE status = 'valid' AND method != ? AND branch_id = ? "
+    for r in conn.all("SELECT kind, method, account, amount_cents FROM payments WHERE status = 'valid' AND method != ? AND branch_id = ? "
                       "AND substr(received_at, 1, 10) = ?", (CREDIT_METHOD, bid, day)):
         if r["kind"] == "payment":
-            gross[_method(r["method"])] = gross.get(_method(r["method"]), 0) + r["amount_cents"]
+            k = _method(r["method"], r["account"])
+            gross[k] = gross.get(k, 0) + r["amount_cents"]
         else:
             refunds += r["amount_cents"]
-    for r in conn.all("SELECT kind, method, amount_cents FROM patient_credits WHERE status = 'valid' AND branch_id = ? AND entry_date = ? "
+    for r in conn.all("SELECT kind, method, account, amount_cents FROM patient_credits WHERE status = 'valid' AND branch_id = ? AND entry_date = ? "
                       "AND kind IN ('deposit', 'refund')", (bid, day)):
         if r["kind"] == "deposit":
-            label = f"{_method(r['method'])} (deposit)"
+            label = f"{_method(r['method'], r['account'])} (deposit)"
             gross[label] = gross.get(label, 0) + r["amount_cents"]
         else:
             refunds += r["amount_cents"]
@@ -71,7 +74,10 @@ def branch_report(conn, branch, day: str) -> dict:
         if amount:
             expenses.append(("Dentist commission", name, amount))
     exp_total = sum(x[2] for x in expenses)
-    return {"branch": branch["name"], "gross": sorted(gross.items(), key=lambda x: -x[1]), "gross_total": gross_total,
+    from .cash_deposits import on_hand
+    deposits = [(r["bank"], r["slip_no"], r["amount_cents"]) for r in conn.all(
+        "SELECT bank, slip_no, amount_cents FROM cash_deposits WHERE status = 'ok' AND branch_id = ? AND deposit_date = ? ORDER BY id", (bid, day))]
+    return {"deposits": deposits, "cash_on_hand": on_hand(conn, bid, day), "branch": branch["name"], "gross": sorted(gross.items(), key=lambda x: -x[1]), "gross_total": gross_total,
             "refunds": refunds, "expenses": expenses, "expenses_total": exp_total, "net": gross_total - refunds - exp_total}
 
 
@@ -113,6 +119,10 @@ def as_text(reports: list[dict], day_label: str) -> str:
         lines += [f"  - {label}{(' – ' + det) if det else ''}: {peso(a)}" for label, det, a in r["expenses"]] or ["  - None"]
         lines.append(f"TOTAL EXPENSES: {peso(r['expenses_total'])}")
         lines.append(f"NET: {peso(r['net'])}")
+        if r.get("deposits"):
+            lines.append("BANK DEPOSITS TODAY")
+            lines += [f"  - {b}{(' slip ' + s) if s else ''}: {peso(a)}" for b, s, a in r["deposits"]]
+        lines.append(f"CASH NOT YET DEPOSITED: {peso(r.get('cash_on_hand', 0))}")
         lines.append("")
     if len(reports) > 1:
         g = sum(r["gross_total"] for r in reports)

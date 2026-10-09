@@ -20,6 +20,8 @@
 {% for label, det, a in r.expenses %}<tr><td>{{ label }}{% if det %}<br><small class="muted">{{ det }}</small>{% endif %}</td><td class="num">{{ a|peso }}</td></tr>{% else %}<tr><td colspan="2" class="muted">None</td></tr>{% endfor %}
 <tr class="dc-t"><td>Total expenses</td><td class="num">{{ r.expenses_total|peso }}</td></tr>
 <tr class="dc-net"><td>Net</td><td class="num">{{ r.net|peso }}</td></tr>
+{% for b, sn, a in r.deposits %}<tr><td>Bank deposit · {{ b }}{% if sn %} · slip {{ sn }}{% endif %}</td><td class="num">{{ a|peso }}</td></tr>{% endfor %}
+<tr><td>Cash not yet deposited</td><td class="num">{{ r.cash_on_hand|peso }}</td></tr>
 </tbody></table></div>
 {% endfor %}
 </div>

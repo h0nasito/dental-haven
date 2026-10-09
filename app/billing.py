@@ -11,6 +11,44 @@ PAYMENT_METHODS = {
     "check": "Check", "hmo": "HMO / insurance", "other": "Other",
 }
 
+DEFAULT_BANKS = ["BDO", "BPI", "Security Bank", "RCBC", "AUB"]
+BANK_METHODS = ("bank_transfer",)          # these ask which bank account the money went into
+
+
+def banks(conn=None) -> list[str]:
+    """The clinic's bank accounts (System setting finance.banks)."""
+    from . import settings
+    v = settings.get("finance.banks", conn)
+    return [b for b in (v or DEFAULT_BANKS) if b]
+
+
+def pay_options(conn=None, include_credit=False) -> list[tuple[str, str]]:
+    """Payment type choices: 'Cash', 'GCash', 'Bank transfer – BDO', ... (value 'method' or 'method:Bank')."""
+    out = []
+    for k, label in PAYMENT_METHODS.items():
+        if k in BANK_METHODS:
+            out += [(f"{k}:{b}", f"{label} – {b}") for b in banks(conn)]
+        else:
+            out.append((k, label))
+    return out
+
+
+def parse_pay(value: str, conn=None) -> tuple[str, str] | None:
+    """'bank_transfer:BDO' -> ('bank_transfer', 'BDO'); 'gcash' -> ('gcash', 'GCash'); invalid -> None."""
+    method, _, account = (value or "").partition(":")
+    if method not in PAYMENT_METHODS or method == CREDIT_METHOD:
+        return None
+    if method in BANK_METHODS:
+        if account not in banks(conn):
+            return None
+        return method, account
+    return method, "GCash" if method == "gcash" else ""
+
+
+def pay_label(method: str, account: str = "") -> str:
+    label = PAYMENT_METHODS.get(method, "Account credit" if method == CREDIT_METHOD else method)
+    return f"{label} – {account}" if account and method in BANK_METHODS else label
+
 
 def compute_totals(items: list[dict], invoice_discount: int, conn=None) -> dict:
     subtotal = sum(int(i["amount_cents"]) for i in items)

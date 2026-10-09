@@ -9,7 +9,7 @@ from flask import Blueprint, Response, abort, flash, g, redirect, render_templat
 
 from .. import audit, settings
 from ..auth import require
-from ..billing import (CREDIT_METHOD, PAYMENT_METHODS, collections, commission_dentists, compute_totals, credit_balance,
+from ..billing import (CREDIT_METHOD, PAYMENT_METHODS, parse_pay, pay_label, collections, commission_dentists, compute_totals, credit_balance,
                        invoice_commission_info, lab_share, line_amount, next_invoice_number, paid_amount, payment_state)
 from ..db import get_db
 from ..fee_schedule import picker_options
@@ -41,7 +41,9 @@ def _recalc(conn, invoice_id):
 
 @bp.app_context_processor
 def _ctx():
-    return {"PAYMENT_METHODS": PAYMENT_METHODS, "PAYMENT_LABELS": {**PAYMENT_METHODS, CREDIT_METHOD: "Account credit"}}
+    from ..billing import pay_label, pay_options
+    return {"PAYMENT_METHODS": PAYMENT_METHODS, "PAYMENT_LABELS": {**PAYMENT_METHODS, CREDIT_METHOD: "Account credit"},
+            "pay_options": pay_options, "pay_label": pay_label}
 
 
 # ---------------------------------------------------------------------------
@@ -306,10 +308,11 @@ def payment(invoice_id):
             if action == "refund" and not g.user.can("billing.void"):
                 abort(403)
             amount = parse_money(request.form.get("amount"))
-            method = request.form.get("method")
+            pm = parse_pay(request.form.get("method"), conn)
+            method, account = pm or ("", "")
             received = parse_date(request.form.get("received_at")) or today()
             note = clean(request.form.get("notes"), 300)
-            if not amount or amount <= 0 or method not in PAYMENT_METHODS or method == CREDIT_METHOD:
+            if not amount or amount <= 0 or not pm:
                 flash("Enter an amount and a payment method.", "error")
             elif action == "payment" and amount > inv["total_cents"] - paid:
                 flash(f"That's more than the balance ({peso(inv['total_cents'] - paid)}).", "error")
@@ -319,11 +322,12 @@ def payment(invoice_id):
                 flash("The payment date can't be in the future.", "error")
             else:
                 pid = conn.insert("payments", {"invoice_id": invoice_id, "branch_id": inv["branch_id"], "kind": action,
-                                               "amount_cents": amount, "method": method, "reference": clean(request.form.get("reference"), 80),
+                                               "amount_cents": amount, "method": method, "account": account,
+                                               "reference": clean(request.form.get("reference"), 80),
                                                "received_at": received.isoformat(), "received_by": g.user.id, "status": "valid",
                                                "notes": note, "created_at": now_str()})
                 audit.record("payment_recorded" if action == "payment" else "refund_recorded", "invoice", invoice_id,
-                             f"{'Payment' if action == 'payment' else 'Refund'} {peso(amount)} via {PAYMENT_METHODS[method]}",
+                             f"{'Payment' if action == 'payment' else 'Refund'} {peso(amount)} via {pay_label(method, account)}",
                              {"payment_id": pid, "reason": note}, inv["branch_id"])
                 flash("Payment recorded." if action == "payment" else "Refund recorded.", "success")
         elif action == "multi":
@@ -378,9 +382,10 @@ def _multi_payment(conn, inv, paid):
         if not (a or "").strip():
             continue
         amt = parse_money(a)
-        if not amt or amt <= 0 or m not in PAYMENT_METHODS or m == CREDIT_METHOD:
+        pm = parse_pay(m, conn)
+        if not amt or amt <= 0 or not pm:
             return "Each payment line needs a payment type and an amount like 1500 or 1500.00."
-        lines.append((m, amt))
+        lines.append((pm, amt))
     if not lines:
         return "Add at least one payment line with an amount."
     total = sum(a for _m, a in lines)
@@ -425,11 +430,11 @@ def _multi_payment(conn, inv, paid):
                                                 "not_signed_reason": "" if stored else reason, "captured_by": g.user.id,
                                                 "created_at": now_str()})
     ref, note = clean(request.form.get("reference"), 80), clean(request.form.get("notes"), 300)
-    for m, amt in lines:
+    for (m, account), amt in lines:
         pid = conn.insert("payments", {"invoice_id": inv["id"], "branch_id": inv["branch_id"], "kind": "payment", "amount_cents": amt,
-                                       "method": m, "reference": ref, "received_at": received.isoformat(), "received_by": g.user.id,
+                                       "method": m, "account": account, "reference": ref, "received_at": received.isoformat(), "received_by": g.user.id,
                                        "status": "valid", "notes": note, "signature_id": sig_id, "created_at": now_str()})
-        audit.record("payment_recorded", "invoice", inv["id"], f"Payment {peso(amt)} via {PAYMENT_METHODS[m]}",
+        audit.record("payment_recorded", "invoice", inv["id"], f"Payment {peso(amt)} via {pay_label(m, account)}",
                      {"payment_id": pid, "signed": bool(stored)}, inv["branch_id"])
     comm_note = ""
     if comm:
@@ -623,6 +628,53 @@ def daily_collection():
                            to=daily_report.recipients(conn))
 
 
+@bp.route("/reports/financial", methods=["GET", "POST"])
+@require("reports.sales")
+def financial():
+    """Collections by where the money went (Cash, GCash, Bank transfer – BDO, ...) and per bank account."""
+    from .. import finance_report, settings as _settings
+    from ..billing import banks
+    conn = get_db()
+    if request.method == "POST":
+        if not g.user.is_super_admin:
+            abort(403)
+        names = []
+        for line in (request.form.get("banks") or "").splitlines():
+            n = clean(line, 40)
+            if n and n.lower() not in {x.lower() for x in names} and n.lower() != "gcash" and ":" not in n:
+                names.append(n)
+        if names:
+            _settings.put("finance.banks", names, g.user.id, conn)
+            audit.record("finance_banks_saved", "settings", None, "Bank accounts: " + ", ".join(names))
+            flash("Bank accounts saved.", "success")
+        return redirect(url_for("billing.financial"))
+    start, end = date_range_args(31)
+    if "from" not in request.args:
+        start = today().replace(day=1)
+    mine = [b for b in conn.all("SELECT * FROM branches WHERE active = 1 ORDER BY sort_order") if b["id"] in g.user.branch_ids]
+    bid = to_int(request.args.get("branch"))
+    shown = [b for b in mine if b["id"] == bid] or mine
+    rep = finance_report.build(conn, shown, start.isoformat(), end.isoformat())
+    if request.args.get("format") == "csv":
+        if not g.user.can("reports.export"):
+            abort(403)
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["Where the payment went", *[b["name"] for b in shown], "Total (PHP)"])
+        for r in rep["rows"]:
+            w.writerow([r["label"], *[r["net"][b["id"]] / 100 for b in shown], r["total"] / 100])
+        w.writerow(["Total", *[rep["branch_totals"][b["id"]] / 100 for b in shown], rep["total"] / 100])
+        w.writerow([])
+        w.writerow(["Account", "Paid in directly", "Cash deposited", "Total (PHP)"])
+        for a in rep["accounts"]:
+            w.writerow([a["name"], a["direct"] / 100, a["cash_deposited"] / 100, a["total"] / 100])
+        audit.record("financial_report_exported", "report", None, f"Financial report {start} to {end}")
+        return Response("\ufeff" + buf.getvalue(), mimetype="text/csv",
+                        headers={"Content-Disposition": f'attachment; filename="financial-report-{start}-to-{end}.csv"', "Cache-Control": "no-store"})
+    return render_template("staff/billing/financial.html", rep=rep, shown=shown, mine=mine, bid=bid if len(shown) == 1 and len(mine) > 1 else None,
+                           start=start, end=end, banks=banks(conn))
+
+
 @bp.route("/reports/sales")
 @require("reports.sales")
 def sales():
@@ -754,14 +806,15 @@ def patient_credit(patient_id):
         abort(403)
     amount = parse_money(request.form.get("amount"))
     branch_id = to_int(request.form.get("branch_id"))
-    method = request.form.get("method")
+    pm = parse_pay(request.form.get("method"), conn)
+    method, account = pm or ("", "")
     entry = parse_date(request.form.get("entry_date")) or today()
     note = clean(request.form.get("notes"), 300)
     back = redirect(url_for("patients.detail", patient_id=patient_id) + "#billing")
     if not branch_id or not g.user.in_branch(branch_id):
         flash("Choose one of your branches.", "error")
         return back
-    if not amount or amount <= 0 or method not in PAYMENT_METHODS or entry > today():
+    if not amount or amount <= 0 or not pm or entry > today():
         flash("Enter an amount, a payment method and a date that isn't in the future.", "error")
         return back
     with conn.transaction(immediate=True):
@@ -770,10 +823,10 @@ def patient_credit(patient_id):
                 flash("A refund can't exceed the patient's credit, and needs a reason.", "error")
                 return back
         cid = conn.insert("patient_credits", {"patient_id": patient_id, "branch_id": branch_id, "kind": action, "amount_cents": amount,
-                                              "method": method, "reference": clean(request.form.get("reference"), 80),
+                                              "method": method, "account": account, "reference": clean(request.form.get("reference"), 80),
                                               "entry_date": entry.isoformat(), "notes": note, "created_by": g.user.id,
                                               "created_at": now_str()})
-        audit.record("credit_" + action, "patient", patient_id, f"Account credit {action} {peso(amount)} via {PAYMENT_METHODS[method]}",
+        audit.record("credit_" + action, "patient", patient_id, f"Account credit {action} {peso(amount)} via {pay_label(method, account)}",
                      {"credit_id": cid, "reason": note}, branch_id)
     flash("Deposit recorded as account credit." if action == "deposit" else "Credit refund recorded.", "success")
     return back

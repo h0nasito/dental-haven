@@ -111,6 +111,7 @@ class TestPatientProfile(Base):
                                                             "signature": "data:image/png;base64," + base64.b64encode(b"<svg>" * 40).decode()})
         self.assertEqual(self.q("SELECT COUNT(*) AS n FROM payments WHERE invoice_id = ?", (inv,))["n"], 2)
         # patient not present: allowed with a reason
-        admin.post(f"/staff/invoices/{inv}/payments", data={"action": "multi", "method": ["bank_transfer"], "amount": ["100"],
+        admin.post(f"/staff/invoices/{inv}/payments", data={"action": "multi", "method": ["bank_transfer:BDO"], "amount": ["100"],
                                                             "not_signed_reason": "Paid by parent online"})
         self.assertEqual(self.q("SELECT COUNT(*) AS n FROM payments WHERE invoice_id = ?", (inv,))["n"], 3)
+        self.assertEqual(self.q("SELECT account FROM payments WHERE invoice_id = ? ORDER BY id DESC LIMIT 1", (inv,))["account"], "BDO")
