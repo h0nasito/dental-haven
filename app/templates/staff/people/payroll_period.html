@@ -48,13 +48,16 @@
 {% else %}<tr><td colspan="10" class="empty">No dentists in this period.</td></tr>{% endfor %}</tbody></table></div></div>
 {% if show_money %}
 <div class="card" id="extras"><div class="row between"><h2 class="mb-0">Additions &amp; deductions</h2><a class="btn btn-secondary btn-sm" href="{{ url_for('people.payslips', period_id=p.id) }}" target="_blank" rel="noopener">Print all payslips</a></div>
-<p class="hint">Additions: transportation or meal allowance, quota hit, incentives, bonuses. Deductions: cash advance, loan payment, shortage, and SSS / PhilHealth / Pag-IBIG / tax if you type them in. Regular allowances set on an employee's page are added automatically (per day present or per cutoff) and refreshed by Recalculate.</p>
+<p class="hint">Additions: transportation or meal allowance, quota hit, incentives, bonuses. Deductions: cash advance, loan payment, shortage, and SSS / PhilHealth / Pag-IBIG / tax if you type them in. Regular allowances and regular deductions (SSS, PhilHealth, Pag-IBIG, tax, loans) set on an employee's page are added automatically and refreshed by Recalculate.</p>
 {% set named = lines|selectattr('employee_id', 'in', items.keys())|list %}
 {% if named %}<div class="table-wrap"><table><thead><tr><th>Employee</th><th>Item</th><th class="num">Amount</th>{% if p.status == 'draft' and current_user.can('payroll.prepare') %}<th></th>{% endif %}</tr></thead><tbody>
 {% for l in named %}{% set it = items[l.employee_id] %}{% for x in it.add + it.ded %}<tr><td>{% if loop.first %}<strong>{{ l.full_name }}</strong>{% endif %}</td>
-<td>{{ x.name }}{% if x.allowance_id %} <span class="badge">automatic</span>{% endif %}{% if x.note %}<br><small class="muted">{{ x.note }}</small>{% endif %}</td>
+<td>{{ x.name }}{% if x.allowance_id or x.deduction_id %} <span class="badge">automatic</span>{% endif %}{% if x.note %}<br><small class="muted">{{ x.note }}</small>{% endif %}</td>
 <td class="num">{% if x.kind == 'addition' %}<span class="c-green">+{{ x.amount_cents|peso }}</span>{% else %}<span class="text-danger">−{{ x.amount_cents|peso }}</span>{% endif %}</td>
 {% if p.status == 'draft' and current_user.can('payroll.prepare') %}<td><form method="post" action="{{ url_for('people.payroll_items', period_id=p.id) }}">{{ csrf() }}<input type="hidden" name="action" value="remove"><input type="hidden" name="item_id" value="{{ x.id }}"><button class="btn btn-ghost btn-sm" aria-label="Remove {{ x.name }}">✕</button></form></td>{% endif %}</tr>{% endfor %}{% endfor %}</tbody></table></div>
+{% set ns = namespace(t={}) %}{% for l in named %}{% for x in items[l.employee_id].ded %}{% set _ = ns.t.update({x.name: ns.t.get(x.name, 0) + x.amount_cents}) %}{% endfor %}{% endfor %}
+{% if ns.t %}<h3 class="mt-1">Deductions to remit / collect this cutoff</h3><table class="fin" style="max-width:420px"><tbody>{% for n, a in ns.t|dictsort %}<tr><td>{{ n }}</td><td class="num">{{ a|peso }}</td></tr>{% endfor %}</tbody></table>
+<p class="hint">Employee shares only. The employer's share of SSS, PhilHealth and Pag-IBIG is not included.</p>{% endif %}
 {% else %}<p class="muted">None yet.</p>{% endif %}
 {% if p.status == 'draft' and current_user.can('payroll.prepare') %}
 <form method="post" action="{{ url_for('people.payroll_items', period_id=p.id) }}" class="mt-1">{{ csrf() }}<h3>Add</h3>

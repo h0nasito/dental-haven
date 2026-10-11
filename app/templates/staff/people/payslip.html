@@ -32,7 +32,7 @@
 </tbody></table></div></div>
 <table class="ps-net"><tr><td>NET PAY</td><td class="num">{{ net|peso if net is not none else 'Pay rule not set' }}</td></tr></table>
 <div class="row between ps-sign"><div>Prepared by: ______________________</div><div>Received by: ______________________<br><small class="muted">{{ l.full_name }} · date</small></div></div>
-<p class="hint">SSS, PhilHealth, Pag-IBIG and withholding tax are only included when typed in as deductions. {% if p.status == 'approved' %}Approved summary.{% else %}Draft, may still change.{% endif %}</p>
+<p class="hint">Employee shares of SSS, PhilHealth, Pag-IBIG, tax and loans are as entered by HR. {% if p.status == 'approved' %}Approved summary.{% else %}Draft, may still change.{% endif %}</p>
 </section>{% endfor %}
 </main>
 <style>

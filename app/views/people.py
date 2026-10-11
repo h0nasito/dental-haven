@@ -266,6 +266,23 @@ def _fmt12(hm: str) -> str:
     return f"{(h - 1) % 12 + 1}:{m:02d} {'AM' if h < 12 else 'PM'}"
 
 
+def _emp_deductions(conn, emp_id):
+    from ..payroll import loan_paid
+    out = []
+    for d in conn.all("SELECT * FROM employee_deductions WHERE employee_id = ? AND active = 1 ORDER BY id", (emp_id,)):
+        d = dict(d)
+        if d["loan_total_cents"]:
+            d["paid"] = loan_paid(conn, d["id"])
+            d["left"] = max(0, d["loan_total_cents"] - d["paid"])
+        out.append(d)
+    return out
+
+
+def _deduction_choices():
+    from ..payroll import DEDUCTION_SCHEDULES, REGULAR_DEDUCTIONS
+    return {"regular_deductions": REGULAR_DEDUCTIONS, "deduction_schedules": DEDUCTION_SCHEDULES}
+
+
 @bp.route("/employees/<int:emp_id>", methods=["GET", "POST"])
 @require("attendance.manage", "compensation.manage", any_of=True)
 def employee(emp_id):
@@ -277,6 +294,29 @@ def employee(emp_id):
         abort(404)
     if request.method == "POST":
         action = request.form.get("action")
+        if action in ("deduction_add", "deduction_remove"):
+            from ..payroll import DEDUCTION_SCHEDULES
+            if not g.user.can("compensation.manage"):
+                abort(403)
+            if action == "deduction_add":
+                name = clean(request.form.get("name"), 80)
+                amt = parse_money(request.form.get("amount"))
+                sched = request.form.get("schedule")
+                loan = parse_money(request.form.get("loan_total")) if (request.form.get("loan_total") or "").strip() else None
+                if not name or not amt or amt <= 0 or sched not in DEDUCTION_SCHEDULES or (loan is not None and loan <= 0):
+                    flash("Enter the deduction, the amount and when it is deducted.", "error")
+                else:
+                    conn.insert("employee_deductions", {"employee_id": emp_id, "name": name, "amount_cents": amt, "schedule": sched,
+                                                        "loan_total_cents": loan, "reference": clean(request.form.get("reference"), 60),
+                                                        "created_by": g.user.id, "created_at": now_str()})
+                    audit.record("deduction_set", "employee", emp_id, f"Regular deduction: {name} {peso(amt)} ({DEDUCTION_SCHEDULES[sched]})"
+                                 + (f", loan total {peso(loan)}" if loan else ""), branch_id=e["primary_branch_id"])
+                    flash("Deduction saved. It is taken off draft payrolls on Recalculate.", "success")
+            else:
+                conn.execute("UPDATE employee_deductions SET active = 0 WHERE id = ? AND employee_id = ?", (to_int(request.form.get("deduction_id")), emp_id))
+                audit.record("deduction_stopped", "employee", emp_id, "Regular deduction stopped", branch_id=e["primary_branch_id"])
+                flash("Deduction stopped.", "success")
+            return redirect(url_for("people.employee", emp_id=emp_id) + "#deductions")
         if action in ("allowance_add", "allowance_remove"):
             if not g.user.can("compensation.manage"):
                 abort(403)
@@ -387,7 +427,8 @@ def employee(emp_id):
     return render_template("staff/people/employee.html", ot_end=_fmt12(_settings.get("payroll.staff_end_time", conn) or "17:00"), e=e, comps=comps, branches=branches_for_user(g.user), is_dentist=is_dentist,
                            dpay=dpay, svc_rates=svc_rates, all_services=conn.all("SELECT id, name FROM services WHERE active = 1 ORDER BY sort_order"),
                            today=today().isoformat(),
-                           allowances=conn.all("SELECT * FROM employee_allowances WHERE employee_id = ? AND active = 1 ORDER BY id", (emp_id,)))
+                           allowances=conn.all("SELECT * FROM employee_allowances WHERE employee_id = ? AND active = 1 ORDER BY id", (emp_id,)),
+                           deductions=_emp_deductions(conn, emp_id), **_deduction_choices())
 
 
 # ---------------------------------------------------------------------------
@@ -689,8 +730,9 @@ def _rebuild(conn, period_id):
             conn.insert("payroll_lines", {"period_id": period_id, **line,
                                           "adjustment_cents": prev["adjustment_cents"] if prev else 0,
                                           "adjustment_note": prev["adjustment_note"] if prev else ""})
-        from ..payroll import apply_allowances
+        from ..payroll import apply_allowances, apply_deductions
         apply_allowances(conn, period_id)
+        apply_deductions(conn, period_id)
 
 
 def _load_period(period_id):
@@ -797,7 +839,8 @@ def payroll_items(period_id):
             conn.execute("DELETE FROM payroll_items WHERE id = ?", (it["id"],))
             audit.record("payroll_item_removed", "payroll_period", period_id, f"Removed {it['kind']} {it['name']} {peso(it['amount_cents'])}",
                          {"employee_id": it["employee_id"]})
-            flash("Removed." + (" It comes back on Recalculate while the employee's regular allowance is on." if it["allowance_id"] else ""), "success")
+            flash("Removed." + (" It comes back on Recalculate while it is set as regular on the employee's page."
+                                if it["allowance_id"] or it["deduction_id"] else ""), "success")
         return back
     emp = to_int(f.get("employee_id"))
     kind = "deduction" if f.get("name") in DEDUCTION_TYPES else "addition"

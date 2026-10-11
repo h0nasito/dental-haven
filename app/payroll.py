@@ -247,8 +247,40 @@ def add_manual_commission(conn, dentist_user_id: int | None, employee_id: int | 
 # Additions and deductions on a payroll period (allowances, quota hit, incentives, bonuses / cash advance, loans, ...)
 # ---------------------------------------------------------------------------
 ADDITION_TYPES = ["Transportation allowance", "Meal allowance", "Quota hit", "Incentive", "Bonus", "13th month pay", "Other addition"]
-DEDUCTION_TYPES = ["Cash advance", "Loan payment", "Shortage", "SSS", "PhilHealth", "Pag-IBIG", "Withholding tax", "Other deduction"]
+DEDUCTION_TYPES = ["Cash advance", "Loan payment", "SSS loan", "Pag-IBIG loan", "Shortage", "SSS", "PhilHealth", "Pag-IBIG", "Withholding tax", "Other deduction"]
 ALLOWANCE_BASIS = {"per_day": "per day present", "per_cutoff": "per cutoff"}
+REGULAR_DEDUCTIONS = ["SSS", "PhilHealth", "Pag-IBIG", "Withholding tax", "SSS loan", "Pag-IBIG loan", "Company loan", "Cash advance"]
+DEDUCTION_SCHEDULES = {"every": "every cutoff", "first": "1st cutoff only (1–15)", "second": "2nd cutoff only (16–end)",
+                       "split": "monthly amount, half each cutoff"}
+
+
+def loan_paid(conn, deduction_id: int, except_period: int | None = None) -> int:
+    """How much of a loan was already deducted in payroll periods that weren't cancelled."""
+    return conn.scalar("SELECT COALESCE(SUM(i.amount_cents), 0) FROM payroll_items i JOIN payroll_periods p ON p.id = i.period_id "
+                       "WHERE i.deduction_id = ? AND p.status != 'cancelled' AND p.id != ?", (deduction_id, except_period or 0)) or 0
+
+
+def apply_deductions(conn, period_id: int) -> None:
+    """(Re)create the automatic deduction lines of a period from each employee's regular deductions."""
+    period = conn.one("SELECT * FROM payroll_periods WHERE id = ?", (period_id,))
+    conn.execute("DELETE FROM payroll_items WHERE period_id = ? AND deduction_id IS NOT NULL", (period_id,))
+    first_half = int(period["start_date"][8:10]) <= 15
+    for line in conn.all("SELECT employee_id FROM payroll_lines WHERE period_id = ?", (period_id,)):
+        for d in conn.all("SELECT * FROM employee_deductions WHERE employee_id = ? AND active = 1 ORDER BY id", (line["employee_id"],)):
+            sched = d["schedule"]
+            if (sched == "first" and not first_half) or (sched == "second" and first_half):
+                continue
+            amount = d["amount_cents"] // 2 + (d["amount_cents"] % 2 if not first_half else 0) if sched == "split" else d["amount_cents"]
+            note = DEDUCTION_SCHEDULES[sched]
+            if d["loan_total_cents"]:
+                left = d["loan_total_cents"] - loan_paid(conn, d["id"], period_id)
+                amount = min(amount, max(0, left))
+                note = f"balance after this: ₱{max(0, left - amount) / 100:,.2f}"
+            if d["reference"]:
+                note = f"{d['reference']} · {note}"
+            if amount > 0:
+                conn.insert("payroll_items", {"period_id": period_id, "employee_id": line["employee_id"], "kind": "deduction", "name": d["name"],
+                                              "amount_cents": amount, "note": note, "deduction_id": d["id"], "created_at": now_str()})
 
 
 def apply_allowances(conn, period_id: int) -> None:

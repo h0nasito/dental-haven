@@ -52,5 +52,31 @@ class TestPayrollAdditions(TestPayrollRules):
         self.assertIsNone(self.q("SELECT id FROM payroll_items WHERE id = ?", (cash["id"],)))
         self.assertIn(self.login("reception.malolos").get(f"/staff/payroll/{pid}/payslip/{eid}").status_code, (403, 302))
 
+    def test_regular_deductions_and_loan(self):
+        admin = self.login("admin")
+        eid, bid = self._employee("Deductions Test Assistant")
+        for day in ("2025-07-01", "2025-07-02", "2025-07-16"):
+            self._record(admin, eid, bid, day, "08:00", "17:00")
+        admin.post(f"/staff/employees/{eid}", data={"action": "deduction_add", "name": "SSS", "amount": "450", "schedule": "second"})
+        admin.post(f"/staff/employees/{eid}", data={"action": "deduction_add", "name": "PhilHealth", "amount": "250.01", "schedule": "split"})
+        admin.post(f"/staff/employees/{eid}", data={"action": "deduction_add", "name": "Pag-IBIG", "amount": "200", "schedule": "first"})
+        admin.post(f"/staff/employees/{eid}", data={"action": "deduction_add", "name": "SSS loan", "amount": "1000", "schedule": "every",
+                                                    "loan_total": "1500", "reference": "LN-1"})
+        r = admin.post("/staff/payroll", data={"start_date": "2025-07-01", "end_date": "2025-07-15", "branch_id": bid, "name": "Jul A ded"})
+        p1 = int(r.headers["Location"].rsplit("/", 1)[1])
+        got = {i["name"]: i["amount_cents"] for i in self.conn.all("SELECT * FROM payroll_items WHERE period_id = ? AND employee_id = ?", (p1, eid))}
+        self.assertEqual(got, {"PhilHealth": 12500, "Pag-IBIG": 20000, "SSS loan": 100000})
+        r = admin.post("/staff/payroll", data={"start_date": "2025-07-16", "end_date": "2025-07-31", "branch_id": bid, "name": "Jul B ded"})
+        p2 = int(r.headers["Location"].rsplit("/", 1)[1])
+        got = {i["name"]: i["amount_cents"] for i in self.conn.all("SELECT * FROM payroll_items WHERE period_id = ? AND employee_id = ?", (p2, eid))}
+        self.assertEqual(got, {"SSS": 45000, "PhilHealth": 12501, "SSS loan": 50000})    # loan: only the ₱500 balance left
+        page = admin.get(f"/staff/employees/{eid}").data.decode()
+        self.assertIn("fully paid", page)
+        self.assertIn("Deductions to remit", admin.get(f"/staff/payroll/{p2}").data.decode())
+        # cancelling the first period gives the loan balance back
+        admin.post(f"/staff/payroll/{p1}", data={"action": "cancel"})
+        admin.post(f"/staff/payroll/{p2}", data={"action": "rebuild"})
+        self.assertEqual(self.q("SELECT amount_cents FROM payroll_items WHERE period_id = ? AND name = 'SSS loan'", (p2,))["amount_cents"], 100000)
+
 
 del TestPayrollRules

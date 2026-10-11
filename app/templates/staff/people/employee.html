@@ -53,6 +53,18 @@
 <div class="field"><label for="ala">Amount (₱)</label><input id="ala" name="amount" inputmode="decimal" required></div>
 <div class="field"><label for="alb">Counted</label><select id="alb" name="basis"><option value="per_day">Per day present</option><option value="per_cutoff">Per cutoff (fixed)</option></select></div></div>
 <button class="btn btn-secondary">Add allowance</button></form></div>
+<div class="card" id="deductions"><h2>Regular deductions</h2>
+<p class="hint mt-0">SSS, PhilHealth, Pag-IBIG, withholding tax and loans: type the employee's share as shown on the contribution table or loan statement. They are taken off every draft payroll automatically on the cutoffs you choose. For a loan, enter the loan total and it stops once fully paid.</p>
+<ul class="list-plain">{% for d in deductions %}<li class="row between"><span><strong>{{ d.name }}</strong> · {{ d.amount_cents|peso }} · {{ deduction_schedules[d.schedule] }}{% if d.reference %} · {{ d.reference }}{% endif %}
+{% if d.loan_total_cents %}<br><small class="muted">Loan {{ d.loan_total_cents|peso }} · paid {{ d.paid|peso }} · balance <strong>{{ d.left|peso }}</strong>{% if not d.left %} (fully paid){% endif %}</small>{% endif %}</span>
+<form method="post">{{ csrf() }}<input type="hidden" name="action" value="deduction_remove"><input type="hidden" name="deduction_id" value="{{ d.id }}"><button class="btn btn-ghost btn-sm" data-confirm="Stop this deduction?">Stop</button></form></li>{% else %}<li class="muted">None.</li>{% endfor %}</ul>
+<form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="deduction_add"><div class="form-grid">
+<div class="field"><label for="ddn">Deduction</label><input id="ddn" name="name" maxlength="80" list="dd-names" required placeholder="e.g. SSS"><datalist id="dd-names">{% for n in regular_deductions %}<option value="{{ n }}">{% endfor %}</datalist></div>
+<div class="field"><label for="dda">Amount (₱)</label><input id="dda" name="amount" inputmode="decimal" required></div>
+<div class="field"><label for="dds">When</label><select id="dds" name="schedule">{% for k, l in deduction_schedules.items() %}<option value="{{ k }}" {% if k == 'second' %}selected{% endif %}>{{ l|capitalize }}</option>{% endfor %}</select></div>
+<div class="field"><label for="ddl">Loan total (₱) <span class="hint">Only for loans</span></label><input id="ddl" name="loan_total" inputmode="decimal"></div>
+<div class="field"><label for="ddr">Reference <span class="hint">Optional, e.g. loan no.</span></label><input id="ddr" name="reference" maxlength="60"></div></div>
+<button class="btn btn-secondary">Add deduction</button></form></div>
 {% endif %}
 </div>
 {% endblock %}
