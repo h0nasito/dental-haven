@@ -4,5 +4,6 @@
   <a href="{{ url_for('lab_works.clients') }}" class="{{ 'active' if active == 'clients' else '' }}">Clinics</a>{% endif %}
   <a href="{{ url_for('lab_works.prices') }}" class="{{ 'active' if active == 'prices' else '' }}">Price list</a>
   {% if nav_lab_billing %}<a href="{{ url_for('lab_works.invoices') }}" class="{{ 'active' if active == 'invoices' else '' }}">Invoices &amp; receipts</a>
-  <a href="{{ url_for('lab_works.collections') }}" class="{{ 'active' if active == 'collections' else '' }}">Collection report</a>{% endif %}
+  <a href="{{ url_for('lab_works.collections') }}" class="{{ 'active' if active == 'collections' else '' }}">Collections</a>
+  <a href="{{ url_for('lab_works.financial') }}" class="{{ 'active' if active == 'financial' else '' }}">Financial</a>{% endif %}
 </nav>

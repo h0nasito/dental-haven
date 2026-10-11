@@ -3,7 +3,7 @@
 {% block page_title %}Expenses{% endblock %}
 {% block content %}
 <div class="page-head"><div><h1>Expenses</h1><p>{{ start|date }} – {{ end|date }}. New expenses are drafts until someone with "Post Expenses" posts them. Only posted expenses count in reports.</p></div>
-<div class="row">{% if current_user.can('expenses.view') %}<a class="btn" href="{{ url_for('expenses.report') }}">Reports (daily / monthly / by date)</a>{% endif %}
+<div class="row"><a class="btn btn-secondary" href="{{ url_for('expenses.bills') }}">Monthly bills (rent, electricity, internet…)</a>{% if current_user.can('expenses.view') %}<a class="btn" href="{{ url_for('expenses.report') }}">Reports (daily / monthly / by date)</a>{% endif %}
 {% if current_user.can('reports.export') and current_user.can('expenses.view') %}<a class="btn btn-secondary btn-sm" href="{{ url_for('expenses.export', **{'from': start.isoformat(), 'to': end.isoformat()}) }}">CSV export</a>{% endif %}</div></div>
 <div class="grid grid-4" style="margin-bottom:1rem">
 <div class="stat"><div class="label">Posted</div><div class="value">{{ totals.posted|peso }}</div></div>

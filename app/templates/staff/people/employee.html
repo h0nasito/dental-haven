@@ -44,6 +44,15 @@
 <div class="field"><label for="nt">Notes</label><input id="nt" name="notes" placeholder="e.g. Rate per signed contract dated …"></div>
 <button class="btn btn-secondary">Add setting</button></form>
 <h3 class="mt-1">History</h3><ul class="list-plain">{% for c in comps %}<li><strong>{{ BASIS_LABELS[c.basis] }}</strong>{% if c.rate_cents is not none %} · {{ c.rate_cents|peso }}{% endif %}{% if c.percentage_bp %} · {{ c.percentage_bp / 100 }}%{% endif %} · from {{ c.effective_from|date }}<br><small class="muted">{{ c.notes }} · set by {{ c.by_name }} {{ c.created_at|dt }}</small></li>{% else %}<li class="muted">No compensation settings yet.</li>{% endfor %}</ul></div>
+<div class="card" id="allowances"><h2>Regular allowances</h2>
+<p class="hint mt-0">Added to every draft payroll automatically, e.g. transportation allowance ₱50 per day present, or ₱500 per cutoff. One-time amounts (quota hit, incentives, bonuses) are added on the payroll period page instead.</p>
+<ul class="list-plain">{% for a in allowances %}<li class="row between"><span><strong>{{ a.name }}</strong> · {{ a.amount_cents|peso }} {{ 'per day present' if a.basis == 'per_day' else 'per cutoff' }}</span>
+<form method="post">{{ csrf() }}<input type="hidden" name="action" value="allowance_remove"><input type="hidden" name="allowance_id" value="{{ a.id }}"><button class="btn btn-ghost btn-sm" data-confirm="Stop this allowance?">Stop</button></form></li>{% else %}<li class="muted">None.</li>{% endfor %}</ul>
+<form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="allowance_add"><div class="form-grid">
+<div class="field"><label for="aln">Allowance</label><input id="aln" name="name" maxlength="80" list="al-names" value="Transportation allowance"><datalist id="al-names"><option value="Transportation allowance"><option value="Meal allowance"><option value="Rice allowance"><option value="Communication allowance"></datalist></div>
+<div class="field"><label for="ala">Amount (₱)</label><input id="ala" name="amount" inputmode="decimal" required></div>
+<div class="field"><label for="alb">Counted</label><select id="alb" name="basis"><option value="per_day">Per day present</option><option value="per_cutoff">Per cutoff (fixed)</option></select></div></div>
+<button class="btn btn-secondary">Add allowance</button></form></div>
 {% endif %}
 </div>
 {% endblock %}

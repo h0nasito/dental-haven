@@ -1,0 +1,26 @@
+{% extends "staff/layout.html" %}
+{% block page_title %}Lab financial report{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Lab financial report</h1><p>{{ lab_names }} · Payments received by where the money went, {{ start|date }} – {{ end|date }}. Voided receipts are left out.</p></div>
+<a class="btn btn-secondary btn-sm" href="{{ url_for('lab_works.financial', format='csv', **{'from': start.isoformat(), 'to': end.isoformat()}) }}">CSV export</a></div>
+{% set active = 'financial' %}{% include "staff/lab_works/_nav.html" %}
+<form class="toolbar" method="get">
+<div class="field"><label for="lf">From</label><input id="lf" type="date" name="from" value="{{ start.isoformat() }}"></div>
+<div class="field"><label for="lt">To</label><input id="lt" type="date" name="to" value="{{ end.isoformat() }}"></div>
+<button class="btn btn-secondary">Show</button></form>
+<div class="grid grid-3" style="margin-bottom:1rem">
+<div class="stat"><div class="label">Received</div><div class="value">{{ rep.total|peso }}</div></div>
+<div class="stat"><div class="label">From outside clinics</div><div class="value">{{ rep.outside|peso }}</div></div>
+<div class="stat"><div class="label">From Dental Haven branches</div><div class="value">{{ rep.branch|peso }}</div></div></div>
+<div class="card"><h2>Payments by where they went</h2>
+<div class="table-wrap"><table class="fin"><thead><tr><th>Payment went to</th><th class="num">Outside clinics</th><th class="num">Dental Haven branches</th><th class="num">Total</th></tr></thead><tbody>
+{% for r in rep.rows %}<tr><td>{{ r.label }}</td><td class="num">{{ r.outside|peso if r.outside else '—' }}</td><td class="num">{{ r.branch|peso if r.branch else '—' }}</td><td class="num"><strong>{{ r.total|peso }}</strong></td></tr>
+{% else %}<tr><td colspan="4" class="empty">No payments received in this period.</td></tr>{% endfor %}</tbody>
+<tfoot><tr><td><strong>Total</strong></td><td class="num">{{ rep.outside|peso }}</td><td class="num">{{ rep.branch|peso }}</td><td class="num"><strong>{{ rep.total|peso }}</strong></td></tr></tfoot></table></div></div>
+<div class="card mt-1"><h2>Money in each account</h2>
+<div class="table-wrap"><table class="fin"><thead><tr><th>Account</th><th class="num">Received</th></tr></thead><tbody>
+{% for a in rep.accounts %}<tr><td>{{ a.name }}</td><td class="num">{{ a.total|peso if a.total else '—' }}</td></tr>{% endfor %}
+<tr><td>Cash received</td><td class="num">{{ rep.cash|peso if rep.cash else '—' }}</td></tr></tbody></table></div>
+<p class="hint">Bank transfers are counted in the bank they were paid into. Card and check payments are listed above. The banks are the same list as in the clinic's Financial report.</p></div>
+<style>.fin td.num, .fin th.num { white-space: nowrap; }</style>
+{% endblock %}

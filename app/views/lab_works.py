@@ -32,6 +32,36 @@ OPEN = sql_list(k for k in _OPEN if k != "sent")
 ARCHES = {"": "—", "upper": "Upper", "lower": "Lower", "both": "Upper & lower"}
 METHODS = {"cash": "Cash", "gcash": "GCash", "maya": "Maya", "bank": "Bank transfer", "check": "Check", "card": "Card"}
 LAB_FULL_NAMES = {"DSDL": "Digital Solutions Dental Laboratory"}
+LAB_BANK_METHODS = ("bank",)
+
+
+def lab_pay_options(conn=None) -> list[tuple[str, str]]:
+    """'Cash', 'GCash', 'Bank transfer – BDO', ... (the banks are the clinic's list in the Financial report)."""
+    from ..billing import banks
+    out = []
+    for k, label in METHODS.items():
+        if k in LAB_BANK_METHODS:
+            out += [(f"{k}:{b}", f"{label} – {b}") for b in banks(conn)]
+        else:
+            out.append((k, label))
+    return out
+
+
+def lab_parse_pay(value, conn=None):
+    from ..billing import banks
+    method, _, account = (value or "").partition(":")
+    if method not in METHODS:
+        return None
+    if method in LAB_BANK_METHODS:
+        return (method, account) if account in banks(conn) else None
+    return method, "GCash" if method == "gcash" else ""
+
+
+def lab_pay_label(method, account="") -> str:
+    label = METHODS.get(method, method)
+    if method in LAB_BANK_METHODS:
+        return f"{label} – {account or 'bank not set'}"
+    return label
 
 
 def lab_display(name):
@@ -714,19 +744,20 @@ def invoice(invoice_id):
                 return redirect(url_for("lab_works.invoices"))
             elif action == "pay" and inv["status"] == "issued":
                 amt = parse_money(request.form.get("amount"))
-                method = request.form.get("method")
+                pm = lab_parse_pay(request.form.get("method"), conn)
+                method, account = pm or ("", "")
                 rec = parse_date(request.form.get("received_on")) or today()
                 balance = inv["total_cents"] - inv["paid_cents"]
                 if amt is None or amt <= 0 or amt > balance:
                     flash(f"Enter an amount between ₱0.01 and the balance of ₱{balance / 100:,.2f}.", "error")
-                elif method not in METHODS:
-                    flash("Choose how it was paid.", "error")
+                elif not pm:
+                    flash("Choose how it was paid (and the bank, for a bank transfer).", "error")
                 elif rec > today():
                     flash("The payment date can't be in the future.", "error")
                 else:
                     receipt = _next_number(conn, "lab_payments", "AR")
                     pid = conn.insert("lab_payments", {"invoice_id": inv["id"], "receipt_no": receipt, "amount_cents": amt, "method": method,
-                                                       "reference": clean(request.form.get("reference"), 80), "received_on": rec.isoformat(),
+                                                       "account": account, "reference": clean(request.form.get("reference"), 80), "received_on": rec.isoformat(),
                                                        "received_by": g.user.id, "status": "ok", "created_at": now_str()})
                     audit.record("lab_payment_recorded", "lab_invoice", inv["id"], f"Payment {receipt} of ₱{amt / 100:,.2f} on {inv['number']}")
                     _recalc(conn, inv["id"])
@@ -754,7 +785,8 @@ def invoice(invoice_id):
                         (inv["id"],))
     return render_template("staff/lab_works/invoice.html", inv=inv, items=items, groups=groups, payments=payments,
                            price_list=price_items(conn, [inv["lab_id"]]), pay=pay_status(inv), labels=PAY_LABELS,
-                           methods=METHODS, today=today().isoformat(), new_receipt=to_int(request.args.get("receipt")))
+                           methods=METHODS, pay_opts=lab_pay_options(conn), lab_pay_label=lab_pay_label,
+                           today=today().isoformat(), new_receipt=to_int(request.args.get("receipt")))
 
 
 def _lab_header(conn, lab_id):
@@ -783,7 +815,7 @@ def receipt_print(payment_id):
         abort(404)
     inv = _invoice(conn, p["invoice_id"])
     by = conn.one("SELECT name FROM users WHERE id = ?", (p["received_by"],))
-    return render_template("staff/lab_works/receipt_print.html", p=p, inv=inv, lab=_lab_header(conn, inv["lab_id"]), methods=METHODS,
+    return render_template("staff/lab_works/receipt_print.html", p=p, inv=inv, lab=_lab_header(conn, inv["lab_id"]), methods=METHODS, lab_pay_label=lab_pay_label,
                            by=by["name"] if by else "", balance=inv["total_cents"] - inv["paid_cents"])
 
 
@@ -837,6 +869,38 @@ def commission():
 # Collection report
 # ---------------------------------------------------------------------------
 
+@bp.route("/financial")
+@login_required
+def financial():
+    """Laboratory financial report: payments received by where the money went (Cash, GCash, Bank transfer – BDO, ...)."""
+    _need("lab.billing")
+    from .. import finance_report
+    conn = get_db()
+    ids = _lab_ids()
+    end = parse_date(request.args.get("to")) or today()
+    start = parse_date(request.args.get("from")) or end.replace(day=1)
+    if start > end:
+        start, end = end, start
+    rep = finance_report.lab_build(conn, ids, start.isoformat(), end.isoformat())
+    if request.args.get("format") == "csv":
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["Where the payment went", "Outside clinics", "Dental Haven branches", "Total (PHP)"])
+        for r in rep["rows"]:
+            w.writerow([r["label"], r["outside"] / 100, r["branch"] / 100, r["total"] / 100])
+        w.writerow(["Total", rep["outside"] / 100, rep["branch"] / 100, rep["total"] / 100])
+        w.writerow([])
+        w.writerow(["Account", "Total (PHP)"])
+        for a in rep["accounts"]:
+            w.writerow([a["name"], a["total"] / 100])
+        w.writerow(["Cash received", rep["cash"] / 100])
+        audit.record("lab_financial_exported", "lab_invoice", None, f"Lab financial report {start} to {end}")
+        return Response("\ufeff" + buf.getvalue(), mimetype="text/csv",
+                        headers={"Content-Disposition": f'attachment; filename="lab-financial-report-{start}-to-{end}.csv"', "Cache-Control": "no-store"})
+    return render_template("staff/lab_works/financial.html", rep=rep, start=start, end=end,
+                           lab_names=", ".join(lab_display(l["name"]) for l in conn.all(f"SELECT name FROM laboratories WHERE id IN ({_in(ids)})", ids)))
+
+
 @bp.route("/collections")
 @login_required
 def collections():
@@ -866,7 +930,7 @@ def collections():
         safe = lambda x: ("'" + x) if isinstance(x, str) and x[:1] in ("=", "+", "-", "@") else x  # noqa: E731
         for r in rows:
             wr.writerow([safe(x) for x in (r["received_on"], r["receipt_no"], r["invoice_number"], r["clinic_name"],
-                                            "Branch" if r["branch_id"] else "Outside clinic", METHODS.get(r["method"], r["method"]),
+                                            "Branch" if r["branch_id"] else "Outside clinic", lab_pay_label(r["method"], r["account"]),
                                             r["reference"], r["amount_cents"] / 100, r["by_name"] or "")])
         wr.writerow(["", "", "", "", "", "", "Total", sum(r["amount_cents"] for r in rows) / 100, ""])
         audit.record("lab_collections_exported", "lab_invoice", None, f"Exported lab collections {start} to {end}")
@@ -876,7 +940,8 @@ def collections():
     by_kind = {"outside": 0, "branch": 0}
     for r in rows:
         by_kind["branch" if r["branch_id"] else "outside"] += r["amount_cents"]
-        by_method[r["method"]] = by_method.get(r["method"], 0) + r["amount_cents"]
+        k = lab_pay_label(r["method"], r["account"])
+        by_method[k] = by_method.get(k, 0) + r["amount_cents"]
         by_clinic[r["clinic_name"]] = by_clinic.get(r["clinic_name"], 0) + r["amount_cents"]
         by_day[r["received_on"]] = by_day.get(r["received_on"], 0) + r["amount_cents"]
     invoiced = conn.scalar(f"SELECT COALESCE(SUM(total_cents), 0) FROM lab_invoices WHERE lab_id IN ({_in(ids)}) AND status = 'issued' "
@@ -895,7 +960,7 @@ def collections():
     clients = conn.all(f"SELECT id, clinic_name FROM lab_clients WHERE lab_id IN ({_in(ids)})"
                        + (" AND branch_id IS NULL" if kind == "outside" else " AND branch_id IS NOT NULL" if kind == "branch" else "")
                        + " ORDER BY clinic_name", ids)
-    return render_template("staff/lab_works/collections.html", rows=rows, start=start, end=end, client=client, clients=clients, methods=METHODS,
+    return render_template("staff/lab_works/collections.html", rows=rows, start=start, end=end, client=client, clients=clients, methods=METHODS, lab_pay_label=lab_pay_label,
                            kind=kind, kinds=KINDS, by_kind=by_kind,
                            by_method=sorted(by_method.items(), key=lambda x: -x[1]), by_clinic=sorted(by_clinic.items(), key=lambda x: -x[1]),
                            by_day=sorted(by_day.items()), total=sum(r["amount_cents"] for r in rows), invoiced=invoiced,

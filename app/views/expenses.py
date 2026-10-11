@@ -23,10 +23,11 @@ from .common import branches_for_user, date_range_args
 
 bp = Blueprint("expenses", __name__, url_prefix="/staff/expenses")
 
-CATEGORIES = ["Dental supplies", "Laboratory fees", "Rent", "Utilities (power, water, internet)", "Salaries & wages",
+CATEGORIES = ["Dental supplies", "Laboratory fees", "Rent", "Electricity", "Water", "Internet & phone", "Salaries & wages",
               "Equipment & maintenance", "Marketing & advertising", "Professional fees", "Taxes, permits & licenses",
               "Transportation & delivery", "Office supplies", "Pantry & cleaning supplies", "Food & meals", "Repairs",
               "Miscellaneous"]
+OLD_CATEGORIES = ["Utilities (power, water, internet)"]   # still shown on old entries; no longer offered for new ones
 
 
 def _scope(alias="e"):
@@ -92,7 +93,7 @@ def index():
         where.append("e.status = ?")
         args.append(status)
     category = request.args.get("category")
-    if category in CATEGORIES:
+    if category in CATEGORIES + OLD_CATEGORIES:
         where.append("e.category = ?")
         args.append(category)
     branch = to_int(request.args.get("branch"))
@@ -228,7 +229,7 @@ def report():
                     "LEFT JOIN users u ON u.id = e.created_by "
                     f"WHERE {frag} AND e.branch_id IN ({marks}) AND e.expense_date BETWEEN ? AND ? AND e.status != 'void' "
                     "ORDER BY e.expense_date, e.expense_time, e.id", [*params, *chosen, start.isoformat(), end.isoformat()])
-    picked_cats = [c for c in request.args.getlist("category") if c in CATEGORIES]
+    picked_cats = [c for c in request.args.getlist("category") if c in CATEGORIES + OLD_CATEGORIES]
     if picked_cats:
         rows = [r for r in rows if r["category"] in picked_cats]
     include_pending = bool(request.args.get("pending"))
@@ -284,3 +285,96 @@ def report():
                            names=names, per_branch=per_branch, matrix=matrix, cats=cats, days=sorted(days.items()), rows=counted,
                            grand=grand, include_pending=include_pending, today=today(), args=request.args,
                            all_categories=CATEGORIES, picked_cats=picked_cats)
+
+
+# ---------------------------------------------------------------------------
+# Monthly bills per branch: rent, electricity, water, internet, ... One click records this month's bill as an expense.
+# ---------------------------------------------------------------------------
+def _month_arg():
+    m = request.values.get("month") or today().strftime("%Y-%m")
+    try:
+        return date_cls(int(m[:4]), int(m[5:7]), 1)
+    except (ValueError, IndexError):
+        return today().replace(day=1)
+
+
+@bp.route("/bills", methods=["GET", "POST"])
+@require("expenses.view", "expenses.add", any_of=True)
+def bills():
+    conn = get_db()
+    branches = branches_for_user(g.user)
+    my_ids = [b["id"] for b in branches]
+    month = _month_arg()
+    mkey = month.strftime("%Y-%m")
+    if request.method == "POST":
+        f = request.form
+        action = f.get("action")
+        if action in ("add", "save"):
+            if not g.user.can("expenses.post"):
+                abort(403)
+            if action == "add":
+                bid = to_int(f.get("branch_id"))
+                cat, item = f.get("category"), clean(f.get("item"), 150)
+                amt = parse_money(f.get("amount")) if (f.get("amount") or "").strip() else 0
+                due = to_int(f.get("due_day"))
+                if bid not in my_ids or cat not in CATEGORIES or not item or amt is None or amt < 0 or (due and not 1 <= due <= 31):
+                    flash("Choose the branch and category, and enter the bill name (amount and due day are optional).", "error")
+                else:
+                    conn.insert("branch_bills", {"branch_id": bid, "category": cat, "item": item, "payee": clean(f.get("payee"), 150),
+                                                 "amount_cents": amt, "due_day": due or None,
+                                                 "method": f.get("method") if f.get("method") in PAYMENT_METHODS else "cash",
+                                                 "created_by": g.user.id, "created_at": now_str()})
+                    audit.record("branch_bill_added", "expense", None, f"Monthly bill added: {item}", branch_id=bid)
+                    flash("Monthly bill added.", "success")
+            else:
+                b = conn.one("SELECT * FROM branch_bills WHERE id = ?", (to_int(f.get("bill_id")),))
+                if not b or b["branch_id"] not in my_ids:
+                    abort(404)
+                amt = parse_money(f.get("amount")) if (f.get("amount") or "").strip() else 0
+                due = to_int(f.get("due_day"))
+                if amt is None or amt < 0 or (due and not 1 <= due <= 31) or not clean(f.get("item"), 150):
+                    flash("Check the name, amount and due day.", "error")
+                else:
+                    conn.execute("UPDATE branch_bills SET item = ?, payee = ?, amount_cents = ?, due_day = ?, active = ? WHERE id = ?",
+                                 (clean(f.get("item"), 150), clean(f.get("payee"), 150), amt, due or None, 1 if f.get("active") else 0, b["id"]))
+                    flash("Saved.", "success")
+        elif action == "record":
+            if not g.user.can("expenses.add"):
+                abort(403)
+            b = conn.one("SELECT * FROM branch_bills WHERE id = ?", (to_int(f.get("bill_id")),))
+            if not b or b["branch_id"] not in my_ids:
+                abort(404)
+            amt = parse_money(f.get("amount"))
+            d = parse_date(f.get("paid_on")) or today()
+            method = f.get("method") if f.get("method") in PAYMENT_METHODS else b["method"]
+            if conn.one("SELECT id FROM expenses WHERE bill_id = ? AND bill_month = ? AND status != 'void'", (b["id"], mkey)):
+                flash("This bill is already recorded for that month.", "error")
+            elif not amt or amt <= 0 or d > today():
+                flash("Enter this month's amount (and a payment date that isn't in the future).", "error")
+            else:
+                eid = conn.insert("expenses", {"branch_id": b["branch_id"], "expense_date": d.isoformat(), "expense_time": now().strftime("%H:%M"),
+                                               "category": b["category"], "item": b["item"], "description": f"{month.strftime('%B %Y')} bill",
+                                               "qty": 1, "unit_price_cents": amt, "spent_by": g.user.name, "payee": b["payee"],
+                                               "amount_cents": amt, "method": method, "reference": clean(f.get("reference"), 80),
+                                               "notes": "", "receipt_stored": "", "status": "draft", "bill_id": b["id"], "bill_month": mkey,
+                                               "created_by": g.user.id, "created_at": now_str()})
+                audit.record("expense_added", "expense", eid, f"Monthly bill {b['item']} for {mkey}: {peso(amt)}", branch_id=b["branch_id"])
+                flash(f"{b['item']} for {month.strftime('%B %Y')} added to expenses ({peso(amt)}). Post it to count it in reports.", "success")
+        else:
+            abort(400)
+        return redirect(url_for("expenses.bills", month=mkey))
+    marks = ",".join("?" * len(my_ids)) or "NULL"
+    rows = conn.all(f"SELECT * FROM branch_bills WHERE branch_id IN ({marks}) ORDER BY active DESC, branch_id, COALESCE(due_day, 99), id", my_ids)
+    done = {r["bill_id"]: r for r in conn.all(f"SELECT id, bill_id, amount_cents, status, expense_date FROM expenses WHERE bill_month = ? "
+                                               f"AND status != 'void' AND branch_id IN ({marks})", [mkey, *my_ids])}
+    groups = []
+    for b in branches:
+        items = [r for r in rows if r["branch_id"] == b["id"]]
+        if items or g.user.can("expenses.post"):
+            groups.append({"branch": b, "items": items,
+                           "recorded": sum(done[r["id"]]["amount_cents"] for r in items if r["id"] in done),
+                           "missing": [r for r in items if r["active"] and r["id"] not in done]})
+    prev = (month - timedelta(days=1)).replace(day=1).strftime("%Y-%m")
+    nxt = (month.replace(day=28) + timedelta(days=4)).replace(day=1).strftime("%Y-%m")
+    return render_template("staff/expenses/bills.html", groups=groups, done=done, month=month, mkey=mkey, prev=prev, nxt=nxt,
+                           categories=CATEGORIES, branches=branches, today=today().isoformat())

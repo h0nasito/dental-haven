@@ -203,3 +203,30 @@ class TestOutsideWorkBilling(TestLabWorks):
         self.assertIn("Outside clinic", csv)
         self.assertIn("Smile Partner Clinic OWB", c.get("/staff/lab/invoices?show=all&kind=outside").data.decode())
         self.assertNotIn("Smile Partner Clinic OWB", c.get("/staff/lab/invoices?show=all&kind=branch").data.decode())
+
+
+class TestLabFinancial(TestLabWorks):
+    test_access_needs_permission_and_lab = test_work_status_and_notifications = None
+    test_due_checks_run_once_a_day = test_invoice_discount_payment_receipt = test_collection_report = None
+
+    def test_lab_financial_report(self):
+        self.grant("lab.works", "lab.billing")
+        c = self.tech()
+        wid = self.new_work(c, clinic_name="Finance Test Clinic LFR", units="2", price="1000")["id"]
+        iid = int(c.post(f"/staff/lab/works/{wid}/bill").headers["Location"].rstrip("/").split("/")[-1])
+        c.post(f"/staff/lab/invoices/{iid}", data={"action": "issue"})
+        page = c.get(f"/staff/lab/invoices/{iid}").data.decode()
+        self.assertIn('value="bank:BDO"', page)
+        c.post(f"/staff/lab/invoices/{iid}", data={"action": "pay", "amount": "500", "method": "bank", "received_on": ""})   # no bank: refused
+        self.assertEqual(self.conn.one("SELECT COUNT(*) AS n FROM lab_payments WHERE invoice_id = ?", (iid,))["n"], 0)
+        c.post(f"/staff/lab/invoices/{iid}", data={"action": "pay", "amount": "1500", "method": "bank:BPI", "received_on": ""})
+        c.post(f"/staff/lab/invoices/{iid}", data={"action": "pay", "amount": "500", "method": "gcash", "received_on": ""})
+        rep = c.get("/staff/lab/financial").data.decode()
+        self.assertIn("Bank transfer – BPI", rep)
+        self.assertIn("₱1,500.00", rep)
+        from app import finance_report
+        from app.util import today
+        r = finance_report.lab_build(self.conn, [self.lab], today().isoformat(), today().isoformat())
+        acc = {a["name"]: a["total"] for a in r["accounts"]}
+        self.assertGreaterEqual(acc["BPI"], 150000)
+        self.assertIn("Bank transfer – BPI", c.get("/staff/lab/financial?format=csv").data.decode())

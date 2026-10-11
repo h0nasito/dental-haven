@@ -1,0 +1,44 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Monthly bills<style>.bill-rec input, .bill-rec select { width: auto; min-width: 0; } .bill-rec input[type=date] { width: 9.5em; }</style>
+{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Monthly bills · {{ month.strftime('%B %Y') }}</h1><p>Each branch's regular bills: rent, electricity, water, internet and others. Record each one when it is paid; it goes to Expenses and is taken out of the gross in the Financial report.</p></div>
+<div class="row"><a class="btn btn-ghost btn-sm" href="{{ url_for('expenses.bills', month=prev) }}">← Previous month</a><a class="btn btn-ghost btn-sm" href="{{ url_for('expenses.bills', month=nxt) }}">Next month →</a>
+<a class="btn btn-secondary btn-sm" href="{{ url_for('expenses.index') }}">All expenses</a></div></div>
+{% for gr in groups %}
+<div class="card {{ 'mt-1' if not loop.first }}"><div class="row between"><h2 class="mb-0">{{ gr.branch.name }}</h2>
+<span>{% if gr.missing %}<span class="badge badge-amber">{{ gr.missing|length }} not recorded yet</span>{% elif gr['items'] %}<span class="badge badge-green">All recorded</span>{% endif %} <strong>{{ gr.recorded|peso }}</strong></span></div>
+{% if gr['items'] %}<div class="table-wrap"><table><thead><tr><th>Bill</th><th>Due</th><th class="num">Usual amount</th><th>{{ month.strftime('%B') }}</th></tr></thead><tbody>
+{% for b in gr['items'] %}{% set e = done.get(b.id) %}<tr {% if not b.active %}style="opacity:.55"{% endif %}>
+<td><strong>{{ b.item }}</strong> <span class="badge">{{ b.category }}</span>{% if b.payee %}<br><small class="muted">{{ b.payee }}</small>{% endif %}{% if not b.active %}<br><small class="muted">Not in use</small>{% endif %}
+{% if current_user.can('expenses.post') %}<details><summary><small>Edit</small></summary><form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="save"><input type="hidden" name="bill_id" value="{{ b.id }}"><input type="hidden" name="month" value="{{ mkey }}">
+<div class="form-grid"><div class="field"><label for="bi{{ b.id }}">Name</label><input id="bi{{ b.id }}" name="item" value="{{ b.item }}" maxlength="150"></div>
+<div class="field"><label for="bp{{ b.id }}">Paid to</label><input id="bp{{ b.id }}" name="payee" value="{{ b.payee }}" maxlength="150"></div>
+<div class="field"><label for="ba{{ b.id }}">Usual amount (₱)</label><input id="ba{{ b.id }}" name="amount" value="{{ '%.2f'|format(b.amount_cents / 100) if b.amount_cents else '' }}" inputmode="decimal"></div>
+<div class="field"><label for="bd{{ b.id }}">Due day</label><input id="bd{{ b.id }}" name="due_day" value="{{ b.due_day or '' }}" inputmode="numeric"></div></div>
+<label class="check"><input type="checkbox" name="active" value="1" {% if b.active %}checked{% endif %}> In use</label> <button class="btn btn-secondary btn-sm">Save</button></form></details>{% endif %}</td>
+<td>{{ ('every ' ~ b.due_day ~ ('st' if b.due_day in (1, 21, 31) else 'nd' if b.due_day in (2, 22) else 'rd' if b.due_day in (3, 23) else 'th')) if b.due_day else '—' }}</td>
+<td class="num">{{ b.amount_cents|peso if b.amount_cents else 'varies' }}</td>
+<td>{% if e %}<span class="badge {{ 'badge-green' if e.status == 'posted' else 'badge-amber' }}">{{ 'Recorded' if e.status == 'posted' else 'Recorded, not posted yet' }}</span> <strong>{{ e.amount_cents|peso }}</strong><br><small class="muted">paid {{ e.expense_date|date }}</small>
+{% elif b.active and current_user.can('expenses.add') %}<form method="post" class="row bill-rec" style="gap:.35rem;flex-wrap:wrap;align-items:center">{{ csrf() }}<input type="hidden" name="action" value="record"><input type="hidden" name="bill_id" value="{{ b.id }}"><input type="hidden" name="month" value="{{ mkey }}">
+<input name="amount" value="{{ '%.2f'|format(b.amount_cents / 100) if b.amount_cents else '' }}" placeholder="Amount" inputmode="decimal" style="width:7.5em" aria-label="Amount for {{ b.item }}" required>
+<input type="date" name="paid_on" value="{{ today }}" max="{{ today }}" aria-label="Date paid">
+<select name="method" aria-label="Paid by">{% for k, l in PAYMENT_METHODS.items() %}<option value="{{ k }}" {% if k == b.method %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+<input name="reference" placeholder="OR / ref no." maxlength="80" style="width:8em" aria-label="Receipt or reference number">
+<button class="btn btn-sm">Record</button></form>{% else %}—{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}<p class="muted">No monthly bills yet for this branch.</p>{% endif %}
+</div>{% endfor %}
+{% if current_user.can('expenses.post') %}
+<form method="post" class="card mt-1">{{ csrf() }}<input type="hidden" name="action" value="add"><input type="hidden" name="month" value="{{ mkey }}"><h2>Add a monthly bill</h2>
+<div class="form-grid">
+<div class="field"><label for="nb">Branch</label><select id="nb" name="branch_id">{% for b in branches %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}</select></div>
+<div class="field"><label for="nc">Category</label><select id="nc" name="category">{% for c in categories %}<option {% if c == 'Rent' %}selected{% endif %}>{{ c }}</option>{% endfor %}</select></div>
+<div class="field"><label for="ni">Name</label><input id="ni" name="item" maxlength="150" placeholder="e.g. Space rental, Meralco, Water bill, PLDT internet" required></div>
+<div class="field"><label for="np">Paid to <span class="hint">Optional</span></label><input id="np" name="payee" maxlength="150"></div>
+<div class="field"><label for="na">Usual amount (₱) <span class="hint">Leave empty if it changes</span></label><input id="na" name="amount" inputmode="decimal"></div>
+<div class="field"><label for="nd">Due day <span class="hint">1–31, optional</span></label><input id="nd" name="due_day" inputmode="numeric"></div>
+<div class="field"><label for="nm">Usually paid by</label><select id="nm" name="method">{% for k, l in PAYMENT_METHODS.items() %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></div>
+</div><button class="btn btn-secondary">Add bill</button></form>{% endif %}
+<style>.bill-rec input, .bill-rec select { width: auto; min-width: 0; } .bill-rec input[type=date] { width: 9.5em; }</style>
+{% endblock %}

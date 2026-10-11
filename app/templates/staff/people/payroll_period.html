@@ -10,7 +10,7 @@
 <p class="hint">Daily rate × days worked, + holiday pay (regular holiday worked = double, special non-working day worked = +30%{% if pay_unworked %}, unworked regular holiday = 1 day{% endif %}), + approved overtime (daily rate ÷ 8 × 1.25 per hour), + technician commission (works delivered in this cutoff), − lates (₱{{ late_rate }} per minute).</p>
 <div class="table-wrap"><table>
 <thead><tr><th>Employee</th><th class="num">Days</th><th class="num">Late</th><th class="num">OT approved</th><th class="num">Open exceptions</th>
-{% if show_money %}<th class="num">Daily rate</th><th class="num">Basic</th><th class="num">Holiday</th><th class="num">Overtime</th><th class="num">Technician commission</th><th class="num">Late deduction</th><th class="num">Adjustment</th><th class="num">Total estimate</th>{% else %}<th>Pay basis</th>{% endif %}</tr></thead><tbody>
+{% if show_money %}<th class="num">Daily rate</th><th class="num">Basic</th><th class="num">Holiday</th><th class="num">Overtime</th><th class="num">Technician commission</th><th class="num">Late deduction</th><th class="num">Adjustment</th><th class="num">Additions / deductions</th><th class="num">Net pay</th><th></th>{% else %}<th>Pay basis</th>{% endif %}</tr></thead><tbody>
 {% for l in lines if l.kind != 'dentist' %}<tr><td><strong>{{ l.full_name }}</strong><br><small class="muted">{{ l.position }}</small></td><td class="num">{{ l.days_present }}</td>
 <td class="num">{{ l.late_minutes }} min</td><td class="num">{% if l.ot_minutes %}{{ '%.2f'|format(l.ot_minutes / 60) }} h{% else %}—{% endif %}</td>
 <td class="num">{% if l.open_exceptions %}<a href="{{ url_for('people.attendance', employee=l.employee_id, status='exception', **{'from': p.start_date, 'to': p.end_date}) }}" style="color:var(--red-700);font-weight:700">{{ l.open_exceptions }}</a>{% else %}0{% endif %}</td>
@@ -22,15 +22,17 @@
 <td class="num">{% if p.status == 'draft' and current_user.can('payroll.prepare') %}<details><summary>{{ l.adjustment_cents|peso if l.adjustment_cents else 'Add' }}</summary><form method="post">{{ csrf() }}<input type="hidden" name="action" value="adjust"><input type="hidden" name="line_id" value="{{ l.id }}">
 <label class="sr-only" for="aj{{ l.id }}">Amount</label><input id="aj{{ l.id }}" name="adjustment" value="{{ (l.adjustment_cents / 100) if l.adjustment_cents else '' }}" placeholder="e.g. -250"><label class="sr-only" for="an{{ l.id }}">Reason</label><input id="an{{ l.id }}" name="adjustment_note" value="{{ l.adjustment_note }}" placeholder="Reason"><button class="btn btn-secondary btn-sm mt-1">Save</button></form></details>
 {% else %}{{ l.adjustment_cents|peso if l.adjustment_cents else '—' }}{% if l.adjustment_note %}<br><small class="muted">{{ l.adjustment_note }}</small>{% endif %}{% endif %}</td>
-<td class="num"><strong>{{ (l.estimate_cents + l.adjustment_cents)|peso if l.estimate_cents is not none else '—' }}</strong>{% if l.estimate_cents is none %}<br><small class="muted">needs pay rule</small>{% endif %}</td>
+<td class="num">{% set it = items.get(l.employee_id, {}) %}{% if it.add_total %}<span class="c-green">+{{ it.add_total|peso }}</span>{% endif %}{% if it.ded_total %}<br><span class="text-danger">−{{ it.ded_total|peso }}</span>{% endif %}{% if not it.add_total and not it.ded_total %}—{% endif %}</td>
+<td class="num"><strong>{{ net_pay(l, it)|peso if l.estimate_cents is not none else '—' }}</strong>{% if l.estimate_cents is none %}<br><small class="muted">needs pay rule</small>{% endif %}</td>
+<td><a class="btn btn-ghost btn-sm" href="{{ url_for('people.payslips', period_id=p.id, emp_id=l.employee_id) }}" target="_blank" rel="noopener">Payslip</a></td>
 {% else %}<td>{{ BASIS_LABELS.get(l.basis, l.basis) }}</td>{% endif %}</tr>
-{% else %}<tr><td colspan="13" class="empty">No staff in scope.</td></tr>{% endfor %}</tbody></table></div>
+{% else %}<tr><td colspan="15" class="empty">No staff in scope.</td></tr>{% endfor %}</tbody></table></div>
 {% if not show_money %}<p class="hint">Rates and amounts are hidden because you don't have access to compensation.</p>{% endif %}
 <p class="hint">Night differential and statutory deductions (SSS, PhilHealth, Pag-IBIG, withholding tax) are not computed here.</p></div>
 <div class="card"><h2>Dentists: daily rate + commission</h2>
 <p class="hint">Daily pay = days present × daily rate. Commission = procedures done in this period on issued invoices: (amount − share of invoice discount − lab fee) × commission %.</p>
 <div class="table-wrap"><table><thead><tr><th>Dentist</th><th class="num">Days present</th><th class="num">Open exceptions</th><th class="num">Procedures done</th>
-{% if show_money %}<th class="num">Daily pay</th><th class="num">Commission base</th><th class="num">Commission</th><th class="num">Adjustment</th><th class="num">Total estimate</th>{% endif %}<th></th></tr></thead><tbody>
+{% if show_money %}<th class="num">Daily pay</th><th class="num">Commission base</th><th class="num">Commission</th><th class="num">Adjustment</th><th class="num">Additions / deductions</th><th class="num">Net pay</th><th></th>{% endif %}<th></th></tr></thead><tbody>
 {% for l in lines if l.kind == 'dentist' %}<tr><td><strong>{{ l.full_name }}</strong><br><small class="muted">{% if l.basis == 'unset' %}Rates not set{% else %}{{ l.rate_cents|peso }}/day · {{ l.percentage_bp / 100 }}%{% endif %}</small></td>
 <td class="num">{{ l.days_present }}</td><td class="num">{% if l.open_exceptions %}<a href="{{ url_for('people.attendance', employee=l.employee_id, status='exception', **{'from': p.start_date, 'to': p.end_date}) }}" style="color:var(--red-700);font-weight:700">{{ l.open_exceptions }}</a>{% else %}0{% endif %}</td>
 <td class="num">{{ l.commission_items }}</td>
@@ -39,9 +41,33 @@
 <td class="num">{% if p.status == 'draft' and current_user.can('payroll.prepare') %}<details><summary>{{ l.adjustment_cents|peso if l.adjustment_cents else 'Add' }}</summary><form method="post">{{ csrf() }}<input type="hidden" name="action" value="adjust"><input type="hidden" name="line_id" value="{{ l.id }}">
 <label class="sr-only" for="aj{{ l.id }}">Amount</label><input id="aj{{ l.id }}" name="adjustment" value="{{ (l.adjustment_cents / 100) if l.adjustment_cents else '' }}" placeholder="e.g. -250"><label class="sr-only" for="an{{ l.id }}">Reason</label><input id="an{{ l.id }}" name="adjustment_note" value="{{ l.adjustment_note }}" placeholder="Reason"><button class="btn btn-secondary btn-sm mt-1">Save</button></form></details>
 {% else %}{{ l.adjustment_cents|peso if l.adjustment_cents else '—' }}{% endif %}</td>
-<td class="num"><strong>{{ (l.estimate_cents + l.adjustment_cents)|peso if l.estimate_cents is not none else '—' }}</strong>{% if l.estimate_cents is none %}<br><small class="muted">set rates in Employees</small>{% endif %}</td>{% endif %}
+<td class="num">{% set it = items.get(l.employee_id, {}) %}{% if it.add_total %}<span class="c-green">+{{ it.add_total|peso }}</span>{% endif %}{% if it.ded_total %}<br><span class="text-danger">−{{ it.ded_total|peso }}</span>{% endif %}{% if not it.add_total and not it.ded_total %}—{% endif %}</td>
+<td class="num"><strong>{{ net_pay(l, it)|peso if l.estimate_cents is not none else '—' }}</strong>{% if l.estimate_cents is none %}<br><small class="muted">set rates in Employees</small>{% endif %}</td>
+<td><a class="btn btn-ghost btn-sm" href="{{ url_for('people.payslips', period_id=p.id, emp_id=l.employee_id) }}" target="_blank" rel="noopener">Payslip</a></td>{% endif %}
 <td><a class="btn btn-ghost btn-sm" href="{{ url_for('people.payroll_commission', period_id=p.id, emp_id=l.employee_id) }}">Details</a></td></tr>
 {% else %}<tr><td colspan="10" class="empty">No dentists in this period.</td></tr>{% endfor %}</tbody></table></div></div>
+{% if show_money %}
+<div class="card" id="extras"><div class="row between"><h2 class="mb-0">Additions &amp; deductions</h2><a class="btn btn-secondary btn-sm" href="{{ url_for('people.payslips', period_id=p.id) }}" target="_blank" rel="noopener">Print all payslips</a></div>
+<p class="hint">Additions: transportation or meal allowance, quota hit, incentives, bonuses. Deductions: cash advance, loan payment, shortage, and SSS / PhilHealth / Pag-IBIG / tax if you type them in. Regular allowances set on an employee's page are added automatically (per day present or per cutoff) and refreshed by Recalculate.</p>
+{% set named = lines|selectattr('employee_id', 'in', items.keys())|list %}
+{% if named %}<div class="table-wrap"><table><thead><tr><th>Employee</th><th>Item</th><th class="num">Amount</th>{% if p.status == 'draft' and current_user.can('payroll.prepare') %}<th></th>{% endif %}</tr></thead><tbody>
+{% for l in named %}{% set it = items[l.employee_id] %}{% for x in it.add + it.ded %}<tr><td>{% if loop.first %}<strong>{{ l.full_name }}</strong>{% endif %}</td>
+<td>{{ x.name }}{% if x.allowance_id %} <span class="badge">automatic</span>{% endif %}{% if x.note %}<br><small class="muted">{{ x.note }}</small>{% endif %}</td>
+<td class="num">{% if x.kind == 'addition' %}<span class="c-green">+{{ x.amount_cents|peso }}</span>{% else %}<span class="text-danger">−{{ x.amount_cents|peso }}</span>{% endif %}</td>
+{% if p.status == 'draft' and current_user.can('payroll.prepare') %}<td><form method="post" action="{{ url_for('people.payroll_items', period_id=p.id) }}">{{ csrf() }}<input type="hidden" name="action" value="remove"><input type="hidden" name="item_id" value="{{ x.id }}"><button class="btn btn-ghost btn-sm" aria-label="Remove {{ x.name }}">✕</button></form></td>{% endif %}</tr>{% endfor %}{% endfor %}</tbody></table></div>
+{% else %}<p class="muted">None yet.</p>{% endif %}
+{% if p.status == 'draft' and current_user.can('payroll.prepare') %}
+<form method="post" action="{{ url_for('people.payroll_items', period_id=p.id) }}" class="mt-1">{{ csrf() }}<h3>Add</h3>
+<div class="form-grid">
+<div class="field"><label for="xe">Employee</label><select id="xe" name="employee_id" required>{% for l in lines %}<option value="{{ l.employee_id }}">{{ l.full_name }}</option>{% endfor %}</select></div>
+<div class="field"><label for="xn">Type</label><select id="xn" name="name" required>
+<optgroup label="Add to salary">{% for t in add_types %}<option value="{{ t }}" data-kind="addition">{{ t }}</option>{% endfor %}</optgroup>
+<optgroup label="Deduct from salary">{% for t in ded_types %}<option value="{{ t }}" data-kind="deduction">{{ t }}</option>{% endfor %}</optgroup></select></div>
+<div class="field"><label for="xa">Amount (₱)</label><input id="xa" name="amount" inputmode="decimal" required></div>
+<div class="field"><label for="xo">Name, if “Other” <span class="hint">Optional</span></label><input id="xo" name="other_name" maxlength="80"></div>
+<div class="field"><label for="xt">Note <span class="hint">Optional, shows on the payslip</span></label><input id="xt" name="note" maxlength="200" placeholder="e.g. October quota reached"></div>
+</div><button class="btn btn-secondary">Save</button></form>{% endif %}
+</div>{% endif %}
 <div class="grid grid-2">
 <div class="card"><h2>Workflow</h2>
 <p>Prepared by {{ p.creator }}{% if p.submitter %} · submitted by {{ p.submitter }} {{ p.submitted_at|dt }}{% endif %}</p>

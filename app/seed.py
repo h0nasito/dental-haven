@@ -887,7 +887,7 @@ def seed_demo(conn, password: str | None = None) -> str:
                                            "quantity": "#21", "instructions": "1 capsule every 8 hours for 7 days", "seq": 0})
         conn.insert("prescription_items", {"prescription_id": rx, "medicine": "Mefenamic acid 500 mg (demo)", "dosage": "500 mg",
                                            "quantity": "#10", "instructions": "1 capsule every 8 hours as needed for pain", "seq": 1})
-        cats = ["Dental supplies", "Laboratory fees", "Utilities (power, water, internet)", "Rent", "Office supplies"]
+        cats = ["Dental supplies", "Laboratory fees", "Electricity", "Internet & phone", "Rent", "Office supplies"]
         for i in range(24):
             b = rnd.choice(branches)
             conn.insert("expenses", {"branch_id": b["id"], "expense_date": (today() - timedelta(days=rnd.randint(0, 40))).isoformat(),

@@ -22,7 +22,7 @@ class TestExpenseReports(Base):
         mal, boc = self.branch("malolos"), self.branch("bocaue")
         self._add(admin, mal, "2025-03-03", "TEST Gloves (box)", "3", "250", spent_by="Test Person", payee="Supplier A", reference="OR-1",
                   receipt=(io.BytesIO(PNG), "or.png"))
-        self._add(admin, mal, "2025-03-03", "TEST Meralco bill", "1", "4500", cat="Utilities (power, water, internet)")
+        self._add(admin, mal, "2025-03-03", "TEST Meralco bill", "1", "4500", cat="Electricity")
         self._add(admin, boc, "2025-03-15", "TEST Lunch", "1", "", amount="600", cat="Food & meals")
         self._add(admin, boc, "2025-04-01", "TEST April item", "1", "100")
         rows = {r["item"]: r for r in self.conn.all("SELECT * FROM expenses WHERE item LIKE 'TEST %'")}
@@ -48,7 +48,7 @@ class TestExpenseReports(Base):
         self.assertNotIn("TEST April item", monthly)
         # category filter: only utilities
         util = admin.get(f"/staff/expenses/report?mode=monthly&month=2025-03&branch={mal}&branch={boc}"
-                         "&category=Utilities+%28power%2C+water%2C+internet%29").data.decode()
+                         "&category=Electricity").data.decode()
         self.assertIn("TEST Meralco bill", util)
         self.assertNotIn("TEST Gloves (box)", util)
         self.assertNotIn("TEST Lunch", util)

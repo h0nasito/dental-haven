@@ -241,3 +241,47 @@ def add_manual_commission(conn, dentist_user_id: int | None, employee_id: int | 
                                               "rate_bp": rate_bp, "amount_cents": amount_cents, "created_by": by_user_id,
                                               "created_at": now_str()})
     return cid, None
+
+
+# ---------------------------------------------------------------------------
+# Additions and deductions on a payroll period (allowances, quota hit, incentives, bonuses / cash advance, loans, ...)
+# ---------------------------------------------------------------------------
+ADDITION_TYPES = ["Transportation allowance", "Meal allowance", "Quota hit", "Incentive", "Bonus", "13th month pay", "Other addition"]
+DEDUCTION_TYPES = ["Cash advance", "Loan payment", "Shortage", "SSS", "PhilHealth", "Pag-IBIG", "Withholding tax", "Other deduction"]
+ALLOWANCE_BASIS = {"per_day": "per day present", "per_cutoff": "per cutoff"}
+
+
+def apply_allowances(conn, period_id: int) -> None:
+    """(Re)create the automatic allowance lines of a period from each employee's regular allowances."""
+    conn.execute("DELETE FROM payroll_items WHERE period_id = ? AND allowance_id IS NOT NULL", (period_id,))
+    for line in conn.all("SELECT employee_id, days_present FROM payroll_lines WHERE period_id = ?", (period_id,)):
+        for a in conn.all("SELECT * FROM employee_allowances WHERE employee_id = ? AND active = 1 ORDER BY id", (line["employee_id"],)):
+            if a["basis"] == "per_day":
+                amount, note = a["amount_cents"] * line["days_present"], f"{line['days_present']} day(s) × ₱{a['amount_cents'] / 100:,.2f}"
+            else:
+                amount, note = a["amount_cents"], "per cutoff"
+            if amount > 0:
+                conn.insert("payroll_items", {"period_id": period_id, "employee_id": line["employee_id"], "kind": "addition", "name": a["name"],
+                                              "amount_cents": amount, "note": note, "allowance_id": a["id"], "created_at": now_str()})
+
+
+def period_items(conn, period_id: int) -> dict[int, dict]:
+    """{employee_id: {"add": [...], "ded": [...], "add_total", "ded_total"}}"""
+    out: dict[int, dict] = {}
+    for it in conn.all("SELECT * FROM payroll_items WHERE period_id = ? ORDER BY kind, id", (period_id,)):
+        o = out.setdefault(it["employee_id"], {"add": [], "ded": [], "add_total": 0, "ded_total": 0})
+        if it["kind"] == "addition":
+            o["add"].append(it)
+            o["add_total"] += it["amount_cents"]
+        else:
+            o["ded"].append(it)
+            o["ded_total"] += it["amount_cents"]
+    return out
+
+
+def net_pay(line, items: dict | None) -> int | None:
+    """Estimate + adjustment + additions − deductions (None when the pay rule isn't set)."""
+    if line["estimate_cents"] is None:
+        return None
+    items = items or {}
+    return line["estimate_cents"] + (line["adjustment_cents"] or 0) + items.get("add_total", 0) - items.get("ded_total", 0)

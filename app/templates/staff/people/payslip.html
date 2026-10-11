@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Payslip · {{ p.name }}{% endblock %}
+{% block body %}
+<main id="main">
+<div class="no-print row between print-sheet" style="margin-bottom:1rem"><a href="{{ url_for('people.payroll_period', period_id=p.id) }}">← Back to payroll</a><span class="muted">Use your browser's Print command{% if lines|length > 1 %} · one payslip per page{% endif %}</span></div>
+{% for l in lines %}{% set it = items.get(l.employee_id, {}) %}{% set net = net_pay(l, it) %}
+<section class="print-sheet payslip">
+{% if p.status != 'approved' %}<div class="watermark">DRAFT, NOT FINAL</div>{% endif %}
+<div class="row between"><div><h1 class="mb-0">Dental Haven</h1><p class="muted mb-0">{{ l.branch or p.branch or '' }}</p></div>
+<div style="text-align:right"><h2 class="mb-0">PAYSLIP</h2><p class="mb-0">{{ p.start_date|date }} – {{ p.end_date|date }}</p></div></div>
+<table class="ps-head"><tr><td><strong>Employee</strong><br>{{ l.full_name }}</td><td><strong>Position</strong><br>{{ l.position or '—' }}</td>
+<td><strong>Days present</strong><br>{{ l.days_present }}</td><td><strong>Late</strong><br>{{ l.late_minutes }} min</td></tr></table>
+<div class="ps-cols">
+<div><h3>Earnings</h3><table><tbody>
+{% if l.kind == 'dentist' %}
+<tr><td>Daily pay{% if l.rate_cents %} <small class="muted">({{ l.days_present }} × {{ l.rate_cents|peso }})</small>{% endif %}</td><td class="num">{{ (l.daily_pay_cents or 0)|peso }}</td></tr>
+<tr><td>Commission{% if l.percentage_bp %} <small class="muted">({{ l.percentage_bp / 100 }}%)</small>{% endif %}</td><td class="num">{{ (l.commission_cents or 0)|peso }}</td></tr>
+{% else %}
+<tr><td>Basic pay{% if l.rate_cents and l.basis == 'daily' %} <small class="muted">({{ l.days_present }} × {{ l.rate_cents|peso }})</small>{% endif %}</td><td class="num">{{ (l.basic_pay_cents if l.basic_pay_cents is not none else (l.estimate_cents or 0))|peso }}</td></tr>
+{% if l.holiday_pay_cents %}<tr><td>Holiday pay</td><td class="num">{{ l.holiday_pay_cents|peso }}</td></tr>{% endif %}
+{% if l.ot_pay_cents %}<tr><td>Overtime <small class="muted">({{ '%.2f'|format(l.ot_minutes / 60) }} h)</small></td><td class="num">{{ l.ot_pay_cents|peso }}</td></tr>{% endif %}
+{% if l.commission_cents %}<tr><td>Technician commission</td><td class="num">{{ l.commission_cents|peso }}</td></tr>{% endif %}
+{% endif %}
+{% for x in it.add or [] %}<tr><td>{{ x.name }}{% if x.note %} <small class="muted">({{ x.note }})</small>{% endif %}</td><td class="num">{{ x.amount_cents|peso }}</td></tr>{% endfor %}
+{% if l.adjustment_cents > 0 %}<tr><td>Adjustment{% if l.adjustment_note %} <small class="muted">({{ l.adjustment_note }})</small>{% endif %}</td><td class="num">{{ l.adjustment_cents|peso }}</td></tr>{% endif %}
+</tbody></table></div>
+<div><h3>Deductions</h3><table><tbody>
+{% if l.late_deduction_cents %}<tr><td>Late <small class="muted">({{ l.late_minutes }} min)</small></td><td class="num">{{ l.late_deduction_cents|peso }}</td></tr>{% endif %}
+{% for x in it.ded or [] %}<tr><td>{{ x.name }}{% if x.note %} <small class="muted">({{ x.note }})</small>{% endif %}</td><td class="num">{{ x.amount_cents|peso }}</td></tr>{% endfor %}
+{% if l.adjustment_cents < 0 %}<tr><td>Adjustment{% if l.adjustment_note %} <small class="muted">({{ l.adjustment_note }})</small>{% endif %}</td><td class="num">{{ (-l.adjustment_cents)|peso }}</td></tr>{% endif %}
+{% if not l.late_deduction_cents and not it.ded and l.adjustment_cents >= 0 %}<tr><td class="muted">None</td><td></td></tr>{% endif %}
+</tbody></table></div></div>
+<table class="ps-net"><tr><td>NET PAY</td><td class="num">{{ net|peso if net is not none else 'Pay rule not set' }}</td></tr></table>
+<div class="row between ps-sign"><div>Prepared by: ______________________</div><div>Received by: ______________________<br><small class="muted">{{ l.full_name }} · date</small></div></div>
+<p class="hint">SSS, PhilHealth, Pag-IBIG and withholding tax are only included when typed in as deductions. {% if p.status == 'approved' %}Approved summary.{% else %}Draft, may still change.{% endif %}</p>
+</section>{% endfor %}
+</main>
+<style>
+.payslip { position: relative; margin-bottom: 2rem; }
+.payslip table { width: 100%; border-collapse: collapse; }
+.payslip td { padding: .3rem .4rem; border-bottom: 1px solid #e5e5e5; vertical-align: top; }
+.ps-head { margin: 1rem 0; } .ps-head td { border: 1px solid #ddd; }
+.ps-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+.ps-net { margin-top: 1rem; } .ps-net td { font-size: 1.25rem; font-weight: 800; border-top: 2px solid #222; border-bottom: 2px solid #222; }
+.ps-sign { margin-top: 2.5rem; gap: 1rem; }
+@media print { .payslip { page-break-after: always; margin: 0; } .payslip:last-of-type { page-break-after: auto; } }
+@media (max-width: 640px) { .ps-cols { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}

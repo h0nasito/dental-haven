@@ -8,7 +8,7 @@
 <div><img src="{{ url_for('static', filename='img/logo.png') }}" alt="" width="60" height="40"><h2 class="mb-0">{{ lab.name }}</h2><p class="muted">{{ lab.address }}{% if lab.phone %}<br>{{ lab.phone }}{% endif %}</p></div>
 <div style="text-align:right;flex:none"><h2 class="mb-0">Acknowledgment receipt</h2><p>No. <strong>{{ p.receipt_no }}</strong><br>Date: {{ p.received_on|date }}</p></div></div>
 <p style="font-size:1.05rem;line-height:1.7">Received from <strong>{{ inv.clinic_name }}</strong>{% if inv.doctor %} ({{ inv.doctor }}){% endif %} the amount of <strong>{{ p.amount_cents|peso }}</strong>
-by {{ methods.get(p.method, p.method) }}{% if p.reference %} (ref. {{ p.reference }}){% endif %}, as payment for invoice <strong>{{ inv.number }}</strong>.</p>
+by {{ lab_pay_label(p.method, p.account) }}{% if p.reference %} (ref. {{ p.reference }}){% endif %}, as payment for invoice <strong>{{ inv.number }}</strong>.</p>
 <table><tbody><tr><td>Invoice total</td><td class="num">{{ inv.total_cents|peso }}</td></tr><tr><td>Total paid to date</td><td class="num">{{ inv.paid_cents|peso }}</td></tr>
 <tr><td><strong>Remaining balance</strong></td><td class="num"><strong>{{ balance|peso }}</strong></td></tr></tbody></table>
 <p class="mt-1" style="font-size:.85rem"><strong>This is an acknowledgment receipt, not a BIR official receipt.</strong></p>

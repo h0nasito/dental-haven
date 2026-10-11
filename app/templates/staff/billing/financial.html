@@ -17,6 +17,17 @@
 {% else %}<tr><td colspan="{{ shown|length + 2 }}" class="empty">No payments in this period.</td></tr>{% endfor %}</tbody>
 <tfoot><tr><td><strong>Total</strong></td>{% if shown|length > 1 %}{% for b in shown %}<td class="num">{{ rep.branch_totals[b.id]|peso }}</td>{% endfor %}{% endif %}<td class="num"><strong>{{ rep.total|peso }}</strong></td></tr></tfoot></table></div></div>
 
+{% set multi = shown|length > 1 %}
+<div class="card mt-1"><div class="row between"><h2 class="mb-0">Gross less expenses</h2><a class="btn btn-ghost btn-sm" href="{{ url_for('expenses.bills') }}">Monthly bills</a></div>
+<div class="table-wrap"><table class="fin"><thead><tr><th></th>{% if multi %}{% for b in shown %}<th class="num">{{ b.name }}</th>{% endfor %}{% endif %}<th class="num">Total</th></tr></thead><tbody>
+<tr><td><strong>Gross collections</strong> <small class="muted">(less refunds)</small></td>{% if multi %}{% for b in shown %}<td class="num"><strong>{{ st.gross.get(b.id, 0)|peso }}</strong></td>{% endfor %}{% endif %}<td class="num"><strong>{{ st.gross_total|peso }}</strong></td></tr>
+{% for r in st.rows %}<tr><td>Less: {{ r.label }}</td>{% if multi %}{% for b in shown %}<td class="num">{{ ('−' ~ (r.by[b.id]|peso)) if r.by[b.id] else '—' }}</td>{% endfor %}{% endif %}<td class="num">−{{ r.total|peso }}</td></tr>
+{% else %}<tr><td colspan="{{ shown|length + 2 }}" class="muted">No expenses in this period.</td></tr>{% endfor %}
+<tr><td>Total expenses</td>{% if multi %}{% for b in shown %}<td class="num">−{{ st.expenses[b.id]|peso }}</td>{% endfor %}{% endif %}<td class="num">−{{ st.expenses_total|peso }}</td></tr></tbody>
+<tfoot><tr><td><strong>Net</strong></td>{% if multi %}{% for b in shown %}<td class="num"><strong {% if st.net[b.id] < 0 %}class="text-danger"{% endif %}>{{ st.net[b.id]|peso }}</strong></td>{% endfor %}{% endif %}<td class="num"><strong {% if st.net_total < 0 %}class="text-danger"{% endif %}>{{ st.net_total|peso }}</strong></td></tr></tfoot></table></div>
+<p class="hint">Expenses come from Expenses and Monthly bills (rent, electricity, water, internet, food…), by the date they were paid. Lab fees and dentist commissions are counted the same way as in the daily collection report.
+{% if posted_only %}Only posted expenses are counted. <a href="{{ url_for('billing.financial', branch=bid, **{'from': start.isoformat(), 'to': end.isoformat()}) }}">Count drafts too</a>{% elif st.drafts_total %}Includes {{ st.drafts_total|peso }} of expenses not posted yet. <a href="{{ url_for('billing.financial', branch=bid, posted=1, **{'from': start.isoformat(), 'to': end.isoformat()}) }}">Count posted only</a>{% endif %}</p></div>
+
 <div class="card mt-1"><h2>Money in each account</h2>
 <div class="table-wrap"><table class="fin"><thead><tr><th>Account</th><th class="num">Paid in directly</th><th class="num">Cash deposited</th><th class="num">Total</th></tr></thead><tbody>
 {% for a in rep.accounts %}<tr><td>{{ a.name }}</td><td class="num">{{ a.direct|peso if a.direct else '—' }}</td><td class="num">{{ a.cash_deposited|peso if a.cash_deposited else '—' }}</td><td class="num"><strong>{{ a.total|peso }}</strong></td></tr>{% endfor %}

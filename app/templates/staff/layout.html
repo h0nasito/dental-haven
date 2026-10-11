@@ -58,7 +58,7 @@
       {% if current_user.can('billing.view') %}{{ nav('billing.invoices', 'Invoices', 'billing.invoice') }}{% endif %}
       {% if current_user.can('reports.sales') %}{{ nav('billing.sales', 'Sales & collections', 'billing.sales') }}{{ nav('billing.daily_collection', 'Daily collection report', 'billing.daily_collection') }}{{ nav('billing.financial', 'Financial report', 'billing.financial') }}{% endif %}
       {% if current_user.can('reports.operations') %}{{ nav('billing.operations', 'Operations report', 'billing.operations') }}{% endif %}
-      {% if current_user.can('expenses.view') or current_user.can('expenses.add') %}{{ nav('expenses.index', 'Expenses', 'expenses.') }}{% endif %}
+      {% if current_user.can('expenses.view') or current_user.can('expenses.add') %}{{ nav('expenses.index', 'Expenses', 'expenses.index') }}{{ nav('expenses.bills', 'Monthly bills', 'expenses.bills') }}{% endif %}
       {% if current_user.can('deposits.view') or current_user.can('deposits.manage') %}{{ nav('deposits.index', 'Bank deposits', 'deposits.') }}{% endif %}
     {% endcall %}
     {% call group('Inventory', 'box') %}
@@ -90,7 +90,7 @@
       {{ nav('labs.index', 'Branch lab cases', 'labs.') }}
       {% if nav_lab_works %}{{ nav('lab_works.works', 'Outside clinic works', 'lab_works.work') }}{{ nav('lab_works.clients', 'Clinics', 'lab_works.clients') }}{% endif %}
       {{ nav('lab_works.prices', 'Lab price list', 'lab_works.prices') }}
-      {% if nav_lab_billing %}{{ nav('lab_works.invoices', 'Lab invoices & receipts', 'lab_works.invoice') }}{{ nav('lab_works.collections', 'Lab collection report', 'lab_works.collections') }}{% endif %}
+      {% if nav_lab_billing %}{{ nav('lab_works.invoices', 'Lab invoices & receipts', 'lab_works.invoice') }}{{ nav('lab_works.collections', 'Lab collection report', 'lab_works.collections') }}{{ nav('lab_works.financial', 'Lab financial report', 'lab_works.financial') }}{% endif %}
     {% endif %}{% endcall %}
     <div class="nav-group">
       <a class="nav" href="{{ url_for('public.home') }}" target="_blank" rel="noopener">View public site ↗</a>

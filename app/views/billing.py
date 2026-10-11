@@ -655,6 +655,8 @@ def financial():
     bid = to_int(request.args.get("branch"))
     shown = [b for b in mine if b["id"] == bid] or mine
     rep = finance_report.build(conn, shown, start.isoformat(), end.isoformat())
+    posted_only = request.args.get("posted") == "1"
+    st = finance_report.statement(conn, shown, start.isoformat(), end.isoformat(), rep["branch_totals"], posted_only)
     if request.args.get("format") == "csv":
         if not g.user.can("reports.export"):
             abort(403)
@@ -665,13 +667,20 @@ def financial():
             w.writerow([r["label"], *[r["net"][b["id"]] / 100 for b in shown], r["total"] / 100])
         w.writerow(["Total", *[rep["branch_totals"][b["id"]] / 100 for b in shown], rep["total"] / 100])
         w.writerow([])
+        w.writerow(["Gross less expenses", *[b["name"] for b in shown], "Total (PHP)"])
+        w.writerow(["Gross collections", *[st["gross"].get(b["id"], 0) / 100 for b in shown], st["gross_total"] / 100])
+        for r in st["rows"]:
+            w.writerow(["Less: " + r["label"], *[r["by"][b["id"]] / 100 for b in shown], r["total"] / 100])
+        w.writerow(["Total expenses", *[st["expenses"][b["id"]] / 100 for b in shown], st["expenses_total"] / 100])
+        w.writerow(["NET", *[st["net"][b["id"]] / 100 for b in shown], st["net_total"] / 100])
+        w.writerow([])
         w.writerow(["Account", "Paid in directly", "Cash deposited", "Total (PHP)"])
         for a in rep["accounts"]:
             w.writerow([a["name"], a["direct"] / 100, a["cash_deposited"] / 100, a["total"] / 100])
         audit.record("financial_report_exported", "report", None, f"Financial report {start} to {end}")
         return Response("\ufeff" + buf.getvalue(), mimetype="text/csv",
                         headers={"Content-Disposition": f'attachment; filename="financial-report-{start}-to-{end}.csv"', "Cache-Control": "no-store"})
-    return render_template("staff/billing/financial.html", rep=rep, shown=shown, mine=mine, bid=bid if len(shown) == 1 and len(mine) > 1 else None,
+    return render_template("staff/billing/financial.html", rep=rep, st=st, posted_only=posted_only, shown=shown, mine=mine, bid=bid if len(shown) == 1 and len(mine) > 1 else None,
                            start=start, end=end, banks=banks(conn))
 
 

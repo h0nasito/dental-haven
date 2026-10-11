@@ -21,7 +21,7 @@
 <tr><td><a href="{{ url_for('lab_works.collections', kind='branch', **{'from': start.isoformat(), 'to': end.isoformat()}) }}">Dental Haven branches</a></td><td class="num">{{ by_kind.branch|peso }}</td></tr></tbody>
 <tfoot><tr><td><strong>Total</strong></td><td class="num"><strong>{{ total|peso }}</strong></td></tr></tfoot></table></div>{% endif %}
 <div class="grid grid-2">
-<div class="card"><h2>By payment method</h2>{% if by_method %}<table><tbody>{% for m, amt in by_method %}<tr><td>{{ methods.get(m, m) }}</td><td class="num">{{ amt|peso }}</td></tr>{% endfor %}</tbody>
+<div class="card"><h2>By payment method</h2>{% if by_method %}<table><tbody>{% for m, amt in by_method %}<tr><td>{{ m }}</td><td class="num">{{ amt|peso }}</td></tr>{% endfor %}</tbody>
 <tfoot><tr><td><strong>Total</strong></td><td class="num"><strong>{{ total|peso }}</strong></td></tr></tfoot></table>{% else %}<p class="muted">No payments in this period.</p>{% endif %}</div>
 <div class="card"><h2>By clinic</h2>{% if by_clinic %}<table><tbody>{% for c, amt in by_clinic %}<tr><td>{{ c }}</td><td class="num">{{ amt|peso }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="muted">No payments in this period.</p>{% endif %}</div>
 </div>
@@ -30,7 +30,7 @@
 <div class="card mt-1"><h2>Receipts</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Receipt</th><th>Invoice</th><th>Dental clinic</th><th>Method</th><th class="num">Amount</th><th>Received by</th></tr></thead><tbody>
 {% for r in rows %}<tr><td>{{ r.received_on|date }}</td><td><a href="{{ url_for('lab_works.receipt_print', payment_id=r.id) }}" target="_blank">{{ r.receipt_no }}</a></td>
 <td><a href="{{ url_for('lab_works.invoice', invoice_id=r.invoice_id) }}">{{ r.invoice_number }}</a></td><td>{{ r.clinic_name }}</td>
-<td>{{ methods.get(r.method, r.method) }}{% if r.reference %}<br><small class="muted">{{ r.reference }}</small>{% endif %}</td><td class="num">{{ r.amount_cents|peso }}</td><td>{{ r.by_name or '—' }}</td></tr>
+<td>{{ lab_pay_label(r.method, r.account) }}{% if r.reference %}<br><small class="muted">{{ r.reference }}</small>{% endif %}</td><td class="num">{{ r.amount_cents|peso }}</td><td>{{ r.by_name or '—' }}</td></tr>
 {% else %}<tr><td colspan="7" class="empty">No payments received in this period.</td></tr>{% endfor %}</tbody></table></div>
 <p class="hint">Voided receipts are left out. Acknowledgment receipts are not BIR official receipts.</p></div>
 <div class="card mt-1"><h2>Outstanding balances</h2>{% if outstanding %}<div class="table-wrap"><table><thead><tr><th>Dental clinic</th><th class="num">Unpaid invoices</th><th class="num">Not yet due</th><th class="num">Past due</th><th class="num">Total</th></tr></thead><tbody>

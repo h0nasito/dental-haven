@@ -106,3 +106,45 @@ class TestFinancialReport(Base):
         self.assertEqual(rep["cash_net"] - rep["cash_deposited"], 10000)
         # the payment form offers "Bank transfer – BDO"; a bank transfer without a bank is refused
         self.assertIn('value="bank_transfer:BDO"', a.get(f"/staff/invoices/{inv}").data.decode())
+
+
+class TestBillsAndNet(Base):
+    def test_monthly_bill_and_gross_less_expenses(self):
+        bid = self.branch("sjdm")
+        a = self.login("admin")
+        a.post("/staff/expenses/bills", data={"action": "add", "branch_id": bid, "category": "Rent", "item": "Space rental TBN", "amount": "25,000", "due_day": "5"})
+        a.post("/staff/expenses/bills", data={"action": "add", "branch_id": bid, "category": "Electricity", "item": "Electric bill TBN"})
+        rent = self.q("SELECT * FROM branch_bills WHERE item = 'Space rental TBN'")
+        elec = self.q("SELECT * FROM branch_bills WHERE item = 'Electric bill TBN'")
+        self.assertEqual((rent["amount_cents"], rent["due_day"]), (2500000, 5))
+        from app.util import today
+        mkey = today().strftime("%Y-%m")
+        page = a.get(f"/staff/expenses/bills?month={mkey}").data.decode()
+        self.assertIn("Space rental TBN", page)
+        self.assertIn("not recorded yet", page)
+        a.post("/staff/expenses/bills", data={"action": "record", "bill_id": rent["id"], "month": mkey, "amount": "25000", "method": "bank_transfer"})
+        a.post("/staff/expenses/bills", data={"action": "record", "bill_id": elec["id"], "month": mkey, "amount": "8,450.75", "method": "cash"})
+        # recording twice is refused
+        a.post("/staff/expenses/bills", data={"action": "record", "bill_id": rent["id"], "month": mkey, "amount": "25000"})
+        ex = self.conn.all("SELECT * FROM expenses WHERE bill_id IN (?, ?) AND status != 'void'", (rent["id"], elec["id"]))
+        self.assertEqual(sorted(e["amount_cents"] for e in ex), [845075, 2500000])
+        self.assertTrue(all(e["status"] == "draft" and e["bill_month"] == mkey for e in ex))
+        self.assertIn("All recorded", a.get(f"/staff/expenses/bills?month={mkey}").data.decode())
+        # the financial report takes them out of the gross
+        from app import finance_report
+        d = today().isoformat()
+        st = finance_report.statement(self.conn, [{"id": bid}], d, d, {bid: 10000000})
+        labels = {r["label"]: r["total"] for r in st["rows"]}
+        self.assertGreaterEqual(labels["Rent"], 2500000)
+        self.assertGreaterEqual(labels["Electricity"], 845075)
+        self.assertEqual(st["net"][bid], 10000000 - st["expenses"][bid])
+        st2 = finance_report.statement(self.conn, [{"id": bid}], d, d, {bid: 10000000}, posted_only=True)
+        self.assertNotIn("Rent", {r["label"] for r in st2["rows"]})
+        page = a.get(f"/staff/reports/financial?branch={bid}").data.decode()
+        self.assertIn("Gross less expenses", page)
+        self.assertIn("Less: Rent", page)
+
+    def test_staff_cannot_add_bills(self):
+        r = self.login("staff.malolos").post("/staff/expenses/bills", data={"action": "add", "branch_id": self.branch("malolos"),
+                                                                            "category": "Rent", "item": "X"})
+        self.assertEqual(r.status_code, 403)

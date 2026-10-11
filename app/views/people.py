@@ -277,6 +277,26 @@ def employee(emp_id):
         abort(404)
     if request.method == "POST":
         action = request.form.get("action")
+        if action in ("allowance_add", "allowance_remove"):
+            if not g.user.can("compensation.manage"):
+                abort(403)
+            if action == "allowance_add":
+                name = clean(request.form.get("name"), 80)
+                amt = parse_money(request.form.get("amount"))
+                basis = request.form.get("basis")
+                if not name or not amt or amt <= 0 or basis not in ("per_day", "per_cutoff"):
+                    flash("Enter the allowance name, amount and how it is counted.", "error")
+                else:
+                    conn.insert("employee_allowances", {"employee_id": emp_id, "name": name, "amount_cents": amt, "basis": basis,
+                                                        "created_by": g.user.id, "created_at": now_str()})
+                    audit.record("allowance_set", "employee", emp_id, f"Regular allowance: {name} {peso(amt)} {basis.replace('_', ' ')}",
+                                 branch_id=e["primary_branch_id"])
+                    flash("Allowance saved. It is added to draft payrolls on Recalculate.", "success")
+            else:
+                conn.execute("UPDATE employee_allowances SET active = 0 WHERE id = ? AND employee_id = ?", (to_int(request.form.get("allowance_id")), emp_id))
+                audit.record("allowance_stopped", "employee", emp_id, "Regular allowance stopped", branch_id=e["primary_branch_id"])
+                flash("Allowance stopped.", "success")
+            return redirect(url_for("people.employee", emp_id=emp_id) + "#allowances")
         if action == "compensation":
             if not g.user.can("compensation.manage"):
                 abort(403)
@@ -366,7 +386,8 @@ def employee(emp_id):
     from .. import settings as _settings
     return render_template("staff/people/employee.html", ot_end=_fmt12(_settings.get("payroll.staff_end_time", conn) or "17:00"), e=e, comps=comps, branches=branches_for_user(g.user), is_dentist=is_dentist,
                            dpay=dpay, svc_rates=svc_rates, all_services=conn.all("SELECT id, name FROM services WHERE active = 1 ORDER BY sort_order"),
-                           today=today().isoformat())
+                           today=today().isoformat(),
+                           allowances=conn.all("SELECT * FROM employee_allowances WHERE employee_id = ? AND active = 1 ORDER BY id", (emp_id,)))
 
 
 # ---------------------------------------------------------------------------
@@ -668,6 +689,8 @@ def _rebuild(conn, period_id):
             conn.insert("payroll_lines", {"period_id": period_id, **line,
                                           "adjustment_cents": prev["adjustment_cents"] if prev else 0,
                                           "adjustment_note": prev["adjustment_note"] if prev else ""})
+        from ..payroll import apply_allowances
+        apply_allowances(conn, period_id)
 
 
 def _load_period(period_id):
@@ -746,9 +769,75 @@ def payroll_period(period_id):
                      "WHERE l.period_id = ? ORDER BY e.full_name", (period_id,))
     history = conn.all("SELECT a.*, u.name AS actor FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id "
                        "WHERE entity_type = 'payroll_period' AND entity_id = ? ORDER BY a.id DESC", (period_id,))
+    from ..payroll import ADDITION_TYPES, DEDUCTION_TYPES, net_pay, period_items
+    items = period_items(conn, period_id)
     return render_template("staff/people/payroll_period.html", p=p, lines=lines, history=history, rules_confirmed=rules_confirmed,
+                           items=items, net_pay=net_pay, add_types=ADDITION_TYPES, ded_types=DEDUCTION_TYPES,
                            late_rate=settings.get("payroll.late_peso_per_minute", conn), pay_unworked=settings.get("payroll.pay_unworked_regular_holiday", conn),
                            show_money=g.user.can("compensation.manage"))
+
+
+@bp.route("/payroll/<int:period_id>/items", methods=["POST"])
+@require("payroll.prepare")
+def payroll_items(period_id):
+    """Add or remove an addition (allowance, quota hit, incentive, bonus) or a deduction (cash advance, loan, ...)."""
+    from ..payroll import ADDITION_TYPES, DEDUCTION_TYPES
+    conn = get_db()
+    p = _load_period(period_id)
+    back = redirect(url_for("people.payroll_period", period_id=period_id) + "#extras")
+    if not g.user.can("compensation.manage"):
+        abort(403)
+    if p["status"] != "draft":
+        flash("Only draft periods can be changed. Return it to draft first.", "error")
+        return back
+    f = request.form
+    if f.get("action") == "remove":
+        it = conn.one("SELECT * FROM payroll_items WHERE id = ? AND period_id = ?", (to_int(f.get("item_id")), period_id))
+        if it:
+            conn.execute("DELETE FROM payroll_items WHERE id = ?", (it["id"],))
+            audit.record("payroll_item_removed", "payroll_period", period_id, f"Removed {it['kind']} {it['name']} {peso(it['amount_cents'])}",
+                         {"employee_id": it["employee_id"]})
+            flash("Removed." + (" It comes back on Recalculate while the employee's regular allowance is on." if it["allowance_id"] else ""), "success")
+        return back
+    emp = to_int(f.get("employee_id"))
+    kind = "deduction" if f.get("name") in DEDUCTION_TYPES else "addition"
+    name = f.get("name") or ""
+    if name.startswith("Other"):
+        name = clean(f.get("other_name"), 80) or name
+    amt = parse_money(f.get("amount"))
+    if not conn.one("SELECT 1 AS x FROM payroll_lines WHERE period_id = ? AND employee_id = ?", (period_id, emp)):
+        flash("Choose an employee in this payroll.", "error")
+    elif (f.get("name") not in (ADDITION_TYPES if kind == "addition" else DEDUCTION_TYPES)) or not amt or amt <= 0:
+        flash("Choose the type and enter the amount.", "error")
+    else:
+        conn.insert("payroll_items", {"period_id": period_id, "employee_id": emp, "kind": kind, "name": name, "amount_cents": amt,
+                                      "note": clean(f.get("note"), 200), "created_by": g.user.id, "created_at": now_str()})
+        audit.record("payroll_item_added", "payroll_period", period_id, f"{'Addition' if kind == 'addition' else 'Deduction'}: {name} {peso(amt)}",
+                     {"employee_id": emp})
+        flash(f"{name} of {peso(amt)} {'added' if kind == 'addition' else 'deducted'}.", "success")
+    return back
+
+
+@bp.route("/payroll/<int:period_id>/payslips")
+@bp.route("/payroll/<int:period_id>/payslip/<int:emp_id>")
+@require("payroll.prepare", "payroll.approve", any_of=True)
+def payslips(period_id, emp_id=None):
+    """Printable payslip for one employee, or for everyone in the period (one per page)."""
+    from ..payroll import net_pay, period_items
+    if not g.user.can("compensation.manage"):
+        abort(403)
+    conn = get_db()
+    p = _load_period(period_id)
+    lines = conn.all("SELECT l.*, e.full_name, e.position, b.name AS branch FROM payroll_lines l JOIN employees e ON e.id = l.employee_id "
+                     "LEFT JOIN branches b ON b.id = e.primary_branch_id "
+                     "WHERE l.period_id = ?" + (" AND l.employee_id = ?" if emp_id else "") + " ORDER BY l.kind DESC, e.full_name",
+                     (period_id, emp_id) if emp_id else (period_id,))
+    if emp_id and not lines:
+        abort(404)
+    audit.record("payslip_printed", "payroll_period", period_id, "Opened payslip" + ("" if emp_id else "s for everyone"),
+                 {"employee_id": emp_id} if emp_id else None)
+    return render_template("staff/people/payslip.html", p=p, lines=lines, items=period_items(conn, period_id), net_pay=net_pay,
+                           late_rate=settings.get("payroll.late_peso_per_minute", conn), BASIS_LABELS=BASIS_LABELS)
 
 
 @bp.route("/payroll/<int:period_id>/dentist/<int:emp_id>")
@@ -848,8 +937,10 @@ def payroll_export(period_id):
               "Procedures done"]
     if show_money:
         header += ["Rate (PHP)", "Commission %", "Daily pay (PHP)", "Commission base (PHP)", "Commission (PHP)", "Estimate (PHP)",
-                   "Adjustment (PHP)", "Adjustment note"]
+                   "Adjustment (PHP)", "Adjustment note", "Additions (PHP)", "Deductions (PHP)", "Net pay (PHP)", "Additions / deductions detail"]
     w.writerow(header)
+    from ..payroll import net_pay, period_items
+    items = period_items(conn, period_id)
     for l in lines:
         dent = l["kind"] == "dentist"
         row = [l["full_name"], l["position"], "Dentist" if dent else "Staff", l["days_present"], round(l["minutes_worked"] / 60, 2), l["late_minutes"],
@@ -860,6 +951,11 @@ def payroll_export(period_id):
                     (l["commission_base_cents"] or 0) / 100 if dent else "", (l["commission_cents"] or 0) / 100 if l["commission_cents"] is not None else "",
                     l["estimate_cents"] / 100 if l["estimate_cents"] is not None else "needs pay rule",
                     l["adjustment_cents"] / 100, l["adjustment_note"]]
+            it = items.get(l["employee_id"], {})
+            npay = net_pay(l, it)
+            row += [it.get("add_total", 0) / 100, it.get("ded_total", 0) / 100, npay / 100 if npay is not None else "",
+                    "; ".join([f"+{x['name']} {x['amount_cents'] / 100:,.2f}" for x in it.get("add", [])]
+                              + [f"-{x['name']} {x['amount_cents'] / 100:,.2f}" for x in it.get("ded", [])])]
         w.writerow(row)
     audit.record("payroll_exported", "payroll_period", period_id, "Exported payroll CSV")
     return Response("﻿" + buf.getvalue(), mimetype="text/csv",
