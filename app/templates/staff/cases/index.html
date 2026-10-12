@@ -1,0 +1,32 @@
+{% extends "staff/layout.html" %}
+{% block page_title %}My cases{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>My cases</h1><p>Patients assigned to {{ 'you' if not current_user.is_super_admin else 'the dentist' }}, by procedure. View only: payments, visits and, for braces, the monthly adjustments.</p></div></div>
+<form class="toolbar" method="get">
+{% if current_user.is_super_admin %}<div class="field"><label for="cd">Dentist</label><select id="cd" name="dentist">{% for d in dentists %}<option value="{{ d.id }}" {% if d.id == did %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select></div>{% endif %}
+<div class="field"><label for="ct">Procedure</label><select id="ct" name="type"><option value="">All procedures</option>{% for k in cats %}<option value="{{ k }}" {% if k == cat %}selected{% endif %}>{{ k }} ({{ counts[k] }})</option>{% endfor %}</select></div>
+<div class="field"><label for="cf">Show</label><select id="cf" name="filter"><option value="">All cases</option><option value="active" {% if flt == 'active' %}selected{% endif %}>Seen in the last 90 days</option><option value="balance" {% if flt == 'balance' %}selected{% endif %}>With balance</option><option value="overdue" {% if flt == 'overdue' %}selected{% endif %}>Braces: adjustment overdue</option></select></div>
+<div class="field"><label for="cdf">Visit from</label><input id="cdf" type="date" name="from" value="{{ d_from }}"></div>
+<div class="field"><label for="cdt">to</label><input id="cdt" type="date" name="to" value="{{ d_to }}"></div>
+<div class="field"><label for="cq">Search</label><input id="cq" name="q" value="{{ q }}" placeholder="Name or chart number"></div>
+<button class="btn btn-secondary">Show</button></form>
+<div class="grid grid-4" style="margin-bottom:1rem">
+<div class="stat"><div class="label">Cases</div><div class="value">{{ summary.cases }}</div></div>
+<div class="stat"><div class="label">Braces (ortho)</div><div class="value">{{ summary.ortho }}</div></div>
+<div class="stat {{ 'warn' if summary.ortho_overdue else '' }}"><div class="label">Adjustment overdue</div><div class="value">{{ summary.ortho_overdue }}</div><div class="sub">No visit in 45+ days</div></div>
+<div class="stat"><div class="label">Balances</div><div class="value">{{ summary.balance|peso }}</div></div></div>
+{% if d_from or d_to or cat or q or flt %}<p class="hint">{{ shown }} case{{ 's' if shown != 1 }}{% if d_from or d_to %} with a visit {% if d_from %}from {{ d_from|date }} {% endif %}{% if d_to %}to {{ d_to|date }}{% endif %}{% endif %} · <a href="{{ url_for('cases.index', dentist=did if current_user.is_super_admin else None) }}">Clear filters</a></p>{% endif %}
+<div class="case-list">
+{% for c in rows %}{% set p = c.patient %}
+<a class="card case-item" href="{{ url_for('cases.detail', patient_id=c.patient_id, type=c.category, dentist=did if current_user.is_super_admin else None) }}">
+<div class="row between" style="align-items:flex-start;gap:.5rem"><div><strong>{{ p.last_name }}, {{ p.first_name }}</strong> <small class="muted">{{ p.chart_no }}{% if p.branch %} · {{ p.branch }}{% endif %}</small><br><span class="badge">{{ c.category }}</span></div>
+<div style="text-align:right">{% if c.balance %}<strong class="text-danger">{{ c.balance|peso }}</strong><br><small class="muted">balance</small>{% elif c.billed %}<span class="badge badge-green">Paid</span>{% endif %}</div></div>
+<p><small class="muted">{{ c.n }} visit{{ 's' if c.n != 1 }}{% if c.first %} · since {{ c.first|date }}{% endif %}{% if c.last %} · last {{ c.last|date }} ({{ c.days_since }} day{{ 's' if c.days_since != 1 }} ago){% endif %} · paid {{ c.paid|peso }} of {{ c.billed|peso }}{% if c.next %} · next {{ c.next|dt }}{% endif %}</small></p>
+{% if c.category == ORTHO and c.months %}<div class="months" aria-label="Monthly adjustments">{% for m, ok in c.months[-12:] %}<span class="mo {{ 'ok' if ok else ('now' if loop.last else 'miss') }}" title="{{ m }}">{{ m[5:] }}</span>{% endfor %}</div>
+<p><span class="badge {{ {'ok': 'badge-green', 'due': 'badge-amber', 'overdue': 'badge-red'}[c.adjust] }}">{{ {'ok': 'Adjustment on track', 'due': 'Adjustment due', 'overdue': 'Adjustment overdue'}[c.adjust] }}</span>{% if c.missed %} <small class="muted">{{ c.missed }} month{{ 's' if c.missed != 1 }} without a visit</small>{% endif %}</p>{% endif %}
+</a>
+{% else %}<div class="card"><p class="muted mb-0">No cases match.</p></div>{% endfor %}</div>
+<style>.case-list { display: grid; gap: .75rem; } .case-item { display: block; color: inherit; text-decoration: none; } .case-item p { margin: .35rem 0 0; }
+.months { display: flex; flex-wrap: wrap; gap: 3px; margin-top: .45rem; } .mo { font-size: .7rem; width: 2.1em; text-align: center; padding: .15rem 0; border-radius: 4px; background: var(--line-2); color: var(--ink-3); }
+.mo.ok { background: var(--green-100); color: var(--green-700); font-weight: 700; } .mo.miss { background: var(--red-100); color: var(--red-700); } .mo.now { outline: 1px dashed var(--line); }</style>
+{% endblock %}
