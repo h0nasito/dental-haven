@@ -92,6 +92,12 @@ class TestTimeClock(Base):
         # the technician now sees the lab and times in there, checked against the lab's location
         page = tech.get("/staff/clock").data.decode()
         self.assertIn(f'value="l:{lab}" selected', page)
+        # also when the lab employee has a branch on their account (the lab is in another building): the lab is chosen first
+        self.conn.execute("INSERT INTO user_branches (user_id, branch_id) VALUES (?, ?)", (uid, bid))
+        page = self.login("labtech.test").get("/staff/clock").data.decode()
+        self.assertIn(f'value="l:{lab}" selected', page)
+        self.assertIn("Selfie in front of the clinic or lab", page)
+        self.conn.execute("DELETE FROM user_branches WHERE user_id = ?", (uid,))
         tech.post("/staff/clock", data={"kind": "in", "place": f"l:{lab}", "lat": "14.9001", "lng": "120.8001", "acc": "10",
                                         "photo": (io.BytesIO(PNG), "selfie.png")}, content_type="multipart/form-data")
         p_in = self.q("SELECT * FROM time_punches WHERE employee_id = ?", (emp,))

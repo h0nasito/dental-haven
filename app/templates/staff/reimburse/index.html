@@ -1,0 +1,44 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, empty %}
+{% block page_title %}Reimbursements{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Reimbursements</h1><p>Money you spent for the clinic, paid back with your salary once approved. {% if current_user.can('reimburse.approve') %}You can approve or disapprove reimbursements of your branches.{% endif %}</p></div></div>
+{% if current_user.can('reimburse.approve') %}<nav class="tabs" style="margin-bottom:1rem">
+<a href="{{ url_for('reimburse.index', show='pending') }}" class="{{ 'active' if show == 'pending' else '' }}">To approve{% if pending_n %} ({{ pending_n }}){% endif %}</a>
+<a href="{{ url_for('reimburse.index', show='approved') }}" class="{{ 'active' if show == 'approved' else '' }}">Approved</a>
+<a href="{{ url_for('reimburse.index', show='all') }}" class="{{ 'active' if show == 'all' else '' }}">All</a>
+{% if me %}<a href="{{ url_for('reimburse.index', show='mine') }}" class="{{ 'active' if show == 'mine' else '' }}">Mine</a>{% endif %}</nav>{% endif %}
+
+{% if show in ('pending', 'approved', 'all') and current_user.can('reimburse.approve') %}
+{% if show == 'pending' and pending_n %}<p class="hint">{{ pending_n }} waiting · {{ pending_amt|peso }}</p>{% endif %}
+<div class="rb-list">{% for r in rows %}<div class="card rb-item"><div class="row between" style="align-items:flex-start;gap:.5rem"><div><strong>{{ r.full_name }}</strong><br><small class="muted">{{ r.position }}{% if r.branch %} · {{ r.branch }}{% endif %} · filed {{ r.created_at|dt }}</small></div>
+<div style="text-align:right"><strong style="font-size:1.15rem">{{ r.amount_cents|peso }}</strong><br><span class="badge {{ status[r.status][1] }}">{{ status[r.status][0] }}</span></div></div>
+<p><strong>{{ r.category }}</strong> · spent {{ r.spent_on|date }}<br>{{ r.details }}<br><small class="muted">Reason: {{ r.reason }}</small>{% if r.receipt %}<br><a href="{{ url_for('reimburse.receipt', rid=r.id) }}" target="_blank" rel="noopener">📎 Receipt</a>{% else %}<br><small class="muted">No receipt attached</small>{% endif %}</p>
+{% if r.reviewer %}<p><small class="muted">{{ status[r.status][0] }} by {{ r.reviewer }}{% if r.review_note %}: {{ r.review_note }}{% endif %}{% if r.status == 'approved' %} · {% if r.period_name %}in payroll “{{ r.period_name }}”{% else %}not yet in a payroll: added when this cutoff's payroll is made or recalculated{% endif %}{% endif %}</small></p>{% endif %}
+{% if r.status == 'pending' and can_review(r) %}<form method="post" action="{{ url_for('reimburse.act', rid=r.id) }}">{{ csrf() }}<input type="hidden" name="next" value="{{ request.full_path }}">
+<label class="sr-only" for="rn{{ r.id }}">Note</label><input id="rn{{ r.id }}" name="note" maxlength="300" placeholder="Note (required to disapprove)">
+<div class="row mt-1" style="gap:.5rem"><button class="btn" name="action" value="approve">Approve</button><button class="btn btn-danger" name="action" value="disapprove">Disapprove</button></div></form>
+{% elif r.status == 'pending' %}<p><small class="muted">Waiting for another approver.</small></p>{% endif %}</div>
+{% else %}<div class="card">{{ empty('No reimbursements to approve' if show == 'pending' else 'No reimbursements here') }}</div>{% endfor %}</div>
+{% else %}
+<div class="grid grid-2">
+<div>{% if current_user.can('reimburse.request') %}{% if me %}
+<form method="post" class="card" enctype="multipart/form-data">{{ csrf() }}<h2>File a reimbursement</h2>
+<div class="field"><label for="rc">What was it for?</label><select id="rc" name="category" required>{% for c in categories %}<option>{{ c }}</option>{% endfor %}</select></div>
+<div class="form-grid"><div class="field"><label for="ra">Amount (₱)</label><input id="ra" name="amount" inputmode="decimal" required></div>
+<div class="field"><label for="rs">Date spent</label><input id="rs" type="date" name="spent_on" value="{{ today }}" max="{{ today }}" required></div></div>
+<div class="field"><label for="rd">Details</label><input id="rd" name="details" maxlength="300" placeholder="e.g. Tricycle to BDO and back, 2 trips" required></div>
+<div class="field"><label for="rr">Reason</label><input id="rr" name="reason" maxlength="300" placeholder="e.g. Deposit of yesterday's cash collection" required></div>
+<div class="field"><label for="rp">Receipt <span class="hint">Photo or PDF, if you have one</span></label><input id="rp" type="file" name="receipt" accept="image/*,application/pdf"></div>
+<p class="hint">After HR approves it, it is added to your salary in that cutoff's payroll.</p>
+<button class="btn">Send for approval</button></form>
+{% else %}<div class="card"><p class="muted mb-0">Your account isn't linked to an employee record yet. Ask HR.</p></div>{% endif %}{% endif %}</div>
+<div class="card"><h2>My reimbursements</h2>
+<ul class="list-plain">{% for r in mine %}<li><div class="row between" style="align-items:flex-start;gap:.5rem"><div><strong>{{ r.amount_cents|peso }}</strong> · {{ r.category }}<br><small>{{ r.details }}</small><br><small class="muted">spent {{ r.spent_on|date }}{% if r.reviewer %} · {{ status[r.status][0]|lower }} by {{ r.reviewer }}{% if r.review_note %}: {{ r.review_note }}{% endif %}{% endif %}{% if r.status == 'approved' %} · {% if r.period_name %}paid in “{{ r.period_name }}”{% else %}to be added in this cutoff's payroll{% endif %}{% endif %}</small></div>
+<div style="text-align:right"><span class="badge {{ status[r.status][1] }}">{{ status[r.status][0] }}</span>
+{% if r.status == 'pending' %}<form method="post" action="{{ url_for('reimburse.act', rid=r.id) }}" data-confirm="Cancel this reimbursement?">{{ csrf() }}<input type="hidden" name="action" value="cancel"><button class="btn btn-ghost btn-sm">Cancel</button></form>{% endif %}</div></div></li>
+{% else %}<li>{{ empty('No reimbursements yet') }}</li>{% endfor %}</ul></div>
+</div>
+{% endif %}
+<style>.rb-list { display: grid; gap: .75rem; } .rb-item p { margin: .4rem 0 0; }</style>
+{% endblock %}

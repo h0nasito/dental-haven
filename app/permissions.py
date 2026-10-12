@@ -144,6 +144,10 @@ CATALOG: list[Perm] = [
     Perm("attendance.view", "View attendance (DTR)", "Staff & payroll"),
     Perm("attendance.clock", "Time in / time out with a selfie and location check", "Staff & payroll"),
     Perm("overtime.approve", "Approve overtime (only approved overtime is paid)", "Staff & payroll", True),
+    Perm("leave.request", "reimburse.request", "File a leave form for themselves", "Staff & payroll"),
+    Perm("leave.approve", "Approve or disapprove leave forms of their branches", "Staff & payroll", True),
+    Perm("reimburse.request", "File a reimbursement for money they spent for the clinic", "Staff & payroll"),
+    Perm("reimburse.approve", "Approve or disapprove reimbursements of their branches (added to the salary)", "Staff & payroll", True),
     Perm("attendance.manage", "Record, import and correct attendance", "Staff & payroll", True),
     Perm("compensation.manage", "View and edit compensation settings", "Staff & payroll", True),
     Perm("payroll.prepare", "Prepare draft payroll summaries", "Staff & payroll", True),
@@ -168,7 +172,7 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
         "dashboard.view", "appointments.view", "appointments.complete", "calendar.birthdays", "calendar.events",
         "followups.view", "followups.manage", "patients.view", "clinical.view", "clinical.edit", *_CLINICAL_WRITE,
         "documents.upload", "lab.view", "lab.all_branches", "lab.manage", "reportcards.generate", "reportcards.review",
-        "quotes.view", "quotes.manage", "attendance.clock", "evaluations.answer",
+        "quotes.view", "quotes.manage", "attendance.clock", "leave.request", "reimburse.request", "evaluations.answer",
     },
     "staff": {
         "dashboard.view", "dashboard.balances", "appointments.view", "calendar.associates", "calendar.birthdays",
@@ -177,10 +181,10 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
         "leads.view", "followups.view", "followups.manage", "reminders.view", "reminders.send",
         "billing.view", "billing.manage", "bills.edit", "payments.add", "credit.apply", "commission.record",
         "expenses.view", "expenses.add", "lab.view", "reports.operations", "attendance.view",
-        "quotes.view", "quotes.manage", "inventory.view", "inventory.order", "attendance.clock",
+        "quotes.view", "quotes.manage", "inventory.view", "inventory.order", "attendance.clock", "leave.request", "reimburse.request",
     },
     "hr": {
-        "dashboard.view", "attendance.view", "attendance.manage", "attendance.clock", "overtime.approve", "compensation.manage",
+        "dashboard.view", "attendance.view", "attendance.manage", "attendance.clock", "overtime.approve", "compensation.manage", "leave.request", "leave.approve", "reimburse.request", "reimburse.approve",
         "payroll.prepare", "reports.operations", "calendar.birthdays", "calendar.events",
     },
     "supervisor": {
@@ -188,22 +192,22 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
         "bookings.view", "appointments.manage", "appointments.complete", "bookings.manage", "patients.view", "patients.contact",
         "patients.manage", "documents.upload", "leads.view", "leads.manage", "followups.view", "followups.manage", "reminders.view",
         "reminders.send", "billing.view", "quotes.view", "lab.view", "lab.all_branches", "reports.operations", "attendance.view", "attendance.manage",
-        "attendance.clock", "overtime.approve", "inventory.view", "inventory.order", "inventory.order_approve", "deposits.view",
+        "attendance.clock", "overtime.approve", "inventory.view", "inventory.order", "inventory.order_approve", "deposits.view", "leave.request", "leave.approve", "reimburse.request", "reimburse.approve",
     },
     "technician": {
-        "dashboard.view", "lab.view", "attendance.clock", "inventory.view",
+        "dashboard.view", "lab.view", "attendance.clock", "leave.request", "reimburse.request", "inventory.view",
     },
     "cashier": {
         "dashboard.view", "dashboard.balances", "appointments.view", "calendar.associates", "patients.view", "patients.contact",
         "billing.view", "billing.manage", "bills.edit", "payments.add", "credit.apply", "commission.record", "quotes.view", "reports.sales",
-        "expenses.view", "expenses.add", "attendance.clock", "deposits.view", "deposits.manage",
+        "expenses.view", "expenses.add", "attendance.clock", "leave.request", "reimburse.request", "deposits.view", "deposits.manage",
     },
     "receptionist": {
         "dashboard.view", "appointments.view", "calendar.associates", "calendar.birthdays", "calendar.events",
         "bookings.view", "appointments.manage", "appointments.complete", "bookings.manage",
         "patients.view", "patients.contact", "patients.manage", "documents.upload",
         "leads.view", "leads.manage", "followups.view", "followups.manage", "reminders.view", "reminders.send",
-        "quotes.view", "quotes.manage", "attendance.clock", "lab.view", "lab.all_branches",
+        "quotes.view", "quotes.manage", "attendance.clock", "leave.request", "reimburse.request", "lab.view", "lab.all_branches",
     },
 }
 

@@ -52,7 +52,7 @@
 {% set named = lines|selectattr('employee_id', 'in', items.keys())|list %}
 {% if named %}<div class="table-wrap"><table><thead><tr><th>Employee</th><th>Item</th><th class="num">Amount</th>{% if p.status == 'draft' and current_user.can('payroll.prepare') %}<th></th>{% endif %}</tr></thead><tbody>
 {% for l in named %}{% set it = items[l.employee_id] %}{% for x in it.add + it.ded %}<tr><td>{% if loop.first %}<strong>{{ l.full_name }}</strong>{% endif %}</td>
-<td>{{ x.name }}{% if x.allowance_id or x.deduction_id %} <span class="badge">automatic</span>{% endif %}{% if x.note %}<br><small class="muted">{{ x.note }}</small>{% endif %}</td>
+<td>{{ x.name }}{% if x.reimbursement_id %} <span class="badge">approved reimbursement</span>{% elif x.allowance_id or x.deduction_id %} <span class="badge">automatic</span>{% endif %}{% if x.note %}<br><small class="muted">{{ x.note }}</small>{% endif %}</td>
 <td class="num">{% if x.kind == 'addition' %}<span class="c-green">+{{ x.amount_cents|peso }}</span>{% else %}<span class="text-danger">−{{ x.amount_cents|peso }}</span>{% endif %}</td>
 {% if p.status == 'draft' and current_user.can('payroll.prepare') %}<td><form method="post" action="{{ url_for('people.payroll_items', period_id=p.id) }}">{{ csrf() }}<input type="hidden" name="action" value="remove"><input type="hidden" name="item_id" value="{{ x.id }}"><button class="btn btn-ghost btn-sm" aria-label="Remove {{ x.name }}">✕</button></form></td>{% endif %}</tr>{% endfor %}{% endfor %}</tbody></table></div>
 {% set ns = namespace(t={}) %}{% for l in named %}{% for x in items[l.employee_id].ded %}{% set _ = ns.t.update({x.name: ns.t.get(x.name, 0) + x.amount_cents}) %}{% endfor %}{% endfor %}

@@ -317,3 +317,21 @@ def net_pay(line, items: dict | None) -> int | None:
         return None
     items = items or {}
     return line["estimate_cents"] + (line["adjustment_cents"] or 0) + items.get("add_total", 0) - items.get("ded_total", 0)
+
+
+def apply_reimbursements(conn, period_id: int) -> None:
+    """Approved reimbursements go into the payroll cutoff that covers their approval date (or the next draft payroll
+    after it, if that cutoff was already approved). Each one is counted in one payroll only."""
+    period = conn.one("SELECT * FROM payroll_periods WHERE id = ?", (period_id,))
+    conn.execute("DELETE FROM payroll_items WHERE period_id = ? AND reimbursement_id IS NOT NULL", (period_id,))
+    conn.execute("UPDATE reimbursements SET period_id = NULL WHERE period_id = ?", (period_id,))
+    emps = [r["employee_id"] for r in conn.all("SELECT employee_id FROM payroll_lines WHERE period_id = ?", (period_id,))]
+    if not emps:
+        return
+    marks = ",".join("?" * len(emps))
+    for r in conn.all(f"SELECT * FROM reimbursements WHERE status = 'approved' AND period_id IS NULL AND employee_id IN ({marks}) "
+                      "AND substr(reviewed_at, 1, 10) <= ? ORDER BY reviewed_at, id", [*emps, period["end_date"]]):
+        conn.insert("payroll_items", {"period_id": period_id, "employee_id": r["employee_id"], "kind": "addition", "name": "Reimbursement",
+                                      "amount_cents": r["amount_cents"], "note": f"{r['category']}, {r['spent_on']}" + (f": {r['details'][:80]}" if r["details"] else ""),
+                                      "reimbursement_id": r["id"], "created_at": now_str()})
+        conn.execute("UPDATE reimbursements SET period_id = ? WHERE id = ?", (period_id, r["id"]))

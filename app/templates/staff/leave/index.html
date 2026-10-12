@@ -1,0 +1,67 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, empty %}
+{% block page_title %}Leave forms{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Leave forms</h1><p>File a leave and follow its approval. {% if current_user.can('leave.approve') %}You can approve or disapprove leave forms of your branches.{% endif %}</p></div></div>
+{% if current_user.can('leave.approve') %}<nav class="tabs" style="margin-bottom:1rem">
+<a href="{{ url_for('leave.index', show='pending') }}" class="{{ 'active' if show == 'pending' else '' }}">To approve{% if pending_n %} ({{ pending_n }}){% endif %}</a>
+<a href="{{ url_for('leave.index', show='today') }}" class="{{ 'active' if show == 'today' else '' }}">On leave today</a>
+<a href="{{ url_for('leave.index', show='all') }}" class="{{ 'active' if show == 'all' else '' }}">All</a>
+<a href="{{ url_for('leave.index', show='balances') }}" class="{{ 'active' if show == 'balances' else '' }}">Leave balances</a>
+{% if me %}<a href="{{ url_for('leave.index', show='mine') }}" class="{{ 'active' if show == 'mine' else '' }}">My leave</a>{% endif %}</nav>{% endif %}
+
+{% if show == 'balances' and current_user.can('leave.approve') %}
+<div class="card"><h2>Service incentive leave (SIL) {{ balances[0].year if balances else '' }}</h2>
+<p class="hint mt-0">Service incentive leave: 5 days a year for regular employees (others 0), unless you set a different number. Counts approved leave with pay this calendar year; it starts again every January.</p>
+<div class="leave-list">{% for b in balances %}<div class="leave-item" style="border-top:1px solid var(--line);padding-top:.6rem">
+<div class="row between" style="gap:.5rem;align-items:flex-start"><div><strong>{{ b.e.full_name }}</strong><br><small class="muted">{{ b.e.position }}{% if b.e.branch %} · {{ b.e.branch }}{% endif %} · {{ b.e.employment_type|replace('_', ' ') }}</small></div>
+<div style="text-align:right"><strong style="font-size:1.15rem">{{ '%g'|format(b.available) }}</strong> <small class="muted">of {{ '%g'|format(b.entitled) }} left</small><br><small class="muted">used {{ '%g'|format(b.used) }}{% if b.pending %} · pending {{ '%g'|format(b.pending) }}{% endif %}</small></div></div>
+<details><summary><small>Change days a year</small></summary><form method="post" action="{{ url_for('leave.set_entitlement', emp_id=b.e.id) }}" class="row mt-1" style="gap:.4rem;align-items:center">{{ csrf() }}
+<label class="sr-only" for="pd{{ b.e.id }}">Days a year</label><input id="pd{{ b.e.id }}" name="days" value="{{ '%g'|format(b.e.paid_leave_days) if b.e.paid_leave_days is not none else '' }}" placeholder="default {{ '%g'|format(b.entitled) if b.e.paid_leave_days is none else '' }}" inputmode="decimal" style="width:7em">
+<button class="btn btn-secondary btn-sm">Save</button><small class="muted">Empty = default</small></form></details></div>
+{% else %}{{ empty('No employees') }}{% endfor %}</div></div>
+{% elif show in ('pending', 'today', 'all') and current_user.can('leave.approve') %}
+<div class="leave-list">
+{% for l in rows %}<div class="card leave-item"><div class="row between" style="align-items:flex-start;gap:.5rem"><div><strong>{{ l.full_name }}</strong><br><small class="muted">{{ l.position }}{% if l.branch %} · {{ l.branch }}{% endif %} · filed {{ l.created_at|dt }}</small></div>
+<span class="badge {{ status[l.status][1] }}">{{ status[l.status][0] }}</span></div>
+<p class="mb-0 mt-1">{% if l.with_pay %}<span class="badge badge-green">With pay</span> {% else %}<span class="badge">Without pay</span> {% endif %}<strong>{{ l.leave_type }}</strong> · {{ l.start_date|date }}{% if l.end_date != l.start_date %} – {{ l.end_date|date }}{% endif %}{% if l.half_day %} ({{ l.half_day|upper }} half day){% endif %} · {{ '%g'|format(l.days) }} day{{ 's' if l.days != 1 }}</p>
+<p class="mb-0"><small class="muted">Reliever:</small> {{ l.reliever or 'N/A' }}</p>
+<p class="mb-0">{{ l.reason }}{% if l.attachment %} · <a href="{{ url_for('leave.attachment', leave_id=l.id) }}" target="_blank" rel="noopener">📎 Attachment</a>{% endif %}</p>
+{% if l.bal and (l.with_pay or l.bal.entitled) %}<p class="mb-0"><small class="muted">SIL {{ l.bal.year }}: {{ '%g'|format(l.bal.available) }} of {{ '%g'|format(l.bal.entitled) }} day(s) left{% if l.bal.pending %} after pending forms{% endif %} · used {{ '%g'|format(l.bal.used) }}</small></p>{% endif %}
+{% if l.reviewer %}<p class="mb-0"><small class="muted">{{ status[l.status][0] }} by {{ l.reviewer }}{% if l.review_note %}: {{ l.review_note }}{% endif %}</small></p>{% endif %}
+{% if l.status == 'pending' and can_review(l) %}<form method="post" action="{{ url_for('leave.act', leave_id=l.id) }}" class="mt-1">{{ csrf() }}<input type="hidden" name="next" value="{{ request.full_path }}">
+<label class="sr-only" for="ln{{ l.id }}">Note</label><input id="ln{{ l.id }}" name="note" maxlength="300" placeholder="Note (required to disapprove)">
+<div class="row mt-1" style="gap:.5rem"><button class="btn" name="action" value="approve">Approve</button><button class="btn btn-danger" name="action" value="disapprove">Disapprove</button></div></form>
+{% elif l.status == 'pending' %}<p class="mb-0"><small class="muted">Waiting for another approver.</small></p>{% endif %}</div>
+{% else %}<div class="card">{{ empty('No leave forms to approve' if show == 'pending' else ('Nobody is on leave today' if show == 'today' else 'No leave forms yet')) }}</div>{% endfor %}</div>
+{% else %}
+<div class="grid grid-2">
+<div>{% if current_user.can('leave.request') %}
+{% if me %}<form method="post" class="card" enctype="multipart/form-data">{{ csrf() }}<h2>File a leave</h2>
+{% set sil_ok = bal and bal.available >= 0.5 %}
+<div class="field"><label for="lt">Type of leave</label><select id="lt" name="leave_type" required>{% for t in types %}{% if t == SIL %}<option value="{{ t }}" {% if not sil_ok %}disabled{% endif %}>SIL, with pay ({{ '%g'|format(bal.available if bal else 0) }} of {{ '%g'|format(bal.entitled if bal else 0) }} left){% if not sil_ok %}: none left{% endif %}</option>{% else %}<option {% if t == 'Vacation leave' and not sil_ok %}selected{% endif %}>{{ t }}</option>{% endif %}{% endfor %}</select>
+<small class="muted">Only SIL is with pay. {% if not sil_ok %}You have no SIL left this year, so it can't be chosen.{% else %}Other types are without pay.{% endif %}</small></div>
+<div class="form-grid"><div class="field"><label for="ls">From</label><input id="ls" type="date" name="start_date" value="{{ today }}" required></div>
+<div class="field"><label for="le">To</label><input id="le" type="date" name="end_date" value="{{ today }}" required></div></div>
+<div class="field"><label for="lh">Half day?</label><select id="lh" name="half_day"><option value="">No, whole day(s)</option><option value="am">Morning (AM) only</option><option value="pm">Afternoon (PM) only</option></select></div>
+<div class="field"><label for="lr">Reason</label><textarea id="lr" name="reason" rows="3" maxlength="500" required></textarea></div>
+<div class="field"><label for="lrl">Reliever <span class="hint">{{ 'Any dentist, any branch' if me_dentist else 'Any employee (not dentists), any branch' }}</span></label><select id="lrl" name="reliever" required><option value="">Choose…</option>
+{% for r in relievers %}<option value="{{ r.id }}">{{ r.full_name }}{% if r.branch %} · {{ r.branch }}{% endif %}</option>{% endfor %}<option value="na">N/A (no one available)</option></select></div>
+<div class="field"><label for="la">Attachment <span class="hint">Optional, e.g. medical certificate (photo or PDF)</span></label><input id="la" type="file" name="attachment" accept="image/*,application/pdf"></div>
+<p class="hint">Sundays are not counted. Your branch's HR or approver is notified.</p>
+<button class="btn">Send for approval</button></form>
+{% else %}<div class="card"><p class="muted mb-0">Your account isn't linked to an employee record yet, so you can't file a leave. Ask HR.</p></div>{% endif %}
+{% endif %}</div>
+
+<div class="card"><h2>My leave forms</h2>
+{% if bal and bal.entitled %}<div class="stat" style="margin-bottom:.75rem"><div class="label">SIL (leave with pay) left · {{ bal.year }}</div><div class="value">{{ '%g'|format(bal.available) }} <small style="font-size:1rem" class="muted">of {{ '%g'|format(bal.entitled) }} days</small></div><div class="sub">Used {{ '%g'|format(bal.used) }}{% if bal.pending %} · waiting for approval {{ '%g'|format(bal.pending) }}{% endif %}</div></div>{% endif %}
+{% if used %}<p class="hint mt-0">Approved this year: {% for t, d in used.items() %}{{ t }} {{ '%g'|format(d) }} day{{ 's' if d != 1 }}{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
+<ul class="list-plain">{% for l in mine %}<li><div class="row between" style="align-items:flex-start;gap:.5rem"><div><strong>{{ l.leave_type }}</strong>{% if l.with_pay %} <span class="badge badge-green">With pay</span>{% endif %}<br>{{ l.start_date|date }}{% if l.end_date != l.start_date %} – {{ l.end_date|date }}{% endif %}{% if l.half_day %} ({{ l.half_day|upper }}){% endif %} · {{ '%g'|format(l.days) }} day{{ 's' if l.days != 1 }}<br><small class="muted">{{ l.reason }} · reliever: {{ l.reliever or 'N/A' }}</small>
+{% if l.reviewer %}<br><small class="muted">by {{ l.reviewer }}{% if l.review_note %}: {{ l.review_note }}{% endif %}</small>{% endif %}</div>
+<div style="text-align:right"><span class="badge {{ status[l.status][1] }}">{{ status[l.status][0] }}</span>
+{% if l.status == 'pending' or (l.status == 'approved' and l.start_date > today) %}<form method="post" action="{{ url_for('leave.act', leave_id=l.id) }}" data-confirm="Cancel this leave?">{{ csrf() }}<input type="hidden" name="action" value="cancel"><button class="btn btn-ghost btn-sm">Cancel</button></form>{% endif %}</div></div></li>
+{% else %}<li>{{ empty('No leave forms yet') }}</li>{% endfor %}</ul></div>
+</div>
+{% endif %}
+<style>.leave-list { display: grid; gap: .75rem; } .leave-item p { margin-top: .35rem; }</style>
+{% endblock %}

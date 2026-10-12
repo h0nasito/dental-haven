@@ -390,7 +390,7 @@ def seed_base(conn):
         granted = set(_settings2.get("seed.perms_granted", conn) or [])
         new_perms = {"quotes.view", "quotes.manage", "inventory.view", "inventory.manage", "lab.works", "lab.billing", "attendance.clock",
                      "overtime.approve", "lab.commission", "commission.record", "evaluations.answer", "evaluations.manage",
-                     "inventory.order", "inventory.order_approve", "deposits.view", "deposits.manage"} - granted
+                     "inventory.order", "inventory.order_approve", "deposits.view", "deposits.manage", "leave.request", "leave.approve", "reimburse.request", "reimburse.approve"} - granted
         if new_perms and conn.scalar("SELECT COUNT(*) FROM role_permissions"):
             for role, perms in ROLE_DEFAULTS.items():
                 for perm in new_perms & set(perms):

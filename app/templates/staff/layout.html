@@ -68,6 +68,8 @@
     {% endcall %}
     {% call group('Staff & payroll', 'staff') %}
       {% if current_user.can('attendance.clock') %}{{ nav('timeclock.clock', 'Time clock', 'timeclock.clock') }}{% endif %}
+      {% if current_user.can('leave.request') or current_user.can('leave.approve') %}{{ nav('leave.index', 'Leave forms', 'leave.', nav_counts.get('leave')) }}{% endif %}
+      {% if current_user.can('reimburse.request') or current_user.can('reimburse.approve') %}{{ nav('reimburse.index', 'Reimbursements', 'reimburse.', nav_counts.get('reimburse')) }}{% endif %}
       {% if current_user.can('attendance.view') %}{{ nav('people.attendance', 'Attendance (DTR)', 'people.attendance') }}{% endif %}
       {% if current_user.can('attendance.manage') %}{{ nav('timeclock.log', 'Time clock log', 'timeclock.log') }}{{ nav('people.holidays', 'Holidays', 'people.holidays') }}{% endif %}
       {% if current_user.can('compensation.manage') or current_user.can('attendance.manage') %}{{ nav('people.employees', 'Employees', 'people.employee') }}{% endif %}

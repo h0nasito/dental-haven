@@ -109,8 +109,11 @@ def clock():
     branch_id = (rec["branch_id"] if rec else None) or g.user.active_branch_id or emp["primary_branch_id"] or (branches[0]["id"] if branches else None)
     # Where today's record was started (a lab or a branch), or the default choice.
     first = conn.one("SELECT lab_id FROM time_punches WHERE time_record_id = ? ORDER BY id LIMIT 1", (rec["id"],)) if rec else None
+    ready_labs = [l for l in labs if l["branch_id"]]
     if first and first["lab_id"]:
         place = f"l:{first['lab_id']}"
+    elif not rec and ready_labs:
+        place = f"l:{ready_labs[0]['id']}"     # lab employees time in at their laboratory by default
     elif rec or branches:
         place = f"b:{branch_id}"
     else:

@@ -37,6 +37,18 @@ def register_context(app):
             else:
                 counts["reviews"] = conn.scalar(
                     f"SELECT COUNT(*) FROM report_cards WHERE status='pending_review' AND {bf}", bp)
+        if user.can("leave.approve"):
+            if user.is_super_admin:
+                counts["leave"] = conn.scalar("SELECT COUNT(*) FROM leave_requests WHERE status = 'pending'")
+            else:
+                lbf, lbp = branch_filter(user, "branch_id")
+                counts["leave"] = conn.scalar(f"SELECT COUNT(*) FROM leave_requests WHERE status = 'pending' AND {lbf}", lbp)
+        if user.can("reimburse.approve"):
+            if user.is_super_admin:
+                counts["reimburse"] = conn.scalar("SELECT COUNT(*) FROM reimbursements WHERE status = 'pending'")
+            else:
+                rbf, rbp = branch_filter(user, "branch_id")
+                counts["reimburse"] = conn.scalar(f"SELECT COUNT(*) FROM reimbursements WHERE status = 'pending' AND {rbf}", rbp)
         lab_ids = [r["lab_id"] for r in conn.all("SELECT lab_id FROM user_labs WHERE user_id = ?", (user.id,))]
         nav_lab = user.is_super_admin or user.can("lab.view") or bool(lab_ids)
         nav_lab_works = user.is_super_admin or (bool(lab_ids) and user.can("lab.works"))

@@ -1,10 +1,6 @@
 {% extends "staff/layout.html" %}
 {% from "macros.html" import csrf, empty %}
-{% block page_title %}Bank deposits<style>.cashbook td.num { white-space: nowrap; }
-.slip-thumbs { display: flex; gap: .35rem; flex-wrap: wrap; margin-top: .35rem; }
-.slip-thumbs img, .slip-pdf { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); display: grid; place-items: center; font-size: .75rem; font-weight: 700; background: var(--line-2); }
-.slip-add { margin-top: .3rem; }</style>
-{% endblock %}
+{% block page_title %}Bank deposits{% endblock %}
 {% block content %}
 {% set bname = (branches|selectattr('id', 'equalto', bid)|first).name %}
 <div class="page-head"><div><h1>Bank deposits &amp; cash on hand</h1><p>{{ bname }} · Cash collected, minus cash refunds and cash expenses, minus what was deposited in the bank.</p></div>

@@ -1,7 +1,6 @@
 {% extends "staff/layout.html" %}
 {% from "macros.html" import csrf %}
-{% block page_title %}Monthly bills<style>.bill-rec input, .bill-rec select { width: auto; min-width: 0; } .bill-rec input[type=date] { width: 9.5em; }</style>
-{% endblock %}
+{% block page_title %}Monthly bills{% endblock %}
 {% block content %}
 <div class="page-head"><div><h1>Monthly bills · {{ month.strftime('%B %Y') }}</h1><p>Each branch's regular bills: rent, electricity, water, internet and others. Record each one when it is paid; it goes to Expenses and is taken out of the gross in the Financial report.</p></div>
 <div class="row"><a class="btn btn-ghost btn-sm" href="{{ url_for('expenses.bills', month=prev) }}">← Previous month</a><a class="btn btn-ghost btn-sm" href="{{ url_for('expenses.bills', month=nxt) }}">Next month →</a>

@@ -704,7 +704,9 @@ def payroll():
             return redirect(url_for("people.payroll_period", period_id=pid))
     periods = conn.all("SELECT p.*, b.name AS branch, u.name AS creator FROM payroll_periods p LEFT JOIN branches b ON b.id = p.branch_id "
                        "LEFT JOIN users u ON u.id = p.created_by ORDER BY p.start_date DESC")
-    periods = [p for p in periods if g.user.is_super_admin or p["branch_id"] in g.user.branch_ids]
+    active = {r["id"] for r in conn.all("SELECT id FROM branches WHERE active = 1")}
+    covers_all = active.issubset(set(g.user.branch_ids))   # all-branch periods: for users who cover every branch (as when opening one)
+    periods = [p for p in periods if g.user.is_super_admin or (p["branch_id"] in g.user.branch_ids if p["branch_id"] else covers_all)]
     t = today()
     default_start, cutoff_end = cutoff_for(t)
     return render_template("staff/people/payroll.html", periods=periods, branches=branches_for_user(g.user),
@@ -733,6 +735,8 @@ def _rebuild(conn, period_id):
         from ..payroll import apply_allowances, apply_deductions
         apply_allowances(conn, period_id)
         apply_deductions(conn, period_id)
+        from ..payroll import apply_reimbursements
+        apply_reimbursements(conn, period_id)
 
 
 def _load_period(period_id):
@@ -805,6 +809,7 @@ def payroll_period(period_id):
                 flash("Payroll summary approved. Payments are still made outside this system.", "success")
         elif action == "cancel" and p["status"] in ("draft", "submitted") and g.user.can("payroll.prepare"):
             conn.execute("UPDATE payroll_periods SET status='cancelled' WHERE id=?", (period_id,))
+            conn.execute("UPDATE reimbursements SET period_id = NULL WHERE period_id = ?", (period_id,))   # counted again in the next payroll
             audit.record("payroll_cancelled", "payroll_period", period_id, "Cancelled")
         return redirect(url_for("people.payroll_period", period_id=period_id))
     lines = conn.all("SELECT l.*, e.full_name, e.position FROM payroll_lines l JOIN employees e ON e.id = l.employee_id "
@@ -837,10 +842,12 @@ def payroll_items(period_id):
         it = conn.one("SELECT * FROM payroll_items WHERE id = ? AND period_id = ?", (to_int(f.get("item_id")), period_id))
         if it:
             conn.execute("DELETE FROM payroll_items WHERE id = ?", (it["id"],))
+            if it["reimbursement_id"]:
+                conn.execute("UPDATE reimbursements SET period_id = NULL WHERE id = ?", (it["reimbursement_id"],))
             audit.record("payroll_item_removed", "payroll_period", period_id, f"Removed {it['kind']} {it['name']} {peso(it['amount_cents'])}",
                          {"employee_id": it["employee_id"]})
             flash("Removed." + (" It comes back on Recalculate while it is set as regular on the employee's page."
-                                if it["allowance_id"] or it["deduction_id"] else ""), "success")
+                                if it["allowance_id"] or it["deduction_id"] or it["reimbursement_id"] else ""), "success")
         return back
     emp = to_int(f.get("employee_id"))
     kind = "deduction" if f.get("name") in DEDUCTION_TYPES else "addition"
