@@ -428,10 +428,11 @@ def edit(quote_id):
             audit.record("quote_deleted", "quotation", quote_id, "Draft quotation deleted", branch_id=q["branch_id"])
             flash("Draft quotation deleted.", "success")
             return redirect(url_for("quotes.index"))
-        back = url_for("quotes.edit", quote_id=quote_id, view=request.form.get("view") or None)
+        view = "simple" if (request.form.get("view") == "simple" or action in SIMPLE_ACTIONS) else None
+        back = url_for("quotes.edit", quote_id=quote_id, view=view)
         return redirect(back + (("#" + request.form.get("anchor")) if (request.form.get("anchor") or "").replace("-", "").isalnum() else ""))
     from ..fee_schedule import picker_options
-    if request.args.get("view") != "advanced":
+    if request.args.get("view") == "simple":
         return _simple_page(conn, q, picker_options(conn))
     items = conn.all("SELECT * FROM quotation_items WHERE quotation_id = ? ORDER BY seq", (quote_id,))
     plans = structure(q, items)

@@ -27,7 +27,7 @@
 <div class="page-head"><div>
 {% if q.patient_id %}<a href="{{ url_for('patients.detail', patient_id=q.patient_id) }}">← {{ q.last_name }}, {{ q.first_name }}</a>{% else %}<a href="{{ url_for('quotes.index') }}">← Quotations</a>{% endif %}
 <h1>{{ q.number or 'Draft quotation' }}</h1>
-<p><a href="{{ url_for('quotes.edit', quote_id=q.id) }}">← Simple view</a> · <a href="{{ url_for('quotes.pdf', quote_id=q.id) }}">Download PDF</a></p>
+<p><a href="{{ url_for('quotes.pdf', quote_id=q.id) }}">Download PDF</a> · <a href="{{ url_for('quotes.edit', quote_id=q.id, view='simple') }}">Options &amp; reference photos view</a></p>
 <p>For <strong>{% if q.patient_id %}{{ q.first_name }} {{ q.last_name }} ({{ q.chart_no }}){% else %}{{ q.client_name }}{% if q.client_contact %} · {{ q.client_contact }}{% endif %}{% endif %}</strong> · {{ q.branch }}{% if q.dentist %} · {{ q.dentist }}{% endif %} · valid until {{ q.valid_until|date }}</p></div>
 <div class="row">{{ status_badge(q.status) }}{% if items %}<a class="btn btn-secondary" href="{{ url_for('quotes.print_view', quote_id=q.id) }}" target="_blank">Print</a>{% endif %}</div></div>
 {% if items|selectattr('sample_price')|list %}<div class="notice" style="margin-bottom:1rem">Some items use <strong>sample prices</strong> from the price list, not Dental Haven's actual prices. Type the real price for those items (or update Administration → Price list) before giving this quotation to a patient.</div>{% endif %}
@@ -43,18 +43,18 @@
 {% for it in blk.rows %}<tr class="{{ 'q-opt' if it.kind == 'option' }}">
 <td>{% if it.kind == 'option' %}<strong>{{ it.letter }}.</strong> {% endif %}{{ it.description }}{% if it.sample_price %} <span class="badge badge-amber">Sample price</span>{% endif %}{% if it.kind == 'option' %} <span class="badge">option</span>{% endif %}
 {% if it.tooth %}<br><small class="muted">Tooth {{ it.tooth }}</small>{% endif %}{% if it.note %}<br><small class="q-note">{{ it.note }}</small>{% endif %}
-{% if editable %}<div class="q-actions"><form method="post" class="inline-form">{{ csrf() }}<input type="hidden" name="view" value="advanced"><input type="hidden" name="action" value="move"><input type="hidden" name="item_id" value="{{ it.id }}">
+{% if editable %}<div class="q-actions"><form method="post" class="inline-form">{{ csrf() }}<input type="hidden" name="action" value="move"><input type="hidden" name="item_id" value="{{ it.id }}">
 <button class="btn btn-ghost btn-sm" name="dir" value="up" aria-label="Move up">↑</button><button class="btn btn-ghost btn-sm" name="dir" value="down" aria-label="Move down">↓</button></form>
-<details><summary>Edit</summary><form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="view" value="advanced"><input type="hidden" name="action" value="save_item"><input type="hidden" name="item_id" value="{{ it.id }}">{{ line_fields(it, 'e' ~ it.id) }}<button class="btn btn-secondary btn-sm">Save</button></form></details>
-<form method="post" class="inline-form">{{ csrf() }}<input type="hidden" name="view" value="advanced"><input type="hidden" name="action" value="remove_item"><input type="hidden" name="item_id" value="{{ it.id }}"><button class="btn btn-ghost btn-sm" aria-label="Remove {{ it.description }}">✕</button></form></div>{% endif %}</td>
+<details><summary>Edit</summary><form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="save_item"><input type="hidden" name="item_id" value="{{ it.id }}">{{ line_fields(it, 'e' ~ it.id) }}<button class="btn btn-secondary btn-sm">Save</button></form></details>
+<form method="post" class="inline-form">{{ csrf() }}<input type="hidden" name="action" value="remove_item"><input type="hidden" name="item_id" value="{{ it.id }}"><button class="btn btn-ghost btn-sm" aria-label="Remove {{ it.description }}">✕</button></form></div>{% endif %}</td>
 <td class="num">× {{ it.qty }}</td><td class="num">{{ it.unit_price_cents|peso }}{% if it.unit_label %}/{{ it.unit_label }}{% endif %}</td>
 <td class="num">{% if it.discount_cents %}<s class="muted">{{ it.full_cents|peso }}</s><br>{% endif %}<strong>{{ it.amount_cents|peso }}</strong></td></tr>{% endfor %}
 </tbody></table></div>{% endfor %}
 {% if plan.freebies %}<h4 class="q-sec q-free">Freebies</h4><div class="table-wrap"><table class="q-table"><tbody>
 {% for it in plan.freebies %}<tr><td>{{ it.description }}{% if it.tooth %}<br><small class="muted">{{ it.tooth }}</small>{% endif %}
-{% if editable %}<div class="q-actions"><form method="post" class="inline-form">{{ csrf() }}<input type="hidden" name="view" value="advanced"><input type="hidden" name="action" value="move"><input type="hidden" name="item_id" value="{{ it.id }}"><button class="btn btn-ghost btn-sm" name="dir" value="up" aria-label="Move up">↑</button><button class="btn btn-ghost btn-sm" name="dir" value="down" aria-label="Move down">↓</button></form>
-<details><summary>Edit</summary><form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="view" value="advanced"><input type="hidden" name="action" value="save_item"><input type="hidden" name="item_id" value="{{ it.id }}">{{ line_fields(it, 'e' ~ it.id) }}<button class="btn btn-secondary btn-sm">Save</button></form></details>
-<form method="post" class="inline-form">{{ csrf() }}<input type="hidden" name="view" value="advanced"><input type="hidden" name="action" value="remove_item"><input type="hidden" name="item_id" value="{{ it.id }}"><button class="btn btn-ghost btn-sm" aria-label="Remove {{ it.description }}">✕</button></form></div>{% endif %}</td><td class="num">× {{ it.qty }}</td><td class="num">{{ it.unit_price_cents|peso }}{% if it.unit_label %}/{{ it.unit_label }}{% endif %}</td><td class="num">{{ it.full_cents|peso }}</td></tr>{% endfor %}
+{% if editable %}<div class="q-actions"><form method="post" class="inline-form">{{ csrf() }}<input type="hidden" name="action" value="move"><input type="hidden" name="item_id" value="{{ it.id }}"><button class="btn btn-ghost btn-sm" name="dir" value="up" aria-label="Move up">↑</button><button class="btn btn-ghost btn-sm" name="dir" value="down" aria-label="Move down">↓</button></form>
+<details><summary>Edit</summary><form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="save_item"><input type="hidden" name="item_id" value="{{ it.id }}">{{ line_fields(it, 'e' ~ it.id) }}<button class="btn btn-secondary btn-sm">Save</button></form></details>
+<form method="post" class="inline-form">{{ csrf() }}<input type="hidden" name="action" value="remove_item"><input type="hidden" name="item_id" value="{{ it.id }}"><button class="btn btn-ghost btn-sm" aria-label="Remove {{ it.description }}">✕</button></form></div>{% endif %}</td><td class="num">× {{ it.qty }}</td><td class="num">{{ it.unit_price_cents|peso }}{% if it.unit_label %}/{{ it.unit_label }}{% endif %}</td><td class="num">{{ it.full_cents|peso }}</td></tr>{% endfor %}
 </tbody></table></div><p class="q-plan-total">Freebies value: <strong>{{ plan.freebie_total|peso }}</strong> (free)</p>{% endif %}
 <p class="q-plan-total">{{ plan.name or 'Treatment' }} total: <strong>{{ plan.total|peso }}</strong>{% if plan.has_options %} + the option the patient chooses{% endif %}</p>
 </div>{% endfor %}
@@ -65,7 +65,7 @@
 <datalist id="q-procs">{% for r in presets %}<option value="{{ r.name }}" data-price="{{ '%d' % (r.unit_price_cents // 100) }}" data-kind="{{ r.kind }}">Item list · ₱{{ '{:,.0f}'.format(r.unit_price_cents / 100) }}{% if r.unit_label %}/{{ r.unit_label }}{% endif %}</option>{% endfor %}
 {% for o in fees %}<option value="{{ o.name }}" data-price="{{ '%d' % (o.price // 100) }}" data-kind="item">{{ o.category }} · ₱{{ '{:,.0f}'.format(o.price / 100) }}</option>{% endfor %}</datalist>
 {% if editable %}
-<form method="post" class="mt-1 quote-add" data-q-many>{{ csrf() }}<input type="hidden" name="view" value="advanced"><input type="hidden" name="action" value="add_many">
+<form method="post" class="mt-1 quote-add" data-q-many>{{ csrf() }}<input type="hidden" name="action" value="add_many">
 <h3>Add procedures</h3>
 <p class="hint">Add as many procedures as you need, then click <strong>Add all</strong>. Start typing to search your quotation item list and the fee schedule; the price fills in and you can change it. Empty rows are ignored.</p>
 <div class="form-grid">
@@ -88,7 +88,7 @@
 <p class="hint">For material choices (Emax / Zirconia / Ceramic) set the type to <strong>Option</strong>: they're lettered A, B, C and not added together. Discount can be pesos or a percent, e.g. 20%.</p>
 </form>
 <details class="mt-1"><summary>Add one line with all details (unit, red note, save to item list)</summary>
-<form method="post" class="mt-1 quote-add" data-q-add>{{ csrf() }}<input type="hidden" name="view" value="advanced"><input type="hidden" name="action" value="add_item">
+<form method="post" class="mt-1 quote-add" data-q-add>{{ csrf() }}<input type="hidden" name="action" value="add_item">
 {{ line_fields(None, 'n') }}
 <button class="btn btn-secondary">Add line</button>
 </form></details>
@@ -97,7 +97,7 @@
 </div>
 <div>
 {% if editable %}
-<div class="card"><h2>Details</h2><form method="post">{{ csrf() }}<input type="hidden" name="view" value="advanced"><input type="hidden" name="action" value="details">
+<div class="card"><h2>Details</h2><form method="post">{{ csrf() }}<input type="hidden" name="action" value="details">
 <div class="form-grid">
 <div class="field"><label for="qd">Dentist</label><select id="qd" name="dentist_id"><option value="">—</option>{% for d in dentists %}<option value="{{ d.id }}" {% if q.dentist_id == d.id %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select></div>
 <div class="field"><label for="vu">Valid until</label><input id="vu" name="valid_until" type="date" value="{{ q.valid_until }}" min="{{ today }}"></div>
@@ -112,15 +112,15 @@
 {% if current_user.can('quotes.manage') %}
 <div class="card"><h2>Next steps</h2>
 {% if q.status == 'draft' %}
-<form method="post">{{ csrf() }}<input type="hidden" name="view" value="advanced"><input type="hidden" name="action" value="issue"><button class="btn" {% if not items %}disabled{% endif %}>Finalise quotation</button>
+<form method="post">{{ csrf() }}<input type="hidden" name="action" value="issue"><button class="btn" {% if not items %}disabled{% endif %}>Finalise quotation</button>
 <p class="hint">Gives it a number and locks the items so it can be printed and given to the patient.</p></form>
-<form method="post" class="mt-1" data-confirm="Delete this draft quotation?">{{ csrf() }}<input type="hidden" name="view" value="advanced"><input type="hidden" name="action" value="delete"><button class="btn btn-ghost btn-sm">Delete draft</button></form>
+<form method="post" class="mt-1" data-confirm="Delete this draft quotation?">{{ csrf() }}<input type="hidden" name="action" value="delete"><button class="btn btn-ghost btn-sm">Delete draft</button></form>
 {% elif q.status == 'issued' %}
-<div class="row"><form method="post">{{ csrf() }}<input type="hidden" name="view" value="advanced"><input type="hidden" name="action" value="accepted"><button class="btn">Patient accepted</button></form>
-<form method="post">{{ csrf() }}<input type="hidden" name="view" value="advanced"><input type="hidden" name="action" value="declined"><button class="btn btn-secondary">Patient declined</button></form></div>
+<div class="row"><form method="post">{{ csrf() }}<input type="hidden" name="action" value="accepted"><button class="btn">Patient accepted</button></form>
+<form method="post">{{ csrf() }}<input type="hidden" name="action" value="declined"><button class="btn btn-secondary">Patient declined</button></form></div>
 {% endif %}
 {% if q.status == 'accepted' and not q.invoice_id and current_user.can('billing.manage') %}
-<form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="view" value="advanced"><input type="hidden" name="action" value="to_invoice">
+<form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="to_invoice">
 <p><strong>What did the patient choose?</strong></p>
 {% for plan in plans %}{% if plan.name %}<p class="mb-0"><em>{{ plan.name }}</em></p>{% endif %}
 {% for blk in plan.blocks %}{% for it in blk.rows %}<label class="check"><input type="checkbox" name="item_ids" value="{{ it.id }}" {% if it.kind == 'item' and (it.plan or '') == main %}checked{% endif %}> {% if it.kind == 'option' %}{{ it.letter }}. {% endif %}{{ it.description }}{% if it.tooth %} ({{ it.tooth }}){% endif %} · {{ it.amount_cents|peso }}</label>{% endfor %}{% endfor %}{% endfor %}
@@ -128,8 +128,8 @@
 <p class="hint">The ticked lines go into a draft invoice. Freebies aren't billed.</p></form>{% endif %}
 {% if q.invoice_id %}<p class="mt-1">Billed on <a href="{{ url_for('billing.invoice', invoice_id=q.invoice_id) }}">this invoice</a>.</p>{% endif %}
 <div class="row mt-1">
-{% if q.status in ('issued', 'declined') and not q.invoice_id %}<form method="post">{{ csrf() }}<input type="hidden" name="view" value="advanced"><input type="hidden" name="action" value="reopen"><button class="btn btn-ghost btn-sm">Reopen to edit</button></form>{% endif %}
-<form method="post">{{ csrf() }}<input type="hidden" name="view" value="advanced"><input type="hidden" name="action" value="duplicate"><button class="btn btn-ghost btn-sm">Make a copy</button></form></div>
+{% if q.status in ('issued', 'declined') and not q.invoice_id %}<form method="post">{{ csrf() }}<input type="hidden" name="action" value="reopen"><button class="btn btn-ghost btn-sm">Reopen to edit</button></form>{% endif %}
+<form method="post">{{ csrf() }}<input type="hidden" name="action" value="duplicate"><button class="btn btn-ghost btn-sm">Make a copy</button></form></div>
 </div>
 {% endif %}
 <p class="muted" style="font-size:.85rem">A quotation is an estimate. It doesn't bill the patient or change their balance.</p>

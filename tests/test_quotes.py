@@ -171,7 +171,7 @@ class TestQuotes(Base):
         c = self.login("dentist.malolos")
         qid, _ = self._quote(c)
         fee = self.q("SELECT * FROM fee_schedule WHERE active = 1 ORDER BY id LIMIT 1")
-        page = c.get(f"/staff/quotes/{qid}?view=advanced").data.decode()
+        page = c.get(f"/staff/quotes/{qid}").data.decode()
         self.assertIn('name="m_proc"', page)
         self.assertIn("Add all", page)
         r = c.post(f"/staff/quotes/{qid}", data={
@@ -210,7 +210,7 @@ class TestSimpleQuote(TestQuotes):
         from PIL import Image
         c = self.login("dentist.malolos")
         qid, _p = self._quote(c)
-        page = c.get(f"/staff/quotes/{qid}").data.decode()
+        page = c.get(f"/staff/quotes/{qid}?view=simple").data.decode()
         self.assertIn("Option 1", page)
         self.assertIn("+ Add procedure", page)
         c.post(f"/staff/quotes/{qid}", data={"action": "s_add", "plan": "Option 1", "procedure": "Zirconia crown", "qty": "2", "unit_price": "5500"})
@@ -227,7 +227,7 @@ class TestSimpleQuote(TestQuotes):
         im = self.q("SELECT * FROM quotation_images WHERE quotation_id = ?", (qid,))
         self.assertEqual((im["plan"], im["caption"]), ("Option 1", "Zirconia crown"))
         self.assertEqual(c.get(f"/staff/quotes/{qid}/image/{im['id']}").status_code, 200)
-        page = c.get(f"/staff/quotes/{qid}").data.decode()
+        page = c.get(f"/staff/quotes/{qid}?view=simple").data.decode()
         for part in ("Option 2", "₱11,500.00", "₱7,000.00", "Add another option", "Option 3"):
             self.assertIn(part, page)
         # edit a line, rename and recommend an option
@@ -237,7 +237,7 @@ class TestSimpleQuote(TestQuotes):
         c.post(f"/staff/quotes/{qid}", data={"action": "s_rename", "plan": "Option 2", "new_name": "Option 2: Porcelain"})
         c.post(f"/staff/quotes/{qid}", data={"action": "s_recommend", "plan": "Option 1"})
         self.assertEqual(self.q("SELECT recommended_plan FROM quotations WHERE id = ?", (qid,))["recommended_plan"], "Option 1")
-        self.assertIn("Option 2: Porcelain", c.get(f"/staff/quotes/{qid}").data.decode())
+        self.assertIn("Option 2: Porcelain", c.get(f"/staff/quotes/{qid}?view=simple").data.decode())
         # PDF download
         r = c.get(f"/staff/quotes/{qid}/pdf")
         self.assertEqual(r.status_code, 200)
