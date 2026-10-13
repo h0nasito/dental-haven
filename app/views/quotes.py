@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
+from flask import Blueprint, Response, abort, flash, g, redirect, render_template, request, send_file, url_for
 
 from .. import audit
 from ..auth import require
@@ -386,6 +386,9 @@ def edit(quote_id):
                                      "created_by": g.user.id, "created_at": now_str(), "updated_at": now_str()})
                 for it in conn.all("SELECT * FROM quotation_items WHERE quotation_id = ? ORDER BY seq", (quote_id,)):
                     conn.insert("quotation_items", {k: it[k] for k in ITEM_FIELDS} | {"quotation_id": nid})
+                for im in conn.all("SELECT * FROM quotation_images WHERE quotation_id = ? ORDER BY seq, id", (quote_id,)):
+                    conn.insert("quotation_images", {"quotation_id": nid, "plan": im["plan"], "stored_name": im["stored_name"],
+                                                     "caption": im["caption"], "seq": im["seq"], "created_by": g.user.id, "created_at": now_str()})
                 _recalc(conn, nid)
             audit.record("quote_created", "quotation", nid, f"Copied from quotation {q['number'] or q['id']}", branch_id=q["branch_id"])
             return redirect(url_for("quotes.edit", quote_id=nid))
@@ -415,15 +418,21 @@ def edit(quote_id):
                     audit.record("invoice_created", "invoice", inv_id, f"Draft invoice from quotation {q['number']}", branch_id=q["branch_id"])
                 flash("Draft invoice created from the quotation. Check it before issuing.", "success")
                 return redirect(url_for("billing.invoice", invoice_id=inv_id))
+        elif action in SIMPLE_ACTIONS and editable:
+            _simple_action(conn, q, action)
         elif action == "delete" and q["status"] == "draft":
             with conn.transaction():
+                conn.execute("DELETE FROM quotation_images WHERE quotation_id = ?", (quote_id,))
                 conn.execute("DELETE FROM quotation_items WHERE quotation_id = ?", (quote_id,))
                 conn.execute("DELETE FROM quotations WHERE id = ?", (quote_id,))
             audit.record("quote_deleted", "quotation", quote_id, "Draft quotation deleted", branch_id=q["branch_id"])
             flash("Draft quotation deleted.", "success")
             return redirect(url_for("quotes.index"))
-        return redirect(url_for("quotes.edit", quote_id=quote_id))
+        back = url_for("quotes.edit", quote_id=quote_id, view=request.form.get("view") or None)
+        return redirect(back + (("#" + request.form.get("anchor")) if (request.form.get("anchor") or "").replace("-", "").isalnum() else ""))
     from ..fee_schedule import picker_options
+    if request.args.get("view") != "advanced":
+        return _simple_page(conn, q, picker_options(conn))
     items = conn.all("SELECT * FROM quotation_items WHERE quotation_id = ? ORDER BY seq", (quote_id,))
     plans = structure(q, items)
     return render_template("staff/quotes/edit.html", q=q, items=items, plans=plans, statuses=STATUSES, kinds=KINDS,
@@ -432,6 +441,149 @@ def edit(quote_id):
                                             "WHEN 'option' THEN 1 ELSE 2 END, sort_order, name"),
                            main=main_plan(q, items), plan_names=sorted({i["plan"] for i in items if i["plan"]} | {"Plan A", "Plan B"}),
                            section_names=sorted({i["section"] for i in items if i["section"]}))
+
+
+# ---------------------------------------------------------------------------
+# Simple editor: Option 1, Option 2, ... each a list of procedures with prices, and reference photos.
+# ---------------------------------------------------------------------------
+SIMPLE_ACTIONS = ("s_add", "s_save", "s_remove", "s_rename", "s_drop_option", "s_add_images", "s_remove_image", "s_recommend")
+MAX_IMAGES = 12
+_PLAN = "(plan = ? OR (plan = '' AND ? = 'Option 1'))"   # lines of older quotations without an option name count as Option 1
+
+
+def _options(conn, q):
+    """[{name, lines, total, images, recommended}] in the order they were made."""
+    items = conn.all("SELECT * FROM quotation_items WHERE quotation_id = ? ORDER BY seq, id", (q["id"],))
+    images = conn.all("SELECT * FROM quotation_images WHERE quotation_id = ? ORDER BY seq, id", (q["id"],))
+    names = []
+    for x in list(items) + list(images):
+        n = x["plan"] or "Option 1"
+        if n not in names:
+            names.append(n)
+    rec = q["recommended_plan"] if len(names) > 1 and q["recommended_plan"] in names else ""   # only when someone marked it
+    out = []
+    for n in names:
+        lines = [dict(i) for i in items if (i["plan"] or "Option 1") == n]
+        out.append({"name": n, "lines": lines, "images": [i for i in images if (i["plan"] or "Option 1") == n],
+                    "total": sum(i["amount_cents"] for i in lines if i["kind"] != "freebie" and i["kind"] != "option"),
+                    "recommended": n == rec and len(names) > 1})
+    return out
+
+
+def _next_option_name(opts) -> str:
+    n = len(opts) + 1
+    names = {o["name"] for o in opts}
+    while f"Option {n}" in names:
+        n += 1
+    return f"Option {n}"
+
+
+def _simple_action(conn, q, action):
+    f = request.form
+    plan = clean(f.get("plan"), 60) or "Option 1"
+    if action == "s_add":
+        name = clean(f.get("procedure"), 200)
+        preset = conn.one("SELECT * FROM quote_presets WHERE active = 1 AND lower(name) = lower(?) ORDER BY id LIMIT 1", (name,)) if name else None
+        fee = None if preset else _find_fee(conn, name)
+        qty = max(1, min(999, to_int(f.get("qty"), 1) or 1))
+        unit = parse_money(f.get("unit_price")) if (f.get("unit_price") or "").strip() else None
+        if unit is None:
+            unit = preset["unit_price_cents"] if preset else (fee["price_cents"] if fee else None)
+        if len(name) < 2 or unit is None or unit < 0:
+            flash("Type or choose the procedure and its price.", "error")
+            return
+        seq = (conn.scalar("SELECT MAX(seq) FROM quotation_items WHERE quotation_id = ?", (q["id"],)) or 0) + 1
+        conn.insert("quotation_items", {
+            "quotation_id": q["id"], "price_item_id": None, "service_id": None, "sample_price": 0, "seq": seq,
+            "description": preset["name"] if preset else (fee["name"].title() if fee else name), "tooth": clean(f.get("tooth"), 80),
+            "qty": qty, "unit_price_cents": unit, "discount_cents": 0, "amount_cents": line_amount(qty, unit, 0), "plan": plan,
+            "section": "", "kind": "item", "unit_label": preset["unit_label"] if preset else (unit_label_from(fee["unit"]) if fee else ""),
+            "note": ""})
+        _recalc(conn, q["id"])
+    elif action == "s_save":
+        it = conn.one("SELECT * FROM quotation_items WHERE id = ? AND quotation_id = ?", (to_int(f.get("item_id")), q["id"]))
+        unit = parse_money(f.get("unit_price"))
+        qty = max(1, min(999, to_int(f.get("qty"), 1) or 1))
+        if it and unit is not None and unit >= 0:
+            conn.update("quotation_items", it["id"], {"description": clean(f.get("description"), 200) or it["description"], "qty": qty,
+                                                      "unit_price_cents": unit, "tooth": clean(f.get("tooth"), 80), "discount_cents": 0,
+                                                      "amount_cents": 0 if it["kind"] == "freebie" else line_amount(qty, unit, 0)})
+            _recalc(conn, q["id"])
+        else:
+            flash("Enter a price like 5500.", "error")
+    elif action == "s_remove":
+        conn.execute("DELETE FROM quotation_items WHERE id = ? AND quotation_id = ?", (to_int(f.get("item_id")), q["id"]))
+        _recalc(conn, q["id"])
+    elif action == "s_rename":
+        new = clean(f.get("new_name"), 60)
+        if new and new != plan:
+            conn.execute(f"UPDATE quotation_items SET plan = ? WHERE quotation_id = ? AND {_PLAN}", (new, q["id"], plan, plan))
+            conn.execute(f"UPDATE quotation_images SET plan = ? WHERE quotation_id = ? AND {_PLAN}", (new, q["id"], plan, plan))
+            if q["recommended_plan"] == plan:
+                conn.update("quotations", q["id"], {"recommended_plan": new})
+            _recalc(conn, q["id"])
+    elif action == "s_drop_option":
+        conn.execute(f"DELETE FROM quotation_items WHERE quotation_id = ? AND {_PLAN}", (q["id"], plan, plan))
+        conn.execute(f"DELETE FROM quotation_images WHERE quotation_id = ? AND {_PLAN}", (q["id"], plan, plan))
+        _recalc(conn, q["id"])
+        flash(f"{plan} removed.", "success")
+    elif action == "s_recommend":
+        conn.update("quotations", q["id"], {"recommended_plan": plan})
+        _recalc(conn, q["id"])
+    elif action == "s_add_images":
+        from ..uploads import save_private_photo
+        have = conn.scalar("SELECT COUNT(*) FROM quotation_images WHERE quotation_id = ?", (q["id"],)) or 0
+        files = [x for x in request.files.getlist("images") if x and x.filename][:max(0, MAX_IMAGES - have)]
+        if not files:
+            flash(f"Choose a photo (up to {MAX_IMAGES} per quotation).", "error")
+            return
+        caption = clean(f.get("caption"), 120)
+        for x in files:
+            stored, err = save_private_photo(x, "quotes")
+            if err:
+                flash(f"Photo: {err}", "error")
+                return
+            conn.insert("quotation_images", {"quotation_id": q["id"], "plan": plan, "stored_name": stored, "caption": caption,
+                                             "seq": have, "created_by": g.user.id, "created_at": now_str()})
+            have += 1
+    elif action == "s_remove_image":
+        conn.execute("DELETE FROM quotation_images WHERE id = ? AND quotation_id = ?", (to_int(f.get("image_id")), q["id"]))
+
+
+def _simple_page(conn, q, fees):
+    opts = _options(conn, q)
+    presets = conn.all("SELECT * FROM quote_presets WHERE active = 1 AND kind != 'freebie' ORDER BY sort_order, name")
+    return render_template("staff/quotes/simple.html", q=q, opts=opts, next_name=_next_option_name(opts), statuses=STATUSES,
+                           dentists=_dentists(conn, q["branch_id"]), fees=fees, presets=presets, max_images=MAX_IMAGES,
+                           can_edit=q["status"] == "draft" and g.user.can("quotes.manage"),
+                           complex=any(i["kind"] != "item" or i["section"] or i["discount_cents"] for o in opts for i in o["lines"]))
+
+
+@bp.route("/<int:quote_id>/image/<int:image_id>")
+@require("quotes.view")
+def image(quote_id, image_id):
+    _load(quote_id)
+    from ..uploads import document_path
+    im = get_db().one("SELECT * FROM quotation_images WHERE id = ? AND quotation_id = ?", (image_id, quote_id))
+    if not im:
+        abort(404)
+    resp = send_file(document_path(im["stored_name"]), max_age=0)
+    resp.headers["Cache-Control"] = "private, no-store"
+    return resp
+
+
+@bp.route("/<int:quote_id>/pdf")
+@require("quotes.view")
+def pdf(quote_id):
+    """The quotation as a PDF file to download or send to the patient."""
+    conn = get_db()
+    q = _load(quote_id)
+    from ..quote_pdf import render_pdf
+    data = render_pdf(conn, q, _options(conn, q))
+    audit.record("quote_pdf", "quotation", quote_id, "Downloaded the quotation PDF", branch_id=q["branch_id"])
+    name = (q["number"] or f"quotation-{q['id']}").replace("/", "-")
+    return Response(data, mimetype="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{name}.pdf"', "Cache-Control": "private, no-store"})
 
 
 @bp.route("/<int:quote_id>/print")

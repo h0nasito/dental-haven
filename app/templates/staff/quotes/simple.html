@@ -1,0 +1,83 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, status_badge %}
+{% block page_title %}Quotation{% endblock %}
+{% block content %}
+{% set who = (q.first_name ~ ' ' ~ q.last_name) if q.patient_id else q.client_name %}
+<div class="page-head"><div><a href="{{ url_for('quotes.index') }}">← Quotations</a><h1>{{ q.number or 'Draft quotation' }}</h1>
+<p>{{ who }} · {{ q.branch }}{% if q.dentist %} · {{ q.dentist }}{% endif %} · valid until {{ q.valid_until|date }}</p></div>
+<div class="row">{{ status_badge(q.status) }}<a class="btn" href="{{ url_for('quotes.pdf', quote_id=q.id) }}">Download PDF</a></div></div>
+{% if complex %}<p class="notice">This quotation has sections, material choices or freebies made in the full editor. <a href="{{ url_for('quotes.edit', quote_id=q.id, view='advanced') }}">Open the full editor</a></p>{% endif %}
+
+<datalist id="q-proc">{% for r in presets %}<option value="{{ r.name }}" data-price="{{ '%.2f'|format(r.unit_price_cents / 100) }}">₱{{ '{:,.0f}'.format(r.unit_price_cents / 100) }}{% if r.unit_label %}/{{ r.unit_label }}{% endif %}</option>{% endfor %}
+{% for o in fees %}<option value="{{ o.name }}" data-price="{{ '%.2f'|format(o.price / 100) }}">{{ o.category }} · ₱{{ '{:,.0f}'.format(o.price / 100) }}{% if o.unit %} {{ o.unit }}{% endif %}</option>{% endfor %}</datalist>
+
+{% macro add_line(plan) %}
+<form method="post" class="q-add" data-q-add>{{ csrf() }}<input type="hidden" name="action" value="s_add"><input type="hidden" name="plan" value="{{ plan }}"><input type="hidden" name="anchor" value="opt-{{ plan|replace(' ', '-') }}">
+<div class="q-add-grid">
+<div class="field q-proc"><label>Procedure</label><input name="procedure" list="q-proc" placeholder="Type to search, e.g. zirconia, RCT" autocomplete="off" required data-q-proc></div>
+<div class="field"><label>Tooth</label><input name="tooth" maxlength="80" placeholder="optional"></div>
+<div class="field"><label>Qty</label><input name="qty" value="1" inputmode="numeric"></div>
+<div class="field"><label>Price (₱)</label><input name="unit_price" inputmode="decimal" placeholder="auto" data-q-price></div>
+</div><button class="btn btn-secondary btn-sm">+ Add procedure</button></form>
+{% endmacro %}
+
+{% for o in opts %}<div class="card q-opt" id="opt-{{ o.name|replace(' ', '-') }}">
+<div class="row between" style="gap:.5rem;align-items:center"><h2 class="mb-0">{{ o.name }}{% if o.recommended %} <span class="badge badge-amber">★ Recommended</span>{% endif %}</h2>
+<strong class="q-total">{{ o.total|peso }}</strong></div>
+<ul class="q-lines">{% for ln in o.lines %}<li>
+{% if can_edit %}<details><summary><span class="q-desc">{{ ln.description }}{% if ln.tooth %} <small class="muted">#{{ ln.tooth }}</small>{% endif %}{% if ln.kind == 'freebie' %} <span class="badge">free</span>{% endif %}</span>
+<span class="q-amt">{{ ln.qty }} × {{ ln.unit_price_cents|peso }} = <strong>{{ ln.amount_cents|peso }}</strong></span></summary>
+<form method="post" class="q-edit">{{ csrf() }}<input type="hidden" name="action" value="s_save"><input type="hidden" name="item_id" value="{{ ln.id }}"><input type="hidden" name="anchor" value="opt-{{ o.name|replace(' ', '-') }}">
+<input name="description" value="{{ ln.description }}" maxlength="200" aria-label="Procedure"><input name="tooth" value="{{ ln.tooth }}" placeholder="Tooth" aria-label="Tooth" style="max-width:7em">
+<input name="qty" value="{{ ln.qty }}" inputmode="numeric" aria-label="Qty" style="max-width:4.5em"><input name="unit_price" value="{{ '%.2f'|format(ln.unit_price_cents / 100) }}" inputmode="decimal" aria-label="Price" style="max-width:8em">
+<button class="btn btn-secondary btn-sm">Save</button><button class="btn btn-ghost btn-sm" name="action" value="s_remove">Remove</button></form></details>
+{% else %}<span class="q-desc">{{ ln.description }}{% if ln.tooth %} <small class="muted">#{{ ln.tooth }}</small>{% endif %}</span><span class="q-amt">{{ ln.qty }} × {{ ln.unit_price_cents|peso }} = <strong>{{ ln.amount_cents|peso }}</strong></span>{% endif %}
+</li>{% else %}<li class="muted">No procedures yet.</li>{% endfor %}</ul>
+{% if can_edit %}{{ add_line(o.name) }}{% endif %}
+{% if o.images or can_edit %}<h3 class="mt-1">Reference photos <small class="muted">for the patient, e.g. the material</small></h3>
+<div class="q-imgs">{% for im in o.images %}<figure><a href="{{ url_for('quotes.image', quote_id=q.id, image_id=im.id) }}" target="_blank" rel="noopener"><img src="{{ url_for('quotes.image', quote_id=q.id, image_id=im.id) }}" alt="{{ im.caption or 'Reference photo' }}" loading="lazy"></a>
+<figcaption>{{ im.caption }}{% if can_edit %}<form method="post">{{ csrf() }}<input type="hidden" name="action" value="s_remove_image"><input type="hidden" name="image_id" value="{{ im.id }}"><input type="hidden" name="anchor" value="opt-{{ o.name|replace(' ', '-') }}"><button class="btn btn-ghost btn-sm">Remove</button></form>{% endif %}</figcaption></figure>{% endfor %}</div>
+{% if can_edit %}<form method="post" enctype="multipart/form-data" class="row" style="gap:.5rem;flex-wrap:wrap;align-items:end">{{ csrf() }}<input type="hidden" name="action" value="s_add_images"><input type="hidden" name="plan" value="{{ o.name }}"><input type="hidden" name="anchor" value="opt-{{ o.name|replace(' ', '-') }}">
+<div class="field mb-0"><label>Add photos</label><input type="file" name="images" accept="image/*" multiple required></div>
+<div class="field mb-0"><label>Caption</label><input name="caption" maxlength="120" placeholder="e.g. Zirconia crown"></div><button class="btn btn-secondary btn-sm">Upload</button></form>{% endif %}{% endif %}
+{% if can_edit %}<details class="mt-1"><summary><small>Rename, recommend or remove this option</small></summary>
+<div class="row mt-1" style="gap:.5rem;flex-wrap:wrap">
+<form method="post" class="row" style="gap:.4rem">{{ csrf() }}<input type="hidden" name="action" value="s_rename"><input type="hidden" name="plan" value="{{ o.name }}"><input name="new_name" value="{{ o.name }}" maxlength="60" aria-label="Option name" style="max-width:14em"><button class="btn btn-secondary btn-sm">Rename</button></form>
+{% if opts|length > 1 and not o.recommended %}<form method="post">{{ csrf() }}<input type="hidden" name="action" value="s_recommend"><input type="hidden" name="plan" value="{{ o.name }}"><button class="btn btn-ghost btn-sm">Mark as recommended</button></form>{% endif %}
+<form method="post" data-confirm="Remove {{ o.name }} and its procedures and photos?">{{ csrf() }}<input type="hidden" name="action" value="s_drop_option"><input type="hidden" name="plan" value="{{ o.name }}"><button class="btn btn-ghost btn-sm">Remove option</button></form></div></details>{% endif %}
+</div>{% endfor %}
+
+{% if can_edit %}<div class="card q-opt q-new" id="opt-{{ next_name|replace(' ', '-') }}"><h2>{{ '+ Add another option' if opts else next_name }}</h2>
+{% if opts %}<p class="hint mt-0">For example a different material or a cheaper choice. It will be called “{{ next_name }}” (you can rename it).</p>{% endif %}
+{{ add_line(next_name) }}</div>{% endif %}
+
+<div class="grid grid-2 mt-1">
+{% if can_edit %}<form method="post" class="card">{{ csrf() }}<input type="hidden" name="action" value="details"><input type="hidden" name="recommended_plan" value="{{ q.recommended_plan }}"><h2>Details</h2>
+<div class="form-grid"><div class="field"><label for="qv">Valid until</label><input id="qv" type="date" name="valid_until" value="{{ q.valid_until }}"></div>
+<div class="field"><label for="qd">Dentist</label><select id="qd" name="dentist_id"><option value="">—</option>{% for d in dentists %}<option value="{{ d.id }}" {% if d.id == q.dentist_id %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select></div></div>
+<div class="field"><label for="qp">Prepared by</label><input id="qp" name="prepared_by" value="{{ q.prepared_by }}" maxlength="120"></div>
+<div class="field"><label for="qn">Notes for the patient</label><textarea id="qn" name="notes" rows="3" maxlength="2000">{{ q.notes }}</textarea></div>
+<button class="btn btn-secondary btn-sm">Save details</button></form>{% endif %}
+<div class="card"><h2>Next</h2>
+<div class="row" style="gap:.5rem;flex-wrap:wrap"><a class="btn" href="{{ url_for('quotes.pdf', quote_id=q.id) }}">Download PDF</a>
+{% if can_edit %}<form method="post">{{ csrf() }}<input type="hidden" name="action" value="issue"><button class="btn btn-secondary" {% if not opts %}disabled{% endif %}>Finalise (give to patient)</button></form>{% endif %}
+{% if q.status == 'issued' and current_user.can('quotes.manage') %}<form method="post">{{ csrf() }}<input type="hidden" name="action" value="accepted"><button class="btn btn-secondary">Patient accepted</button></form>
+<form method="post">{{ csrf() }}<input type="hidden" name="action" value="declined"><button class="btn btn-ghost">Declined</button></form>{% endif %}
+{% if current_user.can('quotes.manage') %}{% if q.status in ('issued', 'declined') and not q.invoice_id %}<form method="post">{{ csrf() }}<input type="hidden" name="action" value="reopen"><button class="btn btn-ghost btn-sm">Reopen to edit</button></form>{% endif %}
+<form method="post">{{ csrf() }}<input type="hidden" name="action" value="duplicate"><button class="btn btn-ghost btn-sm">Make a copy</button></form>
+{% if q.status == 'draft' %}<form method="post" data-confirm="Delete this draft quotation?">{{ csrf() }}<input type="hidden" name="action" value="delete"><button class="btn btn-ghost btn-sm">Delete draft</button></form>{% endif %}{% endif %}</div>
+<p class="hint">Patient accepted? Use the <a href="{{ url_for('quotes.edit', quote_id=q.id, view='advanced') }}">full editor</a> to turn it into a bill, add sections, material choices or freebies.</p></div></div>
+<style>
+.q-opt { margin-bottom: 1rem; } .q-total { font-size: 1.2rem; }
+.q-lines { list-style: none; padding: 0; margin: .6rem 0; }
+.q-lines li { border-bottom: 1px solid var(--line); padding: .45rem 0; }
+.q-lines summary { display: flex; justify-content: space-between; gap: .6rem; flex-wrap: wrap; cursor: pointer; list-style: none; }
+.q-lines li > .q-desc { display: inline-block; } .q-lines li > .q-amt { float: right; }
+.q-amt { white-space: nowrap; }
+.q-edit { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .5rem; } .q-edit input { width: auto; flex: 1 1 8em; }
+.q-add-grid { display: grid; grid-template-columns: 2fr 1fr .6fr 1fr; gap: .5rem; } @media (max-width: 640px) { .q-add-grid { grid-template-columns: 1fr 1fr; } .q-proc { grid-column: 1 / -1; } }
+.q-imgs { display: flex; flex-wrap: wrap; gap: .6rem; margin: .4rem 0 .6rem; } .q-imgs figure { margin: 0; width: 140px; }
+.q-imgs img { width: 140px; height: 105px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); } .q-imgs figcaption { font-size: .8rem; }
+.q-new { border-style: dashed; }
+</style>
+{% endblock %}

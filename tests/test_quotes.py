@@ -171,7 +171,7 @@ class TestQuotes(Base):
         c = self.login("dentist.malolos")
         qid, _ = self._quote(c)
         fee = self.q("SELECT * FROM fee_schedule WHERE active = 1 ORDER BY id LIMIT 1")
-        page = c.get(f"/staff/quotes/{qid}").data.decode()
+        page = c.get(f"/staff/quotes/{qid}?view=advanced").data.decode()
         self.assertIn('name="m_proc"', page)
         self.assertIn("Add all", page)
         r = c.post(f"/staff/quotes/{qid}", data={
@@ -199,3 +199,57 @@ class TestQuotes(Base):
         # nothing chosen
         r = c.post(f"/staff/quotes/{qid}", data={"action": "add_many", "m_proc": ["", ""]}, follow_redirects=True)
         self.assertIn("Choose or type at least one procedure", r.data.decode())
+
+
+class TestSimpleQuote(TestQuotes):
+    for _n in [n for n in dir(TestQuotes) if n.startswith("test_")]:
+        locals()[_n] = None
+
+    def test_options_photos_and_pdf(self):
+        import io
+        from PIL import Image
+        c = self.login("dentist.malolos")
+        qid, _p = self._quote(c)
+        page = c.get(f"/staff/quotes/{qid}").data.decode()
+        self.assertIn("Option 1", page)
+        self.assertIn("+ Add procedure", page)
+        c.post(f"/staff/quotes/{qid}", data={"action": "s_add", "plan": "Option 1", "procedure": "Zirconia crown", "qty": "2", "unit_price": "5500"})
+        c.post(f"/staff/quotes/{qid}", data={"action": "s_add", "plan": "Option 1", "procedure": "Cast", "qty": "1", "unit_price": "500"})
+        c.post(f"/staff/quotes/{qid}", data={"action": "s_add", "plan": "Option 2", "procedure": "Porcelain crown", "qty": "2", "unit_price": "3500"})
+        c.post(f"/staff/quotes/{qid}", data={"action": "s_add", "plan": "Option 2", "procedure": "No price here"})          # refused: no price
+        items = self.conn.all("SELECT plan, description, amount_cents FROM quotation_items WHERE quotation_id = ? ORDER BY seq", (qid,))
+        self.assertEqual([(i["plan"], i["amount_cents"]) for i in items], [("Option 1", 1100000), ("Option 1", 50000), ("Option 2", 700000)])
+        img = io.BytesIO()
+        Image.new("RGB", (1200, 900), (230, 230, 220)).save(img, "JPEG")
+        img.seek(0)
+        c.post(f"/staff/quotes/{qid}", data={"action": "s_add_images", "plan": "Option 1", "caption": "Zirconia crown", "images": (img, "z.jpg")},
+               content_type="multipart/form-data")
+        im = self.q("SELECT * FROM quotation_images WHERE quotation_id = ?", (qid,))
+        self.assertEqual((im["plan"], im["caption"]), ("Option 1", "Zirconia crown"))
+        self.assertEqual(c.get(f"/staff/quotes/{qid}/image/{im['id']}").status_code, 200)
+        page = c.get(f"/staff/quotes/{qid}").data.decode()
+        for part in ("Option 2", "₱11,500.00", "₱7,000.00", "Add another option", "Option 3"):
+            self.assertIn(part, page)
+        # edit a line, rename and recommend an option
+        it = self.q("SELECT id FROM quotation_items WHERE quotation_id = ? AND description LIKE 'Cast%'", (qid,))
+        c.post(f"/staff/quotes/{qid}", data={"action": "s_save", "item_id": it["id"], "description": "Cast (upper and lower)", "qty": "2", "unit_price": "500"})
+        self.assertEqual(self.q("SELECT amount_cents FROM quotation_items WHERE id = ?", (it["id"],))["amount_cents"], 100000)
+        c.post(f"/staff/quotes/{qid}", data={"action": "s_rename", "plan": "Option 2", "new_name": "Option 2: Porcelain"})
+        c.post(f"/staff/quotes/{qid}", data={"action": "s_recommend", "plan": "Option 1"})
+        self.assertEqual(self.q("SELECT recommended_plan FROM quotations WHERE id = ?", (qid,))["recommended_plan"], "Option 1")
+        self.assertIn("Option 2: Porcelain", c.get(f"/staff/quotes/{qid}").data.decode())
+        # PDF download
+        r = c.get(f"/staff/quotes/{qid}/pdf")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.mimetype, "application/pdf")
+        self.assertTrue(r.data.startswith(b"%PDF"))
+        self.assertIn("attachment", r.headers["Content-Disposition"])
+        from pypdf import PdfReader
+        text = "".join(p.extract_text() for p in PdfReader(io.BytesIO(r.data)).pages)
+        for part in ("Treatment Quotation", "Option 1", "Zirconia", "Option 2: Porcelain", "Recommended"):
+            self.assertIn(part, text)
+        # remove an option with its photos
+        c.post(f"/staff/quotes/{qid}", data={"action": "s_drop_option", "plan": "Option 1"})
+        self.assertEqual(self.q("SELECT COUNT(*) AS n FROM quotation_images WHERE quotation_id = ?", (qid,))["n"], 0)
+        # another branch can't get the PDF
+        self.assertEqual(self.login("staff.bocaue").get(f"/staff/quotes/{qid}/pdf").status_code, 403)

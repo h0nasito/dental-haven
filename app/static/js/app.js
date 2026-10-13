@@ -464,6 +464,19 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 })();
 
+/* Quotation (simple editor): picking a procedure from the list fills in its price. */
+(function () {
+  document.querySelectorAll('input[data-q-proc]').forEach(function (inp) {
+    var form = inp.closest('form'), list = document.getElementById(inp.getAttribute('list')), price = form.querySelector('[data-q-price]');
+    inp.addEventListener('change', function () {
+      var opt = null;
+      list.querySelectorAll('option').forEach(function (o) { if (o.value === inp.value) opt = o; });
+      if (opt && price && (!price.value || price.dataset.auto)) { price.value = opt.dataset.price; price.dataset.auto = '1'; }
+    });
+    if (price) price.addEventListener('input', function () { price.dataset.auto = ''; });
+  });
+})();
+
 /* Expenses: total = qty x unit price (until the total is typed by hand). */
 (function () {
   document.querySelectorAll('form[data-expform]').forEach(function (f) {
