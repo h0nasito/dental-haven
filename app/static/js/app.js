@@ -615,7 +615,7 @@ document.addEventListener('DOMContentLoaded', function () {
   function markRemoved(el) {
     el.classList.add('removed');
     var t = el.querySelector('.text'); if (t) t.textContent = 'Message removed';
-    el.querySelectorAll('form').forEach(function (f) { f.remove(); });
+    el.querySelectorAll('form, a[data-reply], .reply-quote').forEach(function (f) { f.remove(); });
     setPinned(el, false);
   }
   function pinForm(id, pinned) {
@@ -670,11 +670,24 @@ document.addEventListener('DOMContentLoaded', function () {
     var n = document.createElement('strong'); n.textContent = m.mine ? 'You' : m.name; who.appendChild(n);
     if (m.role && !m.mine) { var r = document.createElement('span'); r.textContent = m.role; who.appendChild(r); }
     var w = document.createElement('span'); w.textContent = m.when; who.appendChild(w);
+    if (!m.removed) {
+      var rp = document.createElement('a'); rp.className = 'rm'; rp.href = '?reply=' + m.id + '#chat-form';
+      rp.setAttribute('data-reply', m.id); rp.setAttribute('data-reply-name', m.mine ? 'You' : m.name); rp.textContent = 'Reply';
+      who.appendChild(rp);
+    }
     if (m.can_pin) who.appendChild(pinForm(m.id, m.pinned));
     if (m.can_remove) who.appendChild(removeForm(m.id));
     var t = document.createElement('div'); t.className = 'text'; t.textContent = m.removed ? 'Message removed' : m.body;
     el.id = 'm' + m.id;
-    el.appendChild(who); el.appendChild(t); chat.appendChild(el);
+    el.appendChild(who);
+    if (m.reply && !m.removed) {
+      var q = document.createElement(m.reply.id ? 'a' : 'span');
+      q.className = 'reply-quote' + (m.reply.removed ? ' gone' : '');
+      if (m.reply.id) { q.href = '#m' + m.reply.id; q.setAttribute('data-jump', m.reply.id); }
+      var qn = document.createElement('strong'); qn.textContent = m.reply.name ? (m.reply.mine ? 'You' : m.reply.name) : 'Reply';
+      q.appendChild(qn); q.appendChild(document.createTextNode(m.reply.text)); el.appendChild(q);
+    }
+    el.appendChild(t); chat.appendChild(el);
     if (m.pinned) setPinned(el, true);
     if (!first) first = m.id;
   }
@@ -712,7 +725,7 @@ document.addEventListener('DOMContentLoaded', function () {
         .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
         .then(function (res) {
           if (!res.ok) { err.textContent = res.j.error || 'Not sent. Try again.'; return; }
-          box.value = ''; if (typeof caret !== 'undefined') caret = [0, 0]; busy = false; poll(); setTimeout(toBottom, 300);
+          box.value = ''; clearReply(); if (typeof caret !== 'undefined') caret = [0, 0]; busy = false; poll(); setTimeout(toBottom, 300);
         })
         .catch(function () { err.textContent = 'Not sent. Check your connection and try again.'; })
         .then(function () { form.querySelector('button.btn').disabled = false; box.focus(); });
@@ -739,6 +752,30 @@ document.addEventListener('DOMContentLoaded', function () {
         if (res.pinned) window.scrollTo({ top: 0, behavior: 'smooth' });
       });
   });
+  /* replies */
+  var replyBar = document.getElementById('reply-bar'), replyTo = document.getElementById('reply-to');
+  function clearReply() { if (replyBar) { replyBar.hidden = true; replyTo.value = ''; } }
+  function flash(el) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.classList.add('flash-hl'); setTimeout(function () { el.classList.remove('flash-hl'); }, 1600); }
+  chat.addEventListener('click', function (e) {
+    var r = e.target.closest('a[data-reply]');
+    if (r && replyBar) {
+      e.preventDefault();
+      var msg = r.closest('.msg'), txt = (msg.querySelector('.text').textContent || '').replace(/\s+/g, ' ').trim();
+      replyTo.value = r.getAttribute('data-reply');
+      document.getElementById('reply-name').textContent = r.getAttribute('data-reply-name');
+      document.getElementById('reply-text').textContent = txt.length > 90 ? txt.slice(0, 89) + '…' : txt;
+      replyBar.hidden = false; box.focus();
+      return;
+    }
+    var j = e.target.closest('[data-jump]');
+    if (j) {
+      e.preventDefault();
+      var target = document.getElementById('m' + j.getAttribute('data-jump'));
+      if (target) flash(target);
+    }
+  });
+  var cancel = document.getElementById('reply-cancel');
+  if (cancel) cancel.addEventListener('click', function (e) { e.preventDefault(); clearReply(); box.focus(); });
   /* jump to a pinned message: briefly highlight it */
   if (pinList) pinList.addEventListener('click', function (e) {
     var a = e.target.closest('a'); if (!a) return;

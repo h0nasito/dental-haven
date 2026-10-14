@@ -17,6 +17,7 @@ from .. import audit
 from ..auth import login_required
 from ..db import get_db
 from ..jinja import _dt
+from ..notices import notify
 from ..util import now, now_str, to_int
 
 bp = Blueprint("chat", __name__, url_prefix="/staff/chat")
@@ -64,11 +65,28 @@ def _as_dict(m) -> dict:
             "when": _dt(m["created_at"], "%b %d, %I:%M %p"), "day": m["created_at"][:10],
             "body": "" if m["deleted_at"] else m["body"], "removed": bool(m["deleted_at"]),
             "can_remove": not m["deleted_at"] and _can_remove(m),
-            "pinned": bool(m["pinned_at"]) and not m["deleted_at"], "can_pin": not m["deleted_at"] and _moderator()}
+            "pinned": bool(m["pinned_at"]) and not m["deleted_at"], "can_pin": not m["deleted_at"] and _moderator(),
+            "reply": _reply(m)}
 
 
-SELECT = ("SELECT m.*, u.name, e.position FROM chat_messages m JOIN users u ON u.id = m.user_id "
-          "LEFT JOIN employees e ON e.user_id = m.user_id ")
+def _reply(m):
+    if not m["reply_to_id"]:
+        return None
+    if m["r_name"] is None:          # the original was deleted (older than a year)
+        return {"id": None, "name": "", "mine": False, "text": "Original message is no longer available", "removed": True}
+    removed = bool(m["r_deleted"])
+    return {"id": m["reply_to_id"], "name": m["r_name"], "mine": m["r_user"] == g.user.id,
+            "text": "Message removed" if removed else _snippet(m["r_body"]), "removed": removed}
+
+
+SELECT = ("SELECT m.*, u.name, e.position, r.body AS r_body, r.deleted_at AS r_deleted, r.user_id AS r_user, ru.name AS r_name "
+          "FROM chat_messages m JOIN users u ON u.id = m.user_id LEFT JOIN employees e ON e.user_id = m.user_id "
+          "LEFT JOIN chat_messages r ON r.id = m.reply_to_id LEFT JOIN users ru ON ru.id = r.user_id ")
+
+
+def _snippet(text: str, n: int = 90) -> str:
+    text = " ".join((text or "").split())
+    return text if len(text) <= n else text[:n - 1].rstrip() + "…"
 
 
 @bp.route("/")
@@ -89,8 +107,14 @@ def index():
         with conn.transaction():
             _mark_read(conn, last)
     people = conn.scalar("SELECT COUNT(*) FROM users WHERE active = 1")
+    replying = None
+    rid = to_int(request.args.get("reply"))
+    if rid:
+        r = conn.one(SELECT + "WHERE m.id = ? AND m.deleted_at IS NULL", (rid,))
+        if r:
+            replying = {"id": r["id"], "name": "You" if r["user_id"] == g.user.id else r["name"], "text": _snippet(r["body"])}
     return render_template("staff/chat/index.html", pins=pinned(conn), emojis=EMOJIS, msgs=msgs, older=older, last=last, before=before, people=people,
-                           keep_days=KEEP_DAYS, max_len=MAX_LEN)
+                           keep_days=KEEP_DAYS, max_len=MAX_LEN, replying=replying)
 
 
 @bp.route("/since")
@@ -130,9 +154,16 @@ def post():
             return jsonify(error=error), 400
         flash(error, "error")
         return redirect(url_for("chat.index"))
+    reply_to = to_int(request.form.get("reply_to"))
+    target = conn.one("SELECT id, user_id FROM chat_messages WHERE id = ? AND deleted_at IS NULL", (reply_to,)) if reply_to else None
     with conn.transaction():
-        mid = conn.insert("chat_messages", {"user_id": g.user.id, "body": body, "created_at": now_str()})
+        mid = conn.insert("chat_messages", {"user_id": g.user.id, "body": body, "created_at": now_str(),
+                                            "reply_to_id": target["id"] if target else None})
         _mark_read(conn, mid)
+        if target and target["user_id"] != g.user.id:
+            # no message text in the notification
+            notify(conn, [target["user_id"]], "chat_reply", f"{g.user.name} replied to your message in the group chat", "",
+                   url_for("chat.index") + f"#m{mid}")
     if wants_json:
         return jsonify(ok=True, id=mid)
     return redirect(url_for("chat.index") + "#bottom")

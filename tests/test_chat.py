@@ -39,8 +39,19 @@ class TestChat(TestPayrollRules):
         self.assertIn("📌 Pinned", rec.get("/staff/chat/").data.decode())
         self.assertIn(m["id"], rec.get(f"/staff/chat/since?after={m['id']}&first={m['id']}").get_json()["pinned_ids"])
         self.assertIn("😊", rec.get("/staff/chat/").data.decode())                # emoticon button
-        # remove: not someone else's (unless moderator), yes own
         other = r.get_json()["id"]
+        # reply: quotes the original, notifies its author (without the message text)
+        rr = rec.post("/staff/chat/", data={"body": "Yes, see you", "reply_to": str(other)}, headers={"Accept": "application/json"}).get_json()
+        rep = self.q("SELECT * FROM chat_messages WHERE id = ?", (rr["id"],))
+        self.assertEqual(rep["reply_to_id"], other)
+        got = admin.get(f"/staff/chat/since?after={other}").get_json()["messages"][-1]
+        self.assertEqual((got["reply"]["id"], got["reply"]["text"]), (other, "Noted"))
+        admin_id = self.q("SELECT user_id FROM chat_messages WHERE id = ?", (other,))["user_id"]
+        n = self.q("SELECT * FROM notifications WHERE user_id = ? AND kind = 'chat_reply' ORDER BY id DESC LIMIT 1", (admin_id,))
+        self.assertIn("replied to your message", n["title"])
+        self.assertNotIn("see you", (n["title"] + n["body"]).lower())
+        self.assertIn("Replying to", rec.get(f"/staff/chat/?reply={other}").data.decode())
+        # remove: not someone else's (unless moderator), yes own
         self.assertEqual(rec.post(f"/staff/chat/{other}/remove").status_code, 403)
         rec.post(f"/staff/chat/{m['id']}/remove")
         gone = self.q("SELECT * FROM chat_messages WHERE id = ?", (m["id"],))
@@ -49,6 +60,7 @@ class TestChat(TestPayrollRules):
         self.assertIn(m["id"], got["removed"])
         self.assertEqual(got["pins"], [])                                       # a removed message is unpinned
         admin.post(f"/staff/chat/{other}/remove")
+        self.assertEqual(admin.get(f"/staff/chat/since?after={other}").get_json()["messages"][-1]["reply"]["text"], "Message removed")
         self.assertIsNotNone(self.q("SELECT deleted_at FROM chat_messages WHERE id = ?", (other,))["deleted_at"])
         # messages older than a year are deleted
         self.conn.execute("INSERT INTO chat_messages (user_id, body, created_at) VALUES (?, 'old', '2000-01-01 08:00:00')",

@@ -26,6 +26,12 @@
 .pin-item .text{white-space:pre-wrap;overflow-wrap:anywhere}
 .pin-item small{color:var(--ink-2)}
 .pin-item a{color:inherit;text-decoration:none}
+.reply-quote{display:block;border-left:3px solid var(--brand-700,#0f766e);background:rgba(0,0,0,.04);border-radius:6px;padding:.25rem .5rem;margin:.25rem 0 .15rem;font-size:.82rem;color:var(--ink-2);text-decoration:none;overflow-wrap:anywhere}
+.reply-quote strong{display:block;color:var(--brand-800,#134e4a);font-size:.75rem}
+.reply-quote.gone{font-style:italic}
+.reply-bar{display:flex;gap:.5rem;align-items:flex-start;justify-content:space-between;border-left:3px solid var(--brand-700,#0f766e);background:var(--surface,#fff);border-radius:6px;padding:.35rem .6rem;margin-bottom:.4rem;font-size:.85rem}
+.reply-bar[hidden]{display:none}
+.reply-bar .x{background:none;border:0;font-size:1.1rem;line-height:1;cursor:pointer;color:var(--ink-2);padding:.1rem .3rem;text-decoration:none}
 .msg.flash-hl{outline:2px solid var(--amber-700)}
 .emoji-btn{font-size:1.35rem;line-height:1;padding:.45rem .55rem;border:1px solid var(--line);border-radius:10px;background:var(--surface,#fff);cursor:pointer}
 .emoji-panel{display:none;grid-template-columns:repeat(auto-fill,minmax(2.4rem,1fr));gap:.15rem;max-height:12rem;overflow-y:auto;border:1px solid var(--line);border-radius:10px;padding:.35rem;margin-bottom:.4rem;background:var(--surface,#fff)}
@@ -48,13 +54,18 @@
 {% set ns = namespace(day='') %}
 {% for m in msgs %}{% if m.day != ns.day %}{% set ns.day = m.day %}<div class="chat-day" data-day="{{ m.day }}">{{ m.day|date }}</div>{% endif %}
 <div class="msg {{ 'mine' if m.mine }} {{ 'removed' if m.removed }} {{ 'is-pinned' if m.pinned }}" data-id="{{ m.id }}" id="m{{ m.id }}"><div class="who">{% if m.pinned %}<span class="pin-tag">📌</span>{% endif %}<strong>{{ 'You' if m.mine else m.name }}</strong>{% if m.role and not m.mine %}<span>{{ m.role }}</span>{% endif %}<span>{{ m.when }}</span>
+{% if not m.removed and not before %}<a class="rm" href="{{ url_for('chat.index', reply=m.id) }}#chat-form" data-reply="{{ m.id }}" data-reply-name="{{ 'You' if m.mine else m.name }}">Reply</a>{% endif %}
 {% if m.can_pin %}{{ pin_form(m) }}{% endif %}{% if m.can_remove %}<form method="post" action="{{ url_for('chat.remove', mid=m.id) }}" data-confirm="Remove this message?">{{ csrf() }}<button class="rm">Remove</button></form>{% endif %}</div>
+{% if m.reply and not m.removed %}{% if m.reply.id %}<a class="reply-quote {{ 'gone' if m.reply.removed }}" href="#m{{ m.reply.id }}" data-jump="{{ m.reply.id }}">{% else %}<span class="reply-quote gone">{% endif %}<strong>{{ ('You' if m.reply.mine else m.reply.name) if m.reply.name else 'Reply' }}</strong>{{ m.reply.text }}{% if m.reply.id %}</a>{% else %}</span>{% endif %}{% endif %}
 <div class="text">{{ 'Message removed' if m.removed else m.body }}</div></div>
 {% else %}<div id="chat-empty">{{ empty('No messages yet', ' Say hello to the team.') }}</div>{% endfor %}
 </div>
 <div id="bottom"></div>
 {% if not before %}<form method="post" action="{{ url_for('chat.post') }}" class="chat-box" id="chat-form">{{ csrf() }}
 <label class="sr-only" for="chat-body">Message</label>
+<div class="reply-bar" id="reply-bar" {% if not replying %}hidden{% endif %}><div><strong>Replying to <span id="reply-name">{{ replying.name if replying else '' }}</span></strong><br><span class="muted" id="reply-text">{{ replying.text if replying else '' }}</span></div>
+<a class="x" id="reply-cancel" href="{{ url_for('chat.index') }}#bottom" aria-label="Cancel reply">✕</a></div>
+<input type="hidden" name="reply_to" id="reply-to" value="{{ replying.id if replying else '' }}">
 <div class="emoji-panel" id="emoji-panel" role="group" aria-label="Emoticons">{% for e in emojis %}<button type="button" data-emoji="{{ e }}" aria-label="{{ e }}">{{ e }}</button>{% endfor %}</div>
 <div class="row"><button type="button" class="emoji-btn" id="emoji-btn" aria-label="Emoticons" aria-expanded="false" aria-controls="emoji-panel">😊</button><textarea id="chat-body" name="body" rows="2" maxlength="{{ max_len }}" placeholder="Write a message…" required></textarea><button class="btn">Send</button></div>
 <div class="chat-err" id="chat-err" role="status"></div></form>{% endif %}
