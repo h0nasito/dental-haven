@@ -97,6 +97,11 @@ def home():
             "GROUP BY p.id, p.first_name, p.last_name, p.chart_no HAVING SUM(i.total_cents - COALESCE((SELECT SUM(CASE WHEN kind='payment' "
             "THEN amount_cents ELSE -amount_cents END) FROM payments WHERE invoice_id = i.id AND status='valid'), 0)) > 0 "
             "ORDER BY balance DESC LIMIT 10", bp2)
+    from .announcements import active_announcements, duty_on
+    mine = None if (g.user.is_super_admin or g.user.can("announcements.manage")) else list(g.user.branch_ids)
+    data["duty_today"] = duty_on(conn, today(), mine)
+    data["announcements"] = active_announcements(conn, g.user, limit=3)
+    data["me_emp"] = conn.one("SELECT id FROM employees WHERE user_id = ?", (g.user.id,))
     return render_template("staff/dashboard.html", d=data, now=now())
 
 

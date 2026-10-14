@@ -1,0 +1,28 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import empty %}
+{% block page_title %}Duty schedule{% endblock %}
+{% block content %}
+{% include "staff/announce/_style.html" %}
+<div class="page-head"><div><h1>Duty schedule</h1><p>Who is on duty each day, {{ first.strftime('%B %Y') }}. 🦷 = dentist.</p></div>
+{% if current_user.can('announcements.manage') and branch_id %}<a class="btn" href="{{ url_for('announce.duty_edit', branch=branch_id, month=first.strftime('%Y-%m')) }}">Set the schedule</a>{% endif %}</div>
+
+<form method="get" class="card row" style="gap:.5rem;flex-wrap:wrap;align-items:flex-end">
+<div class="field mb-0"><label for="db">Branch</label><select id="db" name="branch" data-autosubmit>{% for b in branches %}<option value="{{ b.id }}" {{ 'selected' if b.id == branch_id }}>{{ b.name }}</option>{% endfor %}<option value="all" {{ 'selected' if not branch_id }}>All branches</option></select></div>
+<div class="field mb-0"><label for="dm">Month</label><input id="dm" type="month" name="month" value="{{ first.strftime('%Y-%m') }}"></div>
+{% if me %}<label class="row" style="gap:.3rem;align-items:center"><input type="checkbox" name="mine" value="1" {{ 'checked' if only_me }}> Only my days</label>{% endif %}
+<button class="btn btn-secondary">Show</button></form>
+
+<div class="row between" style="margin:.5rem 0"><a class="btn btn-ghost btn-sm" href="{{ url_for('announce.duty', branch=branch_id or 'all', month=prev.strftime('%Y-%m'), mine=1 if only_me else None) }}">← {{ prev.strftime('%b') }}</a>
+{% if me %}<small class="muted">You: {{ mine }} duty day{{ 's' if mine != 1 }} this month</small>{% endif %}
+<a class="btn btn-ghost btn-sm" href="{{ url_for('announce.duty', branch=branch_id or 'all', month=next.strftime('%Y-%m'), mine=1 if only_me else None) }}">{{ next.strftime('%b') }} →</a></div>
+
+<div class="card"><div class="duty-days">
+{% for d in days %}{% set iso = d.isoformat() %}{% set people = by_day[iso] %}
+<div class="duty-day {{ 'sun' if d.weekday() == 6 }} {{ 'today' if d == today }}" {% if d == today %}id="today"{% endif %}><div class="duty-date">{{ d.day }}<small>{{ weekdays[d.weekday()] }}</small></div>
+<div>{% if people %}{% if branch_id %}<div class="duty-chips" style="margin-top:0">{% for p in people %}<span class="duty-chip {{ 'is-dentist' if p.role == 'dentist' }} {{ 'is-me' if me and me.id == p.employee_id }} {{ 'clash' if (iso, p.employee_id) in double }}" title="{{ p.position }}{{ ' · also on duty at another branch' if (iso, p.employee_id) in double }}">{% if p.role == 'dentist' %}🦷 {% endif %}{{ p.full_name }}</span>{% endfor %}</div>
+{% if people[0].note %}<small class="muted">{{ people[0].note }}</small>{% endif %}
+{% else %}{% for grp in people|groupby('branch') %}<div><small class="muted">{{ grp.grouper }}</small><div class="duty-chips" style="margin-top:.1rem">{% for p in grp.list %}<span class="duty-chip {{ 'is-dentist' if p.role == 'dentist' }} {{ 'is-me' if me and me.id == p.employee_id }}">{% if p.role == 'dentist' %}🦷 {% endif %}{{ p.full_name }}</span>{% endfor %}</div></div>{% endfor %}{% endif %}
+{% else %}<small class="muted">{{ 'Sunday' if d.weekday() == 6 else '—' }}</small>{% endif %}</div></div>
+{% endfor %}</div></div>
+{% if double %}<p class="hint"><span class="duty-chip clash">Name</span> = also on duty at another branch that day.</p>{% endif %}
+{% endblock %}

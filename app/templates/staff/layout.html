@@ -33,6 +33,8 @@
     {%- endmacro %}
     <div class="nav-group nav-top">
       {{ nav('dash.home', 'Dashboard') }}
+      {{ nav('announce.index', 'Announcements & duty', 'announce.') }}
+      {{ nav('chat.index', 'Group chat', 'chat.', nav_counts.get('chat')) }}
       {% if current_user.can('bookings.manage') or current_user.can('bookings.view') or current_user.can('leads.view') or current_user.can('followups.view') %}
         {{ nav('dash.queue', 'Work queue', count=nav_counts.queue) }}
       {% endif %}

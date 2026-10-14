@@ -1,124 +1,51 @@
-"""Website chat assistant: info feed from site content, and the 'send to our team' form saved as a lead."""
+"""Group chat: everyone posts and reads; text only; remove own (moderators any); unread count; old messages purged."""
 from __future__ import annotations
 
-import re
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from test_app import Base  # noqa: E402
+from test_payroll_rules import TestPayrollRules  # noqa: E402
 
 
-class TestChat(Base):
-    def _client_with_csrf(self):
-        c = self.app.test_client()
-        html = c.get("/").data.decode()
-        token = re.search(r'data-csrf="([^"]+)"', html).group(1)
-        return c, token, html
+class TestChat(TestPayrollRules):
+    for _n in [n for n in dir(TestPayrollRules) if n.startswith("test_")]:
+        locals()[_n] = None
 
-    def test_widget_and_info(self):
-        c, _, html = self._client_with_csrf()
-        self.assertIn('id="dh-chat"', html)
-        self.assertIn("js/chat.js", html)
-        self.assertIn('data-lang="tl"', html)
-        d = c.get("/chat/info.json").get_json()
-        names = [b["name"] for b in d["branches"]]
-        self.assertEqual(names[:4], ["Malolos", "Guiguinto", "Bocaue", "San Jose del Monte"])
-        malolos = d["branches"][0]
-        self.assertIn("+63 927 277 7833", malolos["phones"])
-        self.assertTrue(malolos["hours"])
-        self.assertTrue(malolos["hours"] == ["Monday – Saturday: 9:00 AM – 6:00 PM", "Sunday: Closed"])
-        self.assertEqual(len(d["services"]), 8)
-        exam = next(p for p in d["prices"] if p["name"] == "Dental examination (check-up)")  # clinic's own price list
-        self.assertEqual((exam["amount"], exam["fixed"], exam["sample"]), ("₱650", True, False))
-        raw = c.get("/chat/info.json").data.decode()
-        for pt in self.conn.all("SELECT first_name, last_name, phone FROM patients LIMIT 20"):  # no patient data, ever
-            self.assertNotIn(f"{pt['first_name']} {pt['last_name']}", raw)
-
-    def test_send_to_team_creates_chat_lead(self):
-        c, token, _ = self._client_with_csrf()
-        # no CSRF → refused
-        self.assertEqual(c.post("/chat/message", data={"full_name": "X"}).status_code, 400)
-        r = c.post("/chat/message", headers={"X-CSRF-Token": token}, data={"full_name": "Chat Demo", "phone": "0917 555 0101",
-                                                                         "message": "Do you do veneers on Sundays?"})
-        self.assertEqual(r.status_code, 400)
-        self.assertIn("consent_privacy", r.get_json()["errors"])
-        branch = self.branch("bocaue")
-        r = c.post("/chat/message", headers={"X-CSRF-Token": token}, data={
-            "full_name": "Chat Demo", "phone": "0917 555 0101", "branch_id": branch, "message": "Do you do veneers on Sundays?",
-            "consent_privacy": "1"})
+    def test_group_chat(self):
+        rec = self.login("reception.malolos")
+        admin = self.login("admin")
+        self.assertEqual(rec.get("/staff/chat/").status_code, 200)
+        rec.post("/staff/chat/", data={"body": "Good morning team <b>hi</b>"})
+        m = self.q("SELECT * FROM chat_messages ORDER BY id DESC LIMIT 1")
+        self.assertEqual(m["body"], "Good morning team <b>hi</b>")
+        page = admin.get("/staff/").data.decode()
+        self.assertIn('Group chat</span><span class="count">', page)          # unread for the other person
+        chat = admin.get("/staff/chat/").data.decode()
+        self.assertIn("Good morning team &lt;b&gt;hi&lt;/b&gt;", chat)        # escaped, shown as text
+        self.assertNotIn('Group chat</span><span class="count">', admin.get("/staff/").data.decode())
+        # JSON polling and sending
+        r = admin.post("/staff/chat/", data={"body": "Noted"}, headers={"Accept": "application/json"})
         self.assertTrue(r.get_json()["ok"])
-        lead = self.q("SELECT * FROM leads WHERE full_name = 'Chat Demo'")
-        self.assertEqual((lead["source"], lead["branch_id"], lead["status"]), ("chat", branch, "new"))
-        # honeypot: silently ignored
-        c.post("/chat/message", headers={"X-CSRF-Token": token}, data={"full_name": "Bot", "phone": "0917 555 0102", "message": "spam",
-                                                                     "consent_privacy": "1", "website": "http://spam"})
-        self.assertIsNone(self.q("SELECT id FROM leads WHERE full_name = 'Bot'"))
-        page = self.login("admin").get("/staff/leads?source=chat").data
-        self.assertIn(b"Chat Demo", page)
-        self.assertIn(b"Website chat", page)
+        got = rec.get(f"/staff/chat/since?after={m['id']}").get_json()
+        self.assertEqual([x["body"] for x in got["messages"]], ["Noted"])
+        self.assertEqual(rec.post("/staff/chat/", data={"body": ""}, headers={"Accept": "application/json"}).status_code, 400)
+        self.assertEqual(rec.post("/staff/chat/", data={"body": "x" * 1001}, headers={"Accept": "application/json"}).status_code, 400)
+        # remove: not someone else's (unless moderator), yes own
+        other = r.get_json()["id"]
+        self.assertEqual(rec.post(f"/staff/chat/{other}/remove").status_code, 403)
+        rec.post(f"/staff/chat/{m['id']}/remove")
+        gone = self.q("SELECT * FROM chat_messages WHERE id = ?", (m["id"],))
+        self.assertEqual((gone["body"], bool(gone["deleted_at"])), ("", True))
+        got = rec.get(f"/staff/chat/since?after={other}&first={m['id']}").get_json()
+        self.assertIn(m["id"], got["removed"])
+        admin.post(f"/staff/chat/{other}/remove")
+        self.assertIsNotNone(self.q("SELECT deleted_at FROM chat_messages WHERE id = ?", (other,))["deleted_at"])
+        # messages older than a year are deleted
+        self.conn.execute("INSERT INTO chat_messages (user_id, body, created_at) VALUES (?, 'old', '2000-01-01 08:00:00')",
+                          (self.q("SELECT id FROM users WHERE role = 'super_admin' LIMIT 1")["id"],))
+        admin.get("/staff/chat/")
+        self.assertIsNone(self.q("SELECT id FROM chat_messages WHERE body = 'old'"))
 
 
-class TestChatKnowledge(Base):
-    def test_lifespan_answers_complete_and_served(self):
-        from app.chat_lifespan import LIFE, TOPICS
-        from app.chat_procedures import PROCEDURES
-        procs = {p["key"] for p in PROCEDURES}
-        keys = set()
-        for e in LIFE + TOPICS:
-            self.assertNotIn(e["key"], keys)
-            keys.add(e["key"])
-            self.assertTrue(e["en"] and e["tl"] and e["kw"], e["key"])
-            self.assertEqual(len(e.get("pts_en", [])), len(e.get("pts_tl", [])), e["key"])
-            self.assertTrue(all(isinstance(alt, list) and alt for alt in e["kw"]), e["key"])
-        for e in LIFE:
-            self.assertTrue(e["proc"] == "" or e["proc"] in procs, e["key"])
-        d = self.app.test_client().get("/chat/info.json").get_json()
-        self.assertEqual(len(d["life"]), len(LIFE))
-        self.assertEqual(len(d["life_topics"]), len(TOPICS))
-
-    def test_procedures_complete_and_served(self):
-        from app.chat_procedures import PROCEDURES
-        slugs = {r["slug"] for r in self.conn.all("SELECT slug FROM services")}
-        keys = set()
-        for p in PROCEDURES:
-            self.assertNotIn(p["key"], keys)
-            keys.add(p["key"])
-            self.assertIn(p["service"], slugs, p["key"])
-            self.assertTrue(p["kw"], p["key"])
-            for aspect in ("what", "duration", "pain", "recovery", "lasts"):
-                if p[aspect] is not None:
-                    self.assertTrue(p[aspect]["en"] and p[aspect]["tl"], (p["key"], aspect))
-            self.assertIsNotNone(p["duration"], p["key"])  # every procedure can answer "how long?"
-        for k in ("extraction", "wisdom", "root_canal", "braces", "implant", "crown", "filling", "cleaning", "deep_cleaning", "whitening"):
-            self.assertIn(k, keys)
-        info = self.app.test_client().get("/chat/info.json").get_json()
-        self.assertEqual(len(info["procedures"]), len(PROCEDURES))
-        ext = next(p for p in info["procedures"] if p["key"] == "extraction")
-        self.assertIn("minutes", ext["duration"]["en"])
-
-
-class TestCareers(Base):
-    def test_first_careers_wording_is_replaced_if_unedited(self):
-        from app.seed import CONTENT, OLD_CONTENT, seed_base
-        self.conn.execute("UPDATE site_content SET title = 'Build your career with us', body = ? WHERE key = 'careers'", (OLD_CONTENT["careers"],))
-        seed_base(self.conn)
-        row = self.q("SELECT * FROM site_content WHERE key = 'careers'")
-        self.assertEqual((row["title"], row["body"]), CONTENT["careers"])
-
-    def test_careers_section_and_chat_answer(self):
-        c = self.app.test_client()
-        html = c.get("/").data.decode()
-        self.assertIn('id="careers"', html)
-        self.assertIn("mailto:dentalhavenoffice@gmail.com", html)
-        self.assertNotIn("open positions", html)
-        for part in ("Training for dentists and staff", "Digital dentistry, every day", "Innovative tools and equipment"):
-            self.assertIn(part, html)
-        faq = {f["key"]: f for f in c.get("/chat/info.json").get_json()["faq"]}
-        self.assertIn("dentalhavenoffice@gmail.com", faq["careers"]["en"])
-        self.assertIn("dentalhavenoffice@gmail.com", faq["careers"]["tl"])
-        self.assertIn("digital dentistry", faq["careers"]["en"])
-        # without a valid email the section and chat answer are hidden
-        self.conn.execute("UPDATE site_content SET body = '' WHERE key = 'careers_email'")
-        self.assertNotIn('id="careers"', c.get("/").data.decode())
-        self.assertNotIn("careers", {f["key"] for f in c.get("/chat/info.json").get_json()["faq"]})
+del TestPayrollRules

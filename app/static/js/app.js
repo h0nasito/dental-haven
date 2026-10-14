@@ -587,3 +587,96 @@ document.addEventListener('DOMContentLoaded', function () {
     btn.addEventListener('click', function (e) { if (!window.confirm(btn.getAttribute('data-confirm'))) e.preventDefault(); });
   });
 })();
+
+/* Group chat: send without reloading, and show new messages every few seconds while the page is open. */
+(function () {
+  var chat = document.getElementById('chat');
+  if (!chat || chat.getAttribute('data-after') === '') return;
+  var form = document.getElementById('chat-form');
+  var box = document.getElementById('chat-body');
+  var err = document.getElementById('chat-err');
+  var token = form ? form.querySelector('[name=csrf_token]').value : '';
+  var after = parseInt(chat.getAttribute('data-after') || '0', 10);
+  var first = parseInt(chat.getAttribute('data-first') || '0', 10);
+  var removeUrl = chat.getAttribute('data-remove-url');
+  var busy = false;
+
+  function nearBottom() { return window.innerHeight + window.scrollY >= document.body.scrollHeight - 160; }
+  function toBottom() { var b = document.getElementById('bottom'); if (b) b.scrollIntoView({ block: 'end' }); }
+  function lastDay() { var d = chat.querySelectorAll('.chat-day'); return d.length ? d[d.length - 1].getAttribute('data-day') : ''; }
+  function fmtDay(iso) {
+    var p = iso.split('-'); var m = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return m[parseInt(p[1], 10) - 1] + ' ' + p[2] + ', ' + p[0];
+  }
+  function markRemoved(el) {
+    el.classList.add('removed');
+    var t = el.querySelector('.text'); if (t) t.textContent = 'Message removed';
+    var f = el.querySelector('form'); if (f) f.remove();
+  }
+  function removeForm(id) {
+    var f = document.createElement('form');
+    f.method = 'post'; f.action = removeUrl.replace(/\/0\/remove$/, '/' + id + '/remove');
+    var h = document.createElement('input'); h.type = 'hidden'; h.name = 'csrf_token'; h.value = token; f.appendChild(h);
+    var b = document.createElement('button'); b.className = 'rm'; b.textContent = 'Remove'; f.appendChild(b);
+    f.addEventListener('submit', function (e) { if (!window.confirm('Remove this message?')) e.preventDefault(); });
+    return f;
+  }
+  function add(m) {
+    if (chat.querySelector('.msg[data-id="' + m.id + '"]')) return;
+    var empty = document.getElementById('chat-empty'); if (empty) empty.remove();
+    if (m.day !== lastDay()) {
+      var d = document.createElement('div'); d.className = 'chat-day'; d.setAttribute('data-day', m.day); d.textContent = fmtDay(m.day);
+      chat.appendChild(d);
+    }
+    var el = document.createElement('div');
+    el.className = 'msg' + (m.mine ? ' mine' : '') + (m.removed ? ' removed' : '');
+    el.setAttribute('data-id', m.id);
+    var who = document.createElement('div'); who.className = 'who';
+    var n = document.createElement('strong'); n.textContent = m.mine ? 'You' : m.name; who.appendChild(n);
+    if (m.role && !m.mine) { var r = document.createElement('span'); r.textContent = m.role; who.appendChild(r); }
+    var w = document.createElement('span'); w.textContent = m.when; who.appendChild(w);
+    if (m.can_remove) who.appendChild(removeForm(m.id));
+    var t = document.createElement('div'); t.className = 'text'; t.textContent = m.removed ? 'Message removed' : m.body;
+    el.appendChild(who); el.appendChild(t); chat.appendChild(el);
+    if (!first) first = m.id;
+  }
+  function poll() {
+    if (busy || document.hidden) return;
+    busy = true;
+    var url = chat.getAttribute('data-since-url') + '?after=' + after + '&first=' + first;
+    fetch(url, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (!data) return;
+        var stick = nearBottom();
+        data.messages.forEach(function (m) { add(m); if (m.id > after) after = m.id; });
+        data.removed.forEach(function (id) { var el = chat.querySelector('.msg[data-id="' + id + '"]'); if (el && !el.classList.contains('removed')) markRemoved(el); });
+        if (data.messages.length && stick) toBottom();
+      })
+      .catch(function () {})
+      .then(function () { busy = false; });
+  }
+  if (form) {
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var text = box.value.trim(); if (!text) return;
+      var fd = new FormData(form);
+      err.textContent = '';
+      form.querySelector('button').disabled = true;
+      fetch(form.action, { method: 'POST', body: fd, headers: { 'Accept': 'application/json', 'X-CSRF-Token': token }, credentials: 'same-origin' })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (res) {
+          if (!res.ok) { err.textContent = res.j.error || 'Not sent. Try again.'; return; }
+          box.value = ''; busy = false; poll(); setTimeout(toBottom, 300);
+        })
+        .catch(function () { err.textContent = 'Not sent. Check your connection and try again.'; })
+        .then(function () { form.querySelector('button').disabled = false; box.focus(); });
+    });
+    box.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !e.shiftKey && window.matchMedia('(min-width: 800px)').matches) { e.preventDefault(); form.requestSubmit(); }
+    });
+  }
+  toBottom();
+  setInterval(poll, 6000);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) poll(); });
+})();

@@ -1,0 +1,27 @@
+<style>
+.duty-groups{display:flex;flex-direction:column;gap:.7rem}
+.duty-branch{border-top:1px solid var(--line);padding-top:.5rem}
+.duty-branch:first-child{border-top:0;padding-top:0}
+.duty-chips{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.3rem}
+.duty-chip{display:inline-block;padding:.2em .6em;border-radius:999px;background:var(--brand-50,#eef7f6);border:1px solid var(--line);font-size:.85rem;white-space:nowrap}
+.duty-chip.is-dentist{background:var(--blue-100);color:var(--blue-700);border-color:transparent}
+.duty-chip.is-me{outline:2px solid var(--brand-700);font-weight:700}
+.duty-chip.clash{background:var(--amber-100);color:var(--amber-700)}
+.ann{border-left:4px solid var(--brand-700)}
+.ann.pinned{border-left-color:var(--amber-700)}
+.ann-body{white-space:pre-line;margin:.4rem 0 0}
+.duty-days{display:flex;flex-direction:column}
+.duty-day{display:grid;grid-template-columns:4.2rem 1fr;gap:.6rem;padding:.55rem 0;border-top:1px solid var(--line)}
+.duty-day.sun{background:var(--surface-2,#f6f7f8)}
+.duty-day.today{background:var(--brand-50,#eef7f6);border-left:4px solid var(--brand-700);padding-left:.4rem}
+.duty-date{font-weight:700;line-height:1.1}
+.duty-date small{display:block;font-weight:400;color:var(--ink-2)}
+.roster-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:8px}
+.roster{border-collapse:separate;border-spacing:0;font-size:.8rem}
+.roster th,.roster td{padding:.25rem;text-align:center;border-bottom:1px solid var(--line);white-space:nowrap}
+.roster th.name,.roster td.name{position:sticky;left:0;background:var(--surface,#fff);text-align:left;z-index:1;min-width:9rem;max-width:11rem;white-space:normal;border-right:1px solid var(--line)}
+.roster .sun{background:var(--surface-2,#f3f4f5)}
+.roster input[type=checkbox]{width:1.15rem;height:1.15rem;margin:0}
+.roster .else{display:block;font-size:.6rem;color:var(--amber-700)}
+.pattern label{display:inline-flex;align-items:center;gap:.15rem;margin-right:.35rem;font-size:.75rem}
+</style>

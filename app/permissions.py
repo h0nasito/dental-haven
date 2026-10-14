@@ -148,6 +148,7 @@ CATALOG: list[Perm] = [
     Perm("leave.approve", "Approve or disapprove leave forms of their branches", "Staff & payroll", True),
     Perm("reimburse.request", "File a reimbursement for money they spent for the clinic", "Staff & payroll"),
     Perm("reimburse.approve", "Approve or disapprove reimbursements of their branches (added to the salary)", "Staff & payroll", True),
+    Perm("announcements.manage", "Post announcements and set the monthly duty schedule", "Staff & payroll", False),
     Perm("attendance.manage", "Record, import and correct attendance", "Staff & payroll", True),
     Perm("compensation.manage", "View and edit compensation settings", "Staff & payroll", True),
     Perm("payroll.prepare", "Prepare draft payroll summaries", "Staff & payroll", True),
@@ -184,7 +185,7 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
         "quotes.view", "quotes.manage", "inventory.view", "inventory.order", "attendance.clock", "leave.request", "reimburse.request",
     },
     "hr": {
-        "dashboard.view", "attendance.view", "attendance.manage", "attendance.clock", "overtime.approve", "compensation.manage", "leave.request", "leave.approve", "reimburse.request", "reimburse.approve",
+        "dashboard.view", "attendance.view", "attendance.manage", "attendance.clock", "overtime.approve", "compensation.manage", "leave.request", "leave.approve", "reimburse.request", "reimburse.approve", "announcements.manage",
         "payroll.prepare", "reports.operations", "calendar.birthdays", "calendar.events",
     },
     "supervisor": {
@@ -192,7 +193,7 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
         "bookings.view", "appointments.manage", "appointments.complete", "bookings.manage", "patients.view", "patients.contact",
         "patients.manage", "documents.upload", "leads.view", "leads.manage", "followups.view", "followups.manage", "reminders.view",
         "reminders.send", "billing.view", "quotes.view", "lab.view", "lab.all_branches", "reports.operations", "attendance.view", "attendance.manage",
-        "attendance.clock", "overtime.approve", "inventory.view", "inventory.order", "inventory.order_approve", "deposits.view", "leave.request", "leave.approve", "reimburse.request", "reimburse.approve",
+        "attendance.clock", "overtime.approve", "inventory.view", "inventory.order", "inventory.order_approve", "deposits.view", "leave.request", "leave.approve", "reimburse.request", "reimburse.approve", "announcements.manage",
     },
     "technician": {
         "dashboard.view", "lab.view", "attendance.clock", "leave.request", "reimburse.request", "inventory.view",

@@ -56,6 +56,8 @@ def register_context(app):
         if lab_ids:
             from ..notices import run_lab_due_checks
             run_lab_due_checks(conn)
+        from .chat import unread as chat_unread
+        counts["chat"] = chat_unread(conn, user.id)
         from ..notices import unread_count
         return {"nav_branches": nav_branches, "nav_counts": counts, "nav_lab": nav_lab or nav_lab_works, "nav_lab_works": nav_lab_works,
                 "nav_lab_billing": nav_lab_billing, "nav_unread": unread_count(conn, user.id)}

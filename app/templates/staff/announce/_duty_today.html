@@ -1,0 +1,5 @@
+{# expects: groups (from duty_on), me (employee or none) #}
+{% if groups %}<div class="duty-groups">{% for grp in groups %}<div class="duty-branch"><strong>{{ grp.branch }}</strong>
+<div class="duty-chips">{% for p in grp.people %}<span class="duty-chip {{ 'is-dentist' if p.dentist }} {{ 'is-me' if me and me.id == p.id }}" title="{{ p.position }}">{% if p.dentist %}🦷 {% endif %}{{ p.name }}</span>{% endfor %}</div>
+{% if grp.people[0].note %}<small class="muted">{{ grp.people[0].note }}</small>{% endif %}</div>{% endfor %}</div>
+{% else %}<p class="muted mb-0">No duty schedule posted for this day.</p>{% endif %}

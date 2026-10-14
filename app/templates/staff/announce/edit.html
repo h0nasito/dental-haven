@@ -1,0 +1,40 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, empty %}
+{% block page_title %}Set duty schedule{% endblock %}
+{% block content %}
+{% include "staff/announce/_style.html" %}
+<div class="page-head"><div><h1>Set duty schedule</h1><p>{{ branch.name }} · {{ first.strftime('%B %Y') }}. Tick the days each person is on duty. Saving replaces this branch's schedule for the month.</p></div>
+<a class="btn btn-secondary" href="{{ url_for('announce.duty', branch=branch_id, month=first.strftime('%Y-%m')) }}">View</a></div>
+
+<form method="get" class="card row" style="gap:.5rem;flex-wrap:wrap;align-items:flex-end">
+<div class="field mb-0"><label for="eb">Branch</label><select id="eb" name="branch" data-autosubmit>{% for b in branches %}<option value="{{ b.id }}" {{ 'selected' if b.id == branch_id }}>{{ b.name }}</option>{% endfor %}</select></div>
+<div class="field mb-0"><label for="em">Month</label><input id="em" type="month" name="month" value="{{ first.strftime('%Y-%m') }}"></div>
+{% for x in extra %}<input type="hidden" name="add" value="{{ x }}">{% endfor %}
+{% if others %}<div class="field mb-0"><label for="ea">Add someone from another branch</label><select id="ea" name="add"><option value="">—</option>{% for o in others %}<option value="{{ o.id }}">{{ o.full_name }}{% if o.home_branch %} · {{ o.home_branch }}{% endif %}</option>{% endfor %}</select></div>{% endif %}
+<button class="btn btn-secondary">Go</button></form>
+<p class="hint">Save your ticks first before changing branch or month; unsaved ticks are lost.</p>
+
+{% if people %}
+<form method="post">{{ csrf() }}<input type="hidden" name="branch" value="{{ branch_id }}"><input type="hidden" name="month" value="{{ first.strftime('%Y-%m') }}">
+{% for x in extra %}<input type="hidden" name="add" value="{{ x }}">{% endfor %}
+
+<details class="card"><summary><strong>Quick fill by weekday</strong> <small class="muted">e.g. every Mon, Wed, Fri</small></summary>
+<p class="hint mt-1">Ticked weekdays are added to the whole month for that person when you save (on top of the days ticked below). To take a day off, untick it in the grid after saving.</p>
+{% for p in people %}<div class="pattern" style="border-top:1px solid var(--line);padding:.35rem 0"><strong style="font-size:.85rem">{{ p.full_name }}</strong><br>
+{% for w in weekdays %}<label><input type="checkbox" name="w_{{ p.id }}" value="{{ loop.index0 }}">{{ w }}</label>{% endfor %}</div>{% endfor %}</details>
+
+<div class="roster-wrap"><table class="roster"><thead><tr><th class="name">Name</th>
+{% for d in days %}<th class="{{ 'sun' if d.weekday() == 6 }}">{{ weekdays[d.weekday()][:2] }}<br>{{ d.day }}</th>{% endfor %}</tr></thead><tbody>
+{% for p in people %}<tr><td class="name">{% if p.role == 'dentist' %}🦷 {% endif %}{{ p.full_name }}<br><small class="muted">{{ p.position }}{% if p.primary_branch_id != branch_id and p.home_branch %} · {{ p.home_branch }}{% endif %}</small></td>
+{% for d in days %}{% set iso = d.isoformat() %}<td class="{{ 'sun' if d.weekday() == 6 }}"><input type="checkbox" name="d_{{ p.id }}" value="{{ iso }}" aria-label="{{ p.full_name }} {{ iso }}" {{ 'checked' if (iso, p.id) in taken }}>{% if (iso, p.id) in elsewhere %}<span class="else" title="On duty at {{ elsewhere[(iso, p.id)] }}">{{ elsewhere[(iso, p.id)][:6] }}</span>{% endif %}</td>{% endfor %}</tr>{% endfor %}
+</tbody></table></div>
+<p class="hint">Scroll sideways for the rest of the month. Small orange text = already on duty at that branch that day.</p>
+
+<details class="card"><summary><strong>Day notes</strong> <small class="muted">optional, e.g. "Half day", "Closed – holiday"</small></summary>
+<div class="form-grid mt-1">{% for d in days %}<div class="field mb-0"><label for="n{{ d.day }}">{{ d.day }} {{ weekdays[d.weekday()] }}</label><input id="n{{ d.day }}" name="n_{{ d.isoformat() }}" maxlength="80" value="{{ notes.get(d.isoformat(), '') }}"></div>{% endfor %}</div>
+<p class="hint">A note shows only on days with someone on duty.</p></details>
+
+<label class="row mt-1" style="gap:.4rem;align-items:center"><input type="checkbox" name="notify" value="1"> Notify the people on this schedule</label>
+<button class="btn mt-1">Save {{ first.strftime('%B') }} schedule</button></form>
+{% else %}<div class="card">{{ empty('No employees at this branch yet', ' Add someone from another branch above.') }}</div>{% endif %}
+{% endblock %}

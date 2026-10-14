@@ -1,0 +1,43 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, empty %}
+{% block page_title %}Announcements{% endblock %}
+{% block content %}
+{% include "staff/announce/_style.html" %}
+<div class="page-head"><div><h1>Announcements</h1><p>Clinic news and who is on duty in each branch.</p></div>
+<a class="btn btn-secondary" href="{{ url_for('announce.duty') }}">📅 Duty schedule</a></div>
+
+<div class="grid grid-2">
+<div>
+<div class="card"><div class="card-head"><h2>On duty today</h2><small class="muted">{{ today|date }}</small></div>
+{% set groups = duty_today if my_branch_ids is none else duty_today|selectattr('branch_id', 'in', my_branch_ids)|list %}
+{% include "staff/announce/_duty_today.html" %}
+{% if my_branch_ids is not none and duty_today|length > groups|length %}<details class="mt-1"><summary><small>Other branches</small></summary>{% set groups = duty_today|rejectattr('branch_id', 'in', my_branch_ids)|list %}{% include "staff/announce/_duty_today.html" %}</details>{% endif %}
+<p class="mb-0 mt-1"><a href="{{ url_for('announce.duty') }}">See the whole month →</a></p></div>
+<div class="card"><h2>Tomorrow</h2>{% set groups = duty_tomorrow if my_branch_ids is none else duty_tomorrow|selectattr('branch_id', 'in', my_branch_ids)|list %}{% include "staff/announce/_duty_today.html" %}</div>
+</div>
+
+<div>
+{% for a in items %}<div class="card ann {{ 'pinned' if a.pinned }}"><div class="row between" style="gap:.5rem;align-items:flex-start"><div><strong>{% if a.pinned %}📌 {% endif %}{{ a.title }}</strong><br>
+<small class="muted">{{ a.branch or 'All branches' }} · {{ a.starts_on|date }}{% if a.ends_on %} – {{ a.ends_on|date }}{% endif %}{% if a.author %} · {{ a.author }}{% endif %}</small></div>
+{% if current_user.can('announcements.manage') %}<form method="post" action="{{ url_for('announce.delete', aid=a.id) }}" data-confirm="Remove this announcement?">{{ csrf() }}<button class="btn btn-ghost btn-sm" aria-label="Remove">✕</button></form>{% endif %}</div>
+{% if a.body %}<p class="ann-body">{{ a.body }}</p>{% endif %}</div>
+{% else %}<div class="card">{{ empty('No announcements right now') }}</div>{% endfor %}
+
+{% if current_user.can('announcements.manage') %}
+<form method="post" action="{{ url_for('announce.post') }}" class="card">{{ csrf() }}<h2>Post an announcement</h2>
+<div class="field"><label for="at">Title</label><input id="at" name="title" maxlength="150" required placeholder="e.g. Clinic closed on Friday for the holiday"></div>
+<div class="field"><label for="ab">Message</label><textarea id="ab" name="body" rows="4" maxlength="2000"></textarea><small class="muted">Don't put patient names or details here.</small></div>
+<div class="field"><label for="abr">Who sees it</label><select id="abr" name="branch_id"><option value="">All branches</option>{% for b in branches %}<option value="{{ b.id }}">{{ b.name }} only</option>{% endfor %}</select></div>
+<div class="form-grid"><div class="field"><label for="as">Show from</label><input id="as" type="date" name="starts_on" value="{{ today.isoformat() }}"></div>
+<div class="field"><label for="ae">Until <span class="hint">optional</span></label><input id="ae" type="date" name="ends_on"></div></div>
+<label class="row" style="gap:.4rem;align-items:center"><input type="checkbox" name="pinned" value="1"> Pin to the top</label>
+<label class="row mt-1" style="gap:.4rem;align-items:center"><input type="checkbox" name="notify" value="1"> Also send a notification now <small class="muted">(when it starts today)</small></label>
+<button class="btn mt-1">Post</button></form>
+{% if upcoming %}<div class="card"><h2>Scheduled</h2>{% for a in upcoming %}<div class="row between" style="border-top:1px solid var(--line);padding:.4rem 0;gap:.5rem"><span><strong>{{ a.title }}</strong><br><small class="muted">{{ a.branch or 'All branches' }} · from {{ a.starts_on|date }}</small></span>
+<form method="post" action="{{ url_for('announce.delete', aid=a.id) }}" data-confirm="Remove this announcement?">{{ csrf() }}<button class="btn btn-ghost btn-sm">Remove</button></form></div>{% endfor %}</div>{% endif %}
+{% if ended %}<details class="card"><summary>Ended ({{ ended|length }})</summary>{% for a in ended %}<div class="row between" style="border-top:1px solid var(--line);padding:.4rem 0;gap:.5rem"><span>{{ a.title }}<br><small class="muted">{{ a.branch or 'All branches' }} · ended {{ a.ends_on|date }}</small></span>
+<form method="post" action="{{ url_for('announce.delete', aid=a.id) }}" data-confirm="Delete this announcement?">{{ csrf() }}<button class="btn btn-ghost btn-sm">Delete</button></form></div>{% endfor %}</details>{% endif %}
+{% endif %}
+</div>
+</div>
+{% endblock %}

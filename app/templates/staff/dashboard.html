@@ -15,6 +15,15 @@
   {% if d.att_exceptions is defined %}<a class="stat {% if d.att_exceptions %}warn{% endif %}" href="{{ url_for('people.attendance', status='exception') }}"><div class="label">Attendance exceptions</div><div class="value">{{ d.att_exceptions }}</div><div class="sub">To review before payroll</div></a>{% endif %}
 </div>
 
+{% include "staff/announce/_style.html" %}
+<div class="grid grid-2" style="margin-bottom:1rem">
+<div class="card"><div class="card-head"><h2>On duty today</h2><a class="btn btn-ghost btn-sm" href="{{ url_for('announce.duty') }}">Month →</a></div>
+{% set groups = d.duty_today %}{% set me = d.me_emp %}{% include "staff/announce/_duty_today.html" %}</div>
+<div class="card"><div class="card-head"><h2>Announcements</h2><a class="btn btn-ghost btn-sm" href="{{ url_for('announce.index') }}">All →</a></div>
+{% for a in d.announcements %}<div class="duty-branch"><strong>{% if a.pinned %}📌 {% endif %}{{ a.title }}</strong> <small class="muted">· {{ a.branch or 'All branches' }}</small>{% if a.body %}<p class="ann-body mb-0" style="font-size:.9rem">{{ a.body|truncate(160) }}</p>{% endif %}</div>
+{% else %}<p class="muted mb-0">No announcements right now.</p>{% endfor %}</div>
+</div>
+
 <div class="grid grid-2">
 {% if d.today_appts is defined %}
 <div class="card"><div class="card-head"><h2>Today's schedule</h2><a class="btn btn-ghost btn-sm" href="{{ url_for('sched.calendar') }}">Calendar →</a></div>
