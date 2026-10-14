@@ -17,25 +17,46 @@
 .chat-box .row{gap:.5rem;align-items:flex-end}
 .chat-box textarea{flex:1;min-height:2.6rem;max-height:9rem;resize:vertical}
 .chat-err{color:var(--red-700);font-size:.85rem}
+.msg .pin-tag{color:var(--amber-700);font-weight:600}
+.msg.is-pinned{box-shadow:inset 3px 0 0 var(--amber-700)}
+.pins{border-left:4px solid var(--amber-700);padding:.6rem .8rem}
+.pins h2{font-size:1rem;margin:0 0 .3rem}
+.pin-item{border-top:1px solid var(--line);padding:.4rem 0;display:flex;gap:.5rem;justify-content:space-between;align-items:flex-start}
+.pin-item:first-of-type{border-top:0}
+.pin-item .text{white-space:pre-wrap;overflow-wrap:anywhere}
+.pin-item small{color:var(--ink-2)}
+.pin-item a{color:inherit;text-decoration:none}
+.msg.flash-hl{outline:2px solid var(--amber-700)}
+.emoji-btn{font-size:1.35rem;line-height:1;padding:.45rem .55rem;border:1px solid var(--line);border-radius:10px;background:var(--surface,#fff);cursor:pointer}
+.emoji-panel{display:none;grid-template-columns:repeat(auto-fill,minmax(2.4rem,1fr));gap:.15rem;max-height:12rem;overflow-y:auto;border:1px solid var(--line);border-radius:10px;padding:.35rem;margin-bottom:.4rem;background:var(--surface,#fff)}
+.emoji-panel.open{display:grid}
+.emoji-panel button{font-size:1.4rem;line-height:1;padding:.3rem 0;border:0;background:none;cursor:pointer;border-radius:8px}
+.emoji-panel button:hover,.emoji-panel button:focus{background:var(--brand-100,#d7efec)}
 </style>
 <div class="page-head"><div><h1>Group chat</h1><p>One chat for all staff ({{ people }} people). Text only. Messages are kept for 1 year.</p></div></div>
 <p class="flash flash-warning" style="margin-top:0">Don't post patient names, photos, contact details or treatment details here. Use the patient's record for that.</p>
 
+{% macro pin_form(m) %}<form method="post" action="{{ url_for('chat.pin', mid=m.id) }}">{{ csrf() }}<button class="rm" data-pin="{{ m.id }}">{{ 'Unpin' if m.pinned else 'Pin' }}</button></form>{% endmacro %}
+<div class="card pins" id="pins" {% if not pins %}hidden{% endif %}><h2>📌 Pinned</h2><div id="pin-list">
+{% for m in pins %}<div class="pin-item" data-id="{{ m.id }}"><div><a href="#m{{ m.id }}"><span class="text">{{ m.body }}</span></a><br><small>{{ 'You' if m.mine else m.name }} · {{ m.when }}</small></div>{% if m.can_pin %}{{ pin_form(m) }}{% endif %}</div>{% endfor %}
+</div></div>
+
 <div class="card">
 {% if older %}<p style="text-align:center;margin:0 0 .5rem"><a class="btn btn-ghost btn-sm" href="{{ url_for('chat.index', before=msgs[0].id) }}">Show older messages</a></p>{% endif %}
 {% if before %}<p style="text-align:center;margin:0 0 .5rem"><a href="{{ url_for('chat.index') }}#bottom">Back to the latest</a></p>{% endif %}
-<div class="chat" id="chat" data-after="{{ last if not before else '' }}" data-first="{{ msgs[0].id if msgs else 0 }}" data-since-url="{{ url_for('chat.since') }}" data-remove-url="{{ url_for('chat.remove', mid=0) }}">
+<div class="chat" id="chat" data-after="{{ last if not before else '' }}" data-first="{{ msgs[0].id if msgs else 0 }}" data-since-url="{{ url_for('chat.since') }}" data-remove-url="{{ url_for('chat.remove', mid=0) }}" data-pin-url="{{ url_for('chat.pin', mid=0) }}">
 {% set ns = namespace(day='') %}
 {% for m in msgs %}{% if m.day != ns.day %}{% set ns.day = m.day %}<div class="chat-day" data-day="{{ m.day }}">{{ m.day|date }}</div>{% endif %}
-<div class="msg {{ 'mine' if m.mine }} {{ 'removed' if m.removed }}" data-id="{{ m.id }}"><div class="who"><strong>{{ 'You' if m.mine else m.name }}</strong>{% if m.role and not m.mine %}<span>{{ m.role }}</span>{% endif %}<span>{{ m.when }}</span>
-{% if m.can_remove %}<form method="post" action="{{ url_for('chat.remove', mid=m.id) }}" data-confirm="Remove this message?">{{ csrf() }}<button class="rm">Remove</button></form>{% endif %}</div>
+<div class="msg {{ 'mine' if m.mine }} {{ 'removed' if m.removed }} {{ 'is-pinned' if m.pinned }}" data-id="{{ m.id }}" id="m{{ m.id }}"><div class="who">{% if m.pinned %}<span class="pin-tag">📌</span>{% endif %}<strong>{{ 'You' if m.mine else m.name }}</strong>{% if m.role and not m.mine %}<span>{{ m.role }}</span>{% endif %}<span>{{ m.when }}</span>
+{% if m.can_pin %}{{ pin_form(m) }}{% endif %}{% if m.can_remove %}<form method="post" action="{{ url_for('chat.remove', mid=m.id) }}" data-confirm="Remove this message?">{{ csrf() }}<button class="rm">Remove</button></form>{% endif %}</div>
 <div class="text">{{ 'Message removed' if m.removed else m.body }}</div></div>
 {% else %}<div id="chat-empty">{{ empty('No messages yet', ' Say hello to the team.') }}</div>{% endfor %}
 </div>
 <div id="bottom"></div>
 {% if not before %}<form method="post" action="{{ url_for('chat.post') }}" class="chat-box" id="chat-form">{{ csrf() }}
 <label class="sr-only" for="chat-body">Message</label>
-<div class="row"><textarea id="chat-body" name="body" rows="2" maxlength="{{ max_len }}" placeholder="Write a message…" required></textarea><button class="btn">Send</button></div>
+<div class="emoji-panel" id="emoji-panel" role="group" aria-label="Emoticons">{% for e in emojis %}<button type="button" data-emoji="{{ e }}" aria-label="{{ e }}">{{ e }}</button>{% endfor %}</div>
+<div class="row"><button type="button" class="emoji-btn" id="emoji-btn" aria-label="Emoticons" aria-expanded="false" aria-controls="emoji-panel">😊</button><textarea id="chat-body" name="body" rows="2" maxlength="{{ max_len }}" placeholder="Write a message…" required></textarea><button class="btn">Send</button></div>
 <div class="chat-err" id="chat-err" role="status"></div></form>{% endif %}
 </div>
 {% endblock %}

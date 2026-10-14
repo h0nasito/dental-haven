@@ -599,7 +599,11 @@ document.addEventListener('DOMContentLoaded', function () {
   var after = parseInt(chat.getAttribute('data-after') || '0', 10);
   var first = parseInt(chat.getAttribute('data-first') || '0', 10);
   var removeUrl = chat.getAttribute('data-remove-url');
+  var pinUrl = chat.getAttribute('data-pin-url');
+  var pinsBox = document.getElementById('pins');
+  var pinList = document.getElementById('pin-list');
   var busy = false;
+  var ePanel = document.getElementById('emoji-panel'), eBtn = document.getElementById('emoji-btn');
 
   function nearBottom() { return window.innerHeight + window.scrollY >= document.body.scrollHeight - 160; }
   function toBottom() { var b = document.getElementById('bottom'); if (b) b.scrollIntoView({ block: 'end' }); }
@@ -611,7 +615,38 @@ document.addEventListener('DOMContentLoaded', function () {
   function markRemoved(el) {
     el.classList.add('removed');
     var t = el.querySelector('.text'); if (t) t.textContent = 'Message removed';
-    var f = el.querySelector('form'); if (f) f.remove();
+    el.querySelectorAll('form').forEach(function (f) { f.remove(); });
+    setPinned(el, false);
+  }
+  function pinForm(id, pinned) {
+    var f = document.createElement('form');
+    f.method = 'post'; f.action = pinUrl.replace(/\/0\/pin$/, '/' + id + '/pin');
+    var h = document.createElement('input'); h.type = 'hidden'; h.name = 'csrf_token'; h.value = token; f.appendChild(h);
+    var b = document.createElement('button'); b.className = 'rm'; b.setAttribute('data-pin', id); b.textContent = pinned ? 'Unpin' : 'Pin'; f.appendChild(b);
+    return f;
+  }
+  function setPinned(el, on) {
+    el.classList.toggle('is-pinned', on);
+    var tag = el.querySelector('.pin-tag');
+    if (on && !tag) { tag = document.createElement('span'); tag.className = 'pin-tag'; tag.textContent = '📌'; el.querySelector('.who').insertBefore(tag, el.querySelector('.who').firstChild); }
+    if (!on && tag) tag.remove();
+    var b = el.querySelector('button[data-pin]'); if (b) b.textContent = on ? 'Unpin' : 'Pin';
+  }
+  function renderPins(pins) {
+    if (!pinList) return;
+    pinList.textContent = '';
+    pins.forEach(function (m) {
+      var row = document.createElement('div'); row.className = 'pin-item'; row.setAttribute('data-id', m.id);
+      var left = document.createElement('div');
+      var a = document.createElement('a'); a.href = '#m' + m.id;
+      var t = document.createElement('span'); t.className = 'text'; t.textContent = m.body; a.appendChild(t); left.appendChild(a);
+      left.appendChild(document.createElement('br'));
+      var sm = document.createElement('small'); sm.textContent = (m.mine ? 'You' : m.name) + ' · ' + m.when; left.appendChild(sm);
+      row.appendChild(left);
+      if (m.can_pin) row.appendChild(pinForm(m.id, true));
+      pinList.appendChild(row);
+    });
+    pinsBox.hidden = !pins.length;
   }
   function removeForm(id) {
     var f = document.createElement('form');
@@ -635,9 +670,12 @@ document.addEventListener('DOMContentLoaded', function () {
     var n = document.createElement('strong'); n.textContent = m.mine ? 'You' : m.name; who.appendChild(n);
     if (m.role && !m.mine) { var r = document.createElement('span'); r.textContent = m.role; who.appendChild(r); }
     var w = document.createElement('span'); w.textContent = m.when; who.appendChild(w);
+    if (m.can_pin) who.appendChild(pinForm(m.id, m.pinned));
     if (m.can_remove) who.appendChild(removeForm(m.id));
     var t = document.createElement('div'); t.className = 'text'; t.textContent = m.removed ? 'Message removed' : m.body;
+    el.id = 'm' + m.id;
     el.appendChild(who); el.appendChild(t); chat.appendChild(el);
+    if (m.pinned) setPinned(el, true);
     if (!first) first = m.id;
   }
   function poll() {
@@ -651,6 +689,11 @@ document.addEventListener('DOMContentLoaded', function () {
         var stick = nearBottom();
         data.messages.forEach(function (m) { add(m); if (m.id > after) after = m.id; });
         data.removed.forEach(function (id) { var el = chat.querySelector('.msg[data-id="' + id + '"]'); if (el && !el.classList.contains('removed')) markRemoved(el); });
+        if (data.pinned_ids) chat.querySelectorAll('.msg').forEach(function (el) {
+          var on = data.pinned_ids.indexOf(parseInt(el.getAttribute('data-id'), 10)) !== -1;
+          if (on !== el.classList.contains('is-pinned')) setPinned(el, on);
+        });
+        if (data.pins) renderPins(data.pins);
         if (data.messages.length && stick) toBottom();
       })
       .catch(function () {})
@@ -658,23 +701,69 @@ document.addEventListener('DOMContentLoaded', function () {
   }
   if (form) {
     form.addEventListener('submit', function (e) {
+      if (e.target !== form) return;
       e.preventDefault();
       var text = box.value.trim(); if (!text) return;
       var fd = new FormData(form);
       err.textContent = '';
-      form.querySelector('button').disabled = true;
+      form.querySelector('button.btn').disabled = true;
+      if (ePanel) { ePanel.classList.remove('open'); eBtn.setAttribute('aria-expanded', 'false'); }
       fetch(form.action, { method: 'POST', body: fd, headers: { 'Accept': 'application/json', 'X-CSRF-Token': token }, credentials: 'same-origin' })
         .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
         .then(function (res) {
           if (!res.ok) { err.textContent = res.j.error || 'Not sent. Try again.'; return; }
-          box.value = ''; busy = false; poll(); setTimeout(toBottom, 300);
+          box.value = ''; if (typeof caret !== 'undefined') caret = [0, 0]; busy = false; poll(); setTimeout(toBottom, 300);
         })
         .catch(function () { err.textContent = 'Not sent. Check your connection and try again.'; })
-        .then(function () { form.querySelector('button').disabled = false; box.focus(); });
+        .then(function () { form.querySelector('button.btn').disabled = false; box.focus(); });
     });
     box.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' && !e.shiftKey && window.matchMedia('(min-width: 800px)').matches) { e.preventDefault(); form.requestSubmit(); }
     });
+  }
+  /* pin / unpin without reloading */
+  document.addEventListener('submit', function (e) {
+    var f = e.target;
+    if (!/\/pin$/.test(f.getAttribute('action') || '')) return;
+    e.preventDefault();
+    fetch(f.action, { method: 'POST', body: new FormData(f), headers: { 'Accept': 'application/json', 'X-CSRF-Token': token }, credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (res) {
+        if (!res) return;
+        var id = f.action.match(/\/(\d+)\/pin$/)[1];
+        chat.querySelectorAll('.msg').forEach(function (el) {
+          var on = res.pins.some(function (p) { return String(p.id) === el.getAttribute('data-id'); });
+          if (on !== el.classList.contains('is-pinned')) setPinned(el, on);
+        });
+        renderPins(res.pins);
+        if (res.pinned) window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+  });
+  /* jump to a pinned message: briefly highlight it */
+  if (pinList) pinList.addEventListener('click', function (e) {
+    var a = e.target.closest('a'); if (!a) return;
+    var el = document.getElementById(a.getAttribute('href').slice(1));
+    if (!el) { e.preventDefault(); return; }
+    el.classList.add('flash-hl'); setTimeout(function () { el.classList.remove('flash-hl'); }, 1600);
+  });
+  /* emoticons */
+  if (eBtn && ePanel && box) {
+    eBtn.addEventListener('click', function () {
+      var open = ePanel.classList.toggle('open'); eBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    ePanel.addEventListener('click', function (e) {
+      var b = e.target.closest('button[data-emoji]'); if (!b) return;
+      var em = b.getAttribute('data-emoji');
+      var s0 = Math.min(caret[0], box.value.length), s1 = Math.min(caret[1], box.value.length);
+      box.value = box.value.slice(0, s0) + em + box.value.slice(s1);
+      var pos = s0 + em.length; caret = [pos, pos]; box.setSelectionRange(pos, pos);
+    });
+    /* remember where the cursor was, since tapping an emoticon takes focus away from the message box */
+    var caret = [box.value.length, box.value.length];
+    ['input', 'keyup', 'click', 'select', 'focus'].forEach(function (ev) {
+      box.addEventListener(ev, function () { caret = [box.selectionStart, box.selectionEnd]; });
+    });
+    box.addEventListener('blur', function () { caret = [box.selectionStart, box.selectionEnd]; });
   }
   toBottom();
   setInterval(poll, 6000);

@@ -31,6 +31,14 @@ class TestChat(TestPayrollRules):
         self.assertEqual([x["body"] for x in got["messages"]], ["Noted"])
         self.assertEqual(rec.post("/staff/chat/", data={"body": ""}, headers={"Accept": "application/json"}).status_code, 400)
         self.assertEqual(rec.post("/staff/chat/", data={"body": "x" * 1001}, headers={"Accept": "application/json"}).status_code, 400)
+        # pin: only the admin / HR / supervisors; pinned shows at the top and in polling
+        self.assertEqual(rec.post(f"/staff/chat/{m['id']}/pin").status_code, 403)
+        pr = admin.post(f"/staff/chat/{m['id']}/pin", headers={"Accept": "application/json"}).get_json()
+        self.assertTrue(pr["pinned"])
+        self.assertEqual([p["id"] for p in pr["pins"]], [m["id"]])
+        self.assertIn("📌 Pinned", rec.get("/staff/chat/").data.decode())
+        self.assertIn(m["id"], rec.get(f"/staff/chat/since?after={m['id']}&first={m['id']}").get_json()["pinned_ids"])
+        self.assertIn("😊", rec.get("/staff/chat/").data.decode())                # emoticon button
         # remove: not someone else's (unless moderator), yes own
         other = r.get_json()["id"]
         self.assertEqual(rec.post(f"/staff/chat/{other}/remove").status_code, 403)
@@ -39,6 +47,7 @@ class TestChat(TestPayrollRules):
         self.assertEqual((gone["body"], bool(gone["deleted_at"])), ("", True))
         got = rec.get(f"/staff/chat/since?after={other}&first={m['id']}").get_json()
         self.assertIn(m["id"], got["removed"])
+        self.assertEqual(got["pins"], [])                                       # a removed message is unpinned
         admin.post(f"/staff/chat/{other}/remove")
         self.assertIsNotNone(self.q("SELECT deleted_at FROM chat_messages WHERE id = ?", (other,))["deleted_at"])
         # messages older than a year are deleted

@@ -1,7 +1,9 @@
 """Staff group chat: one chat for everyone, text only (no pictures or files), no private messages.
 
 - Everyone signed in to the staff side can read and post.
-- People can remove their own messages; HR / supervisors / the super admin (announcements.manage) can remove any message.
+- People can remove their own messages; HR / supervisors / the super admin (announcements.manage) can remove any message
+  and pin or unpin messages (pinned ones stay at the top of the chat).
+- An emoji button helps type emoticons.
 - Messages older than a year are deleted automatically.
 - Message text is never written to logs, notifications or the audit trail.
 """
@@ -41,15 +43,28 @@ def _mark_read(conn, upto: int):
                      "last_read_id = MAX(last_read_id, excluded.last_read_id)", (g.user.id, upto))
 
 
+def _moderator() -> bool:
+    return g.user.is_super_admin or g.user.can("announcements.manage")
+
+
 def _can_remove(m) -> bool:
-    return m["user_id"] == g.user.id or g.user.is_super_admin or g.user.can("announcements.manage")
+    return m["user_id"] == g.user.id or _moderator()
+
+
+MAX_PINS = 10
+
+
+def pinned(conn) -> list[dict]:
+    rows = conn.all(SELECT + "WHERE m.pinned_at IS NOT NULL AND m.deleted_at IS NULL ORDER BY m.pinned_at DESC LIMIT ?", (MAX_PINS,))
+    return [_as_dict(m) for m in rows]
 
 
 def _as_dict(m) -> dict:
     return {"id": m["id"], "name": m["name"], "role": m["position"] or "", "mine": m["user_id"] == g.user.id,
             "when": _dt(m["created_at"], "%b %d, %I:%M %p"), "day": m["created_at"][:10],
             "body": "" if m["deleted_at"] else m["body"], "removed": bool(m["deleted_at"]),
-            "can_remove": not m["deleted_at"] and _can_remove(m)}
+            "can_remove": not m["deleted_at"] and _can_remove(m),
+            "pinned": bool(m["pinned_at"]) and not m["deleted_at"], "can_pin": not m["deleted_at"] and _moderator()}
 
 
 SELECT = ("SELECT m.*, u.name, e.position FROM chat_messages m JOIN users u ON u.id = m.user_id "
@@ -74,7 +89,7 @@ def index():
         with conn.transaction():
             _mark_read(conn, last)
     people = conn.scalar("SELECT COUNT(*) FROM users WHERE active = 1")
-    return render_template("staff/chat/index.html", msgs=msgs, older=older, last=last, before=before, people=people,
+    return render_template("staff/chat/index.html", pins=pinned(conn), emojis=EMOJIS, msgs=msgs, older=older, last=last, before=before, people=people,
                            keep_days=KEEP_DAYS, max_len=MAX_LEN)
 
 
@@ -91,7 +106,8 @@ def since():
     if rows:
         with conn.transaction():
             _mark_read(conn, rows[-1]["id"])
-    return jsonify(messages=[_as_dict(m) for m in rows], removed=removed)
+    pin_ids = [r["id"] for r in conn.all("SELECT id FROM chat_messages WHERE pinned_at IS NOT NULL AND deleted_at IS NULL AND id >= ?", (first,))]
+    return jsonify(messages=[_as_dict(m) for m in rows], removed=removed, pins=pinned(conn), pinned_ids=pin_ids)
 
 
 @bp.route("/", methods=["POST"])
@@ -133,9 +149,39 @@ def remove(mid):
         abort(403)
     if not m["deleted_at"]:
         with conn.transaction():
-            conn.execute("UPDATE chat_messages SET body = '', deleted_at = ?, deleted_by = ? WHERE id = ?", (now_str(), g.user.id, mid))
+            conn.execute("UPDATE chat_messages SET body = '', deleted_at = ?, deleted_by = ?, pinned_at = NULL, pinned_by = NULL WHERE id = ?",
+                         (now_str(), g.user.id, mid))
             if m["user_id"] != g.user.id:
                 audit.record("chat.remove", "chat_message", mid, "Removed a group chat message by another user")
     if request.headers.get("Accept", "").startswith("application/json"):
         return jsonify(ok=True)
     return redirect(url_for("chat.index"))
+
+
+@bp.route("/<int:mid>/pin", methods=["POST"])
+@login_required
+def pin(mid):
+    """Pin or unpin a message (admin, HR, supervisors)."""
+    if not _moderator():
+        abort(403)
+    conn = get_db()
+    m = conn.one("SELECT * FROM chat_messages WHERE id = ?", (mid,))
+    if not m or m["deleted_at"]:
+        abort(404)
+    with conn.transaction():
+        if m["pinned_at"]:
+            conn.execute("UPDATE chat_messages SET pinned_at = NULL, pinned_by = NULL WHERE id = ?", (mid,))
+        else:
+            conn.execute("UPDATE chat_messages SET pinned_at = ?, pinned_by = ? WHERE id = ?", (now_str(), g.user.id, mid))
+            # keep at most MAX_PINS: the oldest pin drops off
+            conn.execute("UPDATE chat_messages SET pinned_at = NULL, pinned_by = NULL WHERE id IN (SELECT id FROM chat_messages "
+                         "WHERE pinned_at IS NOT NULL AND deleted_at IS NULL ORDER BY pinned_at DESC, id DESC LIMIT -1 OFFSET ?)", (MAX_PINS,))
+    if request.headers.get("Accept", "").startswith("application/json"):
+        return jsonify(ok=True, pinned=not m["pinned_at"], pins=pinned(conn))
+    return redirect(url_for("chat.index"))
+
+
+EMOJIS = ["😀", "😁", "😂", "🤣", "😊", "😍", "🥰", "😘", "😉", "😎", "🤗", "🤔", "😅", "😆", "🙂", "🙃", "😇", "🥳", "😴", "😢",
+          "😭", "😮", "😱", "😡", "😬", "🙄", "🤦", "🤷", "🙏", "👍", "👎", "👏", "🙌", "👌", "✌️", "💪", "👋", "🤝", "❤️", "💙",
+          "💚", "💛", "🔥", "✨", "🎉", "🎂", "🎁", "☕", "🍔", "🍕", "🦷", "🪥", "😷", "💉", "📅", "⏰", "✅", "❌", "⚠️", "📌",
+          "📢", "💯", "⭐", "🌞", "🌧️", "🏥", "🚗", "💰"]
