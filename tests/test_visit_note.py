@@ -61,6 +61,26 @@ class TestVisitNote(Base):
         sig = admin.get(f"/staff/patients/{self.pid}/visit-notes/{v['id']}/signature")
         self.assertEqual((sig.status_code, sig.mimetype), (200, "image/png"))
 
+    def test_cancel_visit_hides_it_and_cancels_recall(self):
+        admin = self.login("admin")
+        self._post(admin, recall_date="2025-08-09", create_bill="", visit_date="2025-06-09")
+        v = self.q("SELECT * FROM visit_notes WHERE patient_id = ? AND status = 'saved' AND visit_date = '2025-06-09'", (self.pid,))
+        self.assertIsNotNone(v)
+        page = admin.get(f"/staff/patients/{self.pid}?tab=notes").data.decode()
+        self.assertIn("Recall Aug 9, 2025", page)
+        self.assertIn("Cancel visit", page)
+        admin.post(f"/staff/patients/{self.pid}/visit-notes/{v['id']}/cancel", data={"reason": ""})          # needs a reason
+        self.assertIsNone(self.q("SELECT cancelled_at FROM visit_notes WHERE id = ?", (v["id"],))["cancelled_at"])
+        admin.post(f"/staff/patients/{self.pid}/visit-notes/{v['id']}/cancel", data={"reason": "Entered by mistake"})
+        v2 = self.q("SELECT * FROM visit_notes WHERE id = ?", (v["id"],))
+        self.assertIsNotNone(v2["cancelled_at"])
+        self.assertTrue(v2["signature_name"])                                        # the signed record is kept
+        self.assertEqual(self.q("SELECT status FROM follow_ups WHERE id = ?", (v["followup_id"],))["status"], "cancelled")
+        self.assertNotIn("Recall Aug 9, 2025", admin.get(f"/staff/patients/{self.pid}?tab=notes").data.decode())
+        # a receptionist can't
+        self.assertEqual(self.login("reception.sjdm").post(f"/staff/patients/{self.pid}/visit-notes/{v['id']}/cancel",
+                                                            data={"reason": "x y z"}).status_code, 403)
+
     def test_no_bill_without_billing_permission_and_dentist_is_self(self):
         doc = self.login("dentist.sjdm")
         self._post(doc, dentist_id="", signature="")

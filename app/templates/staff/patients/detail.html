@@ -146,6 +146,11 @@
 <input type="hidden" name="action" value="remove_item"><input type="hidden" name="item_id" value="{{ b.item_id }}"><input type="hidden" name="next" value="{{ url_for('patients.detail', patient_id=p.id, tab='notes') }}">
 <button class="btn btn-ghost btn-sm" data-confirm="Remove “{{ b.text|truncate(40) }}” from the draft invoice?">Remove “{{ b.text|truncate(26) }}” from draft</button></form>
 {% else %}<small class="muted">“{{ b.text|truncate(26) }}” is on issued invoice {{ b.number }}: to remove it, void the invoice and issue a new one.</small>{% endif %}{% endfor %}{% endif %}
+{% if current_user.can('progress.actions') and gr.visits %}<p class="kebab-h">Visit</p>{% for vn in gr.visits %}
+<details><summary>Cancel visit{% if vn.recall_date %} &amp; recall{% endif %}</summary><form method="post" action="{{ url_for('patients.visit_note_cancel', patient_id=p.id, vid=vn.id) }}" class="mt-1">{{ csrf() }}
+<small class="muted">Removes this visit from the progress notes{% if vn.recall_date %} and cancels its recall on {{ vn.recall_date|date }}{% endif %}. The record{% if vn.signature_name %} and the patient's signature{% endif %} are kept for the clinic's records. Services and notes are removed separately above.</small>
+<label class="sr-only" for="vc{{ vn.id }}">Reason</label><input id="vc{{ vn.id }}" name="reason" placeholder="Reason" required class="mt-1">
+<button class="btn btn-danger btn-sm mt-1" data-confirm="Cancel this visit{% if vn.recall_date %} and its recall{% endif %}?">Cancel visit</button></form></details>{% endfor %}{% endif %}
 {% if current_user.can('progress.add') and gr.notes %}<p class="kebab-h">Notes</p><small class="muted">Notes can't be edited. Add an amendment with “Amends note #{{ gr.notes[0].id }}”.</small>{% endif %}
 {% if current_user.is_super_admin and gr.notes %}{% for n in gr.notes %}<details><summary>Delete note #{{ n.id }}</summary>
 <form method="post" action="{{ url_for('patients.note_delete', patient_id=p.id, note_id=n.id) }}" class="mt-1">{{ csrf() }}

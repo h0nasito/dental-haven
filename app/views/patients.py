@@ -332,7 +332,7 @@ def progress_groups(conn, patient_id, procedures, notes):
             docs[d["day"]] = docs.get(d["day"], 0) + d["n"]
     for vn in conn.all("SELECT v.id, v.visit_date, v.recall_date, v.recall_reason, v.signature_name, v.invoice_id, u.name AS dentist, "
                        "b.name AS branch FROM visit_notes v LEFT JOIN users u ON u.id = v.dentist_id LEFT JOIN branches b ON b.id = v.branch_id "
-                       "WHERE v.patient_id = ? AND v.status = 'saved'", (patient_id,)):
+                       "WHERE v.patient_id = ? AND v.status = 'saved' AND v.cancelled_at IS NULL", (patient_id,)):
         gr = grp(vn["visit_date"], vn["dentist"], vn["branch"] or "")
         gr.setdefault("visits", []).append(vn)
     out = sorted(groups.values(), key=lambda x: (x["date"] or "", x["dentist"] or ""), reverse=True)
@@ -1096,6 +1096,32 @@ def visit_note_delete(patient_id, vid):
     conn.execute("DELETE FROM visit_notes WHERE id = ?", (vid,))
     audit.record("visit_note_draft_deleted", "patient", patient_id, "Deleted a progress note draft", {"visit_note_id": vid})
     flash("Draft deleted.", "success")
+    return redirect(url_for("patients.detail", patient_id=patient_id, tab="notes"))
+
+
+@bp.route("/<int:patient_id>/visit-notes/<int:vid>/cancel", methods=["POST"])
+@require("progress.actions")
+def visit_note_cancel(patient_id, vid):
+    """Cancel a saved visit: it leaves the progress notes and its open recall follow-up is cancelled.
+    The record and the patient's signature are kept (not erased), for the clinic's records."""
+    conn = get_db()
+    _load(patient_id)
+    _require_clinical(patient_id)
+    v = conn.one("SELECT * FROM visit_notes WHERE id = ? AND patient_id = ? AND status = 'saved' AND cancelled_at IS NULL", (vid, patient_id))
+    if not v:
+        abort(404)
+    reason = clean(request.form.get("reason"), 300)
+    if len(reason) < 3:
+        flash("Enter the reason for cancelling the visit.", "error")
+        return redirect(url_for("patients.detail", patient_id=patient_id, tab="notes"))
+    with conn.transaction():
+        conn.execute("UPDATE visit_notes SET cancelled_at = ?, cancelled_by = ?, cancel_reason = ? WHERE id = ?", (now_str(), g.user.id, reason, vid))
+        n = 0
+        if v["followup_id"]:
+            n = conn.execute("UPDATE follow_ups SET status = 'cancelled' WHERE id = ? AND status = 'open'", (v["followup_id"],)).rowcount
+        audit.record("visit_note_cancelled", "patient", patient_id, "Cancelled a progress note visit" + (" and its recall" if n else ""),
+                     {"visit_note_id": vid, "reason": reason, "recall_cancelled": bool(n)}, branch_id=v["branch_id"])
+    flash("Visit cancelled." + (" Its recall reminder was cancelled too." if n else ""), "success")
     return redirect(url_for("patients.detail", patient_id=patient_id, tab="notes"))
 
 
