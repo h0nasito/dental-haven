@@ -656,6 +656,14 @@ document.addEventListener('DOMContentLoaded', function () {
     f.addEventListener('submit', function (e) { if (!window.confirm('Remove this message?')) e.preventDefault(); });
     return f;
   }
+  function avatarEl(id, name, url, initials, color, size) {
+    var a;
+    if (url) { a = document.createElement('img'); a.src = url; a.alt = ''; a.width = size; a.height = size; a.loading = 'lazy'; }
+    else { a = document.createElement('span'); a.textContent = initials || '?'; a.className = 'avatar-initials'; a.style.background = color; a.style.fontSize = Math.round(size * 0.4) + 'px'; a.setAttribute('aria-hidden', 'true'); }
+    a.className = 'avatar' + (url ? '' : ' avatar-initials');
+    a.style.width = size + 'px'; a.style.height = size + 'px';
+    return a;
+  }
   function add(m) {
     if (chat.querySelector('.msg[data-id="' + m.id + '"]')) return;
     var empty = document.getElementById('chat-empty'); if (empty) empty.remove();
@@ -664,7 +672,7 @@ document.addEventListener('DOMContentLoaded', function () {
       chat.appendChild(d);
     }
     var el = document.createElement('div');
-    el.className = 'msg' + (m.mine ? ' mine' : '') + (m.removed ? ' removed' : '');
+    el.className = 'msg' + (m.mine ? ' mine' : '') + (m.removed ? ' removed' : '') + (m.mentions_me ? ' mentioned' : '');
     el.setAttribute('data-id', m.id);
     var who = document.createElement('div'); who.className = 'who';
     var n = document.createElement('strong'); n.textContent = m.mine ? 'You' : m.name; who.appendChild(n);
@@ -677,7 +685,12 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     if (m.can_pin) who.appendChild(pinForm(m.id, m.pinned));
     if (m.can_remove) who.appendChild(removeForm(m.id));
-    var t = document.createElement('div'); t.className = 'text'; t.textContent = m.removed ? 'Message removed' : m.body;
+    var t = document.createElement('div'); t.className = 'text';
+    if (m.removed) t.textContent = 'Message removed';
+    else (m.parts || [{ t: m.body }]).forEach(function (p) {
+      if (p.m) { var sp = document.createElement('span'); sp.className = 'mention' + (p.me ? ' me' : ''); sp.textContent = p.t; t.appendChild(sp); }
+      else t.appendChild(document.createTextNode(p.t));
+    });
     el.id = 'm' + m.id;
     el.appendChild(who);
     if (m.reply && !m.removed) {
@@ -687,7 +700,10 @@ document.addEventListener('DOMContentLoaded', function () {
       var qn = document.createElement('strong'); qn.textContent = m.reply.name ? (m.reply.mine ? 'You' : m.reply.name) : 'Reply';
       q.appendChild(qn); q.appendChild(document.createTextNode(m.reply.text)); el.appendChild(q);
     }
-    el.appendChild(t); chat.appendChild(el);
+    el.appendChild(t);
+    var row = document.createElement('div'); row.className = 'msg-row' + (m.mine ? ' mine' : '');
+    if (!m.mine) row.appendChild(avatarEl(m.uid, m.name, m.avatar, m.initials, m.color, 30));
+    row.appendChild(el); chat.appendChild(row);
     if (m.pinned) setPinned(el, true);
     if (!first) first = m.id;
   }
@@ -731,7 +747,7 @@ document.addEventListener('DOMContentLoaded', function () {
         .then(function () { form.querySelector('button.btn').disabled = false; box.focus(); });
     });
     box.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter' && !e.shiftKey && window.matchMedia('(min-width: 800px)').matches) { e.preventDefault(); form.requestSubmit(); }
+      if (e.key === 'Enter' && !e.shiftKey && !(mBox && !mBox.hidden) && window.matchMedia('(min-width: 800px)').matches) { e.preventDefault(); form.requestSubmit(); }
     });
   }
   /* pin / unpin without reloading */
@@ -801,6 +817,60 @@ document.addEventListener('DOMContentLoaded', function () {
       box.addEventListener(ev, function () { caret = [box.selectionStart, box.selectionEnd]; });
     });
     box.addEventListener('blur', function () { caret = [box.selectionStart, box.selectionEnd]; });
+  }
+  /* @mentions: suggest names while typing "@..." */
+  var mBox = document.getElementById('mention-box');
+  if (mBox && box) {
+    var folks = [];
+    try { folks = JSON.parse(mBox.getAttribute('data-people') || '[]'); } catch (err) { folks = []; }
+    var mStart = -1, mItems = [], mActive = 0;
+    function hideM() { mBox.hidden = true; mStart = -1; mItems = []; }
+    function pick(p) {
+      var pos = box.selectionStart, before = box.value.slice(0, mStart), after = box.value.slice(pos);
+      var ins = '@' + p.name + ' ';
+      box.value = before + ins + after.replace(/^\s+/, '');
+      var c = before.length + ins.length; box.setSelectionRange(c, c);
+      if (typeof caret !== 'undefined') caret = [c, c];
+      hideM(); box.focus();
+    }
+    function showM(list) {
+      mBox.textContent = ''; mItems = list; mActive = 0;
+      list.forEach(function (p, i) {
+        var b = document.createElement('button'); b.type = 'button'; b.setAttribute('role', 'option');
+        if (i === 0) b.className = 'active';
+        b.appendChild(avatarEl(p.id, p.name, p.avatar, p.initials, p.color, 26));
+        var n = document.createElement('span'); n.textContent = p.name; b.appendChild(n);
+        b.addEventListener('mousedown', function (e) { e.preventDefault(); pick(p); });
+        mBox.appendChild(b);
+      });
+      mBox.hidden = !list.length;
+    }
+    function check() {
+      var pos = box.selectionStart, upto = box.value.slice(0, pos);
+      var m = upto.match(/(^|\s)@([^@\n]{0,30})$/);
+      if (!m) { hideM(); return; }
+      var q = m[2].toLowerCase();
+      var list = folks.filter(function (p) {
+        var n = p.name.toLowerCase();
+        return !q || n.indexOf(q) === 0 || n.split(/\s+/).some(function (w) { return w.indexOf(q) === 0; }) || (q.length > 2 && n.indexOf(q) !== -1);
+      }).slice(0, 6);
+      if (!list.length && /\s/.test(q)) { hideM(); return; }
+      mStart = pos - m[2].length - 1;
+      showM(list);
+    }
+    box.addEventListener('input', check);
+    box.addEventListener('click', check);
+    box.addEventListener('blur', function () { setTimeout(hideM, 150); });
+    box.addEventListener('keydown', function (e) {
+      if (mBox.hidden || !mItems.length) return;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        mActive = (mActive + (e.key === 'ArrowDown' ? 1 : mItems.length - 1)) % mItems.length;
+        Array.prototype.forEach.call(mBox.children, function (b, i) { b.className = i === mActive ? 'active' : ''; });
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault(); e.stopImmediatePropagation(); pick(mItems[mActive]);
+      } else if (e.key === 'Escape') { hideM(); }
+    });
   }
   toBottom();
   setInterval(poll, 6000);

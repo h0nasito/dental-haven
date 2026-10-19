@@ -598,9 +598,16 @@ def seed_base(conn):
                     if clean != r["v"]:
                         conn.execute(f"UPDATE {table} SET {col} = ? WHERE id = ?", (clean, r["id"]))
             _settings2.put("seed.html_cleanup_v1", True, None, conn)
+        # Once (Oct 2026): editing the lab price list moved from "lab billing" to its own permission (lab.prices).
+        # Whoever was individually given lab billing keeps being able to edit prices.
+        if not _settings2.get("seed.lab_prices_v1", conn):
+            for r in conn.all("SELECT user_id FROM user_permissions WHERE permission = 'lab.billing' AND granted = 1"):
+                if not conn.one("SELECT 1 AS x FROM user_permissions WHERE user_id = ? AND permission = 'lab.prices'", (r["user_id"],)):
+                    conn.execute("INSERT INTO user_permissions (user_id, permission, granted) VALUES (?, 'lab.prices', 1)", (r["user_id"],))
+            _settings2.put("seed.lab_prices_v1", True, None, conn)
         # Access roles added later (HR, Supervisor, Cashier) start with their recommended access, once.
         if conn.scalar("SELECT COUNT(*) FROM role_permissions"):
-            for role in ("hr", "supervisor", "cashier", "technician"):
+            for role in ("hr", "supervisor", "cashier", "technician", "lab_receptionist"):
                 if not conn.scalar("SELECT COUNT(*) FROM role_permissions WHERE role = ?", (role,)) and \
                         not _settings2.get(f"seed.role_{role}", conn):
                     for p in ROLE_DEFAULTS[role]:

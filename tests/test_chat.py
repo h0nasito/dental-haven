@@ -51,6 +51,16 @@ class TestChat(TestPayrollRules):
         self.assertIn("replied to your message", n["title"])
         self.assertNotIn("see you", (n["title"] + n["body"]).lower())
         self.assertIn("Replying to", rec.get(f"/staff/chat/?reply={other}").data.decode())
+        # @mention: highlighted and the mentioned person is notified (no message text)
+        admin_name = self.q("SELECT name FROM users WHERE id = ?", (admin_id,))["name"]
+        mm = rec.post("/staff/chat/", data={"body": f"Hi @{admin_name}, please check"}, headers={"Accept": "application/json"}).get_json()
+        n = self.q("SELECT * FROM notifications WHERE user_id = ? AND kind = 'chat_mention' ORDER BY id DESC LIMIT 1", (admin_id,))
+        self.assertIn("mentioned you", n["title"])
+        self.assertNotIn("please check", n["title"] + n["body"])
+        got = admin.get(f"/staff/chat/since?after={mm['id'] - 1}").get_json()["messages"][-1]
+        self.assertTrue(got["mentions_me"])
+        self.assertIn({"t": "@" + admin_name, "m": True, "me": True}, got["parts"])
+        self.assertIn('class="mention me"', admin.get("/staff/chat/").data.decode())
         # remove: not someone else's (unless moderator), yes own
         self.assertEqual(rec.post(f"/staff/chat/{other}/remove").status_code, 403)
         rec.post(f"/staff/chat/{m['id']}/remove")
@@ -60,7 +70,8 @@ class TestChat(TestPayrollRules):
         self.assertIn(m["id"], got["removed"])
         self.assertEqual(got["pins"], [])                                       # a removed message is unpinned
         admin.post(f"/staff/chat/{other}/remove")
-        self.assertEqual(admin.get(f"/staff/chat/since?after={other}").get_json()["messages"][-1]["reply"]["text"], "Message removed")
+        msgs = admin.get(f"/staff/chat/since?after={other}").get_json()["messages"]
+        self.assertEqual(next(x for x in msgs if x["id"] == rr["id"])["reply"]["text"], "Message removed")
         self.assertIsNotNone(self.q("SELECT deleted_at FROM chat_messages WHERE id = ?", (other,))["deleted_at"])
         # messages older than a year are deleted
         self.conn.execute("INSERT INTO chat_messages (user_id, body, created_at) VALUES (?, 'old', '2000-01-01 08:00:00')",

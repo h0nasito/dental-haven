@@ -421,6 +421,23 @@ def clients():
     _need("lab.works")
     conn = get_db()
     ids = _lab_ids()
+    if request.method == "POST" and request.form.get("action") == "add":
+        f = request.form
+        lab_id = to_int(f.get("lab_id")) or (ids[0] if len(ids) == 1 else None)
+        name = clean(f.get("clinic_name"), 120)
+        if lab_id not in ids:
+            flash("Choose the laboratory.", "error")
+        elif len(name) < 2:
+            flash("Enter the clinic name.", "error")
+        elif conn.one("SELECT id FROM lab_clients WHERE lab_id = ? AND lower(clinic_name) = lower(?)", (lab_id, name)):
+            flash(f"{name} is already in the list.", "error")
+        else:
+            cid = conn.insert("lab_clients", {"lab_id": lab_id, "clinic_name": name, "doctor": clean(f.get("doctor"), 120),
+                                              "contact_number": clean(f.get("contact_number"), 60), "email": clean(f.get("email"), 120),
+                                              "address": clean(f.get("address"), 300), "active": 1, "created_at": now_str()})
+            audit.record("lab_client_created", "lab_client", cid, f"Added clinic {name}")
+            flash(f"Added {name}.", "success")
+        return redirect(url_for("lab_works.clients"))
     if request.method == "POST":
         cid = to_int(request.form.get("client_id"))
         c = conn.one(f"SELECT * FROM lab_clients WHERE id = ? AND lab_id IN ({_in(ids)})", [cid, *ids])
@@ -442,7 +459,8 @@ def clients():
                     "(SELECT COALESCE(SUM(total_cents - paid_cents), 0) FROM lab_invoices i WHERE i.client_id = c.id AND i.status = 'issued') AS balance_cents "
                     f"FROM lab_clients c WHERE c.lab_id IN ({_in(ids)}) ORDER BY c.active DESC, c.clinic_name", ids)
     edit = to_int(request.args.get("edit"))
-    return render_template("staff/lab_works/clients.html", rows=rows, edit=edit, can_bill=g.user.is_super_admin or g.user.can("lab.billing"))
+    return render_template("staff/lab_works/clients.html", rows=rows, edit=edit, can_bill=g.user.is_super_admin or g.user.can("lab.billing"),
+                           labs=my_labs(conn))
 
 
 # ---------------------------------------------------------------------------
@@ -525,14 +543,15 @@ def invoice_new():
 @bp.route("/prices", methods=["GET", "POST"])
 @login_required
 def prices():
-    """The lab's price list. Lab users and branch staff with lab access can see it; lab billing users edit it."""
+    """The lab's price list (services and prices). Lab users and branch staff with lab access can see it; people with
+    "Laboratory services & prices" (lab.prices) who are assigned to the lab add and edit it."""
     conn = get_db()
     labs = my_labs(conn)
     if not labs and (g.user.can("lab.view") or g.user.can("lab.manage")):
         labs = conn.all("SELECT * FROM laboratories WHERE active = 1 ORDER BY id")
     if not labs:
         abort(403)
-    can_edit = g.user.is_super_admin or (g.user.can("lab.billing") and bool(my_labs(conn)))
+    can_edit = g.user.is_super_admin or (g.user.can("lab.prices") and bool(my_labs(conn)))
     lab_ids = [l["id"] for l in labs]
     if request.method == "POST":
         if not can_edit:

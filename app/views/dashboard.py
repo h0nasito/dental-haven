@@ -125,9 +125,28 @@ def birthdays_this_week(conn, user):
 @require("dashboard.view")
 def queue():
     user = g.user
-    if not (user.can("bookings.manage") or user.can("bookings.view") or user.can("leads.view") or user.can("followups.view")):
-        abort(403)
     conn = get_db()
+    from .. import lab_queue
+    labs = lab_queue.lab_ids(conn, user.id)
+    clinic_ok = user.can("bookings.manage") or user.can("bookings.view") or user.can("leads.view") or user.can("followups.view")
+    lab_only = lab_queue.is_lab_only(conn, user)
+    if lab_only:
+        clinic_ok = False
+    if not clinic_ok and not labs:
+        abort(403)
+    view = request.args.get("view")
+    if view not in ("clinic", "lab"):
+        view = "clinic" if clinic_ok else "lab"
+    if view == "clinic" and not clinic_ok:
+        view = "lab"
+    if view == "lab" and not labs:
+        view = "clinic"
+    if view == "lab":
+        lq = lab_queue.build(conn, labs, can_works=user.is_super_admin or user.can("lab.works"),
+                             can_billing=user.is_super_admin or user.can("lab.billing"))
+        lab_names = conn.all(f"SELECT name FROM laboratories WHERE id IN ({','.join('?' * len(labs))}) ORDER BY name", labs)
+        return render_template("staff/queue.html", view=view, lq=lq, q={}, clinic_ok=clinic_ok, has_lab=True,
+                               lab_names=[r["name"] for r in lab_names], now_s=now_str())
     t = today()
     tomorrow = (t + timedelta(days=1)).isoformat()
     q = {}
@@ -157,7 +176,7 @@ def queue():
         rf, rp = branch_filter(user, "r.branch_id")
         q["reminders_due"] = conn.scalar(
             f"SELECT COUNT(*) FROM reminders r WHERE r.status='pending' AND r.scheduled_for < ? AND {rf}", [tomorrow, *rp])
-    return render_template("staff/queue.html", q=q, now_s=now_str())
+    return render_template("staff/queue.html", view=view, q=q, clinic_ok=clinic_ok, has_lab=bool(labs), now_s=now_str())
 
 
 @bp.route("/branch", methods=["POST"])

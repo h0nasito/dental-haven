@@ -1,4 +1,4 @@
-"""Lab price list: DSDL prices loaded, lab billing users edit, branch staff view, pickers on the invoice."""
+"""Lab price list: DSDL prices loaded, only "Laboratory services & prices" (lab.prices) edits, branch staff view, pickers on the invoice."""
 from __future__ import annotations
 
 import sys
@@ -18,7 +18,13 @@ class TestLabPrices(TestLabCaseBilling):
         z = self.q("SELECT price_cents FROM lab_price_items WHERE lab_id = ? AND name = 'Zirconia premium'", (self.lab,))
         self.assertEqual(z["price_cents"], 550000)
 
-    def test_lab_billing_edits_and_branch_views(self):
+    def test_lab_prices_permission_edits_and_branch_views(self):
+        # lab billing alone doesn't edit the price list any more
+        page = self.t.get("/staff/lab/prices").data.decode()
+        self.assertNotIn("Save price list", page)
+        self.assertEqual(self.t.post("/staff/lab/prices", data={"action": "add", "lab_id": self.lab, "name": "Nope", "price": "1"}).status_code, 403)
+        uid = self.q("SELECT id FROM users WHERE email = ?", (f"labrec{id(self)}@dsdl.test",))["id"]
+        self.conn.execute("INSERT INTO user_permissions (user_id, permission, granted) VALUES (?, 'lab.prices', 1)", (uid,))
         page = self.t.get("/staff/lab/prices").data.decode()
         self.assertIn("Save price list", page)
         it = self.q("SELECT * FROM lab_price_items WHERE lab_id = ? AND name = 'Zirconia premium'", (self.lab,))
@@ -39,6 +45,24 @@ class TestLabPrices(TestLabCaseBilling):
         page = self.t.get(r.headers["Location"]).data.decode()
         self.assertIn("data-price-pick", page)
         self.assertIn('data-price="5500.00"', page)
+
+
+
+
+class TestLabClinicsAdd(TestLabCaseBilling):
+    test_lab_sets_price_and_bills_branch = None
+    test_bill_by_case_with_units_extras_and_less = None
+
+    def test_add_outside_clinic(self):
+        uid = self.q("SELECT id FROM users WHERE email = ?", (f"labrec{id(self)}@dsdl.test",))["id"]
+        self.conn.execute("INSERT INTO user_permissions (user_id, permission, granted) VALUES (?, 'lab.works', 1)", (uid,))
+        self.assertIn("Add a clinic", self.t.get("/staff/lab/clients").data.decode())
+        self.t.post("/staff/lab/clients", data={"action": "add", "clinic_name": "Smile QT Dental", "doctor": "Dr. QT", "contact_number": "0917"})
+        c = self.q("SELECT * FROM lab_clients WHERE clinic_name = 'Smile QT Dental'")
+        self.assertEqual((c["lab_id"], c["doctor"]), (self.lab, "Dr. QT"))
+        self.t.post("/staff/lab/clients", data={"action": "add", "clinic_name": "smile qt dental"})
+        self.assertEqual(self.q("SELECT COUNT(*) AS n FROM lab_clients WHERE lower(clinic_name) = 'smile qt dental'")["n"], 1)
+        self.assertIn("Smile QT Dental", self.t.get("/staff/lab/works/new").data.decode())
 
 
 del TestLabCaseBilling

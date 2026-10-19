@@ -6,7 +6,7 @@
 <div class="page-head"><div>{% if locs|length > 1 %}<a href="{{ url_for('inventory.index') }}">← All locations</a>{% endif %}
 <h1>{{ loc.name }}</h1><p>Consumables stock. Status updates by itself from the quantity, reorder level and expiry date.</p></div>
 <div class="row"><a class="btn btn-secondary" href="{{ url_for('inventory.export', location_id=loc.id) }}">Export CSV</a>
-{% if can_edit %}<a class="btn btn-secondary" href="{{ url_for('inventory.items') }}">Items &amp; prices</a>{% endif %}</div></div>
+{% if can_edit %}<a class="btn btn-secondary" href="{{ url_for('inventory.items', scope=scope) }}">Items &amp; prices</a>{% endif %}</div></div>
 
 {% if locs|length > 1 %}<nav class="tabs" aria-label="Locations">{% for l in locs %}<a href="{{ url_for('inventory.location', location_id=l.id, category=category, status=status, q=q) }}" class="{{ 'active' if l.id == loc.id else '' }}">{{ l.name }}</a>{% endfor %}</nav>{% endif %}
 

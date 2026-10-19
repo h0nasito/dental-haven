@@ -143,3 +143,48 @@ class TestInventory(Base):
         self.assertIn("Code,Group,Category,Item", csv_text)
         line = next(l for l in csv_text.splitlines() if ",Cotton Roll," in l)
         self.assertIn(",4,2,,185.5,742.0,OK,'=HYPERLINK(1)", line)
+
+
+class TestInventoryScopes(TestInventory):
+    """The clinic and the laboratory keep separate item lists."""
+    for _n in [n for n in dir(TestInventory) if n.startswith("test_")]:
+        locals()[_n] = None
+
+    def test_clinic_and_lab_lists_are_separate(self):
+        from app.auth import hash_password
+        from app.util import now_str
+        admin = self.login("admin")
+        lab_loc = self.loc("Digital Solutions%")
+        clinic_loc = self.q("SELECT * FROM inventory_locations WHERE branch_id IS NOT NULL ORDER BY sort_order LIMIT 1")
+        # existing items are the clinic's
+        self.assertEqual(self.item("Cotton Roll")["scope"], "clinic")
+        self.assertIn("Cotton Roll", admin.get(f"/staff/inventory/{clinic_loc['id']}").data.decode())
+        lab_page = admin.get(f"/staff/inventory/{lab_loc['id']}").data.decode()
+        self.assertNotIn("Cotton Roll", lab_page)
+        # add a laboratory item: lab categories, LB- code, only at the lab
+        page = admin.get("/staff/inventory/items?scope=lab").data.decode()
+        self.assertIn("Laboratory items", page)
+        self.assertIn("Gypsum &amp; Model Materials", page)
+        admin.post("/staff/inventory/items", data={"scope": "lab", "name": "Dental Stone Type IV QT", "unit": "bag",
+                                                   "category": "Gypsum & Model Materials", "price": "950", "supplier": ""})
+        it = self.item("Dental Stone Type IV QT")
+        self.assertEqual((it["scope"], it["code"][:3]), ("lab", "LB-"))
+        self.assertIn("Dental Stone Type IV QT", admin.get(f"/staff/inventory/{lab_loc['id']}").data.decode())
+        self.assertNotIn("Dental Stone Type IV QT", admin.get(f"/staff/inventory/{clinic_loc['id']}").data.decode())
+        self.assertNotIn("Dental Stone Type IV QT", admin.get("/staff/inventory/items").data.decode())     # clinic tab
+        self.assertEqual(admin.get(f"/staff/inventory/{clinic_loc['id']}/item/{it['id']}").status_code, 404)
+        # a clinic category can't be used for a lab item
+        admin.post("/staff/inventory/items", data={"scope": "lab", "name": "Wrong Cat QT", "unit": "box", "category": "Routine Disposables"})
+        self.assertIsNone(self.item("Wrong Cat QT"))
+        # a laboratory receptionist sees only the lab's location, even if linked to a branch
+        lab = self.q("SELECT id FROM laboratories WHERE name = 'DSDL'")
+        uid = self.conn.insert("users", {"email": "lab.desk.inv@demo.dentalhaven.test", "name": "Lab Desk Inv", "password_hash": hash_password("DemoPass-2026x"),
+                                         "role": "staff", "access_role": "lab_receptionist", "active": 1, "must_change_password": 0, "created_at": now_str()})
+        self.conn.execute("INSERT INTO user_labs (user_id, lab_id) VALUES (?, ?)", (uid, lab["id"]))
+        self.conn.execute("INSERT INTO user_branches (user_id, branch_id) VALUES (?, ?)", (uid, clinic_loc["branch_id"]))
+        c = self.app.test_client()
+        c.post("/staff/login", data={"email": "lab.desk.inv@demo.dentalhaven.test", "password": "DemoPass-2026x"})
+        r = c.get("/staff/inventory")
+        self.assertEqual(r.status_code, 302)
+        self.assertIn(f"/staff/inventory/{lab_loc['id']}", r.headers["Location"])
+        self.assertEqual(c.get(f"/staff/inventory/{clinic_loc['id']}").status_code, 404)

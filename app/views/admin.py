@@ -179,7 +179,7 @@ def users_from_employees():
         emps = [e for e in emps if e["id"] == only]
     for e in emps:
         e["suggested"] = ACCESS_FOR_POSITION.get(e["position"], "staff")
-        e["is_tech"] = "technician" in (e["position"] or "").lower()
+        e["is_tech"] = any(w in (e["position"] or "").lower() for w in ("technician", "laboratory", "lab "))
     branches = conn.all("SELECT id, name FROM branches ORDER BY sort_order")
     branch_names = {b["id"]: b["name"] for b in branches}
     errors, created = {}, []

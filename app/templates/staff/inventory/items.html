@@ -3,9 +3,10 @@
 {% block page_title %}Inventory items &amp; prices{% endblock %}
 {% block content %}
 <div class="page-head"><div><a href="{{ url_for('inventory.index') }}">← Inventory</a><h1>Items &amp; prices</h1>
-<p>The item list every location uses. Set each item's unit price here once; stock values at all locations use it.</p></div></div>
+<p>{% if scope == 'lab' %}The laboratory's own item list (separate from the clinic's). The lab's location uses it.{% else %}The clinic's item list, used by every branch. The laboratory has its own list.{% endif %} Set each item's unit price here once; stock values use it.</p></div></div>
+{% if scopes|length > 1 %}<nav class="tabs" aria-label="Item lists">{% for sc in scopes %}<a href="{{ url_for('inventory.items', scope=sc) }}" class="{{ 'active' if sc == scope }}">{{ scope_names[sc] }} items</a>{% endfor %}</nav>{% endif %}
 {% if no_price %}<div class="notice" style="margin-bottom:1rem">{{ no_price }} items don't have a unit price yet, so they aren't counted in stock value. Click an item to add its price.</div>{% endif %}
-<form class="toolbar" method="get">
+<form class="toolbar" method="get"><input type="hidden" name="scope" value="{{ scope }}">
   <div class="field grow"><label for="iq">Search</label><input id="iq" name="q" value="{{ q }}" placeholder="Item name, code or supplier"></div>
   <div class="field"><label for="ic">Category</label><select id="ic" name="category"><option value="">All categories</option>
     {% for g, cats in groups.items() %}<optgroup label="{{ g }}">{% for c in cats %}<option value="{{ c }}" {% if c == category %}selected{% endif %}>{{ c }}</option>{% endfor %}</optgroup>{% endfor %}</select></div>
@@ -15,9 +16,9 @@
 <div class="card"><div class="table-wrap"><table><thead><tr><th>Code</th><th>Item</th><th>Unit</th><th>Category</th><th class="num">Unit price</th><th>Supplier</th></tr></thead><tbody>
 {% for r in rows %}<tr><td class="muted">{{ r.code }}</td><td><a href="{{ url_for('inventory.item_edit', item_id=r.id) }}">{{ r.name }}</a>{% if not r.active %} <span class="badge">No longer used</span>{% endif %}</td>
 <td>{{ r.unit or '—' }}</td><td class="muted">{{ r.category }}</td><td class="num">{{ r.unit_price_cents|peso if r.unit_price_cents is not none else '—' }}</td><td>{{ r.supplier or '—' }}</td></tr>
-{% else %}<tr><td colspan="6" class="empty">No items match.</td></tr>{% endfor %}</tbody></table></div></div>
+{% else %}<tr><td colspan="6" class="empty">{% if scope == 'lab' and not q and not category %}No laboratory items yet. Add the lab's materials and supplies below.{% else %}No items match.{% endif %}</td></tr>{% endfor %}</tbody></table></div></div>
 
-<form method="post" class="card mt-1">{{ csrf() }}<h2>Add an item</h2>
+<form method="post" class="card mt-1">{{ csrf() }}<input type="hidden" name="scope" value="{{ scope }}"><h2>Add {{ 'a laboratory' if scope == 'lab' else 'a clinic' }} item</h2>
 <div class="form-grid">
 <div class="field {{ 'error' if errors.name }}"><label for="nn">Item name</label><input id="nn" name="name" value="{{ v.name }}" maxlength="120" required>{% if errors.name %}<div class="field-error">{{ errors.name }}</div>{% endif %}</div>
 <div class="field {{ 'error' if errors.unit }}"><label for="nu">Unit</label><input id="nu" name="unit" value="{{ v.unit }}" maxlength="30" placeholder="box, pack, piece…" required>{% if errors.unit %}<div class="field-error">{{ errors.unit }}</div>{% endif %}</div>

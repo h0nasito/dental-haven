@@ -197,6 +197,6 @@ class TestEmployeeImport(Base):
         self.assertEqual(got["ZZ Tech One"][0], "Dental Technician (RPD)")
         self.assertEqual(got["ZZ Tech Two"][0], "Dental Technician (FPD)")
         self.assertEqual(got["ZZ Front Desk"][0], "Receptionist")
-        self.assertEqual(got["ZZ Lab Desk"][0], "Lab Receptionist")
+        self.assertEqual(got["ZZ Lab Desk"][0], "Laboratory Receptionist")
         self.assertEqual(got["Link Me Person"], ("Head Dentist", uid))
         self.conn.execute("UPDATE employees SET active = 0 WHERE full_name LIKE 'Z%' OR full_name = 'Link Me Person'")

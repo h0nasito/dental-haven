@@ -1,5 +1,5 @@
 {% extends "staff/layout.html" %}
-{% from "macros.html" import csrf %}
+{% from "macros.html" import csrf, avatar %}
 {% block page_title %}Users{% endblock %}
 {% block content %}
 <div class="page-head"><div><h1>Users</h1><p>Only super admins can create users, change roles or assign branches. Every change is recorded in the audit trail.</p></div>
@@ -23,7 +23,7 @@
       <td>{{ loop.index }}</td>
       <td>{% if u.active %}<span class="badge badge-green">Active</span>{% else %}<span class="badge badge-red">Deactivated</span>{% endif %}{% if u.must_change_password and u.active %}<br><span class="badge badge-amber">Temp password</span>{% endif %}
         <br><small class="muted">{{ ('Last in ' ~ (u.last_login_at|date)) if u.last_login_at else 'Never signed in' }}</small></td>
-      <td>{% if u.role == 'super_admin' %}<span class="badge badge-teal">Account owner</span><br>{% endif %}<strong>{{ u.name }}</strong>{% if u.id == current_user.id %} <span class="badge">You</span>{% endif %}
+      <td>{% if u.role == 'super_admin' %}<span class="badge badge-teal">Account owner</span><br>{% endif %}{{ avatar(u.id, u.name, u.avatar, 28) }} <strong>{{ u.name }}</strong>{% if u.id == current_user.id %} <span class="badge">You</span>{% endif %}
         {% if tab == 'associates' %}<br><small class="muted">{% if u.role == 'super_admin' %}All branches{% else %}{{ (user_branches.get(u.id) or ['No branch'])|join(', ') }}{% endif %}</small>{% endif %}</td>
       {% if tab == 'associates' %}
       <td>{{ u.license_no or '—' }}</td><td>{{ u.ptr_no or '—' }}</td>

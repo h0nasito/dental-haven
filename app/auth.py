@@ -51,6 +51,7 @@ class CurrentUser:
         self.role = row["role"]
         self.access_role = row["access_role"] if "access_role" in row.keys() and row["access_role"] else row["role"]
         self.must_change_password = bool(row["must_change_password"])
+        self.avatar = row["avatar"] if "avatar" in row.keys() else None
         self.perms = perms
         self.branch_ids = branch_ids
         self.active_branch_id = active_branch_id if active_branch_id in branch_ids else None

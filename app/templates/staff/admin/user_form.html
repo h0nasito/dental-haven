@@ -1,9 +1,15 @@
 {% extends "staff/layout.html" %}
-{% from "macros.html" import csrf, field %}
+{% from "macros.html" import csrf, field, avatar %}
 {% block page_title %}{{ 'New user' if is_new else 'Edit user' }}{% endblock %}
 {% block content %}
 <div class="page-head"><div><a href="{{ url_for('admin.users') }}">← Users</a><h1>{{ 'New user' if is_new else v.name }}</h1>
 {% if is_new %}<p>New users get a temporary password and must change it at first sign-in. Pick the least access they need.</p>{% endif %}</div></div>
+{% if not is_new and user %}<div class="card row" style="gap:.8rem;align-items:center;flex-wrap:wrap">{{ avatar(user.id, user.name, user.avatar, 64) }}
+<form method="post" action="{{ url_for('profile.set_avatar') }}" enctype="multipart/form-data" class="row" style="gap:.5rem;align-items:center;flex-wrap:wrap">{{ csrf() }}
+<input type="hidden" name="user_id" value="{{ user.id }}"><input type="hidden" name="next" value="{{ request.path }}">
+<label for="uph" class="sr-only">Profile picture</label><input id="uph" type="file" name="photo" accept="image/*" required><button class="btn btn-secondary btn-sm">{{ 'Change picture' if user.avatar else 'Add picture' }}</button></form>
+{% if user.avatar %}<form method="post" action="{{ url_for('profile.set_avatar') }}" data-confirm="Remove this profile picture?">{{ csrf() }}<input type="hidden" name="user_id" value="{{ user.id }}"><input type="hidden" name="next" value="{{ request.path }}"><button class="btn btn-ghost btn-sm" name="action" value="remove">Remove</button></form>{% endif %}
+<small class="muted">Shown in the group chat. Made small automatically.</small></div>{% endif %}
 <div class="grid grid-2">
 <div class="card">
 <form method="post">

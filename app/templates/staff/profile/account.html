@@ -1,0 +1,16 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, avatar %}
+{% block page_title %}My profile{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>My profile</h1><p>Your picture shows in the group chat and at the top of the page.</p></div></div>
+<div class="card" style="max-width:560px">
+<div class="row" style="gap:1rem;align-items:center">{{ avatar(me.id, me.name, me.avatar, 96) }}
+<div><strong style="font-size:1.1rem">{{ me.name }}</strong><br><small class="muted">{{ me.position or ROLES[me.access_role or me.role] }}</small><br><small class="muted">{{ me.email }}</small></div></div>
+<form method="post" action="{{ url_for('profile.set_avatar') }}" enctype="multipart/form-data" class="mt-1">{{ csrf() }}
+<div class="field"><label for="ph">{{ 'Change picture' if me.avatar else 'Add a profile picture' }}</label><input id="ph" type="file" name="photo" accept="image/*" required data-autosubmit>
+<small class="muted">A photo of your face works best. It's cropped to a square and made small (about 20 KB) automatically.</small></div>
+<button class="btn js-hide">Save picture</button></form>
+{% if me.avatar %}<form method="post" action="{{ url_for('profile.set_avatar') }}" class="mt-1" data-confirm="Remove your profile picture?">{{ csrf() }}<button class="btn btn-ghost btn-sm" name="action" value="remove">Remove picture</button></form>{% endif %}
+</div>
+<div class="card" style="max-width:560px"><h2>Password</h2><p class="mb-0"><a class="btn btn-secondary" href="{{ url_for('auth.change_password') }}">Change password</a></p></div>
+{% endblock %}

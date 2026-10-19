@@ -95,7 +95,7 @@ Does the receptionist avoid gossip, arguments and giving unverified information?
     },
     {
         "title": "Dental Laboratory Receptionist Evaluation",
-        "target": "Lab Receptionist",
+        "target": "Laboratory Receptionist",
         "answered_by": "management",
         "description": "Performance evaluation based on the Role Clarity for Dental Laboratory Receptionist.",
         "questions": """## A. Front desk & client coordination

@@ -2,9 +2,47 @@
 {% from "macros.html" import empty %}
 {% block page_title %}Work queue{% endblock %}
 {% block content %}
+{% macro lab_item(r, show_due=True) -%}
+<div class="item {% if r.due_on and r.due_on < lq.today and r.status not in ('ready', 'try_in') %}overdue{% else %}due{% endif %}">
+{% if r.kind == 'work' %}<a href="{{ url_for('lab_works.work', work_id=r.id) }}"><strong>{{ r.number }}</strong></a> <span class="badge">Outside clinic</span>
+<div class="meta">{{ r.case_type }}{% if r.units and r.units > 1 %} × {{ r.units }}{% endif %} · {{ r.clinic_name }}
+{% else %}<a href="{{ url_for('labs.case', case_id=r.id) }}"><strong>{{ r.last_name }}, {{ r.first_name[:1] }}.</strong></a> <span class="badge badge-teal">{{ r.branch }}</span>
+<div class="meta">{{ r.case_type }}{% if r.teeth %} · #{{ r.teeth }}{% endif %}{% endif %}
+<br><span class="badge {{ 'badge-amber' if r.status in ('on_hold', 'try_in') else ('badge-red' if r.status == 'remake' else ('badge-green' if r.status == 'ready' else 'badge-blue')) }}">{{ r.status|lab_status }}</span>
+{% if show_due and r.due_on %} · due {{ r.due_on|date }}{% if r.due_on < lq.today and r.status not in ('ready', 'try_in') %} <strong style="color:var(--red-700)">overdue</strong>{% elif r.due_on == lq.today %} <strong>today</strong>{% endif %}{% endif %}</div></div>
+{%- endmacro %}
+{% if view == 'lab' %}
+<div class="page-head"><div><h1>Work queue</h1><p>Laboratory{% if lab_names %} · {{ lab_names|join(', ') }}{% endif %}: new cases from the branches, work due, pieces ready to release, and billing.</p></div>
+<div class="row">{% if current_user.is_super_admin or current_user.can('lab.works') %}<a class="btn" href="{{ url_for('lab_works.work_new') }}">+ Receive outside work</a>{% endif %}</div></div>
+{% else %}
 <div class="page-head"><div><h1>Work queue</h1><p>Everything waiting on the front desk in one place: booking requests, new inquiries, and follow-ups due today or overdue.</p></div>
 <div class="row">{% if current_user.can('leads.manage') %}<a class="btn btn-secondary" href="{{ url_for('leads.lead_new') }}">+ Log inquiry</a>{% endif %}
 {% if q.reminders_due is defined and q.reminders_due %}<a class="btn btn-secondary" href="{{ url_for('leads.reminders') }}">{{ q.reminders_due }} reminders to send</a>{% endif %}</div></div>
+{% endif %}
+{% if clinic_ok and has_lab %}<nav class="tabs"><a href="{{ url_for('dash.queue', view='clinic') }}" class="{{ 'active' if view == 'clinic' }}">Clinic</a><a href="{{ url_for('dash.queue', view='lab') }}" class="{{ 'active' if view == 'lab' }}">Laboratory</a></nav>{% endif %}
+{% if view == 'lab' %}
+<div class="grid grid-3">
+<section class="card queue-col"><h3>New from branches <span class="badge {{ 'badge-amber' if lq.new_cases }}">{{ lq.new_cases|length }}</span></h3>
+<p class="hint mt-0">Sent by the branches; accept them when the case arrives.</p>
+{% for r in lq.new_cases %}{{ lab_item(r) }}{% else %}{{ empty('No new cases') }}{% endfor %}</section>
+<section class="card queue-col"><h3>Due by tomorrow or overdue <span class="badge {{ 'badge-red' if lq.due }}">{{ lq.due|length }}</span></h3>
+{% for r in lq.due %}{{ lab_item(r) }}{% else %}{{ empty('Nothing due', ' All on schedule.') }}{% endfor %}</section>
+<section class="card queue-col"><h3>Ready for pick-up / delivery <span class="badge {{ 'badge-green' if lq.ready }}">{{ lq.ready|length }}</span></h3>
+{% for r in lq.ready %}{{ lab_item(r, False) }}{% else %}{{ empty('Nothing ready yet') }}{% endfor %}</section>
+<section class="card queue-col"><h3>On hold, remake or trial fitting <span class="badge {{ 'badge-amber' if lq.waiting }}">{{ lq.waiting|length }}</span></h3>
+<p class="hint mt-0">Follow up with the clinic.</p>
+{% for r in lq.waiting %}{{ lab_item(r) }}{% else %}{{ empty('Nothing waiting') }}{% endfor %}</section>
+{% if lq.to_bill is defined %}
+<section class="card queue-col"><h3>Delivered, not billed <span class="badge {{ 'badge-amber' if lq.to_bill }}">{{ lq.to_bill|length }}</span></h3>
+{% for r in lq.to_bill %}<div class="item due"><a href="{{ url_for('lab_works.work', work_id=r.id) }}"><strong>{{ r.number }}</strong></a><div class="meta">{{ r.case_type }} · {{ r.clinic_name }}{% if r.price_cents %} · {{ r.price_cents|peso }}{% endif %}</div></div>
+{% else %}{{ empty('All billed') }}{% endfor %}
+<p class="mb-0"><a href="{{ url_for('lab_works.invoices') }}">Lab invoices →</a></p></section>
+<section class="card queue-col"><h3>Unpaid invoices past due <span class="badge {{ 'badge-red' if lq.unpaid }}">{{ lq.unpaid|length }}</span></h3>
+{% for i in lq.unpaid %}<div class="item overdue"><a href="{{ url_for('lab_works.invoice', invoice_id=i.id) }}"><strong>{{ i.number }}</strong></a><div class="meta">{{ i.clinic_name }} · balance {{ (i.total_cents - i.paid_cents)|peso }} · due {{ i.due_on|date }}</div></div>
+{% else %}{{ empty('No overdue invoices') }}{% endfor %}</section>
+{% endif %}
+</div>
+{% else %}
 <div class="grid grid-3">
 {% if q.requests is defined %}
 <section class="card queue-col"><h3>Booking requests <span class="badge badge-amber">{{ q.requests|length }}</span></h3>
@@ -28,4 +66,5 @@
 {% else %}{{ empty('Nothing due', ' Great work.') }}{% endfor %}</section>
 {% endif %}
 </div>
+{% endif %}
 {% endblock %}

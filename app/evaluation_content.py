@@ -171,7 +171,7 @@ Laging nakangiti?
 
 
 ALIASES = {"dental assistant": {"assistant", "dental asst"}, "receptionist": {"dental receptionist"},
-           "lab receptionist": {"dental laboratory receptionist", "laboratory receptionist"},
+           "laboratory receptionist": {"dental laboratory receptionist", "lab receptionist", "dental lab receptionist"},
            "head receptionist": {"dental head receptionist"}, "dental staff consultant": {"staff consultant"},
            "dental technician (rpd)": {"rpd technician", "dental technician - rpd", "dental technician rpd", "technician (rpd)",
                                        "technician rpd", "technician - rpd"},

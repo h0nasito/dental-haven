@@ -73,6 +73,12 @@ def suggested_lines(conn, location_id: int) -> list[dict]:
     return out
 
 
+def _scope(conn, o) -> str:
+    """Which item list the order uses: the laboratory's, or the clinic's."""
+    loc = conn.one("SELECT laboratory_id FROM inventory_locations WHERE id = ?", (o["location_id"],))
+    return "lab" if loc and loc["laboratory_id"] else "clinic"
+
+
 def _order(conn, order_id):
     o = conn.one("SELECT o.*, l.name AS location, l.branch_id, u.name AS created_by_name, a.name AS approved_by_name FROM inventory_orders o "
                  "JOIN inventory_locations l ON l.id = o.location_id LEFT JOIN users u ON u.id = o.created_by "
@@ -202,7 +208,7 @@ def order(order_id):
                 if not name or not q or q <= 0:
                     flash("Type the item and a quantity.", "error")
                     return back
-                it = conn.one("SELECT * FROM inventory_items WHERE active = 1 AND lower(name) = lower(?)", (name,))
+                it = conn.one("SELECT * FROM inventory_items WHERE active = 1 AND scope = ? AND lower(name) = lower(?)", (_scope(conn, o), name))
                 dup = it and conn.one("SELECT id FROM inventory_order_lines WHERE order_id = ? AND item_id = ?", (order_id, it["id"]))
                 if dup:
                     conn.execute("UPDATE inventory_order_lines SET qty = qty + ? WHERE id = ?", (q, dup["id"]))
@@ -265,7 +271,7 @@ def order(order_id):
                              branch_id=o["branch_id"])
         return back
     from ..inventory_content import CATEGORIES  # noqa: F401  (item picker groups by category in the template)
-    items = conn.all("SELECT name, unit FROM inventory_items WHERE active = 1 ORDER BY name")
+    items = conn.all("SELECT name, unit FROM inventory_items WHERE active = 1 AND scope = ? ORDER BY name", (_scope(conn, o),))
     total = sum(round((ln["approved_qty"] if ln["approved_qty"] is not None else ln["qty"]) * ln["unit_price_cents"])
                 for ln in lines if ln["unit_price_cents"] is not None)
     return render_template("staff/inventory/order.html", o=o, lines=lines, items=items, statuses=STATUSES, month_label=month_label,

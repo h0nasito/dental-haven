@@ -53,14 +53,19 @@ def register_context(app):
         nav_lab = user.is_super_admin or user.can("lab.view") or bool(lab_ids)
         nav_lab_works = user.is_super_admin or (bool(lab_ids) and user.can("lab.works"))
         nav_lab_billing = user.is_super_admin or (bool(lab_ids) and user.can("lab.billing"))
+        nav_lab_queue = False
         if lab_ids:
             from ..notices import run_lab_due_checks
             run_lab_due_checks(conn)
+            from .. import lab_queue
+            nav_lab_queue = True
+            lab_n = lab_queue.count(conn, lab_ids, user.is_super_admin or user.can("lab.works"))
+            counts["queue"] = lab_n if lab_queue.is_lab_only(conn, user) else (counts["queue"] or 0) + lab_n
         from .chat import unread as chat_unread
         counts["chat"] = chat_unread(conn, user.id)
         from ..notices import unread_count
         return {"nav_branches": nav_branches, "nav_counts": counts, "nav_lab": nav_lab or nav_lab_works, "nav_lab_works": nav_lab_works,
-                "nav_lab_billing": nav_lab_billing, "nav_unread": unread_count(conn, user.id)}
+                "nav_lab_billing": nav_lab_billing, "nav_lab_queue": nav_lab_queue, "nav_unread": unread_count(conn, user.id)}
 
 
 def followup_scope(user, alias="f"):

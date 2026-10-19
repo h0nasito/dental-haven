@@ -13,6 +13,7 @@ ROLES = {  # access roles, in the order shown when creating an account
     "super_admin": "Super admin",
     "dentist": "Dentist",
     "receptionist": "Staff – Receptionist",
+    "lab_receptionist": "Staff – Laboratory receptionist",
     "hr": "Staff – HR",
     "supervisor": "Staff – Supervisor",
     "cashier": "Staff – Cashier",
@@ -21,20 +22,20 @@ ROLES = {  # access roles, in the order shown when creating an account
 }
 # Employee positions (job titles). Only a super admin assigns access roles; HR can set positions.
 POSITIONS = ["Head Dentist", "Associate Dentist", "Dentist", "Head Staff", "Dental Staff Consultant", "Head Receptionist", "Receptionist",
-             "Lab Receptionist", "Dental Assistant", "Finance Officer", "Digital Content Associate", "Dental Technician (RPD)", "Dental Technician (FPD)", "Cashier", "Technician", "HR",
+             "Laboratory Receptionist", "Dental Assistant", "Finance Officer", "Digital Content Associate", "Dental Technician (RPD)", "Dental Technician (FPD)", "Cashier", "Technician", "HR",
              "Supervisor", "Staff"]
-POSITION_FOR_ROLE = {"receptionist": "Receptionist", "cashier": "Cashier", "technician": "Technician", "staff": "Staff",
+POSITION_FOR_ROLE = {"receptionist": "Receptionist", "lab_receptionist": "Laboratory Receptionist", "cashier": "Cashier", "technician": "Technician", "staff": "Staff",
                      "dentist": "Dentist", "hr": "HR", "supervisor": "Supervisor"}
 # Suggested access role when a login is created for an employee, by position (the super admin can change it).
 ACCESS_FOR_POSITION = {
     "Head Dentist": "dentist", "Associate Dentist": "dentist", "Dentist": "dentist",
-    "Head Receptionist": "receptionist", "Receptionist": "receptionist", "Lab Receptionist": "staff",
+    "Head Receptionist": "receptionist", "Receptionist": "receptionist", "Laboratory Receptionist": "lab_receptionist",
     "Cashier": "cashier", "Finance Officer": "cashier", "HR": "hr", "Supervisor": "supervisor", "Head Staff": "supervisor",
     "Technician": "technician", "Dental Technician (RPD)": "technician", "Dental Technician (FPD)": "technician",
     "Dental Assistant": "staff", "Dental Staff Consultant": "staff", "Digital Content Associate": "staff", "Staff": "staff",
 }
 # users.role keeps the base role (what the rest of the system checks); users.access_role picks the permission set.
-BASE_ROLE = {"hr": "staff", "supervisor": "staff", "cashier": "staff", "technician": "staff"}
+BASE_ROLE = {"hr": "staff", "supervisor": "staff", "cashier": "staff", "technician": "staff", "lab_receptionist": "staff"}
 
 
 def base_role(access_role: str) -> str:
@@ -112,6 +113,7 @@ CATALOG: list[Perm] = [
     Perm("lab.manage", "Create and update lab cases", "Laboratory"),
     Perm("lab.works", "Outside-clinic lab works: add, edit and update works from other clinics (for users assigned to the lab)", "Laboratory"),
     Perm("lab.billing", "Lab invoices, discounts and payment receipts for outside clinics", "Laboratory", True),
+    Perm("lab.prices", "Laboratory services & prices: add, rename and change prices on the lab's price list (for users assigned to the lab)", "Laboratory", True),
     Perm("lab.commission", "Add technician commissions on lab works and cases", "Laboratory", True),
     # Inventory
     Perm("evaluations.answer", "Answer staff evaluation forms (through the form link, while the form is open)", "Staff evaluations"),
@@ -194,6 +196,12 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
         "patients.manage", "documents.upload", "leads.view", "leads.manage", "followups.view", "followups.manage", "reminders.view",
         "reminders.send", "billing.view", "quotes.view", "lab.view", "lab.all_branches", "reports.operations", "attendance.view", "attendance.manage",
         "attendance.clock", "overtime.approve", "inventory.view", "inventory.order", "inventory.order_approve", "deposits.view", "leave.request", "leave.approve", "reimburse.request", "reimburse.approve", "announcements.manage",
+    },
+    # The laboratory's front desk: works from other clinics, branch cases sent to their lab, lab invoices and receipts.
+    # Lab access comes from being assigned to the lab (user_labs); no clinic patients, bookings or billing.
+    "lab_receptionist": {
+        "dashboard.view", "lab.works", "lab.billing", "calendar.birthdays", "calendar.events", "attendance.clock",
+        "leave.request", "reimburse.request", "inventory.view",
     },
     "technician": {
         "dashboard.view", "lab.view", "attendance.clock", "leave.request", "reimburse.request", "inventory.view",

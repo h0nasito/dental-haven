@@ -4,6 +4,8 @@
 - People can remove their own messages; HR / supervisors / the super admin (announcements.manage) can remove any message
   and pin or unpin messages (pinned ones stay at the top of the chat).
 - An emoji button helps type emoticons.
+- @mentions: typing @ suggests names; a mentioned person is highlighted in the message and gets an in-app
+  notification (without the message text).
 - Messages older than a year are deleted automatically.
 - Message text is never written to logs, notifications or the audit trail.
 """
@@ -13,7 +15,7 @@ from datetime import timedelta
 
 from flask import Blueprint, abort, flash, g, jsonify, redirect, render_template, request, url_for
 
-from .. import audit
+from .. import audit, avatars
 from ..auth import login_required
 from ..db import get_db
 from ..jinja import _dt
@@ -60,8 +62,53 @@ def pinned(conn) -> list[dict]:
     return [_as_dict(m) for m in rows]
 
 
+def people(conn) -> list[dict]:
+    """Everyone who can be @mentioned: active users. Cached for the request."""
+    if "chat_people" not in g:
+        g.chat_people = [{"id": r["id"], "name": r["name"], "avatar": avatars.url(r["id"], r["avatar"]),
+                          "initials": avatars.initials(r["name"]), "color": avatars.color(r["id"])}
+                         for r in conn.all("SELECT id, name, avatar FROM users WHERE active = 1 ORDER BY name")]
+    return g.chat_people
+
+
+def find_mentions(text: str, folks: list[dict]) -> list[tuple[int, int, dict]]:
+    """(start, end, person) for each "@Full Name" in the text; longer names win ("@Ana Cruz" over "@Ana")."""
+    low = text.lower()
+    taken = [False] * len(text)
+    found = []
+    for p in sorted(folks, key=lambda x: -len(x["name"])):
+        tag = "@" + p["name"].lower()
+        i = low.find(tag)
+        while i != -1:
+            end = i + len(tag)
+            boundary = end == len(text) or not (text[end].isalnum() or text[end] == "_")
+            if boundary and not any(taken[i:end]):
+                for k in range(i, end):
+                    taken[k] = True
+                found.append((i, end, p))
+            i = low.find(tag, end)
+    return sorted(found, key=lambda x: x[0])
+
+
+def segments(text: str, folks: list[dict]) -> list[dict]:
+    """Message text split into plain parts and @mention parts (rendered as text, never as HTML)."""
+    out, pos = [], 0
+    for start, end, p in find_mentions(text, folks):
+        if start > pos:
+            out.append({"t": text[pos:start]})
+        out.append({"t": text[start:end], "m": True, "me": p["id"] == g.user.id})
+        pos = end
+    if pos < len(text):
+        out.append({"t": text[pos:]})
+    return out
+
+
 def _as_dict(m) -> dict:
-    return {"id": m["id"], "name": m["name"], "role": m["position"] or "", "mine": m["user_id"] == g.user.id,
+    folks = people(get_db())
+    return {"id": m["id"], "name": m["name"], "uid": m["user_id"], "avatar": avatars.url(m["user_id"], m["avatar"]), "avatar_file": m["avatar"],
+            "initials": avatars.initials(m["name"]), "color": avatars.color(m["user_id"]),
+            "parts": [] if m["deleted_at"] else segments(m["body"], folks),
+            "mentions_me": bool(not m["deleted_at"] and any(p["id"] == g.user.id for _, _, p in find_mentions(m["body"], folks))), "role": m["position"] or "", "mine": m["user_id"] == g.user.id,
             "when": _dt(m["created_at"], "%b %d, %I:%M %p"), "day": m["created_at"][:10],
             "body": "" if m["deleted_at"] else m["body"], "removed": bool(m["deleted_at"]),
             "can_remove": not m["deleted_at"] and _can_remove(m),
@@ -79,7 +126,7 @@ def _reply(m):
             "text": "Message removed" if removed else _snippet(m["r_body"]), "removed": removed}
 
 
-SELECT = ("SELECT m.*, u.name, e.position, r.body AS r_body, r.deleted_at AS r_deleted, r.user_id AS r_user, ru.name AS r_name "
+SELECT = ("SELECT m.*, u.name, u.avatar, e.position, r.body AS r_body, r.deleted_at AS r_deleted, r.user_id AS r_user, ru.name AS r_name "
           "FROM chat_messages m JOIN users u ON u.id = m.user_id LEFT JOIN employees e ON e.user_id = m.user_id "
           "LEFT JOIN chat_messages r ON r.id = m.reply_to_id LEFT JOIN users ru ON ru.id = r.user_id ")
 
@@ -106,15 +153,16 @@ def index():
     if not before:
         with conn.transaction():
             _mark_read(conn, last)
-    people = conn.scalar("SELECT COUNT(*) FROM users WHERE active = 1")
+    n_people = conn.scalar("SELECT COUNT(*) FROM users WHERE active = 1")
     replying = None
     rid = to_int(request.args.get("reply"))
     if rid:
         r = conn.one(SELECT + "WHERE m.id = ? AND m.deleted_at IS NULL", (rid,))
         if r:
             replying = {"id": r["id"], "name": "You" if r["user_id"] == g.user.id else r["name"], "text": _snippet(r["body"])}
-    return render_template("staff/chat/index.html", pins=pinned(conn), emojis=EMOJIS, msgs=msgs, older=older, last=last, before=before, people=people,
-                           keep_days=KEEP_DAYS, max_len=MAX_LEN, replying=replying)
+    return render_template("staff/chat/index.html", pins=pinned(conn), emojis=EMOJIS, msgs=msgs, older=older, last=last, before=before, n_people=n_people,
+                           keep_days=KEEP_DAYS, max_len=MAX_LEN, replying=replying,
+                           people=[p for p in people(conn) if p["id"] != g.user.id])
 
 
 @bp.route("/since")
@@ -160,10 +208,15 @@ def post():
         mid = conn.insert("chat_messages", {"user_id": g.user.id, "body": body, "created_at": now_str(),
                                             "reply_to_id": target["id"] if target else None})
         _mark_read(conn, mid)
+        told = set()
         if target and target["user_id"] != g.user.id:
             # no message text in the notification
             notify(conn, [target["user_id"]], "chat_reply", f"{g.user.name} replied to your message in the group chat", "",
                    url_for("chat.index") + f"#m{mid}")
+            told.add(target["user_id"])
+        mentioned = {p["id"] for _, _, p in find_mentions(body, people(conn))} - told - {g.user.id}
+        if mentioned:
+            notify(conn, mentioned, "chat_mention", f"{g.user.name} mentioned you in the group chat", "", url_for("chat.index") + f"#m{mid}")
     if wants_json:
         return jsonify(ok=True, id=mid)
     return redirect(url_for("chat.index") + "#bottom")

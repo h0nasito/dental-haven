@@ -4,7 +4,10 @@
 - inventory.manage : update stock (count, receive, use/remove), and add or edit items and prices.
                      No role has it by default; only super admins until one grants it in Role access.
 
-A location is visible to a user when they belong to its branch (user_branches) or its lab (user_labs).
+A location is visible to a user when they belong to its branch (user_branches) or its lab (user_labs); people who work
+only at the lab (e.g. the laboratory receptionist) see only the lab's location.
+The clinic and the laboratory keep separate item lists (inventory_items.scope): branch locations show clinic items,
+the laboratory's location shows laboratory items.
 Super admins see every location. Every quantity change is written to inventory_moves with who and when.
 """
 from __future__ import annotations
@@ -18,7 +21,7 @@ from flask import Blueprint, Response, abort, flash, g, redirect, render_templat
 from .. import audit
 from ..auth import require
 from ..db import get_db
-from ..inventory_content import CATEGORIES, GROUP_OF, GROUPS
+from ..inventory_content import SCOPES, categories_for, group_of, groups_for
 from ..util import clean, now_str, parse_date, parse_money, to_int, today
 
 bp = Blueprint("inventory", __name__, url_prefix="/staff/inventory")
@@ -51,7 +54,15 @@ def user_locations(conn=None):
     if g.user.is_super_admin:
         return rows
     labs = {r["lab_id"] for r in conn.all("SELECT lab_id FROM user_labs WHERE user_id = ?", (g.user.id,))}
-    return [r for r in rows if (r["branch_id"] and r["branch_id"] in g.user.branch_ids) or (r["laboratory_id"] and r["laboratory_id"] in labs)]
+    from ..lab_queue import is_lab_only
+    lab_only = is_lab_only(conn, g.user)
+    return [r for r in rows if (r["branch_id"] and r["branch_id"] in g.user.branch_ids and not lab_only)
+            or (r["laboratory_id"] and r["laboratory_id"] in labs)]
+
+
+def scope_of(loc) -> str:
+    """'lab' for the laboratory's location, 'clinic' for a branch."""
+    return "lab" if loc["laboratory_id"] else "clinic"
 
 
 def _location(location_id):
@@ -106,18 +117,20 @@ def status_of(row, on=None):
 
 
 def stock_rows(conn, location_id):
+    loc = conn.one("SELECT laboratory_id FROM inventory_locations WHERE id = ?", (location_id,))
+    scope = scope_of(loc) if loc else "clinic"
     rows = conn.all("SELECT i.*, s.qty, s.reorder_level, s.expiry_date, s.last_counted_at, s.updated_at AS stock_updated_at "
                     "FROM inventory_items i LEFT JOIN inventory_stock s ON s.item_id = i.id AND s.location_id = ? "
-                    "WHERE i.active = 1", (location_id,))
+                    "WHERE i.active = 1 AND (i.scope = ? OR s.qty IS NOT NULL)", (location_id, scope))   # keep any stock already counted
     out = []
     on = today()
     for r in rows:
         r = dict(r)
         r["status"] = status_of(r, on)
         r["value_cents"] = round(r["qty"] * r["unit_price_cents"]) if r["qty"] and r["unit_price_cents"] is not None else None
-        r["group"] = GROUP_OF.get(r["category"], "Other Supplies")
+        r["group"] = group_of(scope, r["category"])
         out.append(r)
-    cat_index = {c: i for i, c in enumerate(CATEGORIES)}
+    cat_index = {c: i for i, c in enumerate(categories_for(scope))}
     out.sort(key=lambda r: (cat_index.get(r["category"], 999), r["name"].lower()))
     return out
 
@@ -202,7 +215,7 @@ def location(location_id):
     loc = _location(location_id)
     can_edit = g.user.can("inventory.manage")
     category = request.values.get("category", "")
-    category = category if category in CATEGORIES else ""
+    category = category if category in categories_for(scope_of(loc)) else ""
     status = request.values.get("status", "")
     q = clean(request.values.get("q"), 80).lower()
     editing = can_edit and request.values.get("edit") == "1" and bool(category)
@@ -267,11 +280,11 @@ def _location_ctx(conn, loc, category, status, q, editing, errors, form):
         shown = [r for r in shown if r["status"] in ATTENTION]
     elif status in STATUS:
         shown = [r for r in shown if r["status"] == status]
-    counts = {c: 0 for c in CATEGORIES}
+    counts = {c: 0 for c in categories_for(scope_of(loc))}
     for r in rows:
         counts[r["category"]] = counts.get(r["category"], 0) + 1
     return dict(loc=loc, locs=user_locations(conn), rows=shown, summary=summary, category=category, status=status, q=q,
-                editing=editing, errors=errors, form=form, groups=GROUPS, counts=counts, statuses=STATUS, fmt_qty=fmt_qty,
+                editing=editing, errors=errors, form=form, groups=groups_for(scope_of(loc)), counts=counts, scope=scope_of(loc), statuses=STATUS, fmt_qty=fmt_qty,
                 can_edit=g.user.can("inventory.manage"), warn_days=EXPIRY_WARN_DAYS)
 
 
@@ -281,6 +294,8 @@ def item(location_id, item_id):
     conn = get_db()
     loc = _location(location_id)
     it = _item(conn, item_id)
+    if it["scope"] != scope_of(loc) and not conn.one("SELECT 1 AS x FROM inventory_stock WHERE location_id = ? AND item_id = ?", (loc["id"], it["id"])):
+        abort(404)
     errors = {}
     if request.method == "POST":
         if not g.user.can("inventory.manage"):
@@ -363,7 +378,7 @@ def item(location_id, item_id):
             others.append((other, s))
     return render_template("staff/inventory/item.html", loc=loc, it=it, stock=stock, status=status_of(row), statuses=STATUS, moves=moves,
                            others=others, fmt_qty=fmt_qty, errors=errors, form=request.form, reasons=REMOVE_REASONS, move_labels=MOVE_LABELS,
-                           can_edit=g.user.can("inventory.manage"), group=GROUP_OF.get(it["category"], ""))
+                           can_edit=g.user.can("inventory.manage"), group=group_of(it["scope"], it["category"]))
 
 
 @bp.route("/<int:location_id>/export.csv")
@@ -391,32 +406,50 @@ def export(location_id):
 # Item list (catalog): shared by every location
 # ---------------------------------------------------------------------------
 
+def item_scopes(conn) -> list[str]:
+    """Item lists this user can manage: the clinic list, and the laboratory list for super admins and people assigned to a lab."""
+    out = []
+    lab_ok = g.user.is_super_admin or bool(conn.one("SELECT 1 AS x FROM user_labs WHERE user_id = ?", (g.user.id,)))
+    from ..lab_queue import is_lab_only
+    if g.user.is_super_admin or not is_lab_only(conn, g.user):
+        out.append("clinic")
+    if lab_ok:
+        out.append("lab")
+    return out
+
+
 @bp.route("/items", methods=["GET", "POST"])
 @require("inventory.manage")
 def items():
     conn = get_db()
+    scopes = item_scopes(conn)
+    if not scopes:
+        abort(403)
+    scope = request.values.get("scope") if request.values.get("scope") in scopes else scopes[0]
+    cats, groups = categories_for(scope), groups_for(scope)
     category = request.values.get("category", "")
-    category = category if category in CATEGORIES else ""
+    category = category if category in cats else ""
     q = clean(request.values.get("q"), 80).lower()
     show = request.values.get("show", "active")
-    v = {"name": "", "unit": "", "category": category or CATEGORIES[0], "price": "", "supplier": ""}
+    v = {"name": "", "unit": "", "category": category or cats[0], "price": "", "supplier": ""}
     errors = {}
     if request.method == "POST":
         v = {"name": clean(request.form.get("name"), 120), "unit": clean(request.form.get("unit"), 30),
              "category": request.form.get("category", ""), "price": clean(request.form.get("price"), 20),
              "supplier": clean(request.form.get("supplier"), 120)}
-        errors = _validate_item(conn, v)
+        errors = _validate_item(conn, v, scope=scope)
         if not errors:
+            prefix = "LB-" if scope == "lab" else "DH-"
             with conn.transaction():
-                n = (conn.scalar("SELECT MAX(CAST(SUBSTR(code, 4) AS INTEGER)) FROM inventory_items WHERE code LIKE 'DH-%'") or 0) + 1
-                iid = conn.insert("inventory_items", {"code": f"DH-{n:04d}", "name": v["name"], "unit": v["unit"], "category": v["category"],
+                n = (conn.scalar(f"SELECT MAX(CAST(SUBSTR(code, 4) AS INTEGER)) FROM inventory_items WHERE code LIKE '{prefix}%'") or 0) + 1
+                iid = conn.insert("inventory_items", {"code": f"{prefix}{n:04d}", "name": v["name"], "unit": v["unit"], "category": v["category"],
                                                       "unit_price_cents": parse_money(v["price"]) if v["price"] else None, "supplier": v["supplier"],
-                                                      "sort_order": CATEGORIES.index(v["category"]) * 1000 + 999, "active": 1,
+                                                      "sort_order": cats.index(v["category"]) * 1000 + 999, "active": 1, "scope": scope,
                                                       "created_at": now_str(), "updated_at": now_str()})
-                audit.record("inventory_item_added", "inventory_item", iid, f"Added inventory item: {v['name']}")
+                audit.record("inventory_item_added", "inventory_item", iid, f"Added {SCOPES[scope].lower()} inventory item: {v['name']}")
             flash(f"Added {v['name']}.", "success")
-            return redirect(url_for("inventory.items", category=v["category"]))
-    where, args = ["1 = 1"], []
+            return redirect(url_for("inventory.items", scope=scope, category=v["category"]))
+    where, args = ["scope = ?"], [scope]
     if show != "all":
         where.append("active = 1")
     if category:
@@ -426,22 +459,22 @@ def items():
         where.append("(LOWER(name) LIKE ? OR LOWER(code) LIKE ? OR LOWER(supplier) LIKE ?)")
         args += [f"%{q}%"] * 3
     rows = conn.all(f"SELECT * FROM inventory_items WHERE {' AND '.join(where)}", args)
-    cat_index = {c: i for i, c in enumerate(CATEGORIES)}
+    cat_index = {c: i for i, c in enumerate(cats)}
     rows = sorted(rows, key=lambda r: (cat_index.get(r["category"], 999), r["name"].lower()))
-    no_price = conn.scalar("SELECT COUNT(*) FROM inventory_items WHERE active = 1 AND unit_price_cents IS NULL")
-    return render_template("staff/inventory/items.html", rows=rows, groups=GROUPS, category=category, q=q, show=show, v=v, errors=errors,
-                           no_price=no_price)
+    no_price = conn.scalar("SELECT COUNT(*) FROM inventory_items WHERE active = 1 AND scope = ? AND unit_price_cents IS NULL", (scope,))
+    return render_template("staff/inventory/items.html", rows=rows, groups=groups, category=category, q=q, show=show, v=v, errors=errors,
+                           no_price=no_price, scope=scope, scopes=scopes, scope_names=SCOPES)
 
 
-def _validate_item(conn, v, item_id=None):
+def _validate_item(conn, v, item_id=None, scope="clinic"):
     errors = {}
     if len(v["name"]) < 2:
         errors["name"] = "Enter the item name."
-    elif conn.one("SELECT id FROM inventory_items WHERE LOWER(name) = LOWER(?) AND id != ?", (v["name"], item_id or 0)):
+    elif conn.one("SELECT id FROM inventory_items WHERE LOWER(name) = LOWER(?) AND scope = ? AND id != ?", (v["name"], scope, item_id or 0)):
         errors["name"] = "An item with this name already exists."
     if not v["unit"]:
         errors["unit"] = "Enter the unit (e.g. box, pack, piece)."
-    if v["category"] not in CATEGORIES:
+    if v["category"] not in categories_for(scope):
         errors["category"] = "Choose a category."
     if v["price"]:
         p = parse_money(v["price"])
@@ -455,6 +488,8 @@ def _validate_item(conn, v, item_id=None):
 def item_edit(item_id):
     conn = get_db()
     it = _item(conn, item_id)
+    if it["scope"] not in item_scopes(conn):
+        abort(404)
     v = {"name": it["name"], "unit": it["unit"], "category": it["category"],
          "price": "" if it["unit_price_cents"] is None else f"{it['unit_price_cents'] / 100:.2f}", "supplier": it["supplier"],
          "notes": it["notes"], "active": it["active"]}
@@ -464,7 +499,7 @@ def item_edit(item_id):
              "category": request.form.get("category", ""), "price": clean(request.form.get("price"), 20),
              "supplier": clean(request.form.get("supplier"), 120), "notes": clean(request.form.get("notes"), 500),
              "active": 1 if request.form.get("active") else 0}
-        errors = _validate_item(conn, v, it["id"])
+        errors = _validate_item(conn, v, it["id"], scope=it["scope"])
         if not errors:
             new_price = parse_money(v["price"]) if v["price"] else None
             conn.update("inventory_items", it["id"], {"name": v["name"], "unit": v["unit"], "category": v["category"], "unit_price_cents": new_price,
@@ -475,5 +510,5 @@ def item_edit(item_id):
             audit.record("inventory_item_updated", "inventory_item", it["id"], f"Updated inventory item {it['code']}: {', '.join(changes) or 'notes'}",
                          {"price_before": it["unit_price_cents"], "price_after": new_price} if "price" in changes else None)
             flash("Item saved.", "success")
-            return redirect(url_for("inventory.items", category=v["category"]))
-    return render_template("staff/inventory/item_edit.html", it=it, v=v, errors=errors, groups=GROUPS)
+            return redirect(url_for("inventory.items", scope=it["scope"], category=v["category"]))
+    return render_template("staff/inventory/item_edit.html", it=it, v=v, errors=errors, groups=groups_for(it["scope"]))

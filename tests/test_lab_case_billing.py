@@ -23,7 +23,7 @@ class TestLabCaseBilling(Base):
         self.case = int(r.headers["Location"].rstrip("/").split("/")[-1])
         a = self.login("admin")
         r = a.post("/staff/admin/users/new", data={"name": "DSDL Lab Receptionist", "email": f"labrec{id(self)}@dsdl.test", "role": "staff",
-                                                   "labs": [str(self.lab)], "position": "Lab Receptionist"})
+                                                   "labs": [str(self.lab)], "position": "Laboratory Receptionist"})
         temp = re.search(rb'id="temp-pw"[^>]*>([^<]+)<', r.data).group(1).decode()
         uid = self.q("SELECT id FROM users WHERE email = ?", (f"labrec{id(self)}@dsdl.test",))["id"]
         self.conn.execute("INSERT INTO user_permissions (user_id, permission, granted) VALUES (?, 'lab.billing', 1)", (uid,))

@@ -882,3 +882,9 @@ section[id] { scroll-margin-top: 72px; }
 .case-photos figure { margin: 0; }
 .case-photos img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); display: block; }
 .case-photos figcaption { font-size: .85rem; margin-top: .3rem; }
+
+/* profile pictures */
+.avatar { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; object-fit: cover; flex: 0 0 auto; vertical-align: middle; background: var(--line); }
+.avatar-initials { color: #fff; font-weight: 700; letter-spacing: .02em; line-height: 1; user-select: none; }
+.me-link { display: inline-flex; align-items: center; border-radius: 50%; text-decoration: none; }
+.me-link:focus-visible { outline: 3px solid var(--brand-700); outline-offset: 2px; }

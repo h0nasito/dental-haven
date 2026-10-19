@@ -608,3 +608,29 @@ ITEMS = [
     ('Oil Base Perfume (for humidifier)', 'gallon', 'Housekeeping'),
     ('Sampayan', 'set', 'Housekeeping'),
 ]
+
+
+# ---------------------------------------------------------------------------
+# Laboratory inventory: its own item list and categories (the lab adds its own items).
+# ---------------------------------------------------------------------------
+LAB_GROUPS = {
+    'Lab Materials': ['Gypsum & Model Materials', 'Wax & Investment', 'Acrylic & Denture Base', 'Denture Teeth',
+                      'Ceramics, Porcelain & Zirconia', 'Metals & Alloys', 'Flexible & Thermoplastic'],
+    'Lab Tools & Consumables': ['Burs, Discs & Polishing', 'CAD/CAM & 3D Printing', 'Lab Disposables & PPE',
+                                'Packaging & Delivery', 'Lab Equipment Parts', 'Lab Office & Housekeeping'],
+}
+LAB_CATEGORIES = [c for cs in LAB_GROUPS.values() for c in cs]
+LAB_GROUP_OF = {c: g for g, cs in LAB_GROUPS.items() for c in cs}
+SCOPES = {"clinic": "Clinic", "lab": "Laboratory"}
+
+
+def groups_for(scope: str) -> dict:
+    return LAB_GROUPS if scope == "lab" else GROUPS
+
+
+def categories_for(scope: str) -> list:
+    return LAB_CATEGORIES if scope == "lab" else CATEGORIES
+
+
+def group_of(scope: str, category: str) -> str:
+    return (LAB_GROUP_OF if scope == "lab" else GROUP_OF).get(category, "Other")

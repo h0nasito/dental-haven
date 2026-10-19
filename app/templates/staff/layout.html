@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "macros.html" import flashes, csrf %}
+{% from "macros.html" import flashes, csrf, avatar %}
 {% block title %}{% block page_title %}Staff{% endblock %} · Dental Haven Staff{% endblock %}
 {% block body %}
 <input type="checkbox" id="menu-toggle" class="menu-toggle sr-only" aria-hidden="true">
@@ -35,7 +35,7 @@
       {{ nav('dash.home', 'Dashboard') }}
       {{ nav('announce.index', 'Announcements & duty', 'announce.') }}
       {{ nav('chat.index', 'Group chat', 'chat.', nav_counts.get('chat')) }}
-      {% if current_user.can('bookings.manage') or current_user.can('bookings.view') or current_user.can('leads.view') or current_user.can('followups.view') %}
+      {% if nav_lab_queue or current_user.can('bookings.manage') or current_user.can('bookings.view') or current_user.can('leads.view') or current_user.can('followups.view') %}
         {{ nav('dash.queue', 'Work queue', count=nav_counts.queue) }}
       {% endif %}
     </div>
@@ -119,7 +119,7 @@
       <div class="spacer"></div>
       <a class="bell" href="{{ url_for('notifications.index') }}" aria-label="Notifications{% if nav_unread %}: {{ nav_unread }} unread{% endif %}"><span aria-hidden="true">🔔</span>{% if nav_unread %}<span class="count">{{ nav_unread }}</span>{% endif %}</a>
       <div class="who hide-sm"><strong>{{ current_user.name }}</strong><br><small>{{ ROLES[current_user.access_role] }}</small></div>
-      <a class="btn btn-ghost btn-sm" href="{{ url_for('auth.change_password') }}">Password</a>
+      <a class="me-link" href="{{ url_for('profile.account') }}" aria-label="My profile" title="My profile">{{ avatar(current_user.id, current_user.name, current_user.avatar, 34) }}</a>
       <form method="post" action="{{ url_for('auth.logout') }}">{{ csrf() }}<button class="btn btn-secondary btn-sm" type="submit">Sign out</button></form>
     </header>
     <main id="main" class="content">

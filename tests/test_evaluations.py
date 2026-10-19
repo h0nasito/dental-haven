@@ -149,7 +149,7 @@ class TestEvaluations(Base):
         from app.util import now_str
         forms = {r["title"]: r for r in self.conn.all("SELECT * FROM evaluation_forms")}
         expected = {"Dental Assistant Evaluation": ("Dental Assistant", "dentists"), "Dental Receptionist Evaluation": ("Receptionist", "dentists"),
-                    "Dental Laboratory Receptionist Evaluation": ("Lab Receptionist", "management"),
+                    "Dental Laboratory Receptionist Evaluation": ("Laboratory Receptionist", "management"),
                     "Head Receptionist Evaluation": ("Head Receptionist", "management"), "Head Staff Evaluation": ("Head Staff", "dentists"),
                     "Dental Staff Consultant Evaluation": ("Dental Staff Consultant", "head_dentist"),
                     "Associate Dentist Evaluation": ("Associate Dentist", "head_dentist"), "Head Dentist Evaluation": ("Head Dentist", "management"),

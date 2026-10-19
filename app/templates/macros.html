@@ -68,3 +68,8 @@
   <ul>{% for e in errors.get('_form') %}<li>{{ e }}</li>{% endfor %}</ul></div>
 {% endif %}
 {% endmacro %}
+
+{% macro avatar(user_id, name, file=None, size=32, cls='') -%}
+{%- if file -%}<img class="avatar {{ cls }}" src="{{ avatar_url(user_id, file) }}" alt="" width="{{ size }}" height="{{ size }}" style="width:{{ size }}px;height:{{ size }}px" loading="lazy">
+{%- else -%}<span class="avatar avatar-initials {{ cls }}" aria-hidden="true" style="width:{{ size }}px;height:{{ size }}px;font-size:{{ (size * 0.4)|round|int }}px;background:{{ user_id|avatar_color }}">{{ name|initials }}</span>{%- endif -%}
+{%- endmacro %}

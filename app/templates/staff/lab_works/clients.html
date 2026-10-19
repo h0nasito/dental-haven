@@ -1,8 +1,16 @@
 {% extends "staff/layout.html" %}
 {% from "macros.html" import csrf %}
-{% block page_title %}Lab clinics{% endblock %}
+{% block page_title %}Lab clinics<form method="post" class="card mt-1" id="add-clinic">{{ csrf() }}<input type="hidden" name="action" value="add"><h2>Add a clinic</h2>
+<div class="form-grid">{% if labs|length > 1 %}<div class="field"><label for="al">Laboratory</label><select id="al" name="lab_id">{% for l in labs %}<option value="{{ l.id }}">{{ l.name }}</option>{% endfor %}</select></div>{% endif %}
+<div class="field"><label for="acn">Clinic name</label><input id="acn" name="clinic_name" maxlength="120" required></div>
+<div class="field"><label for="acd">Doctor <span class="hint">Optional</span></label><input id="acd" name="doctor" maxlength="120"></div>
+<div class="field"><label for="acc">Contact number <span class="hint">Optional</span></label><input id="acc" name="contact_number" maxlength="60" inputmode="tel"></div>
+<div class="field"><label for="ace">Email <span class="hint">Optional</span></label><input id="ace" name="email" type="email" maxlength="120"></div>
+<div class="field"><label for="aca">Address <span class="hint">Optional</span></label><input id="aca" name="address" maxlength="300"></div></div>
+<button class="btn">Add clinic</button></form>
+{% endblock %}
 {% block content %}
-<div class="page-head"><div><h1>Clinics</h1><p>Dental clinics that send work to our laboratory. They're added automatically when you save a work.</p></div>
+<div class="page-head"><div><h1>Clinics</h1><p>Dental clinics outside our branches that send work to our laboratory. Add them below, or they're added automatically when you save a work from a new clinic.</p></div>
 <a class="btn" href="{{ url_for('lab_works.work_new') }}">+ New work</a></div>
 {% set active = 'clients' %}{% include "staff/lab_works/_nav.html" %}
 <div class="card"><div class="table-wrap"><table><thead><tr><th>Dental clinic</th><th>Doctor</th><th>Contact</th><th class="num">Open works</th><th class="num">All works</th>{% if can_bill %}<th class="num">Balance</th>{% endif %}<th></th></tr></thead><tbody>
@@ -24,4 +32,12 @@
 {% endif %}
 {% else %}<tr><td colspan="7" class="empty">No clinics yet.</td></tr>{% endfor %}
 </tbody></table></div></div>
+<form method="post" class="card mt-1" id="add-clinic">{{ csrf() }}<input type="hidden" name="action" value="add"><h2>Add a clinic</h2>
+<div class="form-grid">{% if labs|length > 1 %}<div class="field"><label for="al">Laboratory</label><select id="al" name="lab_id">{% for l in labs %}<option value="{{ l.id }}">{{ l.name }}</option>{% endfor %}</select></div>{% endif %}
+<div class="field"><label for="acn">Clinic name</label><input id="acn" name="clinic_name" maxlength="120" required></div>
+<div class="field"><label for="acd">Doctor <span class="hint">Optional</span></label><input id="acd" name="doctor" maxlength="120"></div>
+<div class="field"><label for="acc">Contact number <span class="hint">Optional</span></label><input id="acc" name="contact_number" maxlength="60" inputmode="tel"></div>
+<div class="field"><label for="ace">Email <span class="hint">Optional</span></label><input id="ace" name="email" type="email" maxlength="120"></div>
+<div class="field"><label for="aca">Address <span class="hint">Optional</span></label><input id="aca" name="address" maxlength="300"></div></div>
+<button class="btn">Add clinic</button></form>
 {% endblock %}
