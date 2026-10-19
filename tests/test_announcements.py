@@ -50,6 +50,20 @@ class TestAnnouncements(TestPayrollRules):
         # saving again with only one ticked day replaces the month
         admin.post("/staff/announcements/duty/edit", data={"branch": bid, "month": month, f"d_{emp['id']}": t.isoformat()})
         self.assertEqual(self.q("SELECT COUNT(*) AS n FROM duty_assignments WHERE employee_id = ? AND branch_id = ?", (emp["id"], bid))["n"], 1)
+        # a dentist in the employee list without a login yet: shown as a dentist and can be scheduled
+        from app.util import now_str
+        did = self.conn.insert("employees", {"full_name": "Dr. No Login (test)", "position": "Associate dentist", "employment_type": "regular",
+                                             "primary_branch_id": None, "active": 1, "created_at": now_str()})
+        aid = self.conn.insert("employees", {"full_name": "Assistant No Login (test)", "position": "Dental assistant", "employment_type": "regular",
+                                             "primary_branch_id": bid, "active": 1, "created_at": now_str()})
+        page = admin.get(f"/staff/announcements/duty/edit?branch={bid}&month={month}").data.decode()
+        self.assertIn("🦷 Dr. No Login (test)", page)
+        self.assertIn("no login yet", page)
+        self.assertNotIn("🦷 Assistant No Login (test)", page)
+        admin.post("/staff/announcements/duty/edit", data={"branch": bid, "month": month, f"d_{did}": t.isoformat(), f"d_{aid}": t.isoformat()})
+        self.assertIsNotNone(self.q("SELECT id FROM duty_assignments WHERE employee_id = ? AND work_date = ?", (did, t.isoformat())))
+        self.assertIn("🦷 Dr. No Login (test)", rec.get(f"/staff/announcements/duty?branch={bid}&month={month}").data.decode())
+        self.assertIn("🦷 Dr. No Login (test)", rec.get("/staff/").data.decode())
         admin.post(f"/staff/announcements/{a['id']}/delete")
         self.assertIsNone(self.q("SELECT id FROM announcements WHERE id = ?", (a["id"],)))
 

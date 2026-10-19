@@ -21,6 +21,12 @@ from .common import branches_for_user
 
 bp = Blueprint("announce", __name__, url_prefix="/staff/announcements")
 
+# A dentist: has a dentist login, or has no login yet and the employee record's position says dentist
+# (e.g. "Dentist", "Associate dentist"; not "Dental assistant").
+IS_DENT = ("(u.role = 'dentist' OR (e.user_id IS NULL AND lower(e.position) LIKE '%dentist%' "
+           "AND lower(e.position) NOT LIKE '%assistant%'))")
+ROLE = f"CASE WHEN {IS_DENT} THEN 'dentist' ELSE u.role END AS role"
+
 WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 
@@ -57,9 +63,9 @@ def active_announcements(conn, user, limit: int | None = None):
 
 def duty_on(conn, day: date, branch_ids: list[int] | None = None) -> list[dict]:
     """[{branch, people: [{name, position, dentist}]}] for one day, branches in their usual order."""
-    rows = conn.all("SELECT d.branch_id, d.note, e.id AS employee_id, e.full_name, e.position, e.user_id, u.role, b.name AS branch, b.sort_order "
+    rows = conn.all("SELECT d.branch_id, d.note, e.id AS employee_id, e.full_name, e.position, e.user_id, " + ROLE + ", b.name AS branch, b.sort_order "
                     "FROM duty_assignments d JOIN employees e ON e.id = d.employee_id JOIN branches b ON b.id = d.branch_id "
-                    "LEFT JOIN users u ON u.id = e.user_id WHERE d.work_date = ? ORDER BY b.sort_order, (u.role = 'dentist') DESC, e.full_name",
+                    "LEFT JOIN users u ON u.id = e.user_id WHERE d.work_date = ? ORDER BY b.sort_order, " + IS_DENT + " DESC, e.full_name",
                     (day.isoformat(),))
     groups: dict[int, dict] = {}
     for r in rows:
@@ -91,16 +97,19 @@ def roster_rows(conn, branch_id: int, first: date, extra_ids: list[int]) -> list
     ids = {r["id"] for r in conn.all("SELECT id FROM employees WHERE active = 1 AND primary_branch_id = ?", (branch_id,))}
     ids |= {r["id"] for r in conn.all("SELECT e.id FROM employees e JOIN users u ON u.id = e.user_id JOIN user_branches ub ON ub.user_id = u.id "
                                       "WHERE e.active = 1 AND u.role = 'dentist' AND u.active = 1 AND ub.branch_id = ?", (branch_id,))}
+    # dentists without a login yet and with no home branch set: they can be scheduled at any branch
+    ids |= {r["id"] for r in conn.all(f"SELECT e.id FROM employees e LEFT JOIN users u ON u.id = e.user_id WHERE e.active = 1 "
+                                      f"AND e.user_id IS NULL AND e.primary_branch_id IS NULL AND {IS_DENT}")}
     ids |= {r["employee_id"] for r in conn.all("SELECT DISTINCT employee_id FROM duty_assignments WHERE branch_id = ? AND work_date BETWEEN ? AND ?",
                                                (branch_id, first.isoformat(), last.isoformat()))}
     ids |= set(extra_ids)
     if not ids:
         return []
     marks = ",".join("?" * len(ids))
-    rows = conn.all(f"SELECT e.id, e.full_name, e.position, e.primary_branch_id, b.name AS home_branch, u.role FROM employees e "
+    rows = conn.all(f"SELECT e.id, e.full_name, e.position, e.primary_branch_id, b.name AS home_branch, e.user_id IS NULL AS no_login, {ROLE} FROM employees e "
                     f"LEFT JOIN users u ON u.id = e.user_id LEFT JOIN branches b ON b.id = e.primary_branch_id "
                     f"WHERE e.id IN ({marks}) AND (u.role IS NULL OR u.role != 'super_admin') "
-                    f"ORDER BY (u.role = 'dentist') DESC, e.full_name", list(ids))
+                    f"ORDER BY {IS_DENT} DESC, e.full_name", list(ids))
     return [dict(r) for r in rows]
 
 
@@ -192,14 +201,14 @@ def duty():
     if branch_id and branch_id not in [b["id"] for b in branches]:
         abort(404)
     days = month_days(first)
-    q = ("SELECT d.work_date, d.branch_id, d.note, e.id AS employee_id, e.full_name, e.position, u.role, b.name AS branch FROM duty_assignments d "
+    q = ("SELECT d.work_date, d.branch_id, d.note, e.id AS employee_id, e.full_name, e.position, " + ROLE + ", b.name AS branch FROM duty_assignments d "
          "JOIN employees e ON e.id = d.employee_id JOIN branches b ON b.id = d.branch_id LEFT JOIN users u ON u.id = e.user_id "
          "WHERE d.work_date BETWEEN ? AND ?")
     params = [days[0].isoformat(), days[-1].isoformat()]
     if branch_id:
         q += " AND d.branch_id = ?"
         params.append(branch_id)
-    rows = conn.all(q + " ORDER BY b.sort_order, (u.role = 'dentist') DESC, e.full_name", params)
+    rows = conn.all(q + " ORDER BY b.sort_order, " + IS_DENT + " DESC, e.full_name", params)
     me = _my_employee(conn)
     only_me = bool(request.args.get("mine")) and me
     by_day: dict[str, list] = {d.isoformat(): [] for d in days}
@@ -286,7 +295,7 @@ def duty_edit():
                       "WHERE d.branch_id != ? AND d.work_date BETWEEN ? AND ?", (branch_id, days[0].isoformat(), days[-1].isoformat())):
         elsewhere[(r["work_date"], r["employee_id"])] = r["name"]
     shown = {p["id"] for p in people}
-    others = [dict(r) for r in conn.all("SELECT e.id, e.full_name, e.position, b.name AS home_branch FROM employees e LEFT JOIN users u ON u.id = e.user_id "
+    others = [dict(r) for r in conn.all("SELECT e.id, e.full_name, e.position, b.name AS home_branch, " + ROLE + " FROM employees e LEFT JOIN users u ON u.id = e.user_id "
                                         "LEFT JOIN branches b ON b.id = e.primary_branch_id WHERE e.active = 1 "
                                         "AND (u.role IS NULL OR u.role != 'super_admin') ORDER BY e.full_name") if r["id"] not in shown]
     return render_template("staff/announce/edit.html", branches=branches, branch=branch, branch_id=branch_id, first=first, days=days,
