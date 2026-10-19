@@ -31,9 +31,15 @@ def _own_employee_id():
 
 
 def _employee_scope(alias="e"):
+    """Employees of the user's branches, plus the laboratory's employees for people who manage the lab's staff."""
     if g.user.is_super_admin:
         return "1 = 1", []
-    return branch_filter(g.user, f"{alias}.primary_branch_id", g.user.branch_ids)
+    sql, params = branch_filter(g.user, f"{alias}.primary_branch_id", g.user.branch_ids)
+    from ..workplace import labs_for
+    labs = [l["id"] for l in labs_for(get_db(), g.user)]
+    if labs:
+        return f"({sql} OR {alias}.lab_id IN ({','.join('?' * len(labs))}))", [*params, *labs]
+    return sql, params
 
 
 # ---------------------------------------------------------------------------
@@ -48,23 +54,26 @@ def employees():
         if not g.user.can("attendance.manage"):
             abort(403)
         name = clean(request.form.get("full_name"), 120)
-        branch_id = to_int(request.form.get("primary_branch_id"))
-        if not name or not branch_id or not g.user.in_branch(branch_id):
-            flash("Enter a name and one of your branches.", "error")
+        from ..workplace import parse as parse_workplace
+        branch_id, lab_id, werr = parse_workplace(conn, g.user, request.form.get("primary_branch_id"))
+        if not name or werr:
+            flash("Enter a name and choose one of your branches or the laboratory.", "error")
         else:
             eid = conn.insert("employees", {"full_name": name, "position": clean(request.form.get("position"), 80) if clean(request.form.get("position"), 80) in POSITIONS else "Staff",
                                             "employment_type": request.form.get("employment_type", "regular"),
-                                            "primary_branch_id": branch_id, "active": 1, "created_at": now_str()})
+                                            "primary_branch_id": branch_id, "lab_id": lab_id, "active": 1, "created_at": now_str()})
             audit.record("employee_created", "employee", eid, f"Added employee {name}", branch_id=branch_id)
             flash("Employee added. This does not create a login; only a super admin can create users.", "success")
         return redirect(url_for("people.employees"))
     scope, params = _employee_scope()
-    rows = conn.all(f"SELECT e.*, b.name AS branch, u.email AS login_email, u.role, u.access_role FROM employees e LEFT JOIN branches b ON b.id = e.primary_branch_id "
+    rows = conn.all(f"SELECT e.*, COALESCE(b.name, lab.name || ' (laboratory)') AS branch, u.email AS login_email, u.role, u.access_role "
+                    f"FROM employees e LEFT JOIN branches b ON b.id = e.primary_branch_id LEFT JOIN laboratories lab ON lab.id = e.lab_id "
                     f"LEFT JOIN users u ON u.id = e.user_id WHERE {scope} ORDER BY e.active DESC, e.full_name", params)
     if g.user.can("compensation.manage"):
         for r in rows:
             r["comp"] = current_compensation(conn, r["id"], today().isoformat())
-    return render_template("staff/people/employees.html", rows=rows, branches=branches_for_user(g.user))
+    from ..workplace import labs_for
+    return render_template("staff/people/employees.html", rows=rows, branches=branches_for_user(g.user), labs=labs_for(conn, g.user))
 
 
 EMPLOYMENT_TYPES = {"regular": "regular", "probationary": "probationary", "probation": "probationary", "associate": "associate",
@@ -288,7 +297,8 @@ def _deduction_choices():
 def employee(emp_id):
     conn = get_db()
     scope, params = _employee_scope()
-    e = conn.one(f"SELECT e.*, b.name AS branch FROM employees e LEFT JOIN branches b ON b.id = e.primary_branch_id WHERE e.id = ? AND {scope}",
+    e = conn.one(f"SELECT e.*, COALESCE(b.name, lab.name || ' (laboratory)') AS branch FROM employees e LEFT JOIN branches b ON b.id = e.primary_branch_id "
+                 f"LEFT JOIN laboratories lab ON lab.id = e.lab_id WHERE e.id = ? AND {scope}",
                  [emp_id, *params])
     if not e:
         abort(404)
@@ -394,14 +404,16 @@ def employee(emp_id):
         elif action == "details":
             if not g.user.can("attendance.manage"):
                 abort(403)
-            branch_id = to_int(request.form.get("primary_branch_id"))
-            if branch_id and not g.user.in_branch(branch_id):
-                abort(403)
+            from ..workplace import parse as parse_workplace
+            branch_id, lab_id, werr = parse_workplace(conn, g.user, request.form.get("primary_branch_id"))
+            if werr:
+                flash(werr, "error")
+                return redirect(url_for("people.employee", emp_id=emp_id))
             pos = clean(request.form.get("position"), 80)
             if pos not in POSITIONS and pos != e["position"]:
                 pos = e["position"]
             upd = {"position": pos, "employment_type": request.form.get("employment_type", "regular"),
-                   "primary_branch_id": branch_id, "active": 1 if request.form.get("active") else 0,
+                   "primary_branch_id": branch_id, "lab_id": lab_id, "active": 1 if request.form.get("active") else 0,
                    "ot_eligible": 1 if request.form.get("ot_eligible") else 0}
             conn.update("employees", emp_id, upd)
             if upd["ot_eligible"] != e["ot_eligible"]:
@@ -424,7 +436,8 @@ def employee(emp_id):
         svc_rates = conn.all("SELECT r.*, s.name AS service FROM dentist_service_rates r JOIN services s ON s.id = r.service_id WHERE employee_id = ? "
                              "ORDER BY s.sort_order", (emp_id,))
     from .. import settings as _settings
-    return render_template("staff/people/employee.html", ot_end=_fmt12(_settings.get("payroll.staff_end_time", conn) or "17:00"), e=e, comps=comps, branches=branches_for_user(g.user), is_dentist=is_dentist,
+    from ..workplace import labs_for
+    return render_template("staff/people/employee.html", ot_end=_fmt12(_settings.get("payroll.staff_end_time", conn) or "17:00"), e=e, comps=comps, branches=branches_for_user(g.user), labs=labs_for(conn, g.user), is_dentist=is_dentist,
                            dpay=dpay, svc_rates=svc_rates, all_services=conn.all("SELECT id, name FROM services WHERE active = 1 ORDER BY sort_order"),
                            today=today().isoformat(),
                            allowances=conn.all("SELECT * FROM employee_allowances WHERE employee_id = ? AND active = 1 ORDER BY id", (emp_id,)),
@@ -688,28 +701,39 @@ def payroll():
         if not g.user.can("payroll.prepare"):
             abort(403)
         s, e = parse_date(request.form.get("start_date")), parse_date(request.form.get("end_date"))
-        branch_id = to_int(request.form.get("branch_id"))
+        raw = request.form.get("branch_id") or ""
+        from ..workplace import labs_for
+        lab_id = to_int(raw[4:]) if raw.startswith("lab:") else None
+        branch_id = None if lab_id else to_int(raw)
         name = clean(request.form.get("name"), 80)
         if not s or not e or e < s or (e - s).days > 62:
             flash("Enter a valid period of up to two months.", "error")
         elif branch_id and not g.user.in_branch(branch_id):
             abort(403)
+        elif lab_id and lab_id not in {l["id"] for l in labs_for(conn, g.user)}:
+            abort(403)
+        elif not branch_id and not lab_id and not g.user.is_super_admin:
+            abort(403)
         else:
             pid = conn.insert("payroll_periods", {"name": name or f"{s.isoformat()} to {e.isoformat()}", "start_date": s.isoformat(),
-                                                  "end_date": e.isoformat(), "branch_id": branch_id, "status": "draft",
+                                                  "end_date": e.isoformat(), "branch_id": branch_id, "lab_id": lab_id, "status": "draft",
                                                   "rules_confirmed": 1 if settings.get("payroll.rules_confirmed") else 0,
                                                   "created_by": g.user.id, "created_at": now_str()})
             _rebuild(conn, pid)
             audit.record("payroll_period_created", "payroll_period", pid, f"Draft payroll {s} – {e}", branch_id=branch_id)
             return redirect(url_for("people.payroll_period", period_id=pid))
-    periods = conn.all("SELECT p.*, b.name AS branch, u.name AS creator FROM payroll_periods p LEFT JOIN branches b ON b.id = p.branch_id "
+    periods = conn.all("SELECT p.*, COALESCE(b.name, lab.name || ' (laboratory)') AS branch, u.name AS creator FROM payroll_periods p "
+                       "LEFT JOIN branches b ON b.id = p.branch_id LEFT JOIN laboratories lab ON lab.id = p.lab_id "
                        "LEFT JOIN users u ON u.id = p.created_by ORDER BY p.start_date DESC")
     active = {r["id"] for r in conn.all("SELECT id FROM branches WHERE active = 1")}
     covers_all = active.issubset(set(g.user.branch_ids))   # all-branch periods: for users who cover every branch (as when opening one)
-    periods = [p for p in periods if g.user.is_super_admin or (p["branch_id"] in g.user.branch_ids if p["branch_id"] else covers_all)]
+    from ..workplace import labs_for
+    my_labs = {l["id"] for l in labs_for(conn, g.user)}
+    periods = [p for p in periods if g.user.is_super_admin or (p["lab_id"] in my_labs if p["lab_id"] else
+                                                               (p["branch_id"] in g.user.branch_ids if p["branch_id"] else covers_all))]
     t = today()
     default_start, cutoff_end = cutoff_for(t)
-    return render_template("staff/people/payroll.html", periods=periods, branches=branches_for_user(g.user),
+    return render_template("staff/people/payroll.html", periods=periods, branches=branches_for_user(g.user), labs=labs_for(conn, g.user),
                            rules_confirmed=settings.get("payroll.rules_confirmed"), default_start=default_start.isoformat(),
                            default_end=cutoff_end.isoformat(), prev_cutoff=cutoff_for(default_start - timedelta(days=1)))
 
@@ -740,11 +764,17 @@ def _rebuild(conn, period_id):
 
 
 def _load_period(period_id):
-    p = get_db().one("SELECT p.*, b.name AS branch, c.name AS creator, s.name AS submitter, a.name AS approver FROM payroll_periods p "
-                     "LEFT JOIN branches b ON b.id = p.branch_id LEFT JOIN users c ON c.id = p.created_by LEFT JOIN users s ON s.id = p.submitted_by "
+    p = get_db().one("SELECT p.*, COALESCE(b.name, lab.name || ' (laboratory)') AS branch, c.name AS creator, s.name AS submitter, a.name AS approver "
+                     "FROM payroll_periods p LEFT JOIN branches b ON b.id = p.branch_id LEFT JOIN laboratories lab ON lab.id = p.lab_id "
+                     "LEFT JOIN users c ON c.id = p.created_by LEFT JOIN users s ON s.id = p.submitted_by "
                      "LEFT JOIN users a ON a.id = p.approved_by WHERE p.id = ?", (period_id,))
     if not p:
         abort(404)
+    if p["lab_id"]:
+        from ..workplace import labs_for
+        if not g.user.is_super_admin and p["lab_id"] not in {l["id"] for l in labs_for(get_db(), g.user)}:
+            abort(403)
+        return p
     if p["branch_id"] and not g.user.in_branch(p["branch_id"]):
         abort(403)
     if not p["branch_id"] and not g.user.is_super_admin:
@@ -878,8 +908,8 @@ def payslips(period_id, emp_id=None):
         abort(403)
     conn = get_db()
     p = _load_period(period_id)
-    lines = conn.all("SELECT l.*, e.full_name, e.position, b.name AS branch FROM payroll_lines l JOIN employees e ON e.id = l.employee_id "
-                     "LEFT JOIN branches b ON b.id = e.primary_branch_id "
+    lines = conn.all("SELECT l.*, e.full_name, e.position, COALESCE(b.name, lab.name) AS branch FROM payroll_lines l JOIN employees e ON e.id = l.employee_id "
+                     "LEFT JOIN branches b ON b.id = e.primary_branch_id LEFT JOIN laboratories lab ON lab.id = e.lab_id "
                      "WHERE l.period_id = ?" + (" AND l.employee_id = ?" if emp_id else "") + " ORDER BY l.kind DESC, e.full_name",
                      (period_id, emp_id) if emp_id else (period_id,))
     if emp_id and not lines:

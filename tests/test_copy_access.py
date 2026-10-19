@@ -30,3 +30,20 @@ class TestCopyAccess(Base):
         self.assertNotEqual(self.q("SELECT role FROM users WHERE id = ?", (dst["id"],))["role"], "super_admin")
         self.assertEqual(self.login("reception.malolos").post(f"/staff/admin/users/{dst['id']}/copy-access",
                                                               data={"from_user": src["id"]}).status_code, 403)
+
+
+class TestUsersLabTab(Base):
+    def test_laboratory_tab(self):
+        from app.auth import hash_password
+        from app.util import now_str
+        uid = self.conn.insert("users", {"email": "lab.tab@demo.dentalhaven.test", "name": "Lab Tab Person", "password_hash": hash_password("x" * 12),
+                                         "role": "staff", "access_role": "lab_receptionist", "active": 1, "must_change_password": 0,
+                                         "created_at": now_str()})
+        lab = self.q("SELECT id FROM laboratories WHERE name = 'DSDL'")["id"]
+        self.conn.execute("INSERT INTO user_labs (user_id, lab_id) VALUES (?, ?)", (uid, lab))
+        admin = self.login("admin")
+        lab_page = admin.get("/staff/admin/users?tab=lab").data.decode()
+        self.assertIn("Lab Tab Person", lab_page)
+        self.assertIn("DSDL", lab_page)
+        self.assertNotIn("Lab Tab Person", admin.get("/staff/admin/users?tab=staff").data.decode())
+        self.assertIn('Laboratory <span class="pill-n">', admin.get("/staff/admin/users").data.decode())

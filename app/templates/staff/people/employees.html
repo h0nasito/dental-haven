@@ -18,7 +18,7 @@
 <form method="post" class="form-grid">{{ csrf() }}
 <div class="field"><label for="fn">Full name</label><input id="fn" name="full_name" required></div>
 <div class="field"><label for="po">Position</label><select id="po" name="position">{% for pos in POSITIONS %}<option {% if 'Staff' == pos %}selected{% endif %}>{{ pos }}</option>{% endfor %}{% if 'Staff' and 'Staff' not in POSITIONS %}<option selected>{{ 'Staff' }}</option>{% endif %}</select></div>
-<div class="field"><label for="br">Branch</label><select id="br" name="primary_branch_id">{% for b in branches %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}</select></div>
+<div class="field"><label for="br">Branch / workplace</label><select id="br" name="primary_branch_id">{% for b in branches %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}{% if labs %}<optgroup label="Laboratory">{% for l in labs %}<option value="lab:{{ l.id }}">{{ l.name }} (laboratory)</option>{% endfor %}</optgroup>{% endif %}</select></div>
 <div class="field"><label for="et">Type</label><select id="et" name="employment_type"><option value="regular">Regular</option><option value="probationary">Probationary</option><option value="associate">Associate dentist</option><option value="part_time">Part-time</option><option value="contractual">Contractual</option></select></div>
 <div><button class="btn btn-secondary">Add</button></div></form></div>
 {% endif %}

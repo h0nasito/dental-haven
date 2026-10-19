@@ -8,7 +8,9 @@
 {% if current_user.can('attendance.manage') %}
 <div class="card"><h2>Details</h2><form method="post">{{ csrf() }}<input type="hidden" name="action" value="details">
 <div class="field"><label for="po">Position</label><select id="po" name="position">{% for pos in POSITIONS %}<option {% if e.position == pos %}selected{% endif %}>{{ pos }}</option>{% endfor %}{% if e.position and e.position not in POSITIONS %}<option selected>{{ e.position }}</option>{% endif %}</select></div>
-{{ select('primary_branch_id', 'Primary branch', branches|opts, e.primary_branch_id) }}
+<div class="field"><label for="pb">Branch / workplace</label><select id="pb" name="primary_branch_id">{% for b in branches %}<option value="{{ b.id }}" {% if not e.lab_id and e.primary_branch_id == b.id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}
+{% if labs %}<optgroup label="Laboratory">{% for l in labs %}<option value="lab:{{ l.id }}" {% if e.lab_id == l.id %}selected{% endif %}>{{ l.name }} (laboratory)</option>{% endfor %}</optgroup>{% endif %}</select>
+<small class="muted">Laboratory staff get their own laboratory payroll.</small></div>
 {{ select('employment_type', 'Type', [('regular','Regular'),('probationary','Probationary'),('associate','Associate dentist'),('part_time','Part-time'),('contractual','Contractual')], e.employment_type) }}
 <label class="check"><input type="checkbox" name="active" value="1" {% if e.active %}checked{% endif %}> Active</label>
 <label class="check"><input type="checkbox" name="ot_eligible" value="1" {% if e.ot_eligible %}checked{% endif %}> Eligible for overtime</label>

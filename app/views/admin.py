@@ -36,21 +36,31 @@ def _temp_password() -> str:
 def users():
     """Users in two lists like MyMedsPH: Associates (dentists) and Staff. The super admin is listed as account owner."""
     conn = get_db()
-    tab = "staff" if request.args.get("tab") == "staff" else "associates"
+    tab = request.args.get("tab") if request.args.get("tab") in ("staff", "lab") else "associates"
     q = clean(request.args.get("q"), 80).lower()
     rows = conn.all("SELECT u.*, e.position FROM users u LEFT JOIN employees e ON e.user_id = u.id "
                     "ORDER BY CASE WHEN u.role = 'super_admin' THEN 0 ELSE 1 END, u.active DESC, u.name")
     ub = {}
     for r in conn.all("SELECT ub.user_id, b.name FROM user_branches ub JOIN branches b ON b.id = ub.branch_id ORDER BY b.sort_order"):
         ub.setdefault(r["user_id"], []).append(r["name"])
+    ul = {}
+    for r in conn.all("SELECT ul.user_id, l.name FROM user_labs ul JOIN laboratories l ON l.id = ul.lab_id ORDER BY l.name"):
+        ul.setdefault(r["user_id"], []).append(r["name"])
     def is_associate(u):
         return u["role"] == "dentist" or (u["role"] == "super_admin" and (u["license_no"] or "dentist" in (u["position"] or "").lower()))
-    counts = {"associates": sum(1 for u in rows if is_associate(u)), "staff": sum(1 for u in rows if not is_associate(u))}
-    rows = [u for u in rows if is_associate(u) == (tab == "associates")]
+    def is_lab(u):
+        """The laboratory team: assigned to a lab with a lab position or role (Laboratory Receptionist, technicians)."""
+        pos = (u["position"] or "").lower()
+        return u["role"] != "super_admin" and not is_associate(u) and (
+            (u["access_role"] or "") in ("lab_receptionist", "technician") or "lab" in pos or "technician" in pos)
+    def kind(u):
+        return "associates" if is_associate(u) else ("lab" if is_lab(u) else "staff")
+    counts = {k: sum(1 for u in rows if kind(u) == k) for k in ("associates", "staff", "lab")}
+    rows = [u for u in rows if kind(u) == tab]
     if q:
         rows = [u for u in rows if q in (u["name"] or "").lower() or q in (u["email"] or "").lower() or q in (u["position"] or "").lower()]
     custom = {r["user_id"] for r in conn.all("SELECT DISTINCT user_id FROM user_permissions")}
-    return render_template("staff/admin/users.html", users=rows, user_branches=ub, tab=tab, q=q, counts=counts, custom=custom)
+    return render_template("staff/admin/users.html", users=rows, user_branches=ub, user_labs=ul, tab=tab, q=q, counts=counts, custom=custom)
 
 
 @bp.route("/users/<int:user_id>/active", methods=["POST"])

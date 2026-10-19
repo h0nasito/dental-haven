@@ -142,7 +142,10 @@ def staff_daily_pay(conn, recs, rate_cents: int, start: str, end: str) -> dict:
 def build_lines(conn, period) -> list[dict]:
     where = "e.active = 1"
     params: list = []
-    if period["branch_id"]:
+    if "lab_id" in period.keys() and period["lab_id"]:
+        where += " AND e.lab_id = ?"           # the laboratory's own payroll
+        params.append(period["lab_id"])
+    elif period["branch_id"]:
         where += " AND e.primary_branch_id = ?"
         params.append(period["branch_id"])
     employees = conn.all(f"SELECT e.* FROM employees e WHERE {where} ORDER BY e.full_name", params)
