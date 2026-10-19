@@ -20,7 +20,7 @@ class TestInventory(Base):
         return self.q("SELECT * FROM inventory_stock WHERE location_id = ? AND item_id = ?", (loc_id, item_id))
 
     def test_items_and_locations_loaded(self):
-        self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM inventory_items"), 592)
+        self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM inventory_items WHERE scope = 'clinic'"), 592)
         names = [r["name"] for r in self.conn.all("SELECT name FROM inventory_locations ORDER BY sort_order")]
         self.assertEqual(len(names), 5)
         self.assertEqual(names[-1], "Digital Solutions Dental Laboratory")
@@ -164,9 +164,11 @@ class TestInventoryScopes(TestInventory):
         # add a laboratory item: lab categories, LB- code, only at the lab
         page = admin.get("/staff/inventory/items?scope=lab").data.decode()
         self.assertIn("Laboratory items", page)
-        self.assertIn("Gypsum &amp; Model Materials", page)
+        self.assertIn("Gypsum &amp; Stone", page)
+        self.assertIn("Zirconia Disks (HT, ST, UT, Multi-layer)", page)          # the lab's checklist is loaded
+        self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM inventory_items WHERE scope = 'lab'"), 111)
         admin.post("/staff/inventory/items", data={"scope": "lab", "name": "Dental Stone Type IV QT", "unit": "bag",
-                                                   "category": "Gypsum & Model Materials", "price": "950", "supplier": ""})
+                                                   "category": "Gypsum & Stone", "price": "950", "supplier": ""})
         it = self.item("Dental Stone Type IV QT")
         self.assertEqual((it["scope"], it["code"][:3]), ("lab", "LB-"))
         self.assertIn("Dental Stone Type IV QT", admin.get(f"/staff/inventory/{lab_loc['id']}").data.decode())

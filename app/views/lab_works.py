@@ -15,12 +15,13 @@ import csv
 import io
 from datetime import timedelta
 
-from flask import Blueprint, Response, abort, flash, g, redirect, render_template, request, url_for
+from flask import Blueprint, Response, abort, flash, g, redirect, render_template, request, send_file, url_for
 
 from .. import audit
 from ..auth import login_required
 from ..db import get_db
 from ..notices import lab_staff, notify, run_lab_due_checks
+from ..uploads import IMAGE_TYPES, document_path, save_document, save_private_photo, sniff
 from ..util import clean, now_str, parse_date, parse_money, to_int, today
 from .labs import CASE_TYPES
 
@@ -418,49 +419,79 @@ def works_export():
 @bp.route("/clients", methods=["GET", "POST"])
 @login_required
 def clients():
+    """The lab's clinics, of two kinds: Dental Haven branches (branch_id set; their lab cases are billed to the branch)
+    and outside clinics (other dental clinics that send works)."""
     _need("lab.works")
     conn = get_db()
     ids = _lab_ids()
-    if request.method == "POST" and request.form.get("action") == "add":
-        f = request.form
+    branches = conn.all("SELECT * FROM branches WHERE active = 1 ORDER BY sort_order")
+    f = request.form
+
+    def picked_branch():
+        if f.get("kind") != "branch":
+            return None, None
+        b = next((x for x in branches if x["id"] == to_int(f.get("branch_id"))), None)
+        return (b, None) if b else (None, "Choose the Dental Haven branch.")
+
+    if request.method == "POST" and f.get("action") == "add":
         lab_id = to_int(f.get("lab_id")) or (ids[0] if len(ids) == 1 else None)
-        name = clean(f.get("clinic_name"), 120)
-        if lab_id not in ids:
+        b, err = picked_branch()
+        name = clean(f.get("clinic_name"), 120) or (f"Dental Haven {b['name']} (branch)" if b else "")
+        details = {"doctor": clean(f.get("doctor"), 120), "contact_number": clean(f.get("contact_number"), 60),
+                   "email": clean(f.get("email"), 120), "address": clean(f.get("address"), 300)}
+        if f.get("kind") not in ("branch", "outside"):
+            flash("Choose whether the clinic is a Dental Haven branch or an outside clinic.", "error")
+        elif lab_id not in ids:
             flash("Choose the laboratory.", "error")
+        elif err:
+            flash(err, "error")
         elif len(name) < 2:
             flash("Enter the clinic name.", "error")
+        elif b and (have := conn.one("SELECT * FROM lab_clients WHERE lab_id = ? AND branch_id = ?", (lab_id, b["id"]))):
+            # each branch is listed once per lab: update it instead of adding a second one
+            conn.update("lab_clients", have["id"], {**{k: v for k, v in details.items() if v}, "active": 1})
+            audit.record("lab_client_updated", "lab_client", have["id"], f"Updated branch clinic {have['clinic_name']}")
+            flash(f"{have['clinic_name']} is already in the list (Dental Haven branch). Its details were updated.", "success")
         elif conn.one("SELECT id FROM lab_clients WHERE lab_id = ? AND lower(clinic_name) = lower(?)", (lab_id, name)):
             flash(f"{name} is already in the list.", "error")
         else:
-            cid = conn.insert("lab_clients", {"lab_id": lab_id, "clinic_name": name, "doctor": clean(f.get("doctor"), 120),
-                                              "contact_number": clean(f.get("contact_number"), 60), "email": clean(f.get("email"), 120),
-                                              "address": clean(f.get("address"), 300), "active": 1, "created_at": now_str()})
-            audit.record("lab_client_created", "lab_client", cid, f"Added clinic {name}")
-            flash(f"Added {name}.", "success")
+            cid = conn.insert("lab_clients", {"lab_id": lab_id, "clinic_name": name, "branch_id": b["id"] if b else None, **details,
+                                              "active": 1, "created_at": now_str()})
+            audit.record("lab_client_created", "lab_client", cid, f"Added {'branch' if b else 'outside'} clinic {name}")
+            flash(f"Added {name} ({'Dental Haven branch' if b else 'outside clinic'}).", "success")
         return redirect(url_for("lab_works.clients"))
     if request.method == "POST":
-        cid = to_int(request.form.get("client_id"))
+        cid = to_int(f.get("client_id"))
         c = conn.one(f"SELECT * FROM lab_clients WHERE id = ? AND lab_id IN ({_in(ids)})", [cid, *ids])
         if not c:
             abort(404)
-        name = clean(request.form.get("clinic_name"), 120)
+        name = clean(f.get("clinic_name"), 120)
+        b, err = picked_branch() if f.get("kind") else ((next((x for x in branches if x["id"] == c["branch_id"]), None) if c["branch_id"] else None), None)
         if len(name) < 2:
             flash("Enter the clinic name.", "error")
+        elif err:
+            flash(err, "error")
+        elif b and conn.one("SELECT id FROM lab_clients WHERE lab_id = ? AND branch_id = ? AND id != ?", (c["lab_id"], b["id"], c["id"])):
+            flash(f"Dental Haven {b['name']} is already listed as a branch clinic.", "error")
         else:
-            conn.update("lab_clients", c["id"], {"clinic_name": name, "doctor": clean(request.form.get("doctor"), 120),
-                                                 "contact_number": clean(request.form.get("contact_number"), 60),
-                                                 "email": clean(request.form.get("email"), 120), "address": clean(request.form.get("address"), 300),
-                                                 "active": 1 if request.form.get("active") else 0})
-            audit.record("lab_client_updated", "lab_client", c["id"], f"Updated clinic {name}")
+            new_branch = b["id"] if b else None
+            conn.update("lab_clients", c["id"], {"clinic_name": name, "doctor": clean(f.get("doctor"), 120),
+                                                 "contact_number": clean(f.get("contact_number"), 60), "branch_id": new_branch,
+                                                 "email": clean(f.get("email"), 120), "address": clean(f.get("address"), 300),
+                                                 "active": 1 if f.get("active") else 0})
+            audit.record("lab_client_updated", "lab_client", c["id"], f"Updated clinic {name}"
+                         + (f" (now {'a Dental Haven branch' if new_branch else 'an outside clinic'})" if new_branch != c["branch_id"] else ""))
             flash("Clinic saved.", "success")
         return redirect(url_for("lab_works.clients"))
-    rows = conn.all(f"SELECT c.*, (SELECT COUNT(*) FROM lab_works w WHERE w.client_id = c.id AND w.status IN {OPEN}) AS open_works, "
+    branch_clients(conn, ids)
+    rows = conn.all(f"SELECT c.*, b.name AS branch_name, (SELECT COUNT(*) FROM lab_works w WHERE w.client_id = c.id AND w.status IN {OPEN}) AS open_works, "
                     "(SELECT COUNT(*) FROM lab_works w WHERE w.client_id = c.id) AS all_works, "
                     "(SELECT COALESCE(SUM(total_cents - paid_cents), 0) FROM lab_invoices i WHERE i.client_id = c.id AND i.status = 'issued') AS balance_cents "
-                    f"FROM lab_clients c WHERE c.lab_id IN ({_in(ids)}) ORDER BY c.active DESC, c.clinic_name", ids)
+                    f"FROM lab_clients c LEFT JOIN branches b ON b.id = c.branch_id WHERE c.lab_id IN ({_in(ids)}) "
+                    "ORDER BY c.branch_id IS NULL, c.active DESC, c.clinic_name", ids)
     edit = to_int(request.args.get("edit"))
     return render_template("staff/lab_works/clients.html", rows=rows, edit=edit, can_bill=g.user.is_super_admin or g.user.can("lab.billing"),
-                           labs=my_labs(conn))
+                           labs=my_labs(conn), branches=branches, kind=request.args.get("kind", ""))
 
 
 # ---------------------------------------------------------------------------
@@ -660,6 +691,50 @@ def bill_work(work_id):
     return redirect(url_for("lab_works.invoice", invoice_id=iid))
 
 
+MAX_PROOFS = 4
+
+
+class _ProofError(Exception):
+    pass
+
+
+def _save_proofs(conn, payment_id, files, room):
+    """Proof of payment: photos are made small (no location data); PDFs are kept as they are. Returns (saved, error)."""
+    files = [f for f in files if f and f.filename]
+    if not files:
+        return 0, None
+    if len(files) > max(0, room):
+        return 0, f"Up to {MAX_PROOFS} proofs per payment."
+    n = 0
+    for f in files:
+        head = f.stream.read(16)
+        f.stream.seek(0)
+        if sniff(head) in IMAGE_TYPES:
+            stored, err = save_private_photo(f, "lab_proofs")
+        else:
+            stored, _mime, _size, _orig, err = save_document(f)
+        if err:
+            return n, f"Proof of payment: {err}"
+        conn.insert("lab_payment_proofs", {"payment_id": payment_id, "stored_name": stored, "uploaded_by": g.user.id, "created_at": now_str()})
+        n += 1
+    return n, None
+
+
+@bp.route("/invoices/<int:invoice_id>/proof/<int:proof_id>")
+@login_required
+def payment_proof(invoice_id, proof_id):
+    _need("lab.billing")
+    conn = get_db()
+    inv = _invoice(conn, invoice_id)
+    ph = conn.one("SELECT f.* FROM lab_payment_proofs f JOIN lab_payments p ON p.id = f.payment_id WHERE f.id = ? AND p.invoice_id = ?",
+                  (proof_id, inv["id"]))
+    if not ph:
+        abort(404)
+    resp = send_file(document_path(ph["stored_name"]), max_age=0)
+    resp.headers["Cache-Control"] = "private, no-store"
+    return resp
+
+
 @bp.route("/invoices/<int:invoice_id>", methods=["GET", "POST"])
 @login_required
 def invoice(invoice_id):
@@ -669,6 +744,16 @@ def invoice(invoice_id):
     if request.method == "POST":
         action = request.form.get("action")
         draft = inv["status"] == "draft"
+        try:
+            return _invoice_post(conn, inv, action, draft)
+        except _ProofError as e:          # nothing was saved (the payment is rolled back)
+            flash(f"Payment not saved: {e}", "error")
+            return redirect(url_for("lab_works.invoice", invoice_id=inv["id"]))
+    return _invoice_page(conn, invoice_id)
+
+
+def _invoice_post(conn, inv, action, draft):
+    if True:
         with conn.transaction():
             if action == "add_item" and draft:
                 desc = clean(request.form.get("description"), 200)
@@ -761,6 +846,19 @@ def invoice(invoice_id):
                 audit.record("lab_invoice_deleted", "lab_invoice", inv["id"], "Deleted a draft lab invoice")
                 flash("Draft deleted.", "success")
                 return redirect(url_for("lab_works.invoices"))
+            elif action == "add_proof":
+                p = conn.one("SELECT * FROM lab_payments WHERE id = ? AND invoice_id = ? AND status = 'ok'", (to_int(request.form.get("payment_id")), inv["id"]))
+                if not p:
+                    abort(404)
+                have = conn.scalar("SELECT COUNT(*) FROM lab_payment_proofs WHERE payment_id = ?", (p["id"],)) or 0
+                saved, err = _save_proofs(conn, p["id"], request.files.getlist("proof"), MAX_PROOFS - have)
+                if err:
+                    flash(err, "error")
+                elif saved:
+                    audit.record("lab_payment_proof_added", "lab_invoice", inv["id"], f"Added {saved} proof of payment to receipt {p['receipt_no']}")
+                    flash("Proof of payment added.", "success")
+                else:
+                    flash(f"Choose a picture or PDF (up to {MAX_PROOFS} per payment).", "error")
             elif action == "pay" and inv["status"] == "issued":
                 amt = parse_money(request.form.get("amount"))
                 pm = lab_parse_pay(request.form.get("method"), conn)
@@ -778,7 +876,11 @@ def invoice(invoice_id):
                     pid = conn.insert("lab_payments", {"invoice_id": inv["id"], "receipt_no": receipt, "amount_cents": amt, "method": method,
                                                        "account": account, "reference": clean(request.form.get("reference"), 80), "received_on": rec.isoformat(),
                                                        "received_by": g.user.id, "status": "ok", "created_at": now_str()})
-                    audit.record("lab_payment_recorded", "lab_invoice", inv["id"], f"Payment {receipt} of ₱{amt / 100:,.2f} on {inv['number']}")
+                    saved, err = _save_proofs(conn, pid, request.files.getlist("proof"), MAX_PROOFS)
+                    if err:
+                        raise _ProofError(err)
+                    audit.record("lab_payment_recorded", "lab_invoice", inv["id"], f"Payment {receipt} of ₱{amt / 100:,.2f} on {inv['number']}"
+                                 + (f" with {saved} proof of payment" if saved else ""))
                     _recalc(conn, inv["id"])
                     flash(f"Payment recorded. Receipt {receipt}.", "success")
                     return redirect(url_for("lab_works.invoice", invoice_id=inv["id"], receipt=pid))
@@ -797,12 +899,20 @@ def invoice(invoice_id):
             if action in ("add_item", "update_item", "remove_item"):
                 sync_case_prices(conn, inv["id"])
         return redirect(url_for("lab_works.invoice", invoice_id=inv["id"]))
+
+
+def _invoice_page(conn, invoice_id):
     inv = _invoice(conn, invoice_id)
     items = conn.all("SELECT * FROM lab_invoice_items WHERE invoice_id = ? ORDER BY id", (inv["id"],))
     groups = item_groups(conn, items)
     payments = conn.all("SELECT p.*, u.name AS by_name FROM lab_payments p LEFT JOIN users u ON u.id = p.received_by WHERE p.invoice_id = ? ORDER BY p.id",
                         (inv["id"],))
-    return render_template("staff/lab_works/invoice.html", inv=inv, items=items, groups=groups, payments=payments,
+    proofs: dict[int, list] = {}
+    if payments:
+        ids = [p["id"] for p in payments]
+        for ph in conn.all(f"SELECT * FROM lab_payment_proofs WHERE payment_id IN ({_in(ids)}) ORDER BY id", ids):
+            proofs.setdefault(ph["payment_id"], []).append(dict(ph, is_pdf=ph["stored_name"].endswith(".pdf")))
+    return render_template("staff/lab_works/invoice.html", inv=inv, items=items, groups=groups, payments=payments, proofs=proofs, max_proofs=MAX_PROOFS,
                            price_list=price_items(conn, [inv["lab_id"]]), pay=pay_status(inv), labels=PAY_LABELS,
                            methods=METHODS, pay_opts=lab_pay_options(conn), lab_pay_label=lab_pay_label,
                            today=today().isoformat(), new_receipt=to_int(request.args.get("receipt")))

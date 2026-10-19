@@ -266,6 +266,28 @@ def _seed_inventory(conn):
                                             "sort_order": CATEGORIES.index(category) * 1000 + i, "active": 1,
                                             "created_at": now_str(), "updated_at": now_str()})
         _st.put("seed.inventory_version", INVENTORY_VERSION, None, conn)
+    # The laboratory's own item list (from its consumables checklist), once. Items already in the lab list are kept.
+    from .inventory_content import LAB_CATEGORIES, LAB_INVENTORY_VERSION, LAB_ITEMS, SUGGESTED_NOTE
+    if int(_st.get("seed.lab_inventory_version", conn) or 0) < LAB_INVENTORY_VERSION:
+        # categories from before the checklist -> the checklist's subcategories
+        old = {"Gypsum & Model Materials": "Gypsum & Stone", "Wax & Investment": "Waxes", "Acrylic & Denture Base": "Acrylics & Resins",
+               "Denture Teeth": "Denture Teeth & Pontics", "Ceramics, Porcelain & Zirconia": "Porcelain & Pressables",
+               "Metals & Alloys": "Alloys & Wires", "Flexible & Thermoplastic": "Sheets", "Burs, Discs & Polishing": "Rotary Abrasives",
+               "CAD/CAM & 3D Printing": "Disks & Blocks", "Lab Disposables & PPE": "PPE", "Packaging & Delivery": "Packaging & Delivery",
+               "Lab Equipment Parts": "Tools & Maintenance", "Lab Office & Housekeeping": "General Materials"}
+        for a, b in old.items():
+            conn.execute("UPDATE inventory_items SET category = ? WHERE scope = 'lab' AND category = ?", (b, a))
+        have = {r["name"].lower() for r in conn.all("SELECT name FROM inventory_items WHERE scope = 'lab'")}
+        n = conn.scalar("SELECT MAX(CAST(SUBSTR(code, 4) AS INTEGER)) FROM inventory_items WHERE code LIKE 'LB-%'") or 0
+        for i, (name, unit, category, suggested) in enumerate(LAB_ITEMS):
+            if name.lower() in have:
+                continue
+            n += 1
+            conn.insert("inventory_items", {"code": f"LB-{n:04d}", "name": name, "unit": unit, "category": category, "scope": "lab",
+                                            "notes": SUGGESTED_NOTE if suggested else "",
+                                            "sort_order": LAB_CATEGORIES.index(category) * 1000 + i, "active": 1,
+                                            "created_at": now_str(), "updated_at": now_str()})
+        _st.put("seed.lab_inventory_version", LAB_INVENTORY_VERSION, None, conn)
 
 
 def seed_base(conn):

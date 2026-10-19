@@ -57,12 +57,27 @@ class TestLabClinicsAdd(TestLabCaseBilling):
         uid = self.q("SELECT id FROM users WHERE email = ?", (f"labrec{id(self)}@dsdl.test",))["id"]
         self.conn.execute("INSERT INTO user_permissions (user_id, permission, granted) VALUES (?, 'lab.works', 1)", (uid,))
         self.assertIn("Add a clinic", self.t.get("/staff/lab/clients").data.decode())
-        self.t.post("/staff/lab/clients", data={"action": "add", "clinic_name": "Smile QT Dental", "doctor": "Dr. QT", "contact_number": "0917"})
+        self.t.post("/staff/lab/clients", data={"action": "add", "kind": "outside", "clinic_name": "Smile QT Dental", "doctor": "Dr. QT", "contact_number": "0917"})
         c = self.q("SELECT * FROM lab_clients WHERE clinic_name = 'Smile QT Dental'")
-        self.assertEqual((c["lab_id"], c["doctor"]), (self.lab, "Dr. QT"))
-        self.t.post("/staff/lab/clients", data={"action": "add", "clinic_name": "smile qt dental"})
+        self.assertEqual((c["lab_id"], c["doctor"], c["branch_id"]), (self.lab, "Dr. QT", None))
+        self.t.post("/staff/lab/clients", data={"action": "add", "kind": "outside", "clinic_name": "smile qt dental"})
         self.assertEqual(self.q("SELECT COUNT(*) AS n FROM lab_clients WHERE lower(clinic_name) = 'smile qt dental'")["n"], 1)
         self.assertIn("Smile QT Dental", self.t.get("/staff/lab/works/new").data.decode())
+        # the type must be chosen
+        self.t.post("/staff/lab/clients", data={"action": "add", "clinic_name": "No Type QT"})
+        self.assertIsNone(self.q("SELECT id FROM lab_clients WHERE clinic_name = 'No Type QT'"))
+        # a Dental Haven branch: listed once per lab (adding it again updates it)
+        page = self.t.get("/staff/lab/clients").data.decode()
+        self.assertIn("Dental Haven branches", page)
+        self.assertIn("Outside clinics", page)
+        bid = self.branch("malolos")
+        self.t.post("/staff/lab/clients", data={"action": "add", "kind": "branch", "branch_id": bid, "doctor": "Dr. Branch QT"})
+        rows = self.conn.all("SELECT * FROM lab_clients WHERE lab_id = ? AND branch_id = ?", (self.lab, bid))
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["doctor"], "Dr. Branch QT")
+        # an outside clinic can be changed to a branch only if that branch isn't listed yet
+        self.t.post("/staff/lab/clients", data={"client_id": c["id"], "kind": "branch", "branch_id": bid, "clinic_name": "Smile QT Dental", "active": "1"})
+        self.assertIsNone(self.q("SELECT branch_id FROM lab_clients WHERE id = ?", (c["id"],))["branch_id"])
 
 
 del TestLabCaseBilling

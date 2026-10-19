@@ -64,16 +64,21 @@
 {% if inv.status != 'draft' %}
 <div class="grid grid-2 mt-1">
 {% if inv.status == 'issued' and inv.paid_cents < inv.total_cents %}
-<form method="post" class="card">{{ csrf() }}<input type="hidden" name="action" value="pay"><h2>Record a payment</h2>
+<form method="post" class="card" enctype="multipart/form-data">{{ csrf() }}<input type="hidden" name="action" value="pay"><h2>Record a payment</h2>
 <div class="form-grid"><div class="field"><label for="pa">Amount (₱)</label><input id="pa" name="amount" inputmode="decimal" value="{{ '%.2f' % ((inv.total_cents - inv.paid_cents) / 100) }}" required></div>
 <div class="field"><label for="pm">Method</label><select id="pm" name="method">{% for k, l in pay_opts %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></div>
 <div class="field"><label for="pr">Reference <span class="hint">Optional, e.g. GCash ref no.</span></label><input id="pr" name="reference" maxlength="80"></div>
-<div class="field"><label for="pd">Date received</label><input id="pd" type="date" name="received_on" value="{{ today }}"></div></div>
+<div class="field"><label for="pd">Date received</label><input id="pd" type="date" name="received_on" value="{{ today }}"></div>
+<div class="field" style="grid-column:1/-1"><label for="pp">Proof of payment <span class="hint">Optional · up to {{ max_proofs }}: GCash / bank transfer screenshot, deposit slip, cheque (photo or PDF)</span></label>
+<input id="pp" type="file" name="proof" accept="image/*,application/pdf" multiple></div></div>
 <button class="btn">Save payment &amp; make receipt</button></form>{% endif %}
 <div class="card"><h2>Payments &amp; receipts</h2>
 <div class="table-wrap"><table><thead><tr><th>Receipt</th><th>Date</th><th>Method</th><th class="num">Amount</th><th></th></tr></thead><tbody>
 {% for p in payments %}<tr><td>{{ p.receipt_no }}{% if p.status == 'void' %} <span class="badge badge-red">Void</span>{% endif %}<br><small class="muted">{{ p.by_name }}</small></td><td>{{ p.received_on|date }}</td>
-<td>{{ lab_pay_label(p.method, p.account) }}{% if p.reference %}<br><small class="muted">{{ p.reference }}</small>{% endif %}</td><td class="num">{{ p.amount_cents|peso }}</td>
+<td>{{ lab_pay_label(p.method, p.account) }}{% if p.reference %}<br><small class="muted">{{ p.reference }}</small>{% endif %}
+{% set pf = proofs.get(p.id, []) %}{% if pf %}<div class="proof-row">{% for f in pf %}<a href="{{ url_for('lab_works.payment_proof', invoice_id=inv.id, proof_id=f.id) }}" target="_blank" rel="noopener" title="Proof of payment {{ loop.index }}">{% if f.is_pdf %}<span class="proof-pdf">PDF</span>{% else %}<img src="{{ url_for('lab_works.payment_proof', invoice_id=inv.id, proof_id=f.id) }}" alt="Proof of payment {{ loop.index }}" loading="lazy">{% endif %}</a>{% endfor %}</div>{% endif %}
+{% if p.status == 'ok' and pf|length < max_proofs %}<form method="post" enctype="multipart/form-data" class="proof-add">{{ csrf() }}<input type="hidden" name="action" value="add_proof"><input type="hidden" name="payment_id" value="{{ p.id }}">
+<label class="btn btn-ghost btn-sm">+ {{ 'Add proof' if not pf else 'Add more' }}<input type="file" name="proof" accept="image/*,application/pdf" multiple data-autosubmit hidden></label><button class="btn btn-sm js-hide">Upload</button></form>{% endif %}</td><td class="num">{{ p.amount_cents|peso }}</td>
 <td>{% if p.status == 'ok' %}<a class="btn btn-secondary btn-sm" href="{{ url_for('lab_works.receipt_print', payment_id=p.id) }}" target="_blank">Receipt</a>
 <details><summary class="btn btn-ghost btn-sm">Void</summary><form method="post" class="mt-0">{{ csrf() }}<input type="hidden" name="action" value="void_payment"><input type="hidden" name="payment_id" value="{{ p.id }}"><input name="reason" placeholder="Reason" aria-label="Reason" required><button class="btn btn-sm">Void receipt</button></form></details>{% endif %}</td></tr>
 {% else %}<tr><td colspan="5" class="empty">No payments yet.</td></tr>{% endfor %}</tbody></table></div>
@@ -81,5 +86,10 @@
 <details class="mt-1"><summary class="btn btn-ghost btn-sm">Void this invoice</summary><form method="post">{{ csrf() }}<input type="hidden" name="action" value="void"><div class="field"><label for="vr">Reason</label><input id="vr" name="reason" required></div><button class="btn btn-sm">Void invoice</button></form></details>{% endif %}
 </div></div>
 {% endif %}
+<style>
+.proof-row{display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.35rem}
+.proof-row img,.proof-pdf{width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;background:var(--surface-2,#f3f4f5)}
+.proof-add{margin-top:.25rem}
+</style>
 {% endblock %}
 <style>.li-case td { background: var(--line-2); } .li-sub td { font-style: italic; color: var(--ink-3); }</style>

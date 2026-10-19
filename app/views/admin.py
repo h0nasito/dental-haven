@@ -302,8 +302,10 @@ def user_edit(user_id):
     history = conn.all("SELECT a.*, u.name AS actor FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id "
                        "WHERE entity_type='user' AND entity_id = ? ORDER BY a.id DESC LIMIT 20", (user_id,))
     n_overrides = conn.scalar("SELECT COUNT(*) FROM user_permissions WHERE user_id = ?", (user_id,))
+    copy_from = conn.all("SELECT u.id, u.name, u.access_role, u.role, e.position FROM users u LEFT JOIN employees e ON e.user_id = u.id "
+                         "WHERE u.active = 1 AND u.role != 'super_admin' AND u.id != ? ORDER BY u.name", (user_id,))
     return render_template("staff/admin/user_form.html", v=v, errors=errors, branches=branches, labs=labs, is_new=False,
-                           user=row, history=history, n_overrides=n_overrides)
+                           user=row, history=history, n_overrides=n_overrides, copy_from=copy_from)
 
 
 @bp.route("/users/<int:user_id>/reset-password", methods=["POST"])
@@ -369,6 +371,49 @@ def user_access(user_id):
         groups.setdefault(p.group, []).append(p)
     return render_template("staff/admin/user_access.html", user=row, role=role, role_perms=role_perms, overrides=overrides,
                            groups=groups, locked=LOCKED)
+
+
+@bp.route("/users/<int:user_id>/copy-access", methods=["POST"])
+@require("roles.manage")
+def user_copy_access(user_id):
+    """Give this user the same access as another user: their role and their individual access changes, and
+    optionally the same branches and laboratories. Super admins can't be copied from or to."""
+    conn = get_db()
+    row = conn.one("SELECT * FROM users WHERE id = ?", (user_id,))
+    src = conn.one("SELECT * FROM users WHERE id = ?", (to_int(request.form.get("from_user")),))
+    back = redirect(url_for("admin.user_edit", user_id=user_id))
+    if not row:
+        abort(404)
+    if not src or src["id"] == row["id"]:
+        flash("Choose the person to copy from.", "error")
+        return back
+    if row["role"] == "super_admin" or src["role"] == "super_admin":
+        flash("Super admin access can't be copied.", "error")
+        return back
+    if row["id"] == g.user.id:
+        flash("You cannot change your own access.", "error")
+        return back
+    places = bool(request.form.get("places"))
+    src_role = src["access_role"] or src["role"]
+    with conn.transaction():
+        before = {"role": row["access_role"] or row["role"],
+                  "overrides": {r["permission"]: r["granted"] for r in conn.all("SELECT permission, granted FROM user_permissions WHERE user_id = ?", (user_id,))}}
+        conn.execute("UPDATE users SET role = ?, access_role = ? WHERE id = ?", (base_role(src_role), src_role, user_id))
+        conn.execute("DELETE FROM user_permissions WHERE user_id = ?", (user_id,))
+        conn.execute("INSERT INTO user_permissions (user_id, permission, granted) SELECT ?, permission, granted FROM user_permissions WHERE user_id = ?",
+                     (user_id, src["id"]))
+        if places:
+            conn.execute("DELETE FROM user_branches WHERE user_id = ?", (user_id,))
+            conn.execute("INSERT INTO user_branches (user_id, branch_id) SELECT ?, branch_id FROM user_branches WHERE user_id = ?", (user_id, src["id"]))
+            conn.execute("DELETE FROM user_labs WHERE user_id = ?", (user_id,))
+            conn.execute("INSERT INTO user_labs (user_id, lab_id) SELECT ?, lab_id FROM user_labs WHERE user_id = ?", (user_id, src["id"]))
+        audit.record("user_access_copied", "user", user_id, f"Copied access from {src['email']} to {row['email']}"
+                     + (" (with branches and laboratories)" if places else ""),
+                     {"from_user": src["id"], "before": before, "role": src_role, "places": places})
+        revoke_user_sessions(user_id)   # the new access applies at next sign-in
+    flash(f"{row['name']} now has the same access as {src['name']} ({ROLES[src_role]})"
+          + (", with the same branches and laboratories." if places else ".") + " They were signed out so it applies.", "success")
+    return back
 
 
 @bp.route("/roles", methods=["GET", "POST"])

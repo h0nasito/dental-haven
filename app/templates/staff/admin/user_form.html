@@ -60,7 +60,14 @@
 <div>
   {% if user.role != 'super_admin' and current_user.can('roles.manage') %}<div class="card"><h3>Access</h3>
     <p class="muted">Uses the {{ ROLES[user.access_role or user.role] }} role{% if n_overrides %}, with <strong>{{ n_overrides }}</strong> individual change{{ 's' if n_overrides != 1 }}{% endif %}.</p>
-    <a class="btn btn-secondary" href="{{ url_for('admin.user_access', user_id=user.id) }}">Individual access</a></div>{% endif %}
+    <a class="btn btn-secondary" href="{{ url_for('admin.user_access', user_id=user.id) }}">Individual access</a>
+    {% if copy_from and user.id != current_user.id %}<form method="post" action="{{ url_for('admin.user_copy_access', user_id=user.id) }}" class="mt-1" style="border-top:1px solid var(--line);padding-top:.8rem" data-confirm="Replace {{ user.name }}'s access with the chosen person's access?">{{ csrf() }}
+    <h4 style="margin:0 0 .4rem">Copy access from another user</h4>
+    <div class="field"><label for="cpf">Same access as</label><select id="cpf" name="from_user" required><option value="">Choose a person…</option>
+    {% for o in copy_from %}<option value="{{ o.id }}">{{ o.name }} · {{ ROLES[o.access_role or o.role] }}{% if o.position %} · {{ o.position }}{% endif %}</option>{% endfor %}</select>
+    <small class="muted">Copies their role and their individual access changes. {{ user.name }}'s own changes are replaced.</small></div>
+    <label class="check"><input type="checkbox" name="places" value="1"> Also copy their branches and laboratories</label>
+    <button class="btn btn-secondary mt-1">Copy access</button></form>{% endif %}</div>{% endif %}
   <div class="card"><h3>Password</h3><p class="muted">Generates a new temporary password and signs the user out everywhere.</p>
     <form method="post" action="{{ url_for('admin.user_reset_password', user_id=user.id) }}" data-confirm="Reset this user's password?">{{ csrf() }}<button class="btn btn-secondary" type="submit">Reset password</button></form></div>
   <div class="card"><h3>History</h3>

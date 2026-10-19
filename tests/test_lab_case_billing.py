@@ -112,3 +112,51 @@ class TestLabCasePhotos(Base):
         self.assertIn(self.app.test_client().get(f"/staff/lab/{case}/photos/{rows[0]['id']}").status_code, (302, 401, 403))
         d.post(f"/staff/lab/{case}/photos", data={"action": "remove", "photo_id": rows[0]["id"]})
         self.assertEqual(self.q("SELECT COUNT(*) AS n FROM lab_case_photos WHERE case_id = ?", (case,))["n"], 2)
+
+
+class TestLabPaymentProof(TestLabCaseBilling):
+    test_lab_sets_price_and_bills_branch = None
+    test_bill_by_case_with_units_extras_and_less = None
+
+    def _issued_invoice(self):
+        self.t.post(f"/staff/lab/{self.case}", data={"status": "accepted", "lab_fee": "3500", "note": ""})
+        self.t.get("/staff/lab/invoices")
+        client = self.q("SELECT id FROM lab_clients WHERE lab_id = ? AND branch_id = ?", (self.lab, self.branch("malolos")))
+        r = self.t.post("/staff/lab/invoices/new", data={"client": client["id"], f"c_{self.case}": "1"})
+        iid = int(r.headers["Location"].rstrip("/").split("/")[-1])
+        self.t.post(f"/staff/lab/invoices/{iid}", data={"action": "issue"})
+        return iid
+
+    def _jpg(self):
+        import io
+        from PIL import Image
+        b = io.BytesIO(); Image.new("RGB", (1800, 1200), (30, 140, 200)).save(b, "JPEG"); b.seek(0)
+        return b
+
+    def test_payment_with_proof(self):
+        import io
+        iid = self._issued_invoice()
+        r = self.t.post(f"/staff/lab/invoices/{iid}", data={"action": "pay", "amount": "1000", "method": "gcash", "reference": "GC123",
+                                                             "received_on": "", "proof": [(self._jpg(), "gcash.jpg")]},
+                        content_type="multipart/form-data")
+        self.assertEqual(r.status_code, 302)
+        p = self.q("SELECT * FROM lab_payments WHERE invoice_id = ?", (iid,))
+        self.assertIsNotNone(p, "payment saved")
+        ph = self.q("SELECT * FROM lab_payment_proofs WHERE payment_id = ?", (p["id"],))
+        self.assertTrue(ph["stored_name"].startswith("lab_proofs/"))
+        page = self.t.get(f"/staff/lab/invoices/{iid}").data.decode()
+        self.assertIn(f"/staff/lab/invoices/{iid}/proof/{ph['id']}", page)
+        img = self.t.get(f"/staff/lab/invoices/{iid}/proof/{ph['id']}")
+        self.assertEqual(img.status_code, 200)
+        self.assertLess(len(img.data), 400_000)
+        # add one more later
+        self.t.post(f"/staff/lab/invoices/{iid}", data={"action": "add_proof", "payment_id": p["id"], "proof": [(self._jpg(), "slip.jpg")]},
+                    content_type="multipart/form-data")
+        self.assertEqual(self.q("SELECT COUNT(*) AS n FROM lab_payment_proofs WHERE payment_id = ?", (p["id"],))["n"], 2)
+        # a bad file: the payment isn't saved
+        n = self.q("SELECT COUNT(*) AS n FROM lab_payments WHERE invoice_id = ?", (iid,))["n"]
+        self.t.post(f"/staff/lab/invoices/{iid}", data={"action": "pay", "amount": "100", "method": "cash", "proof": [(io.BytesIO(b"not a picture"), "x.txt")]},
+                    content_type="multipart/form-data")
+        self.assertEqual(self.q("SELECT COUNT(*) AS n FROM lab_payments WHERE invoice_id = ?", (iid,))["n"], n)
+        # a dentist (no lab billing) can't open it
+        self.assertEqual(self.login("dentist.malolos").get(f"/staff/lab/invoices/{iid}/proof/{ph['id']}").status_code, 403)

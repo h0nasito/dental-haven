@@ -1,8 +1,12 @@
 {% extends "staff/layout.html" %}
 {% from "macros.html" import csrf %}
 {% block page_title %}Lab clinics<form method="post" class="card mt-1" id="add-clinic">{{ csrf() }}<input type="hidden" name="action" value="add"><h2>Add a clinic</h2>
+<fieldset class="field" style="border:0;padding:0;margin:0 0 .6rem"><legend><strong>Is this clinic a Dental Haven branch or outside?</strong></legend>
+<label class="check"><input type="radio" name="kind" value="outside" required> Outside clinic <small class="muted">(another dental clinic)</small></label>
+<label class="check"><input type="radio" name="kind" value="branch" required> Dental Haven branch</label></fieldset>
 <div class="form-grid">{% if labs|length > 1 %}<div class="field"><label for="al">Laboratory</label><select id="al" name="lab_id">{% for l in labs %}<option value="{{ l.id }}">{{ l.name }}</option>{% endfor %}</select></div>{% endif %}
-<div class="field"><label for="acn">Clinic name</label><input id="acn" name="clinic_name" maxlength="120" required></div>
+<div class="field"><label for="acb">Branch <span class="hint">If Dental Haven branch</span></label><select id="acb" name="branch_id"><option value="">—</option>{% for b in branches %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}</select></div>
+<div class="field"><label for="acn">Clinic name <span class="hint">For a branch, leave empty to use "Dental Haven [branch] (branch)"</span></label><input id="acn" name="clinic_name" maxlength="120"></div>
 <div class="field"><label for="acd">Doctor <span class="hint">Optional</span></label><input id="acd" name="doctor" maxlength="120"></div>
 <div class="field"><label for="acc">Contact number <span class="hint">Optional</span></label><input id="acc" name="contact_number" maxlength="60" inputmode="tel"></div>
 <div class="field"><label for="ace">Email <span class="hint">Optional</span></label><input id="ace" name="email" type="email" maxlength="120"></div>
@@ -10,13 +14,18 @@
 <button class="btn">Add clinic</button></form>
 {% endblock %}
 {% block content %}
-<div class="page-head"><div><h1>Clinics</h1><p>Dental clinics outside our branches that send work to our laboratory. Add them below, or they're added automatically when you save a work from a new clinic.</p></div>
+<div class="page-head"><div><h1>Clinics</h1><p>Clinics the laboratory works for: <span class="badge badge-teal">Dental Haven branch</span> (their lab cases are billed to the branch) and <span class="badge badge-blue">Outside clinic</span> (other dental clinics that send works). Outside clinics are also added automatically when you save a work from a new clinic.</p></div>
 <a class="btn" href="{{ url_for('lab_works.work_new') }}">+ New work</a></div>
 {% set active = 'clients' %}{% include "staff/lab_works/_nav.html" %}
 <div class="card"><div class="table-wrap"><table><thead><tr><th>Dental clinic</th><th>Doctor</th><th>Contact</th><th class="num">Open works</th><th class="num">All works</th>{% if can_bill %}<th class="num">Balance</th>{% endif %}<th></th></tr></thead><tbody>
-{% for c in rows %}
+{% set ns = namespace(kind=None) %}
+{% for c in rows %}{% set k = 'branch' if c.branch_id else 'outside' %}
+{% if k != ns.kind %}{% set ns.kind = k %}<tr class="inv-cat"><th colspan="{{ 7 if can_bill else 6 }}">{{ 'Dental Haven branches' if k == 'branch' else 'Outside clinics' }}</th></tr>{% endif %}
 {% if edit == c.id %}
 <tr><td colspan="{{ 7 if can_bill else 6 }}"><form method="post" class="form-grid">{{ csrf() }}<input type="hidden" name="client_id" value="{{ c.id }}">
+<fieldset class="field span-2"><legend>Type</legend><label class="check"><input type="radio" name="kind" value="branch" {% if c.branch_id %}checked{% endif %}> Dental Haven branch</label>
+<label class="check"><input type="radio" name="kind" value="outside" {% if not c.branch_id %}checked{% endif %}> Outside clinic</label>
+<select name="branch_id" aria-label="Branch"><option value="">Which branch…</option>{% for b in branches %}<option value="{{ b.id }}" {% if b.id == c.branch_id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select></fieldset>
 <div class="field"><label for="cn{{ c.id }}">Clinic name</label><input id="cn{{ c.id }}" name="clinic_name" value="{{ c.clinic_name }}" maxlength="120" required></div>
 <div class="field"><label for="cd{{ c.id }}">Doctor</label><input id="cd{{ c.id }}" name="doctor" value="{{ c.doctor }}" maxlength="120"></div>
 <div class="field"><label for="cc{{ c.id }}">Contact number</label><input id="cc{{ c.id }}" name="contact_number" value="{{ c.contact_number }}" maxlength="60"></div>
@@ -25,7 +34,7 @@
 <label class="check"><input type="checkbox" name="active" value="1" {% if c.active %}checked{% endif %}> Active</label>
 <div class="form-actions"><button class="btn btn-sm">Save</button><a class="btn btn-ghost btn-sm" href="{{ url_for('lab_works.clients') }}">Cancel</a></div></form></td></tr>
 {% else %}
-<tr><td><a href="{{ url_for('lab_works.works', client=c.id, status='all') }}"><strong>{{ c.clinic_name }}</strong></a>{% if not c.active %} <span class="badge">Inactive</span>{% endif %}{% if c.address %}<br><small class="muted">{{ c.address }}</small>{% endif %}</td>
+<tr><td><a href="{{ url_for('lab_works.works', client=c.id, status='all') }}"><strong>{{ c.clinic_name }}</strong></a> {% if c.branch_id %}<span class="badge badge-teal">Dental Haven branch</span>{% else %}<span class="badge badge-blue">Outside clinic</span>{% endif %}{% if not c.active %} <span class="badge">Inactive</span>{% endif %}{% if c.address %}<br><small class="muted">{{ c.address }}</small>{% endif %}</td>
 <td>{{ c.doctor or '—' }}</td><td>{{ c.contact_number or '—' }}{% if c.email %}<br><small class="muted">{{ c.email }}</small>{% endif %}</td>
 <td class="num">{{ c.open_works }}</td><td class="num">{{ c.all_works }}</td>{% if can_bill %}<td class="num">{{ c.balance_cents|peso if c.balance_cents else '—' }}</td>{% endif %}
 <td><a class="btn btn-ghost btn-sm" href="{{ url_for('lab_works.clients', edit=c.id) }}">Edit</a> <a class="btn btn-ghost btn-sm" href="{{ url_for('lab_works.work_new', client=c.id) }}">+ Work</a></td></tr>
@@ -33,8 +42,12 @@
 {% else %}<tr><td colspan="7" class="empty">No clinics yet.</td></tr>{% endfor %}
 </tbody></table></div></div>
 <form method="post" class="card mt-1" id="add-clinic">{{ csrf() }}<input type="hidden" name="action" value="add"><h2>Add a clinic</h2>
+<fieldset class="field" style="border:0;padding:0;margin:0 0 .6rem"><legend><strong>Is this clinic a Dental Haven branch or outside?</strong></legend>
+<label class="check"><input type="radio" name="kind" value="outside" required> Outside clinic <small class="muted">(another dental clinic)</small></label>
+<label class="check"><input type="radio" name="kind" value="branch" required> Dental Haven branch</label></fieldset>
 <div class="form-grid">{% if labs|length > 1 %}<div class="field"><label for="al">Laboratory</label><select id="al" name="lab_id">{% for l in labs %}<option value="{{ l.id }}">{{ l.name }}</option>{% endfor %}</select></div>{% endif %}
-<div class="field"><label for="acn">Clinic name</label><input id="acn" name="clinic_name" maxlength="120" required></div>
+<div class="field"><label for="acb">Branch <span class="hint">If Dental Haven branch</span></label><select id="acb" name="branch_id"><option value="">—</option>{% for b in branches %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}</select></div>
+<div class="field"><label for="acn">Clinic name <span class="hint">For a branch, leave empty to use "Dental Haven [branch] (branch)"</span></label><input id="acn" name="clinic_name" maxlength="120"></div>
 <div class="field"><label for="acd">Doctor <span class="hint">Optional</span></label><input id="acd" name="doctor" maxlength="120"></div>
 <div class="field"><label for="acc">Contact number <span class="hint">Optional</span></label><input id="acc" name="contact_number" maxlength="60" inputmode="tel"></div>
 <div class="field"><label for="ace">Email <span class="hint">Optional</span></label><input id="ace" name="email" type="email" maxlength="120"></div>
