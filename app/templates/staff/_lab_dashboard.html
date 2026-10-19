@@ -1,0 +1,48 @@
+{# Laboratory dashboard section. expects: L (lab_queue.dashboard), lab_names #}
+{% macro lab_row(r) -%}
+<li class="lab-line">{% if r.kind == 'work' %}<a href="{{ url_for('lab_works.work', work_id=r.id) }}"><strong>{{ r.number }}</strong></a> <small class="muted">{{ r.case_type }}{% if r.units and r.units > 1 %} × {{ r.units }}{% endif %} · {{ r.clinic_name }}</small>
+{% else %}<a href="{{ url_for('labs.case', case_id=r.id) }}"><strong>{{ r.last_name }}, {{ r.first_name[:1] }}.</strong></a> <small class="muted">{{ r.case_type }}{% if r.teeth %} #{{ r.teeth }}{% endif %} · {{ r.branch }}</small>{% endif %}
+<span class="lab-meta"><span class="badge {{ 'badge-amber' if r.status in ('on_hold', 'try_in') else ('badge-red' if r.status == 'remake' else ('badge-green' if r.status == 'ready' else 'badge-blue')) }}">{{ r.status|lab_status }}</span>
+{% if r.due_on %}<small class="{{ 'c-red' if r.due_on < L.q.today and r.status not in ('ready', 'try_in') else 'muted' }}">due {{ r.due_on|date }}{% if r.due_on == L.q.today %} (today){% endif %}</small>{% endif %}</span></li>
+{%- endmacro %}
+<style>
+.lab-dash .stat .value{font-size:1.7rem}
+.todo-list{list-style:none;margin:0;padding:0}
+.todo-list li{display:flex;gap:.6rem;align-items:center;padding:.55rem 0;border-top:1px solid var(--line)}
+.todo-list li:first-child{border-top:0}
+.todo-n{min-width:2.2rem;height:2.2rem;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-weight:800;background:var(--amber-100);color:var(--amber-700)}
+.todo-n.danger{background:var(--red-100);color:var(--red-700)}
+.todo-n.ok{background:var(--green-100);color:var(--green-700)}
+.lab-lines{list-style:none;margin:0;padding:0}
+.lab-line{padding:.5rem 0;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:.25rem .6rem;align-items:baseline;justify-content:space-between}
+.lab-line:first-child{border-top:0}
+.lab-meta{display:inline-flex;gap:.4rem;align-items:center}
+.stage-chips{display:flex;flex-wrap:wrap;gap:.35rem;margin-bottom:.6rem}
+.c-red{color:var(--red-700);font-weight:600}
+</style>
+<section class="lab-dash" aria-label="Laboratory">
+<h2 style="margin:.2rem 0 .6rem">🧪 Laboratory{% if lab_names %} · {{ lab_names|join(', ') }}{% endif %}</h2>
+<div class="grid grid-4" style="margin-bottom:1rem">
+<a class="stat {{ 'warn' if L.q.new_cases }}" href="{{ url_for('labs.index', status='sent') }}"><div class="label">New from branches</div><div class="value">{{ L.q.new_cases|length }}</div><div class="sub">To accept</div></a>
+<a class="stat" href="{{ url_for('labs.index') }}"><div class="label">Ongoing</div><div class="value">{{ L.ongoing|length }}</div><div class="sub">In production, on hold, trial fitting or remake</div></a>
+<a class="stat {{ 'danger' if L.overdue else ('warn' if L.due_today else '') }}" href="{{ url_for('dash.queue', view='lab') }}"><div class="label">Overdue · due today</div><div class="value">{{ L.overdue|length }} · {{ L.due_today|length }}</div><div class="sub">Still in production</div></a>
+<a class="stat" href="{{ url_for('dash.queue', view='lab') }}"><div class="label">Ready to deliver</div><div class="value">{{ L.q.ready|length }}</div><div class="sub">Today: {{ L.received_today }} received · {{ L.delivered_today }} delivered</div></a>
+{% if L.can_billing %}<a class="stat {{ 'warn' if L.q.unpaid }}" href="{{ url_for('lab_works.invoices') }}"><div class="label">Unpaid balance</div><div class="value">{{ L.balance_cents|peso }}</div><div class="sub">{{ L.q.unpaid|length }} invoice(s) past due</div></a>{% endif %}
+{% if L.low_stock %}<a class="stat {{ 'danger' if L.low_stock|selectattr('status', 'in', ['out', 'expired'])|list else 'warn' }}" href="{{ url_for('inventory.index') }}"><div class="label">Lab stock to watch</div><div class="value">{{ L.low_stock|length }}</div><div class="sub">Out, low or expiring</div></a>{% endif %}
+</div>
+<div class="grid grid-2" style="margin-bottom:1rem">
+<div class="card"><div class="card-head"><h2>To do</h2><a class="btn btn-ghost btn-sm" href="{{ url_for('dash.queue', view='lab') }}">Work queue →</a></div>
+{% if L.todo %}<ul class="todo-list">{% for t in L.todo %}<li><span class="todo-n {{ t.level }}">{{ t.n }}</span><a href="{{ t.url }}">{{ t.text }}</a></li>{% endfor %}</ul>
+{% else %}<p class="muted mb-0">All caught up. Nothing waiting.</p>{% endif %}</div>
+<div class="card"><div class="card-head"><h2>Ready for pick-up / delivery</h2></div>
+{% if L.q.ready %}<ul class="lab-lines">{% for r in L.q.ready[:10] %}{{ lab_row(r) }}{% endfor %}</ul>{% if L.q.ready|length > 10 %}<p class="mb-0"><a href="{{ url_for('dash.queue', view='lab') }}">{{ L.q.ready|length - 10 }} more →</a></p>{% endif %}
+{% else %}<p class="muted mb-0">Nothing ready yet.</p>{% endif %}</div>
+</div>
+<div class="card" style="margin-bottom:1rem"><div class="card-head"><h2>Ongoing cases &amp; works</h2><a class="btn btn-ghost btn-sm" href="{{ url_for('labs.index') }}">All lab cases →</a></div>
+{% if L.stages %}<div class="stage-chips">{% for k, n in L.stages %}<span class="badge">{{ k|lab_status }}: {{ n }}</span>{% endfor %}</div>{% endif %}
+{% if L.ongoing %}<ul class="lab-lines">{% for r in L.ongoing[:15] %}{{ lab_row(r) }}{% endfor %}</ul>{% if L.ongoing|length > 15 %}<p class="mb-0"><a href="{{ url_for('labs.index') }}">{{ L.ongoing|length - 15 }} more →</a></p>{% endif %}
+{% else %}<p class="muted mb-0">No ongoing work.</p>{% endif %}</div>
+{% if L.low_stock %}<div class="card" style="margin-bottom:1rem"><div class="card-head"><h2>Lab stock to watch</h2><a class="btn btn-ghost btn-sm" href="{{ url_for('inventory.index') }}">Inventory →</a></div>
+<ul class="lab-lines">{% for s in L.low_stock[:8] %}<li class="lab-line"><a href="{{ url_for('inventory.item', location_id=s.loc, item_id=s.id) }}">{{ s.name }}</a><span class="lab-meta"><span class="badge {{ s.badge }}">{{ s.label }}</span><small class="muted">{{ '%g'|format(s.qty) if s.qty is not none else '—' }} {{ s.unit }}</small></span></li>{% endfor %}</ul>
+{% if L.low_stock|length > 8 %}<p class="mb-0"><a href="{{ url_for('inventory.index') }}">{{ L.low_stock|length - 8 }} more →</a></p>{% endif %}</div>{% endif %}
+</section>

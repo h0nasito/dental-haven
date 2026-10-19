@@ -53,6 +53,15 @@ class TestLabQueue(Base):
         self.assertNotIn("Booking requests", page)                 # not the clinic's queue
         self.assertNotIn('view=clinic', page)                      # no clinic tab
         home = t.get("/staff/").data.decode()
+        # the lab dashboard: counts, to-do, ongoing, ready
+        self.assertIn("Laboratory", home)
+        self.assertIn("New from branches", home)
+        self.assertIn("To do", home)
+        self.assertIn("overdue: finish or tell the clinic", home)
+        self.assertIn("new case(s) from the branches to accept", home)
+        self.assertIn("Ongoing cases &amp; works", home)
+        self.assertIn("Denture QTEST", home)
+        self.assertIn("Unpaid balance", home)
         self.assertRegex(home, r'Work queue</span><span class="count">\d+')
         # the clinic receptionist still gets the clinic queue
         rec = self.login("reception.malolos").get("/staff/queue").data.decode()

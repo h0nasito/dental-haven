@@ -86,3 +86,72 @@ def count(conn, ids: list[int], can_works: bool) -> int:
         n += conn.scalar(f"SELECT COUNT(*) FROM lab_works WHERE lab_id IN ({m}) AND status IN {sql_list(LATE)} "
                          "AND due_on IS NOT NULL AND due_on <= ?", [*ids, tomorrow]) or 0
     return n
+
+
+def dashboard(conn, user, ids: list[int]) -> dict:
+    """The laboratory's dashboard: counts, a to-do list, ongoing work, ready to deliver, and low lab stock."""
+    from .lab_status import PRODUCTION
+    can_works = user.is_super_admin or user.can("lab.works")
+    can_billing = user.is_super_admin or user.can("lab.billing")
+    q = build(conn, ids, can_works, can_billing)
+    t = today()
+    day = t.isoformat()
+    m = _marks(ids)
+    ongoing_keys = (*PRODUCTION, "try_in", "on_hold", "remake")
+    ongoing = [dict(r, kind="case") for r in conn.all(
+        "SELECT c.id, c.case_type, c.status, c.due_on, c.teeth, b.name AS branch, p.last_name, p.first_name "
+        "FROM lab_cases c JOIN branches b ON b.id = c.branch_id JOIN patients p ON p.id = c.patient_id "
+        f"WHERE c.lab_id IN ({m}) AND c.status IN {sql_list(ongoing_keys)}", ids)]
+    if can_works:
+        ongoing += [dict(r, kind="work") for r in conn.all(
+            "SELECT w.id, w.number, w.case_type, w.status, w.due_on, w.clinic_name, w.units FROM lab_works w "
+            f"WHERE w.lab_id IN ({m}) AND w.status IN {sql_list(ongoing_keys)}", ids)]
+    ongoing.sort(key=lambda r: (r["due_on"] is None, r["due_on"] or "", r["id"]))
+    stages: dict[str, int] = {}
+    for r in ongoing:
+        stages[r["status"]] = stages.get(r["status"], 0) + 1
+    # received / delivered today
+    received_today = conn.scalar(f"SELECT COUNT(*) FROM lab_cases WHERE lab_id IN ({m}) AND sent_on = ?", [*ids, day]) or 0
+    delivered_today = conn.scalar(f"SELECT COUNT(*) FROM lab_cases WHERE lab_id IN ({m}) AND status = 'delivered' AND completed_on = ?", [*ids, day]) or 0
+    if can_works:
+        received_today += conn.scalar(f"SELECT COUNT(*) FROM lab_works WHERE lab_id IN ({m}) AND received_on = ?", [*ids, day]) or 0
+        delivered_today += conn.scalar(f"SELECT COUNT(*) FROM lab_works WHERE lab_id IN ({m}) AND status = 'delivered' AND delivered_on = ?", [*ids, day]) or 0
+    overdue = [r for r in q["due"] if r["due_on"] and r["due_on"] < day]
+    due_today = [r for r in q["due"] if r["due_on"] == day]
+    from .lab_status import STAGES
+    stages = [(k, stages[k]) for k in STAGES if k in stages]          # in the order of the lab's stages
+    out = {"q": q, "ongoing": ongoing, "stages": stages, "overdue": overdue, "due_today": due_today,
+           "received_today": received_today, "delivered_today": delivered_today, "can_works": can_works, "can_billing": can_billing}
+    if can_billing:
+        out["balance_cents"] = conn.scalar(f"SELECT COALESCE(SUM(total_cents - paid_cents), 0) FROM lab_invoices WHERE lab_id IN ({m}) "
+                                           "AND status = 'issued' AND paid_cents < total_cents", ids) or 0
+        out["drafts"] = conn.scalar(f"SELECT COUNT(*) FROM lab_invoices WHERE lab_id IN ({m}) AND status = 'draft'", ids) or 0
+    # lab stock needing attention (out, low, expiring)
+    out["low_stock"] = []
+    if user.is_super_admin or user.can("inventory.view"):
+        from .views.inventory import ATTENTION, STATUS, stock_rows
+        for loc in conn.all(f"SELECT * FROM inventory_locations WHERE active = 1 AND laboratory_id IN ({m})", ids):
+            for r in stock_rows(conn, loc["id"]):
+                if r["status"] in ATTENTION:
+                    out["low_stock"].append({"loc": loc["id"], "id": r["id"], "name": r["name"], "unit": r["unit"], "qty": r["qty"],
+                                             "status": r["status"], "label": STATUS[r["status"]][0], "badge": STATUS[r["status"]][1]})
+        out["low_stock"].sort(key=lambda r: STATUS[r["status"]][2])
+    # the to-do list, in order of urgency
+    todo = []
+    def add(n, text, url, level="warn"):
+        if n:
+            todo.append({"n": n, "text": text, "url": url, "level": level})
+    add(len(overdue), "overdue: finish or tell the clinic the new date", "/staff/queue?view=lab", "danger")
+    add(len(q["new_cases"]), "new case(s) from the branches to accept", "/staff/lab/?status=sent")
+    add(len(due_today), "due today", "/staff/queue?view=lab")
+    add(len(q["ready"]), "ready: arrange pick-up or delivery, then mark Delivered", "/staff/queue?view=lab", "ok")
+    add(len([r for r in q["waiting"] if r["status"] == "on_hold"]), "on hold: follow up with the clinic", "/staff/queue?view=lab")
+    add(len([r for r in q["waiting"] if r["status"] == "remake"]), "remake(s) to schedule", "/staff/queue?view=lab", "danger")
+    if can_billing:
+        add(len(q.get("to_bill", [])), "delivered work not billed yet", "/staff/lab/invoices")
+        add(out["drafts"], "draft invoice(s) to finish and issue", "/staff/lab/invoices")
+        add(len(q.get("unpaid", [])), "unpaid invoice(s) past due: follow up payment", "/staff/lab/invoices", "danger")
+    add(len([r for r in out["low_stock"] if r["status"] in ("out", "expired")]), "lab item(s) out of stock or expired", "/staff/inventory", "danger")
+    add(len([r for r in out["low_stock"] if r["status"] in ("reorder", "expiring")]), "lab item(s) to reorder or expiring soon", "/staff/inventory")
+    out["todo"] = todo
+    return out

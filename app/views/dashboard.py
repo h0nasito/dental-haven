@@ -97,6 +97,12 @@ def home():
             "GROUP BY p.id, p.first_name, p.last_name, p.chart_no HAVING SUM(i.total_cents - COALESCE((SELECT SUM(CASE WHEN kind='payment' "
             "THEN amount_cents ELSE -amount_cents END) FROM payments WHERE invoice_id = i.id AND status='valid'), 0)) > 0 "
             "ORDER BY balance DESC LIMIT 10", bp2)
+    from .. import lab_queue
+    labs = lab_queue.lab_ids(conn, user.id)
+    if labs:
+        data["lab"] = lab_queue.dashboard(conn, user, labs)
+        data["lab_only"] = lab_queue.is_lab_only(conn, user)
+        data["lab_names"] = [r["name"] for r in conn.all(f"SELECT name FROM laboratories WHERE id IN ({','.join('?' * len(labs))}) ORDER BY name", labs)]
     from .announcements import active_announcements, duty_on
     mine = None if (g.user.is_super_admin or g.user.can("announcements.manage")) else list(g.user.branch_ids)
     data["duty_today"] = duty_on(conn, today(), mine)

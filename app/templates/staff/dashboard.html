@@ -15,6 +15,7 @@
   {% if d.att_exceptions is defined %}<a class="stat {% if d.att_exceptions %}warn{% endif %}" href="{{ url_for('people.attendance', status='exception') }}"><div class="label">Attendance exceptions</div><div class="value">{{ d.att_exceptions }}</div><div class="sub">To review before payroll</div></a>{% endif %}
 </div>
 
+{% if d.lab is defined %}{% set L = d.lab %}{% set lab_names = d.lab_names %}{% include "staff/_lab_dashboard.html" %}{% endif %}
 {% include "staff/announce/_style.html" %}
 <div class="grid grid-2" style="margin-bottom:1rem">
 <div class="card"><div class="card-head"><h2>On duty today</h2><a class="btn btn-ghost btn-sm" href="{{ url_for('announce.duty') }}">Month →</a></div>
