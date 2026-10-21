@@ -915,3 +915,40 @@ section[id] { scroll-margin-top: 72px; }
 .suggest-box a.active, .suggest-box a:hover { background: var(--hover, #eef3f8); }
 .suggest-box small { color: var(--muted, #667); white-space: nowrap; }
 .suggest-box .none { padding: .55rem .8rem; color: var(--muted, #667); }
+/* ---- dental chart: round teeth with five surfaces ---- */
+.odo { overflow-x: auto; padding: .4rem 0 .8rem; }
+.odo-side { display: flex; justify-content: space-around; font-size: .72rem; font-weight: 800; letter-spacing: .08em; color: var(--ink-3); min-width: 760px; }
+.odo-row { display: flex; justify-content: center; gap: 4px; min-width: 760px; margin: 6px 0; }
+.odo-mid { width: 2px; background: var(--line); margin: 0 6px; align-self: stretch; }
+.odo-jaw { border-top: 2px solid var(--line); margin: 8px 0; min-width: 760px; }
+.otooth { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 46px; text-decoration: none; color: var(--ink); border-radius: 10px; padding: 2px 0; }
+.odo-row.lower .otooth { flex-direction: column-reverse; }
+.odo-row.kid .otooth svg { width: 36px; height: 36px; }
+.otag { min-width: 40px; height: 18px; border: 1px solid var(--line); border-radius: 5px; font-size: .68rem; font-weight: 800; text-align: center; line-height: 16px; color: var(--ink-2, #334); }
+.ono { font-size: .72rem; font-weight: 700; color: var(--ink-3); }
+.otooth:hover, .otooth.selected { background: var(--hover, #eef3f8); }
+.otooth.selected .t-base { stroke: var(--brand-600, #1d4ed8); stroke-width: 2.5; }
+.tsvg .t-base { fill: #fff; stroke: #9aa7b8; stroke-width: 1.2; }
+.tsvg .seg { fill: #eef1f5; stroke: #9aa7b8; stroke-width: 1; }
+.tsvg .seg.f-caries { fill: #e11d2e; } .tsvg .seg.f-filled { fill: #1d4ed8; } .tsvg .seg.f-sealant { fill: #60a5fa; }
+.tsvg .seg.f-crown { fill: #d99a0b; } .tsvg .seg.f-rct { fill: #7c3aed; } .tsvg .seg.f-implant { fill: #0d9488; }
+.tsvg .seg.f-extract { fill: #fecaca; } .tsvg .seg.f-fracture { fill: #9f1239; } .tsvg .seg.f-other { fill: #94a3b8; }
+.tsvg .t-x { stroke: #475569; stroke-width: 3; stroke-linecap: round; fill: none; }
+.tsvg.m-x-red .t-x { stroke: #dc2626; }
+.tsvg .t-ring { fill: none; stroke: #64748b; stroke-width: 1.5; stroke-dasharray: 3 2; }
+.tsvg.m-ring-red .t-ring { stroke: #dc2626; }
+.tsvg.m-x .seg { fill: #f1f5f9; }
+.odo-legend { display: flex; flex-wrap: wrap; gap: .35rem 1rem; font-size: .82rem; margin-top: .4rem; }
+.odo-legend .legend-item { display: inline-flex; align-items: center; gap: .3rem; }
+.otag-mini { font-size: .68rem; border: 1px solid var(--line); border-radius: 4px; padding: 0 .25rem; }
+.surf-pick { margin-bottom: .8rem; }
+.surf-wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; }
+#tooth-preview .seg { cursor: pointer; }
+#tooth-preview .seg:hover { stroke: var(--brand-600, #1d4ed8); stroke-width: 1.6; }
+.surf-checks { display: grid; gap: .2rem; }
+.tsvg .seg.f-sel { fill: #86efac; }
+.tsvg.m-ring-solid .t-ring { stroke: #334155; stroke-width: 2.2; stroke-dasharray: none; }
+.tsvg.m-ring .seg { fill: #f8fafc; }
+.chart-photos { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .35rem; }
+.chart-photos img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); display: block; }
+.tsvg .seg.f-incipient { fill: #fb923c; } .tsvg .seg.f-amalgam { fill: #475569; } .tsvg .seg.f-temp { fill: #22d3ee; } .tsvg .seg.f-wear { fill: #c8a27a; }

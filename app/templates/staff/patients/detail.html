@@ -250,40 +250,54 @@
 {% endif %}
 
 {% if tab == 'chart' and clinical %}
-<div class="card">
-<div class="card-head"><h2>Dental chart</h2>
-<div class="tabs" style="margin:0;border:0"><a class="{% if dentition == 'adult' %}active{% endif %}" href="?tab=chart&dentition=adult">Adult (permanent)</a><a class="{% if dentition == 'child' %}active{% endif %}" href="?tab=chart&dentition=child">Child (primary)</a></div></div>
-<p class="hint">Click a tooth to see its history{% if current_user.can('chart.edit') %} or record a finding/treatment{% endif %}. Numbering is FDI (e.g. 36 = lower left first molar). The chart is shown from the patient's front: their right is on your left.</p>
-<div class="dchart">
-{% for row_name in ['upper', 'lower'] %}
-<div class="dchart-row {{ row_name }}">
-{% for t in chart_rows[row_name] %}{% set e = chart_latest.get(t|string) %}
-<a class="tooth {{ conditions[e.condition][2] if e else '' }} {% if sel_tooth == t|string %}selected{% endif %}" href="?tab=chart&dentition={{ dentition }}&tooth={{ t }}"
-   title="Tooth {{ t }}{% if e %}: {{ conditions[e.condition][0] }}{% if e.surfaces %} ({{ e.surfaces }}){% endif %}{% endif %}">
-<span class="tooth-no">{{ t }}</span><span class="tooth-body" aria-hidden="true">{{ conditions[e.condition][1] if e else '' }}</span>
-<span class="sr-only">{% if e %}{{ conditions[e.condition][0] }}{% else %}no finding{% endif %}</span></a>
-{% if loop.index == (chart_rows[row_name]|length // 2) %}<span class="midline" aria-hidden="true"></span>{% endif %}
-{% endfor %}</div>
-{% endfor %}
+{% macro tooth_svg(t, size=44, preview=False) -%}{% set v = chart_views.get(t|string, {}) %}{% set rg = chart_regions[t|string] %}
+<svg class="tsvg{% if v.mark %} m-{{ v.mark }}{% endif %}" viewBox="0 0 44 44" width="{{ size }}" height="{{ size }}" aria-hidden="true"{% if preview %} id="tooth-preview" data-regions='{{ chart_regions|tojson }}' data-fills='{{ fill_classes|tojson }}'{% endif %}>
+<circle class="t-base" cx="22" cy="22" r="20.5"/>
+{% for pos in ['top', 'right', 'bottom', 'left'] %}{% set k = rg[pos] %}<path class="seg {{ (v.surf or {}).get(k) or v.whole or '' }}" data-pos="{{ pos }}" d="{{ seg_paths[pos] }}"><title>{{ surfaces[k] }}</title></path>{% endfor %}
+<circle class="seg {{ (v.surf or {}).get('O') or v.whole or '' }}" data-pos="center" cx="22" cy="22" r="8.5"><title>{{ surfaces['O'] }}</title></circle>
+{% if v.mark in ('x', 'x-red') %}<path class="t-x" d="M8 8 L36 36 M36 8 L8 36"/>{% elif v.mark and v.mark.startswith('ring') %}<circle class="t-ring" cx="22" cy="22" r="21.5"/>{% endif %}
+</svg>{%- endmacro %}
+{% macro tooth_row(teeth, lower=False, kid=False) -%}
+<div class="odo-row{{ ' lower' if lower }}{{ ' kid' if kid }}">{% for t in teeth %}{% set v = chart_views.get(t|string, {}) %}
+<a class="otooth{% if sel_tooth == t|string %} selected{% endif %}" href="?tab=chart&tooth={{ t }}#rec" title="Tooth {{ t }}{% if v.label %}: {{ v.label }}{% endif %}">
+<span class="otag">{{ v.tag or '' }}</span><span class="ono">{{ t }}</span>{{ tooth_svg(t) }}<span class="sr-only">{{ v.label or 'no finding' }}</span></a>
+{% if loop.index == (teeth|length // 2) %}<span class="odo-mid" aria-hidden="true"></span>{% endif %}{% endfor %}</div>
+{%- endmacro %}
+<div class="card" id="chart">
+<div class="card-head"><h2>Dental chart</h2><small class="muted">Right ← patient → Left</small></div>
+<p class="hint">Click a tooth to see its history{% if current_user.can('chart.edit') %} or record a finding/treatment{% endif %}. FDI numbering (e.g. 36 = lower left first molar); child (primary) teeth are the small rows. Shown from the patient's front: their right is on your left. Each tooth is split into its five surfaces: centre = occlusal / incisal, top and bottom = buccal or lingual, sides = mesial (towards the middle) and distal.</p>
+<div class="odo">
+<div class="odo-side"><span>RIGHT</span><span>LEFT</span></div>
+{{ tooth_row(chart_child['upper'], kid=True) }}
+{{ tooth_row(chart_adult['upper']) }}
+<div class="odo-jaw" aria-hidden="true"></div>
+{{ tooth_row(chart_adult['lower'], lower=True) }}
+{{ tooth_row(chart_child['lower'], lower=True, kid=True) }}
 </div>
-<div class="legend">{% for code, (label, tag, cls) in conditions.items() %}<span class="legend-item"><span class="tooth mini {{ cls }}"><span class="tooth-body">{{ tag }}</span></span>{{ label }}</span>{% endfor %}</div>
+<div class="odo-legend">{% for code, (label, tag, cls) in conditions.items() %}<span class="legend-item"><svg viewBox="0 0 44 44" width="18" height="18" aria-hidden="true" class="tsvg{% if mark_classes.get(code) %} m-{{ mark_classes[code] }}{% endif %}"><circle class="t-base" cx="22" cy="22" r="20.5"/><circle class="seg {{ fill_classes[code] }}" cx="22" cy="22" r="19"/>{% set mk = mark_classes.get(code, '') %}{% if mk.startswith('x') %}<path class="t-x" d="M8 8 L36 36 M36 8 L8 36"/>{% elif mk.startswith('ring') %}<circle class="t-ring" cx="22" cy="22" r="21.5"/>{% endif %}</svg> <b class="otag-mini">{{ tag }}</b> {{ label }}</span>{% endfor %}</div>
 </div>
 <div class="grid grid-2">
 <div class="card">{% if sel_tooth %}<h2>Tooth {{ sel_tooth }}</h2>
-{% if sel_entries %}<ul class="list-plain">{% for e in sel_entries %}<li class="row between"><span><strong>{{ conditions[e.condition][0] }}</strong>{% if e.surfaces %} · {{ e.surfaces }}{% endif %}{% if e.note %}<br><small>{{ e.note }}</small>{% endif %}<br><small class="muted">{{ e.recorded_on|date }} · {{ e.by_name }}</small></span>
+{% if sel_entries %}<ul class="list-plain">{% for e in sel_entries %}<li class="row between"><span><strong>{{ conditions[e.condition][0] }}</strong>{% if e.surfaces %} · {{ e.surfaces }}{% endif %}{% if e.note %}<br><small>{{ e.note }}</small>{% endif %}<br><small class="muted">{{ e.recorded_on|date }} · {{ e.by_name }}</small>
+{% if chart_photos.get(e.id) %}<span class="chart-photos">{% for ph in chart_photos[e.id] %}<a href="{{ url_for('patients.document', patient_id=p.id, doc_id=ph.id) }}" target="_blank" rel="noopener" title="{{ ph.title or ph.original_name }}">{% if ph.mime.startswith('image/') %}<img src="{{ url_for('patients.document', patient_id=p.id, doc_id=ph.id) }}" alt="Photo of tooth {{ e.tooth }}" loading="lazy">{% else %}📄 {{ ph.original_name }}{% endif %}</a>{% endfor %}</span>{% endif %}</span>
 {% if current_user.can('chart.delete') %}<form method="post" action="{{ url_for('chart.delete', patient_id=p.id) }}" data-confirm="Delete this chart entry?">{{ csrf() }}<input type="hidden" name="entry_id" value="{{ e.id }}"><button class="btn btn-ghost btn-sm">Delete</button></form>{% endif %}</li>{% endfor %}</ul>
 {% else %}<p class="muted">Nothing recorded for this tooth yet.</p>{% endif %}
-{% else %}<h2>Chart history</h2><ul class="list-plain">{% for e in chart_entries[:30] %}<li><strong>{{ e.tooth }}</strong> · {{ conditions[e.condition][0] }}{% if e.surfaces %} ({{ e.surfaces }}){% endif %} <small class="muted">{{ e.recorded_on|date }} · {{ e.by_name }}</small></li>{% else %}<li class="muted">No chart entries yet.</li>{% endfor %}</ul>{% endif %}
+{% else %}<h2>Chart history</h2><ul class="list-plain">{% for e in chart_entries[:30] %}<li><strong>{{ e.tooth }}</strong> · {{ conditions[e.condition][0] }}{% if e.surfaces %} ({{ e.surfaces }}){% endif %} <small class="muted">{{ e.recorded_on|date }} · {{ e.by_name }}</small>{% if chart_photos.get(e.id) %} <a href="?tab=chart&tooth={{ e.tooth }}#rec" class="badge">📷 {{ chart_photos[e.id]|length }}</a>{% endif %}</li>{% else %}<li class="muted">No chart entries yet.</li>{% endfor %}</ul>{% endif %}
 {% if current_user.can('chart.delete') and chart_entries %}<form method="post" action="{{ url_for('chart.delete', patient_id=p.id) }}" class="mt-1" data-confirm="Delete the whole dental chart for this patient?">{{ csrf() }}<input type="hidden" name="scope" value="all"><button class="btn btn-danger btn-sm">Delete patient chart</button></form>{% endif %}
 </div>
 {% if current_user.can('chart.edit') %}
-<div class="card"><h2>Record on chart</h2>
-<form method="post" action="{{ url_for('chart.add_entry', patient_id=p.id) }}">{{ csrf() }}<input type="hidden" name="dentition" value="{{ dentition }}">
-<div class="field"><label for="ct">Tooth</label><select id="ct" name="tooth" required>{% for row_name in ['upper','lower'] %}{% for t in chart_rows[row_name] %}<option value="{{ t }}" {% if sel_tooth == t|string %}selected{% endif %}>{{ t }}</option>{% endfor %}{% endfor %}</select></div>
-<div class="field"><label for="cc">Finding / treatment</label><select id="cc" name="condition">{% for code, (label, tag, cls) in conditions.items() %}<option value="{{ code }}">{{ label }}</option>{% endfor %}</select></div>
-<fieldset style="margin-bottom:.8rem"><legend>Surfaces (optional)</legend><div class="row">{% for k, l in surfaces.items() %}<label class="check"><input type="checkbox" name="surface_{{ k }}" value="1"> {{ k }} <small class="muted">{{ l }}</small></label>{% endfor %}</div></fieldset>
+<div class="card" id="rec"><h2>Record on chart</h2>
+<form method="post" action="{{ url_for('chart.add_entry', patient_id=p.id) }}" class="chart-form" enctype="multipart/form-data">{{ csrf() }}<input type="hidden" name="dentition" value="{{ dentition }}">
+<div class="form-grid"><div class="field"><label for="ct">Tooth</label><select id="ct" name="tooth" required>
+<optgroup label="Adult (permanent)">{% for t in chart_adult['upper'] + chart_adult['lower'] %}<option value="{{ t }}" {% if sel_tooth == t|string %}selected{% endif %}>{{ t }}</option>{% endfor %}</optgroup>
+<optgroup label="Child (primary)">{% for t in chart_child['upper'] + chart_child['lower'] %}<option value="{{ t }}" {% if sel_tooth == t|string %}selected{% endif %}>{{ t }}</option>{% endfor %}</optgroup></select></div>
+<div class="field"><label for="cc">Finding / treatment</label><select id="cc" name="condition">{% for code, (label, tag, cls) in conditions.items() %}<option value="{{ code }}"{% if code == 'caries' %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div></div>
+<fieldset class="surf-pick"><legend>Surfaces <span class="hint">tap the parts of the tooth, or tick below; none = whole tooth</span></legend>
+<div class="surf-wrap">{{ tooth_svg(sel_tooth or 11, 132, preview=True) }}
+<div class="surf-checks">{% for k, l in surfaces.items() %}<label class="check"><input type="checkbox" name="surface_{{ k }}" value="1" data-surface="{{ k }}"> <b>{{ k }}</b> <small class="muted">{{ l }}</small></label>{% endfor %}</div></div></fieldset>
 <div class="form-grid"><div class="field"><label for="cd">Date</label><input id="cd" type="date" name="recorded_on" value="{{ today_iso }}" max="{{ today_iso }}"></div>
 <div class="field"><label for="cn">Note</label><input id="cn" name="note"></div></div>
+<div class="field"><label for="cph">Photos <span class="hint">Optional, up to 6 (JPG, PNG, WebP or PDF, 10 MB each). Also saved in Uploads.</span></label><input id="cph" type="file" name="photos" multiple accept="image/jpeg,image/png,image/webp,application/pdf"></div>
 <button class="btn">Save to chart</button></form></div>
 {% endif %}
 </div>

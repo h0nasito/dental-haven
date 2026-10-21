@@ -1003,3 +1003,33 @@ document.addEventListener('change', function (e) {
   });
   input.addEventListener('blur', function () { setTimeout(hide, 150); });
 })();
+
+/* Dental chart: tap the surfaces of the big tooth; they colour in the chosen finding's colour */
+(function () {
+  var svg = document.getElementById('tooth-preview');
+  if (!svg) return;
+  var form = svg.closest('form'), toothSel = form.querySelector('[name=tooth]'), condSel = form.querySelector('[name=condition]');
+  var regions = {}, fills = {};
+  try { regions = JSON.parse(svg.getAttribute('data-regions') || '{}'); fills = JSON.parse(svg.getAttribute('data-fills') || '{}'); } catch (e) { return; }
+  var names = { M: 'Mesial', O: 'Occlusal / incisal', D: 'Distal', B: 'Buccal / facial', L: 'Lingual / palatal' };
+  function box(k) { return form.querySelector('input[data-surface="' + k + '"]'); }
+  function surfaceAt(pos) { var rg = regions[toothSel.value] || regions['11'] || {}; return rg[pos]; }
+  function paint() {
+    var fill = fills[condSel.value] || 'f-sel';
+    svg.classList.remove('m-x', 'm-x-red', 'm-ring', 'm-ring-red', 'm-ring-solid');
+    Array.prototype.forEach.call(svg.querySelectorAll('[data-pos]'), function (el) {
+      var k = surfaceAt(el.getAttribute('data-pos')), b = box(k);
+      el.setAttribute('class', 'seg' + (b && b.checked ? ' ' + fill : ''));
+      var t = el.querySelector('title'); if (t) t.textContent = names[k] || k;
+    });
+    Array.prototype.forEach.call(svg.querySelectorAll('.t-x, .t-ring'), function (el) { el.remove(); });
+  }
+  svg.addEventListener('click', function (e) {
+    var el = e.target.closest('[data-pos]');
+    if (!el) return;
+    var b = box(surfaceAt(el.getAttribute('data-pos')));
+    if (b) { b.checked = !b.checked; paint(); }
+  });
+  form.addEventListener('change', function (e) { if (e.target === toothSel || e.target === condSel || e.target.hasAttribute('data-surface')) paint(); });
+  paint();
+})();

@@ -450,13 +450,24 @@ def detail(patient_id):
                                      "WHERE i.plan_id = ? ORDER BY i.seq, i.id", (plan["id"],))
         ctx["plans"] = plans
     if clinical and tab == "chart":
-        from .chart import ADULT, CHILD, CONDITIONS, SURFACES, chart_state
+        from .chart import ADULT, CHILD, CONDITIONS, FILL, MARK, SEG_PATHS, SURFACES, chart_state, regions, tooth_views
         entries, latest = chart_state(conn, patient_id)
         dentition = "child" if request.args.get("dentition") == "child" else "adult"
         sel = request.args.get("tooth")
+        all_teeth = [t for rows in (CHILD["upper"], ADULT["upper"], ADULT["lower"], CHILD["lower"]) for t in rows]
         ctx.update(chart_rows=CHILD if dentition == "child" else ADULT, chart_latest=latest, chart_entries=entries,
+                   chart_adult=ADULT, chart_child=CHILD, chart_views=tooth_views(entries), chart_regions={str(t): regions(t) for t in all_teeth},
+                   seg_paths=SEG_PATHS, fill_classes=FILL, mark_classes=MARK, all_teeth=all_teeth,
                    conditions=CONDITIONS, surfaces=SURFACES, dentition=dentition, sel_tooth=sel,
                    sel_entries=[e for e in entries if e["tooth"] == sel] if sel else [], today_iso=today().isoformat())
+        # photos taken with chart entries (of the selected tooth, or the recent ones)
+        ids = [e["id"] for e in ctx["sel_entries"]] if sel else [e["id"] for e in entries[:30]]
+        photos: dict[int, list] = {}
+        if ids:
+            for d in conn.all(f"SELECT id, chart_entry_id, title, original_name, mime FROM patient_documents WHERE patient_id = ? "
+                              f"AND chart_entry_id IN ({','.join('?' * len(ids))}) ORDER BY id", [patient_id, *ids]):
+                photos.setdefault(d["chart_entry_id"], []).append(d)
+        ctx["chart_photos"] = photos
     if g.user.can("lab.view") or g.user.is_super_admin:
         ctx["lab_cases"] = conn.all("SELECT c.*, l.name AS lab FROM lab_cases c JOIN laboratories l ON l.id = c.lab_id "
                                     "WHERE c.patient_id = ? ORDER BY c.id DESC LIMIT 10", (patient_id,))
