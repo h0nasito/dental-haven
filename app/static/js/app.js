@@ -924,16 +924,18 @@ document.addEventListener('DOMContentLoaded', function () {
     var f = b.querySelector('select[name="case_type"]'); if (f) f.focus();
   });
   var tpl = document.getElementById('extra-row-tpl');
-  wrap.addEventListener('click', function (e) {
+  document.addEventListener('click', function (e) {
     var a = e.target.closest('.add-extra');
     if (a && tpl) {
       var rows = a.closest('.extras').querySelector('.extra-rows');
-      rows.appendChild(tpl.content.cloneNode(true)); renumber();
+      rows.appendChild(tpl.content.cloneNode(true));
       var last = rows.lastElementChild; var inp = last && last.querySelector('[name="x_desc"]'); if (inp) inp.focus();
       return;
     }
     var x = e.target.closest('.extra-remove');
-    if (x) { x.closest('.extra-row').remove(); return; }
+    if (x) { x.closest('.extra-row').remove(); }
+  });
+  wrap.addEventListener('click', function (e) {
     var r = e.target.closest('.case-remove'); if (!r) return;
     if (wrap.querySelectorAll('.case-block').length < 2) return;
     r.closest('.case-block').remove(); renumber();

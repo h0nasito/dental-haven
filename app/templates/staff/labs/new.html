@@ -20,7 +20,7 @@
 <div class="field"><label for="du">Due back</label><input id="du" type="date" name="due_on" value="{{ v.due_on }}"></div>
 </div>
 <h2 class="mt-1">What to make</h2>
-<p class="hint mt-0">One row per kind of work, e.g. <em>2 units zirconia crown, shade A2</em> and <em>3 units E.max crown, shade A2</em>. Tap “+ Add another item” for each. Each item becomes its own lab case.</p>
+<p class="hint mt-0">One row per kind of work, e.g. <em>2 units zirconia crown, shade A2</em> and <em>3 units E.max crown, shade A2</em>. Tap “+ Add another item” for each. All items are saved together as one lab case for this patient.</p>
 <div id="case-blocks" data-label="Item">
 {% for it in items %}<fieldset class="case-block">
 <div class="row between"><legend class="case-n">Item {{ loop.index }}</legend><button type="button" class="btn btn-ghost btn-sm case-remove" {% if items|length < 2 %}hidden{% endif %}>✕ Remove</button></div>

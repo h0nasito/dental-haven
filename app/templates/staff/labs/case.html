@@ -1,14 +1,14 @@
 {% extends "staff/layout.html" %}
 {% from "macros.html" import csrf %}
 {% block page_title %}Lab case #{{ c.id }}{% endblock %}
-{% block content %}
-<div class="page-head"><div><a href="{{ url_for('labs.index') }}">← Lab cases</a><h1>{% if c.units and c.units > 1 %}{{ c.units }} × {% endif %}{{ c.case_type }} · {{ c.last_name }}, {{ c.first_name }}</h1>
+{% block content %}{% from "staff/labs/_item_text.html" import item_text %}
+<div class="page-head"><div><a href="{{ url_for('labs.index') }}">← Lab cases</a><h1>{% if c.units and c.units > 1 and ' × ' not in c.case_type %}{{ c.units }} × {% endif %}{{ c.case_type }} · {{ c.last_name }}, {{ c.first_name }}</h1>
 <p>Case #{{ c.id }} · {{ c.lab }} · from {{ c.branch }}</p></div><span class="badge {{ lab_badge(c.status) }}">{{ c.status|lab_status }}</span></div>
 {% set cur = c.status %}{% include "staff/labs/_stages.html" %}
 <div class="grid grid-2">
 <div class="card"><h2>Details</h2>
 <dl class="kv"><dt>Patient</dt><dd>{% if patient_link %}<a href="{{ url_for('patients.detail', patient_id=c.patient_id) }}">{{ c.last_name }}, {{ c.first_name }}</a>{% else %}{{ c.last_name }}, {{ c.first_name }}{% endif %} <small class="muted">{{ c.chart_no }}</small></dd>
-<dt>Dentist</dt><dd>{{ c.dentist or '—' }}</dd><dt>Teeth</dt><dd>{{ c.teeth or '—' }}</dd><dt>Shade</dt><dd>{{ c.shade or '—' }}</dd><dt>Material</dt><dd>{{ c.material or '—' }}</dd>
+<dt>Dentist</dt><dd>{{ c.dentist or '—' }}</dd>{% if items|length <= 1 %}<dt>Teeth</dt><dd>{{ c.teeth or '—' }}</dd><dt>Shade</dt><dd>{{ c.shade or '—' }}</dd><dt>Material</dt><dd>{{ c.material or '—' }}</dd>{% else %}<dt>Items</dt><dd>{{ items|length }} items, {{ c.units }} units · see the list below</dd>{% endif %}
 <dt>Sent</dt><dd>{{ c.sent_on|date }}</dd><dt>Due back</dt><dd>{{ c.due_on|date if c.due_on else '—' }}</dd>
 <dt>Trial fitting target</dt><dd>{% if c.no_try_in %}<span class="badge">None: direct to installation</span>{% else %}{{ c.try_in_on|date if c.try_in_on else '—' }}{% if c.try_in_on and c.try_in_on == c.install_on %} <small class="muted">(same day as installation)</small>{% endif %}{% endif %}</dd>
 <dt>Final installation target</dt><dd>{{ c.install_on|date if c.install_on else '—' }}</dd>{% if c.completed_on %}<dt>Delivered</dt><dd>{{ c.completed_on|date }}</dd>{% endif %}
@@ -18,12 +18,17 @@
 {% if can_update %}<div class="card"><h2>Update status</h2><form method="post">{{ csrf() }}
 <div class="form-grid"><div class="field"><label for="st">Status</label>{% set cur = c.status %}{% include "staff/labs/_status_select.html" %}</div>
 <div class="field"><label for="du">Due back</label><input id="du" type="date" name="due_on" value="{{ c.due_on or '' }}"></div>
-<div class="field"><label for="lf">Lab price (₱) <span class="hint">what the branch pays the lab</span></label><input id="lf" name="lab_fee" value="{{ (c.lab_fee_cents / 100) if c.lab_fee_cents is not none else '' }}"></div></div>
+{% if items|length <= 1 %}<div class="field"><label for="lf">Lab price (₱) <span class="hint">what the branch pays the lab</span></label><input id="lf" name="lab_fee" value="{{ (c.lab_fee_cents / 100) if c.lab_fee_cents is not none else '' }}"></div>{% endif %}</div>
+{% if items|length > 1 %}<fieldset class="item-fees"><legend>Lab price per item (₱) <span class="hint">what the branch pays the lab; the case total adds them up</span></legend>
+{% for it in items %}<div class="field"><label for="if{{ it.id }}">{{ item_text(it) }}{% if it.teeth %} · {{ it.teeth }}{% endif %}</label><input id="if{{ it.id }}" name="item_fee_{{ it.id }}" inputmode="decimal" value="{{ '%.2f'|format(it.lab_fee_cents / 100) if it.lab_fee_cents is not none else '' }}"{% if c.invoice_id %} readonly title="Already on a lab invoice; change the price there"{% endif %}></div>{% endfor %}</fieldset>{% endif %}
 {% set t = c %}{% include "staff/labs/_target_dates.html" %}
 <div class="field"><label for="nt">Note</label><input id="nt" name="note" placeholder="e.g. Try-in done, needs shade adjustment"></div>
 <button class="btn">Save</button></form>{% include "staff/labs/_stage_help.html" %}</div>{% endif %}
 <div class="card"><h2>History</h2><ul class="list-plain">{% for e in events %}<li><strong>{{ e.status|lab_status }}</strong>{% if e.note %} — {{ e.note }}{% endif %}<br><small class="muted">{{ e.created_at|dt }} · {{ e.by_name }}</small></li>{% endfor %}</ul></div>
 </div></div>
+{% if items|length > 1 %}<div class="card" id="items"><h2>Items</h2><div class="table-wrap"><table><thead><tr><th>Item</th><th>Teeth</th><th>Shade</th><th class="num">Units</th><th class="num">Lab price</th></tr></thead><tbody>
+{% for it in items %}<tr><td><strong>{{ it.case_type }}</strong>{% if it.material %}<br><small class="muted">{{ it.material }}</small>{% endif %}{% if it.instructions %}<br><small class="pre">{{ it.instructions }}</small>{% endif %}</td><td>{{ it.teeth or '—' }}</td><td>{{ it.shade or '—' }}</td><td class="num">{{ it.units }}</td><td class="num">{{ it.lab_fee_cents|peso if it.lab_fee_cents is not none else '—' }}</td></tr>{% endfor %}
+<tr><td colspan="3"><strong>Total</strong></td><td class="num"><strong>{{ c.units }}</strong></td><td class="num"><strong>{{ c.lab_fee_cents|peso if c.lab_fee_cents is not none else '—' }}</strong></td></tr></tbody></table></div></div>{% endif %}
 <div class="card" id="photos"><div class="card-head"><h2>Reference photos</h2>{% if photos %}<small class="muted">{{ photos|length }} photo{{ 's' if photos|length != 1 }} · click to open full size</small>{% endif %}</div>
 {% if photos %}<div class="case-photos">{% for ph in photos %}<figure>
 <a href="{{ url_for('labs.case_photo', case_id=c.id, photo_id=ph.id) }}" target="_blank" rel="noopener"><img src="{{ url_for('labs.case_photo', case_id=c.id, photo_id=ph.id) }}" alt="{{ ph.caption or 'Case photo' }}" loading="lazy"></a>

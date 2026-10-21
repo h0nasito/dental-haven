@@ -17,20 +17,20 @@
 <dt>Doctor</dt><dd>{{ w.doctor or '—' }}</dd>
 <dt>Contact number</dt><dd>{{ w.contact_number or '—' }}</dd>
 {% if w.patient_ref %}<dt>Patient reference</dt><dd>{{ w.patient_ref }}</dd>{% endif %}
-<dt>Type of case</dt><dd>{{ w.case_type }}</dd>
-<dt>Units / arch</dt><dd>{{ w.units }} unit{{ 's' if w.units != 1 }}{% if w.arch %} · {{ arches[w.arch] }}{% endif %}</dd>
-{% if w.teeth %}<dt>Teeth</dt><dd>{{ w.teeth }}</dd>{% endif %}
-{% if w.shade %}<dt>Shade</dt><dd>{{ w.shade }}</dd>{% endif %}
-{% if w.material %}<dt>Material</dt><dd>{{ w.material }}</dd>{% endif %}
-<dt>Price per unit</dt><dd>{{ w.price_cents|peso if w.price_cents is not none else '—' }}{% if w.price_cents %} · total {{ (w.price_cents * w.units)|peso }}{% endif %}</dd>
-{% if extras %}<dt>Additional charges</dt><dd>{{ extras_total|peso }} <a href="#extras">({{ extras|length }})</a></dd>
-<dt>Total to bill</dt><dd><strong>{{ ((w.price_cents or 0) * w.units + extras_total)|peso }}</strong></dd>{% endif %}
+{% if extras %}<dt>Additional charges</dt><dd>{{ extras_total|peso }} <a href="#extras">({{ extras|length }})</a></dd>{% endif %}
+<dt>Total to bill</dt><dd><strong>{{ (items_total + extras_total)|peso }}</strong></dd>
 <dt>Date received</dt><dd>{{ w.received_on|date }}</dd>
 <dt>Due date</dt><dd>{{ w.due_on|date if w.due_on else '—' }}{% if w.due_on and w.due_on < today and w.status in LAB_LATE %} <span class="badge badge-red">Overdue</span>{% endif %}</dd>
 <dt>Date delivered</dt><dd>{{ w.delivered_on|date if w.delivered_on else '—' }}</dd>
 </dl>
 {% if w.instructions %}<p class="pre"><strong>Instructions:</strong> {{ w.instructions }}</p>{% endif %}
 </div>
+<div class="card" id="items"><h2>Items</h2>
+<div class="table-wrap"><table><thead><tr><th>Item</th><th>Teeth</th><th>Shade</th><th class="num">Units</th><th class="num">Price</th><th class="num">Amount</th></tr></thead><tbody>
+{% for it in items %}<tr><td><strong>{{ it.case_type }}</strong>{% if it.material %}<br><small class="muted">{{ it.material }}</small>{% endif %}{% if it.arch %}<br><small class="muted">{{ arches[it.arch] }}</small>{% endif %}{% if it.instructions %}<br><small>{{ it.instructions }}</small>{% endif %}</td>
+<td>{{ it.teeth or '—' }}</td><td>{{ it.shade or '—' }}</td><td class="num">{{ it.units }}</td><td class="num">{{ it.price_cents|peso if it.price_cents is not none else '—' }}</td><td class="num">{{ (it.price_cents * it.units)|peso if it.price_cents is not none else '—' }}</td></tr>{% endfor %}
+</tbody></table></div>
+<p class="mb-0 mt-1"><a class="btn btn-secondary btn-sm" href="{{ url_for('lab_works.work_edit', work_id=w.id) }}">Edit items</a></p></div>
 <div class="card" id="extras"><h2>Additional charges</h2>
 <p class="hint mt-0">Extra items billed with this work, e.g. 3D printed cast, rush fee, individual tray.</p>
 {% if extras %}<ul class="list-plain">{% for x in extras %}<li class="row between" style="border-top:1px solid var(--line);padding:.45rem 0;gap:.5rem"><span>{{ x.description }} <small class="muted">· {{ x.qty }} × {{ x.unit_price_cents|peso }}</small></span>

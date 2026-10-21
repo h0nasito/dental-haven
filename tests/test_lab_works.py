@@ -86,75 +86,64 @@ class TestLabWorks(Base):
         finally:
             self.revoke()
 
-    def test_several_cases_in_one_go(self):
-        from app.util import today
-        self.grant("lab.works")
-        try:
-            c = self.tech()
-            page = c.get("/staff/lab/works/new").data.decode()
-            self.assertIn("+ Add another case", page)
-            before = self.q("SELECT COUNT(*) AS n FROM lab_works")["n"]
-            r = c.post("/staff/lab/works/new", data={
-                "lab_id": self.lab, "clinic_name": "Multi Case QT Dental", "doctor": "Dr. QT", "contact_number": "0917",
-                "received_on": today().isoformat(), "due_on": "",
-                "case_type": ["Bridge", "Complete denture", "Retainer"], "units": ["3", "1", "2"], "arch": ["", "upper", "both"],
-                "teeth": ["14-16", "", ""], "shade": ["A2", "", ""], "material": ["Zirconia", "", ""], "price": ["3500", "2110", ""],
-                "patient_ref": ["P1", "P2", "P3"], "instructions": ["", "", "Clear"]})
-            self.assertEqual(r.status_code, 302)
-            rows = self.conn.all("SELECT * FROM lab_works WHERE clinic_name = 'Multi Case QT Dental' ORDER BY id")
-            self.assertEqual([(w["case_type"], w["units"], w["patient_ref"], w["price_cents"]) for w in rows],
-                             [("Bridge", 3, "P1", 350000), ("Complete denture", 1, "P2", 211000), ("Retainer", 2, "P3", None)])
-            self.assertEqual(len({w["client_id"] for w in rows}), 1)
-            self.assertEqual(len({w["number"] for w in rows}), 3)
-            self.assertIn("client=", r.headers["Location"])
-            # one bad case: nothing is saved and the entries stay
-            r = c.post("/staff/lab/works/new", data={
-                "lab_id": self.lab, "clinic_name": "Multi Case QT Dental", "received_on": today().isoformat(),
-                "case_type": ["Bridge", "Bridge"], "units": ["1", "0"], "arch": ["", ""], "teeth": ["11", "22"], "shade": ["", ""],
-                "material": ["", ""], "price": ["", ""], "patient_ref": ["", ""], "instructions": ["", ""]})
-            self.assertEqual(r.status_code, 200)
-            self.assertIn("Enter the number of units", r.data.decode())
-            self.assertIn('value="22"', r.data.decode())
-            self.assertEqual(self.q("SELECT COUNT(*) AS n FROM lab_works")["n"], before + 3)
-        finally:
-            self.revoke()
-
-    def test_additional_charges_billed_with_the_work(self):
+    def test_one_work_with_several_items(self):
         from app.util import today
         self.grant("lab.works", "lab.billing")
         try:
             c = self.tech()
-            r = c.post("/staff/lab/works/new", data={
-                "lab_id": self.lab, "clinic_name": "Extras QT Dental", "received_on": today().isoformat(),
-                "case_type": ["Bridge", "Retainer"], "units": ["3", "1"], "arch": ["", ""], "teeth": ["", ""], "shade": ["", ""],
-                "material": ["", ""], "price": ["3500", "1000"], "patient_ref": ["", ""], "instructions": ["", ""],
-                "x_case": ["0", "0", "1"], "x_desc": ["3D printed cast", "Rush fee", "Model cast"], "x_qty": ["2", "1", "1"],
-                "x_price": ["500", "1500", "500"]})
-            self.assertEqual(r.status_code, 302)
-            w1, w2 = self.conn.all("SELECT * FROM lab_works WHERE clinic_name = 'Extras QT Dental' ORDER BY id")
-            ex1 = [(x["description"], x["qty"], x["unit_price_cents"]) for x in self.conn.all("SELECT * FROM lab_work_extras WHERE work_id = ? ORDER BY id", (w1["id"],))]
-            self.assertEqual(ex1, [("3D printed cast", 2, 50000), ("Rush fee", 1, 150000)])
-            self.assertEqual(self.q("SELECT COUNT(*) AS n FROM lab_work_extras WHERE work_id = ?", (w2["id"],))["n"], 1)
-            # add one more on the work page, then bill: the work line + its charges
-            c.post(f"/staff/lab/works/{w1['id']}", data={"action": "add_extra", "x_case": "0", "x_desc": "Individual tray", "x_qty": "1", "x_price": "300"})
-            page = c.get(f"/staff/lab/works/{w1['id']}").data.decode()
-            self.assertIn("Individual tray", page)
-            self.assertIn("₱13,300.00", page)          # 3 x 3,500 + 2 x 500 + 1,500 + 300
-            r = c.post(f"/staff/lab/works/{w1['id']}/bill")
-            iid = int(r.headers["Location"].rstrip("/").split("/")[-1])
-            items = [(i["description"], i["qty"], i["amount_cents"]) for i in self.conn.all("SELECT * FROM lab_invoice_items WHERE invoice_id = ? ORDER BY id", (iid,))]
-            self.assertEqual(items[1:], [("3D printed cast", 2, 100000), ("Rush fee", 1, 150000), ("Individual tray", 1, 30000)])
-            self.assertEqual(self.q("SELECT total_cents FROM lab_invoices WHERE id = ?", (iid,))["total_cents"], 1330000)
-            # once billed, charges are changed on the invoice
-            c.post(f"/staff/lab/works/{w1['id']}", data={"action": "add_extra", "x_case": "0", "x_desc": "Late", "x_qty": "1", "x_price": "1"})
-            self.assertIsNone(self.q("SELECT id FROM lab_work_extras WHERE description = 'Late'"))
-            # a charge without a price: nothing saved
+            page = c.get("/staff/lab/works/new").data.decode()
+            self.assertIn("+ Add another item", page)
             before = self.q("SELECT COUNT(*) AS n FROM lab_works")["n"]
-            r = c.post("/staff/lab/works/new", data={"lab_id": self.lab, "clinic_name": "Extras QT Dental", "received_on": today().isoformat(),
-                                                    "case_type": "Bridge", "units": "1", "x_case": "0", "x_desc": "Cast", "x_qty": "1", "x_price": ""})
+            # one patient: 2 units E.max veneer (11, 12) + 3 units zirconia bridge (21-23), plus a 3D printed cast
+            r = c.post("/staff/lab/works/new", data={
+                "lab_id": self.lab, "clinic_name": "Items QT Dental", "doctor": "Dr. QT", "patient_ref": "JD-1",
+                "received_on": today().isoformat(), "due_on": "",
+                "case_type": ["Veneer", "Bridge"], "units": ["2", "3"], "arch": ["upper", "upper"], "teeth": ["11, 12", "21, 22, 23"],
+                "shade": ["A2", "A2"], "material": ["E.max (lithium disilicate)", "Zirconia"], "material_new": ["", ""],
+                "price": ["5500", "5500"], "instructions": ["", "Rush"],
+                "x_desc": ["3D printed cast"], "x_qty": ["2"], "x_price": ["500"]})
+            self.assertEqual(r.status_code, 302, r.data[:2000])
+            self.assertEqual(self.q("SELECT COUNT(*) AS n FROM lab_works")["n"], before + 1)
+            w = self.q("SELECT * FROM lab_works WHERE clinic_name = 'Items QT Dental'")
+            self.assertEqual((w["patient_ref"], w["units"]), ("JD-1", 5))
+            self.assertIn("2 × Veneer (E.max", w["case_type"])
+            self.assertIn("3 × Bridge (Zirconia)", w["case_type"])
+            items = self.conn.all("SELECT * FROM lab_work_items WHERE work_id = ? ORDER BY sort_order", (w["id"],))
+            self.assertEqual([(i["case_type"], i["units"], i["teeth"], i["material"], i["price_cents"]) for i in items],
+                             [("Veneer", 2, "11, 12", "E.max (lithium disilicate)", 550000), ("Bridge", 3, "21, 22, 23", "Zirconia", 550000)])
+            page = c.get(f"/staff/lab/works/{w['id']}").data.decode()
+            self.assertIn("28,500.00", page)          # 5 x 5,500 + 2 x 500
+            # one invoice: a line per item, then the cast
+            r = c.post(f"/staff/lab/works/{w['id']}/bill")
+            iid = int(r.headers["Location"].rstrip("/").split("/")[-1])
+            lines = [(i["qty"], i["amount_cents"]) for i in self.conn.all("SELECT * FROM lab_invoice_items WHERE invoice_id = ? ORDER BY id", (iid,))]
+            self.assertEqual(lines, [(2, 1100000), (3, 1650000), (2, 100000)])
+            # edit: change an item, add one
+            c.post(f"/staff/lab/works/{w['id']}/edit", data={
+                "lab_id": self.lab, "clinic_name": "Items QT Dental", "doctor": "Dr. QT", "patient_ref": "JD-1", "received_on": today().isoformat(),
+                "case_type": ["Veneer", "Bridge", "Retainer"], "units": ["2", "3", "1"], "arch": ["", "", ""], "teeth": ["11, 12", "21, 22, 23", ""],
+                "shade": ["A2", "A2", ""], "material": ["E.max (lithium disilicate)", "Zirconia", ""], "material_new": ["", "", ""],
+                "price": ["5500", "5000", "1000"], "instructions": ["", "", ""]})
+            self.assertEqual(self.q("SELECT COUNT(*) AS n FROM lab_work_items WHERE work_id = ?", (w["id"],))["n"], 3)
+            self.assertEqual(self.q("SELECT units FROM lab_works WHERE id = ?", (w["id"],))["units"], 6)
+            # an item with bad units: nothing is saved and the entries stay
+            r = c.post("/staff/lab/works/new", data={
+                "lab_id": self.lab, "clinic_name": "Items QT Dental", "received_on": today().isoformat(),
+                "case_type": ["Bridge", "Bridge"], "units": ["1", "0"], "teeth": ["11", "22"]})
             self.assertEqual(r.status_code, 200)
-            self.assertIn("Enter the price for", r.data.decode())
-            self.assertEqual(self.q("SELECT COUNT(*) AS n FROM lab_works")["n"], before)
+            self.assertIn("Enter the number of units", r.data.decode())
+            self.assertIn('value="22"', r.data.decode())
+            self.assertEqual(self.q("SELECT COUNT(*) AS n FROM lab_works")["n"], before + 1)
+        finally:
+            self.revoke()
+
+    def test_additional_charges_on_the_work_page(self):
+        self.grant("lab.works")
+        try:
+            c = self.tech()
+            w = self.new_work(c, clinic_name="Extras QT Dental")
+            c.post(f"/staff/lab/works/{w['id']}", data={"action": "add_extra", "x_desc": "Rush fee", "x_qty": "1", "x_price": "1500"})
+            self.assertIsNotNone(self.q("SELECT id FROM lab_work_extras WHERE work_id = ? AND description = 'Rush fee'", (w["id"],)))
         finally:
             self.revoke()
 

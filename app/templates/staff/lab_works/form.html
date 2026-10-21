@@ -2,10 +2,12 @@
 {% from "macros.html" import csrf %}
 {% block page_title %}{{ 'Edit ' ~ work.number if work else 'New outside work' }}{% endblock %}
 {% macro err(k) %}{% if errors[k] %}<div class="field-error">{{ errors[k] }}</div>{% endif %}{% endmacro %}
+{% macro price_options(items) -%}
+{% set ns = namespace(cat=None) %}{% for it in items %}{% if it.category != ns.cat %}{% if ns.cat is not none %}</optgroup>{% endif %}{% set ns.cat = it.category %}<optgroup label="{{ it.category or 'Other' }}">{% endif %}<option data-name="{{ it.name }}" data-price="{{ '%.2f'|format(it.price_cents / 100) }}">{{ it.name }} · {{ it.price_cents|peso }}{% if it.unit %} {{ it.unit }}{% endif %}</option>{% if loop.last %}</optgroup>{% endif %}{% endfor %}
+{%- endmacro %}
 {% macro extra_row(x={}) -%}
-<div class="extra-row"><input type="hidden" name="x_case" value="0">
-{% if extras_prices %}<select data-price-pick data-desc="row" data-price="row" aria-label="From the price list"><option value="">From the price list…</option>
-{% set ns = namespace(cat=None) %}{% for it in extras_prices %}{% if it.category != ns.cat %}{% if ns.cat is not none %}</optgroup>{% endif %}{% set ns.cat = it.category %}<optgroup label="{{ it.category or 'Other' }}">{% endif %}<option data-name="{{ it.name }}" data-price="{{ '%.2f'|format(it.price_cents / 100) }}">{{ it.name }} · {{ it.price_cents|peso }}{% if it.unit %} {{ it.unit }}{% endif %}</option>{% if loop.last %}</optgroup>{% endif %}{% endfor %}</select>{% endif %}
+<div class="extra-row">
+{% if extras_prices %}<select data-price-pick data-desc="row" data-price="row" aria-label="From the price list"><option value="">From the price list…</option>{{ price_options(extras_prices) }}</select>{% endif %}
 <input name="x_desc" value="{{ x.desc or '' }}" maxlength="200" placeholder="Charge (e.g. 3D printed cast)" aria-label="Charge">
 <input name="x_qty" value="{{ x.qty or 1 }}" inputmode="numeric" aria-label="Qty" class="x-qty">
 <input name="x_price" value="{{ x.price or '' }}" inputmode="decimal" placeholder="₱ each" aria-label="Price each" class="x-price">
@@ -13,8 +15,8 @@
 {%- endmacro %}
 {% block content %}
 <div class="page-head"><div><a href="{{ url_for('lab_works.work', work_id=work.id) if work else url_for('lab_works.works') }}">← {{ work.number if work else 'Outside clinic works' }}</a>
-<h1>{{ 'Edit ' ~ work.number if work else 'New outside work' }}</h1><p>Work sent to our laboratory by another dental clinic.</p></div></div>
-<form method="post" class="card" style="max-width:900px">{{ csrf() }}
+<h1>{{ 'Edit ' ~ work.number if work else 'New outside work' }}</h1><p>Work sent to our laboratory by another dental clinic, for one patient.</p></div></div>
+<form method="post" class="card" style="max-width:960px">{{ csrf() }}
 <datalist id="clinic-list">{% for c in clinics %}<option value="{{ c.clinic_name }}">{{ c.doctor }}{% if c.contact_number %} · {{ c.contact_number }}{% endif %}</option>{% endfor %}</datalist>
 <h2>Dental clinic</h2>
 <div class="form-grid">
@@ -22,59 +24,43 @@
 <div class="field {{ 'error' if errors.clinic_name }}"><label for="fc">Dental clinic name</label><input id="fc" name="clinic_name" list="clinic-list" value="{{ v.clinic_name }}" maxlength="120" required autocomplete="off"><span class="hint">Start typing to pick a clinic you've worked with.</span>{{ err('clinic_name') }}</div>
 <div class="field"><label for="fd">Doctor</label><input id="fd" name="doctor" value="{{ v.doctor }}" maxlength="120" placeholder="Dr. Juan dela Cruz"></div>
 <div class="field"><label for="fn">Contact number</label><input id="fn" name="contact_number" value="{{ v.contact_number }}" maxlength="60" inputmode="tel"></div>
-{% if work %}<div class="field"><label for="fp">Patient reference <span class="hint">Optional: initials or the clinic's case no.</span></label><input id="fp" name="patient_ref" value="{{ v.patient_ref }}" maxlength="60"></div>{% endif %}
+<div class="field"><label for="fp">Patient reference <span class="hint">Optional: initials or the clinic's case no.</span></label><input id="fp" name="patient_ref" value="{{ v.patient_ref }}" maxlength="60"></div>
 </div>
-{% if not work %}
-<h2 class="mt-1">Cases / items</h2>
-<p class="hint mt-0">Add every case the clinic sent. Each one is saved as its own work (own number and stages); they can be billed together on one invoice.</p>
-<div id="case-blocks">
+
+<h2 class="mt-1">Items</h2>
+<p class="hint mt-0">Everything for this patient in one work, one row per kind of work, e.g. <em>2 units Veneer, E.max</em> and <em>3 units Fixed bridge, Zirconia</em>. Each row is a line on the invoice.</p>
+<div id="case-blocks" data-label="Item">
 {% for c, ce in cases %}<fieldset class="case-block">
-<div class="row between"><legend class="case-n">Case {{ loop.index }}</legend><button type="button" class="btn btn-ghost btn-sm case-remove" {% if cases|length < 2 %}hidden{% endif %}>✕ Remove</button></div>
+<div class="row between"><legend class="case-n">Item {{ loop.index }}</legend><button type="button" class="btn btn-ghost btn-sm case-remove" {% if cases|length < 2 %}hidden{% endif %}>✕ Remove</button></div>
 <div class="form-grid">
 <div class="field {{ 'error' if ce.case_type }}"><label data-for="ct" for="ct{{ loop.index0 }}">Type of case</label><select data-id="ct" id="ct{{ loop.index0 }}" name="case_type">{% for t in case_types %}<option {% if c.case_type == t %}selected{% endif %}>{{ t }}</option>{% endfor %}{% if c.case_type and c.case_type not in case_types %}<option selected>{{ c.case_type }}</option>{% endif %}</select>{% if ce.case_type %}<div class="field-error">{{ ce.case_type }}</div>{% endif %}</div>
 <div class="field {{ 'error' if ce.units }}"><label data-for="cu" for="cu{{ loop.index0 }}">Units</label><input data-id="cu" id="cu{{ loop.index0 }}" name="units" value="{{ c.units or 1 }}" inputmode="numeric" required>{% if ce.units %}<div class="field-error">{{ ce.units }}</div>{% endif %}</div>
 <div class="field"><label data-for="ca" for="ca{{ loop.index0 }}">Arch</label><select data-id="ca" id="ca{{ loop.index0 }}" name="arch">{% for k, l in arches.items() %}<option value="{{ k }}" {% if c.arch == k %}selected{% endif %}>{{ l if k else 'Not applicable' }}</option>{% endfor %}</select></div>
 <div class="field"><label data-for="cte" for="cte{{ loop.index0 }}">Teeth</label><input data-id="cte" id="cte{{ loop.index0 }}" name="teeth" value="{{ c.teeth }}" maxlength="60" placeholder="e.g. 11, 21"></div>
 <div class="field"><label data-for="cs" for="cs{{ loop.index0 }}">Shade</label><input data-id="cs" id="cs{{ loop.index0 }}" name="shade" value="{{ c.shade }}" maxlength="30" placeholder="e.g. A2"></div>
-<div class="field"><label data-for="cm" for="cm{{ loop.index0 }}">Material</label><select data-id="cm" id="cm{{ loop.index0 }}" name="material"><option value="">—</option>{% for m in materials %}<option {% if c.material == m %}selected{% endif %}>{{ m }}</option>{% endfor %}{% if c.material and c.material not in materials and c.material != "__new__" %}<option selected>{{ c.material }}</option>{% endif %}<option value="__new__" {% if c.material == "__new__" %}selected{% endif %}>+ New material…</option></select><input name="material_new" class="mat-new mt-1" value="{{ c.material_new or '' }}" maxlength="80" placeholder="Type the new material" aria-label="New material" {% if c.material != "__new__" %}hidden{% endif %}>{% if ce.material %}<div class="field-error">{{ ce.material }}</div>{% endif %}</div>
-{% if price_list %}<div class="field"><label data-for="cpl" for="cpl{{ loop.index0 }}">Price from the price list</label><select data-id="cpl" id="cpl{{ loop.index0 }}" data-price-pick data-price="block"><option value="">— Pick an item —</option>
-{% for cat, its in price_list|groupby('category') %}<optgroup label="{{ cat }}">{% for it in its %}<option data-price="{{ '%.2f'|format(it.price_cents / 100) }}">{{ it.name }} · {{ it.price_cents|peso }}{% if it.unit %} {{ it.unit }}{% endif %}</option>{% endfor %}</optgroup>{% endfor %}</select></div>{% endif %}
+<div class="field {{ 'error' if ce.material }}"><label data-for="cm" for="cm{{ loop.index0 }}">Material</label><select data-id="cm" id="cm{{ loop.index0 }}" name="material"><option value="">—</option>{% for m in materials %}<option {% if c.material == m %}selected{% endif %}>{{ m }}</option>{% endfor %}{% if c.material and c.material not in materials and c.material != "__new__" %}<option selected>{{ c.material }}</option>{% endif %}<option value="__new__" {% if c.material == "__new__" %}selected{% endif %}>+ New material…</option></select><input name="material_new" class="mat-new mt-1" value="{{ c.material_new or '' }}" maxlength="80" placeholder="Type the new material" aria-label="New material" {% if c.material != "__new__" %}hidden{% endif %}>{% if ce.material %}<div class="field-error">{{ ce.material }}</div>{% endif %}</div>
+{% if price_list %}<div class="field"><label data-for="cpl" for="cpl{{ loop.index0 }}">Price from the price list</label><select data-id="cpl" id="cpl{{ loop.index0 }}" data-price-pick data-price="block"><option value="">— Pick an item —</option>{{ price_options(price_list) }}</select></div>{% endif %}
 <div class="field {{ 'error' if ce.price }}"><label data-for="cpr" for="cpr{{ loop.index0 }}">Price per unit (₱) <span class="hint">Used for the invoice</span></label><input data-id="cpr" id="cpr{{ loop.index0 }}" name="price" value="{{ c.price }}" inputmode="decimal">{% if ce.price %}<div class="field-error">{{ ce.price }}</div>{% endif %}</div>
-<div class="field"><label data-for="cp" for="cp{{ loop.index0 }}">Patient reference <span class="hint">Optional</span></label><input data-id="cp" id="cp{{ loop.index0 }}" name="patient_ref" value="{{ c.patient_ref }}" maxlength="60"></div>
-<div class="field span-2"><label data-for="ci" for="ci{{ loop.index0 }}">Instructions</label><textarea data-id="ci" id="ci{{ loop.index0 }}" name="instructions" rows="2" maxlength="1000">{{ c.instructions }}</textarea></div>
+<div class="field span-2"><label data-for="ci" for="ci{{ loop.index0 }}">Instructions for this item <span class="hint">Optional</span></label><textarea data-id="ci" id="ci{{ loop.index0 }}" name="instructions" rows="2" maxlength="1000">{{ c.instructions }}</textarea></div>
+</div></fieldset>{% endfor %}
 </div>
-<div class="extras"><strong class="extras-h">Additional charges</strong> <small class="muted">e.g. 3D printed cast, rush fee</small>
-<div class="extra-rows">{% for x in extras_in.get(loop.index0, []) %}{{ extra_row(x) }}{% endfor %}</div>
+<button type="button" class="btn btn-secondary" id="add-case">+ Add another item</button>
+
+{% if not work %}<div class="extras mt-1" id="work-extras"><h2 class="mb-0">Additional charges</h2><p class="hint mt-0">Optional, e.g. 3D printed cast, rush fee, extra clasp. Billed with this work.</p>
+<div class="extra-rows">{% for x in extras_in.get(0, []) %}{{ extra_row(x) }}{% endfor %}</div>
 <button type="button" class="btn btn-ghost btn-sm add-extra">+ Add a charge</button></div>
-</fieldset>{% endfor %}
-</div>
-<button type="button" class="btn btn-secondary" id="add-case">+ Add another case</button>
-<template id="extra-row-tpl">{{ extra_row() }}</template>
-<style>.case-block{border:1px solid var(--line);border-radius:12px;padding:.8rem 1rem;margin:0 0 .8rem}.case-block legend.case-n{font-weight:700;padding:0;float:left}.case-block .row.between{margin-bottom:.4rem;align-items:center}
-.extras{border-top:1px dashed var(--line);margin-top:.6rem;padding-top:.6rem}
-.extra-row{display:grid;grid-template-columns:1fr;gap:.35rem;padding:.45rem 0;border-bottom:1px solid var(--line)}
-@media (min-width:700px){.extra-row{grid-template-columns:1.2fr 1.4fr 4.5rem 7rem auto;align-items:center}}
-.extra-row .x-qty{max-width:6rem}</style>
-{% else %}
-<h2 class="mt-1">Case</h2>
-<div class="form-grid">
-<div class="field {{ 'error' if errors.case_type }}"><label for="ft">Type of case</label><select id="ft" name="case_type">{% for t in case_types %}<option {% if v.case_type == t %}selected{% endif %}>{{ t }}</option>{% endfor %}{% if v.case_type and v.case_type not in case_types %}<option selected>{{ v.case_type }}</option>{% endif %}</select>{{ err('case_type') }}</div>
-<div class="field {{ 'error' if errors.units }}"><label for="fu">Units</label><input id="fu" name="units" value="{{ v.units }}" inputmode="numeric" required>{{ err('units') }}</div>
-<div class="field"><label for="fa">Arch</label><select id="fa" name="arch">{% for k, l in arches.items() %}<option value="{{ k }}" {% if v.arch == k %}selected{% endif %}>{{ l if k else 'Not applicable' }}</option>{% endfor %}</select></div>
-<div class="field"><label for="fte">Teeth</label><input id="fte" name="teeth" value="{{ v.teeth }}" maxlength="60" placeholder="e.g. 11, 21"></div>
-<div class="field"><label for="fs">Shade</label><input id="fs" name="shade" value="{{ v.shade }}" maxlength="30" placeholder="e.g. A2"></div>
-<div class="field"><label for="fm">Material</label><select id="fm" name="material"><option value="">—</option>{% for m in materials %}<option {% if v.material == m %}selected{% endif %}>{{ m }}</option>{% endfor %}{% if v.material and v.material not in materials and v.material != "__new__" %}<option selected>{{ v.material }}</option>{% endif %}<option value="__new__" {% if v.material == "__new__" %}selected{% endif %}>+ New material…</option></select><input name="material_new" class="mat-new mt-1" value="{{ v.material_new or '' }}" maxlength="80" placeholder="Type the new material" aria-label="New material" {% if v.material != "__new__" %}hidden{% endif %}></div>
-{% if price_list %}<div class="field"><label for="fpl">Price from the price list</label><select id="fpl" data-price-pick data-price="#fpr"><option value="">— Pick an item —</option>
-{% for cat, its in price_list|groupby('category') %}<optgroup label="{{ cat }}">{% for it in its %}<option data-price="{{ '%.2f'|format(it.price_cents / 100) }}">{{ it.name }} · {{ it.price_cents|peso }}{% if it.unit %} {{ it.unit }}{% endif %}</option>{% endfor %}</optgroup>{% endfor %}</select></div>{% endif %}
-<div class="field {{ 'error' if errors.price }}"><label for="fpr">Price per unit (₱) <span class="hint">Used for the invoice</span></label><input id="fpr" name="price" value="{{ v.price }}" inputmode="decimal">{{ err('price') }}</div>
-<div class="field span-2"><label for="fi">Instructions</label><textarea id="fi" name="instructions" rows="3" maxlength="1000">{{ v.instructions }}</textarea></div>
-</div>
-{% endif %}
+<template id="extra-row-tpl">{{ extra_row() }}</template>{% endif %}
+
 <h2 class="mt-1">Dates</h2>
 <div class="form-grid">
 <div class="field {{ 'error' if errors.received_on }}"><label for="fr">Date received</label><input id="fr" type="date" name="received_on" value="{{ v.received_on }}" required>{{ err('received_on') }}</div>
 <div class="field {{ 'error' if errors.due_on }}"><label for="fdu">Due date</label><input id="fdu" type="date" name="due_on" value="{{ v.due_on }}">{{ err('due_on') }}</div>
 </div>
-<div class="form-actions"><button class="btn">{{ 'Save changes' if work else 'Save' }}</button><a class="btn btn-ghost" href="{{ url_for('lab_works.work', work_id=work.id) if work else url_for('lab_works.works') }}">Cancel</a></div>
+<div class="form-actions"><button class="btn">{{ 'Save changes' if work else 'Save work' }}</button><a class="btn btn-ghost" href="{{ url_for('lab_works.work', work_id=work.id) if work else url_for('lab_works.works') }}">Cancel</a></div>
 </form>
+<style>.case-block{border:1px solid var(--line);border-radius:12px;padding:.8rem 1rem;margin:0 0 .8rem}.case-block legend.case-n{font-weight:700;padding:0;float:left}.case-block .row.between{margin-bottom:.4rem;align-items:center}
+.extras{border-top:1px dashed var(--line);padding-top:.6rem}
+.extra-row{display:grid;grid-template-columns:1fr;gap:.35rem;padding:.45rem 0;border-bottom:1px solid var(--line)}
+@media (min-width:700px){.extra-row{grid-template-columns:1.2fr 1.4fr 4.5rem 7rem auto;align-items:center}}
+.extra-row .x-qty{max-width:6rem}</style>
 {% endblock %}

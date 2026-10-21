@@ -934,6 +934,8 @@ def seed_demo(conn, password: str | None = None) -> str:
                                             "status": st, "sent_on": (today() - timedelta(days=6 - i)).isoformat(),
                                             "due_on": (today() + timedelta(days=i - 1)).isoformat(), "instructions": "Demo case",
                                             "created_by": admin, "created_at": ts, "updated_at": ts})
+            conn.execute("INSERT INTO lab_case_items (case_id, case_type, units, teeth, shade, material, lab_fee_cents, instructions, sort_order) "
+                         "SELECT id, case_type, units, teeth, shade, material, lab_fee_cents, '', 0 FROM lab_cases WHERE id = ?", (cid,))
             conn.insert("lab_case_events", {"case_id": cid, "user_id": admin, "status": st, "note": "Demo", "created_at": ts})
         conn.insert("patient_credits", {"patient_id": p0, "branch_id": conn.scalar("SELECT preferred_branch_id FROM patients WHERE id = ?", (p0,)),
                                         "kind": "deposit", "amount_cents": 500000, "method": "gcash", "entry_date": today().isoformat(),

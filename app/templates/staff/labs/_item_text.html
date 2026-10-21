@@ -1,0 +1,1 @@
+{% macro item_text(it) %}{% if it.units and it.units > 1 %}{{ it.units }} × {% endif %}{{ it.case_type }}{% if it.material %} ({{ it.material }}){% endif %}{% endmacro %}

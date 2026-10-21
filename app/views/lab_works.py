@@ -115,7 +115,7 @@ def branch_clients(conn, lab_ids) -> None:
 def case_label(c) -> str:
     """How a branch lab case appears on a lab invoice (chart number, not the patient's name)."""
     units = c["units"] if "units" in c.keys() and c["units"] else 1
-    return (f"Case #{c['id']} · " + (f"{units} × " if units > 1 else "") + f"{c['case_type']}" + (f" · {c['teeth']}" if c["teeth"] else "") + f" · {c['chart_no']}"
+    return (f"Case #{c['id']} · " + (f"{units} × " if units > 1 and " × " not in c["case_type"] else "") + f"{c['case_type']}" + (f" · {c['teeth']}" if c["teeth"] else "") + f" · {c['chart_no']}"
             + (f" · {c['dentist']}" if c["dentist"] else ""))[:200]
 
 
@@ -137,12 +137,32 @@ def item_groups(conn, items) -> list[dict]:
     return [groups[k] for k in order]
 
 
+def add_case_lines(conn, iid: int, c, desc: str) -> None:
+    """A branch case on a lab invoice: one line, or one line per item when the case has several items."""
+    items = conn.all("SELECT * FROM lab_case_items WHERE case_id = ? ORDER BY sort_order, id", (c["id"],))
+    if len(items) <= 1:
+        price = c["lab_fee_cents"] or 0
+        conn.insert("lab_invoice_items", {"invoice_id": iid, "case_id": c["id"], "case_item_id": items[0]["id"] if items else None,
+                                          "description": desc[:200], "qty": 1, "unit_price_cents": price, "discount_cents": 0, "amount_cents": price})
+        return
+    for it in items:
+        price = it["lab_fee_cents"] or 0
+        text = (f"{it['units']} × " if it["units"] > 1 else "") + it["case_type"] + (f" ({it['material']})" if it["material"] else "") \
+            + (f" · {it['teeth']}" if it["teeth"] else "") + (f" · shade {it['shade']}" if it["shade"] else "")
+        conn.insert("lab_invoice_items", {"invoice_id": iid, "case_id": c["id"], "case_item_id": it["id"], "description": f"Case #{c['id']} · {text}"[:200],
+                                          "qty": 1, "unit_price_cents": price, "discount_cents": 0, "amount_cents": price})
+
+
 def sync_case_prices(conn, invoice_id) -> None:
     """A branch case's lab price = what its lines on its (not voided) lab invoice add up to."""
     for r in conn.all("SELECT DISTINCT case_id FROM lab_invoice_items WHERE invoice_id = ? AND case_id IS NOT NULL", (invoice_id,)):
         total = conn.scalar("SELECT COALESCE(SUM(amount_cents), 0) FROM lab_invoice_items WHERE invoice_id = ? AND case_id = ?",
                             (invoice_id, r["case_id"])) or 0
         conn.execute("UPDATE lab_cases SET lab_fee_cents = ? WHERE id = ?", (max(0, total), r["case_id"]))
+    # a case with several items: each item's price = its own lines
+    for r in conn.all("SELECT case_item_id, COALESCE(SUM(amount_cents), 0) AS total FROM lab_invoice_items WHERE invoice_id = ? "
+                      "AND case_item_id IS NOT NULL GROUP BY case_item_id", (invoice_id,)):
+        conn.execute("UPDATE lab_case_items SET lab_fee_cents = ? WHERE id = ?", (max(0, r["total"]), r["case_item_id"]))
 
 
 def _work(conn, work_id):
@@ -294,7 +314,67 @@ def works():
                            clients=clients, arches=ARCHES, today=today().isoformat(), soon=(today() + timedelta(days=1)).isoformat())
 
 
-CASE_FIELDS = ("patient_ref", "case_type", "material_new", "units", "arch", "teeth", "shade", "material", "price", "instructions")
+# What a work bills: its items (price x units) plus its additional charges. NULL when no item has a price and there are no charges.
+WORK_TOTAL_SQL = ("(SELECT CASE WHEN EXISTS (SELECT 1 FROM lab_work_items wi WHERE wi.work_id = w.id AND wi.price_cents IS NOT NULL)"
+                  " OR EXISTS (SELECT 1 FROM lab_work_extras wx WHERE wx.work_id = w.id) THEN"
+                  " COALESCE((SELECT SUM(wi.price_cents * wi.units) FROM lab_work_items wi WHERE wi.work_id = w.id AND wi.price_cents IS NOT NULL), 0)"
+                  " + COALESCE((SELECT SUM(wx.qty * wx.unit_price_cents) FROM lab_work_extras wx WHERE wx.work_id = w.id), 0) END)")
+
+
+CASE_FIELDS = ("case_type", "material_new", "units", "arch", "teeth", "shade", "material", "price", "instructions")
+HEAD_FIELDS = ("lab_id", "clinic_name", "doctor", "contact_number", "patient_ref", "received_on", "due_on")
+
+
+def work_items(conn, work_id) -> list:
+    return conn.all("SELECT * FROM lab_work_items WHERE work_id = ? ORDER BY sort_order, id", (work_id,))
+
+
+def item_text(it) -> str:
+    """e.g. 2 × Veneer (E.max) · 11, 12"""
+    units = it["units"] or 1
+    return ((f"{units} × " if units > 1 else "") + it["case_type"] + (f" ({it['material']})" if it["material"] else "")
+            + (f" · {it['teeth']}" if it["teeth"] else ""))
+
+
+def work_summary(items: list[dict]) -> dict:
+    """What lab_works keeps for lists and reports: the items in words, total units, and the shared details."""
+    one = len(items) == 1
+    def join(key, sep=", "):
+        vals = []
+        for it in items:
+            if it[key] and it[key] not in vals:
+                vals.append(str(it[key]))
+        return sep.join(vals)
+    case_type = items[0]["case_type"] if one else " + ".join(
+        (f"{it['units']} × " if it["units"] > 1 else "") + it["case_type"] + (f" ({it['material']})" if it["material"] else "") for it in items)
+    return {"case_type": case_type[:200], "units": sum(it["units"] for it in items), "arch": items[0]["arch"] if one else "",
+            "teeth": join("teeth", "; ")[:60], "shade": join("shade")[:30], "material": join("material")[:80],
+            "price_cents": items[0]["price_cents"] if one else None}
+
+
+def _save_items(conn, work_id, items: list[dict]) -> None:
+    conn.execute("DELETE FROM lab_work_items WHERE work_id = ?", (work_id,))
+    for i, it in enumerate(items):
+        conn.insert("lab_work_items", {"work_id": work_id, "case_type": it["case_type"], "units": it["units"], "arch": it["arch"],
+                                       "teeth": it["teeth"], "shade": it["shade"], "material": it["material"], "price_cents": it["price_cents"],
+                                       "instructions": it["instructions"], "sort_order": i})
+
+
+def _parse_work(form, labs):
+    """The work's header + its items from the form. Returns (head values, items, header errors, per-item errors)."""
+    from werkzeug.datastructures import MultiDict
+    cases = _multi_cases(form) or [{k: "" for k in CASE_FIELDS}]
+    head = {k: form.get(k, "") for k in HEAD_FIELDS}
+    items, errors, case_errors = [], {}, []
+    for c in cases:
+        v, data, errs = _work_form(MultiDict({**head, **c}), labs)
+        items.append({"case_type": data["case_type"], "units": data["units"], "arch": data["arch"], "teeth": data["teeth"], "shade": data["shade"],
+                      "material": data["material"], "price_cents": data["price_cents"], "instructions": data["instructions"], "_head": data})
+        case_errors.append({k: e for k, e in errs.items() if k in CASE_FIELDS})
+        for k, e in errs.items():
+            if k not in CASE_FIELDS:
+                errors[k] = e
+    return head, cases, items, errors, case_errors
 
 
 def _multi_cases(form) -> list[dict]:
@@ -322,47 +402,31 @@ def work_new():
     cases = [{k: v.get(k, "") for k in CASE_FIELDS}]
     case_errors: list[dict] = [{}]
     if request.method == "POST":
-        from werkzeug.datastructures import MultiDict
-        cases = _multi_cases(request.form) or [{k: "" for k in CASE_FIELDS}]
-        head = {k: request.form.get(k, "") for k in ("lab_id", "clinic_name", "doctor", "contact_number", "received_on", "due_on")}
-        parsed, case_errors = [], []
-        for c in cases:
-            v, data, errs = _work_form(MultiDict({**head, **c}), labs)
-            parsed.append(data)
-            case_errors.append({k: e for k, e in errs.items() if k in CASE_FIELDS})
-            for k, e in errs.items():
-                if k not in CASE_FIELDS:
-                    errors[k] = e
+        head, cases, items, errors, case_errors = _parse_work(request.form, labs)
         v = {**v, **head}
         extras, xerr = _extras_from(request.form)
         if xerr:
             errors["extras"] = xerr
         if not errors and not any(case_errors):
-            saved = []
+            data = {k: items[0]["_head"][k] for k in ("lab_id", "clinic_name", "doctor", "contact_number", "patient_ref", "received_on", "due_on")}
+            summary = work_summary(items)
             with conn.transaction():
-                first = parsed[0]
-                cid = _client_for(conn, first["lab_id"], first["clinic_name"], first["doctor"], first["contact_number"])
-                for i, data in enumerate(parsed):
-                    number = _next_number(conn, "lab_works", "LW")
-                    wid = conn.insert("lab_works", {**data, "number": number, "client_id": cid, "status": "accepted", "created_by": g.user.id,
-                                                    "created_at": now_str(), "updated_at": now_str()})
-                    for desc, q, pc in extras.get(i, []):
+                cid = _client_for(conn, data["lab_id"], data["clinic_name"], data["doctor"], data["contact_number"])
+                number = _next_number(conn, "lab_works", "LW")
+                wid = conn.insert("lab_works", {**data, **summary, "instructions": "", "number": number, "client_id": cid, "status": "accepted",
+                                                "created_by": g.user.id, "created_at": now_str(), "updated_at": now_str()})
+                _save_items(conn, wid, items)
+                for rows in extras.values():
+                    for desc, q, pc in rows:
                         conn.insert("lab_work_extras", {"work_id": wid, "description": desc, "qty": q, "unit_price_cents": pc,
                                                         "created_by": g.user.id, "created_at": now_str()})
-                    conn.insert("lab_work_events", {"work_id": wid, "user_id": g.user.id, "status": "accepted",
-                                                    "note": "Work received" + (f" (with {len(parsed) - 1} other case{'s' if len(parsed) > 2 else ''})" if len(parsed) > 1 else ""),
-                                                    "created_at": now_str()})
-                    audit.record("lab_work_created", "lab_work", wid, f"Outside work {number} from {data['clinic_name']}")
-                    saved.append((wid, number, data["case_type"]))
-                notify(conn, lab_staff(conn, first["lab_id"]), "lab_new",
-                       f"New work {saved[0][1]}: {saved[0][2]}" if len(saved) == 1 else f"{len(saved)} new works from {first['clinic_name']}",
-                       f"From {first['clinic_name']}" + (f", due {first['due_on']}" if first["due_on"] else ""),
-                       f"/staff/lab/works/{saved[0][0]}" if len(saved) == 1 else f"/staff/lab/works?client={cid}", exclude=g.user.id)
-            if len(saved) == 1:
-                flash(f"Saved as {saved[0][1]}.", "success")
-                return redirect(url_for("lab_works.work", work_id=saved[0][0]))
-            flash(f"Saved {len(saved)} works: {', '.join(n for _, n, _ in saved)}. To bill them on one invoice, open one and tap “Bill with other works”.", "success")
-            return redirect(url_for("lab_works.works", client=cid))
+                conn.insert("lab_work_events", {"work_id": wid, "user_id": g.user.id, "status": "accepted", "note": "Work received", "created_at": now_str()})
+                notify(conn, lab_staff(conn, data["lab_id"]), "lab_new", f"New work {number}: {summary['case_type'][:80]}",
+                       f"From {data['clinic_name']}" + (f", due {data['due_on']}" if data["due_on"] else ""), f"/staff/lab/works/{wid}",
+                       exclude=g.user.id)
+                audit.record("lab_work_created", "lab_work", wid, f"Outside work {number} from {data['clinic_name']} ({len(items)} item{'s' if len(items) > 1 else ''})")
+            flash(f"Saved as {number}" + (f" with {len(items)} items." if len(items) > 1 else "."), "success")
+            return redirect(url_for("lab_works.work", work_id=wid))
         flash(errors.get("extras") or "Please check the highlighted fields.", "error")
     clinics = conn.all(f"SELECT clinic_name, doctor, contact_number FROM lab_clients WHERE lab_id IN ({_in(_lab_ids())}) AND active = 1 ORDER BY clinic_name",
                        _lab_ids())
@@ -429,7 +493,8 @@ def work(work_id):
     lab = conn.one("SELECT * FROM laboratories WHERE id = ?", (w["lab_id"],))
     from ..lab_commission import entries, technicians
     extras = work_extras(conn, w["id"])
-    return render_template("staff/lab_works/work.html", w=w, events=events, statuses=STATUSES, arches=ARCHES, lab=lab, lab_display=lab_display,
+    items = work_items(conn, w["id"])
+    return render_template("staff/lab_works/work.html", items=items, items_total=sum((i["price_cents"] or 0) * i["units"] for i in items), w=w, events=events, statuses=STATUSES, arches=ARCHES, lab=lab, lab_display=lab_display,
                            extras=extras, extras_total=sum(x["qty"] * x["unit_price_cents"] for x in extras),
                            price_list=price_items(conn, [w["lab_id"]]), extras_prices=extras_list(price_items(conn, [w["lab_id"]])),
                            comm_entries=entries(conn, work_id=w["id"]), comm_techs=technicians(conn),
@@ -463,6 +528,7 @@ def remove_work(work_id):
     extras = [dict(x) for x in work_extras(conn, work_id)]
     with conn.transaction():
         conn.execute("DELETE FROM lab_work_extras WHERE work_id = ?", (work_id,))
+        conn.execute("DELETE FROM lab_work_items WHERE work_id = ?", (work_id,))
         conn.execute("DELETE FROM lab_work_events WHERE work_id = ?", (work_id,))
         conn.execute("DELETE FROM lab_works WHERE id = ?", (work_id,))
         audit.record("lab_work_removed", "lab_work", work_id, f"Removed outside work {w['number']} ({w['case_type']}, {w['clinic_name']}): {reason}",
@@ -478,25 +544,30 @@ def work_edit(work_id):
     conn = get_db()
     w = _work(conn, work_id)
     labs = my_labs(conn)
-    v = {**{k: (w[k] if w[k] is not None else "") for k in ("lab_id", "clinic_name", "doctor", "contact_number", "patient_ref", "case_type", "units",
-                                                          "arch", "teeth", "shade", "material", "instructions", "received_on", "due_on")},
-         "price": "" if w["price_cents"] is None else f"{w['price_cents'] / 100:.2f}"}
+    v = {k: (w[k] if w[k] is not None else "") for k in HEAD_FIELDS}
+    cases = [{"case_type": it["case_type"], "units": it["units"], "arch": it["arch"], "teeth": it["teeth"], "shade": it["shade"],
+              "material": it["material"], "material_new": "", "instructions": it["instructions"],
+              "price": "" if it["price_cents"] is None else f"{it['price_cents'] / 100:.2f}"} for it in work_items(conn, w["id"])]
+    case_errors = [{} for _ in cases]
     errors = {}
     if request.method == "POST":
-        v, data, errors = _work_form(request.form, labs)
-        if not errors:
+        head, cases, items, errors, case_errors = _parse_work(request.form, labs)
+        v = {**v, **head}
+        if not errors and not any(case_errors):
+            data = {k: items[0]["_head"][k] for k in ("lab_id", "clinic_name", "doctor", "contact_number", "patient_ref", "received_on", "due_on")}
             with conn.transaction():
                 cid = _client_for(conn, data["lab_id"], data["clinic_name"], data["doctor"], data["contact_number"])
                 reset = {"due_soon_notified": 0, "overdue_notified": 0} if data["due_on"] != w["due_on"] else {}
-                conn.update("lab_works", w["id"], {**data, "client_id": cid, "updated_at": now_str(), **reset})
+                conn.update("lab_works", w["id"], {**data, **work_summary(items), "client_id": cid, "updated_at": now_str(), **reset})
+                _save_items(conn, w["id"], items)
                 audit.record("lab_work_edited", "lab_work", w["id"], f"Edited {w['number']}")
-            flash("Saved.", "success")
+            flash("Saved." + (" It's already on an invoice: update the invoice lines if the prices changed." if w["invoice_id"] else ""), "success")
             return redirect(url_for("lab_works.work", work_id=w["id"]))
     clinics = conn.all(f"SELECT clinic_name, doctor, contact_number FROM lab_clients WHERE lab_id IN ({_in(_lab_ids())}) AND active = 1 ORDER BY clinic_name",
                        _lab_ids())
-    return render_template("staff/lab_works/form.html", v=v, errors=errors, labs=labs, case_types=case_types(conn, v.get("case_type")), materials=materials(conn, v.get("material")), arches=ARCHES, clinics=clinics,
-                           price_list=price_items(conn, [l["id"] for l in labs]),
-                           work=w, lab_display=lab_display)
+    return render_template("staff/lab_works/form.html", v=v, errors=errors, labs=labs, case_types=case_types(conn), materials=materials(conn),
+                           arches=ARCHES, clinics=clinics, price_list=price_items(conn, [l["id"] for l in labs]), cases=list(zip(cases, case_errors)),
+                           extras_prices=[], extras_in={}, work=w, lab_display=lab_display)
 
 
 @bp.route("/works/export.csv")
@@ -507,17 +578,18 @@ def works_export():
     ids = _lab_ids()
     start = parse_date(request.args.get("from")) or (today() - timedelta(days=30))
     end = parse_date(request.args.get("to")) or today()
-    rows = conn.all(f"SELECT w.*, i.number AS invoice_number FROM lab_works w LEFT JOIN lab_invoices i ON i.id = w.invoice_id "
+    rows = conn.all(f"SELECT w.*, {WORK_TOTAL_SQL} AS total_cents, i.number AS invoice_number FROM lab_works w LEFT JOIN lab_invoices i ON i.id = w.invoice_id "
                     f"WHERE w.lab_id IN ({_in(ids)}) AND w.received_on BETWEEN ? AND ? ORDER BY w.received_on, w.id", [*ids, start.isoformat(), end.isoformat()])
     buf = io.StringIO()
     wr = csv.writer(buf)
     wr.writerow(["Work no.", "Dental clinic", "Doctor", "Contact number", "Type of case", "Units", "Arch", "Teeth", "Shade", "Date received",
-                 "Due date", "Date delivered", "Status", "Price per unit (PHP)", "Invoice"])
+                 "Due date", "Date delivered", "Status", "Price per unit (PHP)", "Total (PHP)", "Invoice"])
     safe = lambda x: ("'" + x) if isinstance(x, str) and x[:1] in ("=", "+", "-", "@") else x  # noqa: E731
     for r in rows:
         wr.writerow([safe(x) for x in (r["number"], r["clinic_name"], r["doctor"], r["contact_number"], r["case_type"], r["units"], ARCHES[r["arch"]],
                                         r["teeth"], r["shade"], r["received_on"], r["due_on"] or "", r["delivered_on"] or "", status_label(r["status"]),
-                                        "" if r["price_cents"] is None else r["price_cents"] / 100, r["invoice_number"] or "")])
+                                        "" if r["price_cents"] is None else r["price_cents"] / 100,
+                                        "" if r["total_cents"] is None else r["total_cents"] / 100, r["invoice_number"] or "")])
     audit.record("lab_works_exported", "lab_work", None, f"Exported outside works {start} to {end}")
     return Response("﻿" + buf.getvalue(), mimetype="text/csv",
                     headers={"Content-Disposition": f'attachment; filename="lab-works-{start}-to-{end}.csv"', "Cache-Control": "no-store"})
@@ -649,7 +721,7 @@ def invoice_new():
     client_id = to_int(request.values.get("client"))
     client = conn.one(f"SELECT * FROM lab_clients WHERE id = ? AND lab_id IN ({_in(ids)})", [client_id, *ids]) if client_id else None
     clients = conn.all(f"SELECT * FROM lab_clients WHERE lab_id IN ({_in(ids)}) AND active = 1 ORDER BY branch_id IS NULL, clinic_name", ids)
-    works = conn.all("SELECT * FROM lab_works WHERE client_id = ? AND invoice_id IS NULL AND status != 'cancelled' ORDER BY received_on, id",
+    works = conn.all(f"SELECT w.*, {WORK_TOTAL_SQL} AS total_cents FROM lab_works w WHERE w.client_id = ? AND w.invoice_id IS NULL AND status != 'cancelled' ORDER BY received_on, id",
                      (client["id"],)) if client else []
     cases = conn.all("SELECT c.*, p.chart_no, u.name AS dentist FROM lab_cases c JOIN patients p ON p.id = c.patient_id "
                      "LEFT JOIN users u ON u.id = c.dentist_id WHERE c.lab_id = ? AND c.branch_id = ? AND c.invoice_id IS NULL "
@@ -669,9 +741,7 @@ def invoice_new():
                 _add_work_lines(conn, iid, w, desc)
                 conn.update("lab_works", w["id"], {"invoice_id": iid, "updated_at": now_str()})
             for c in chosen_cases:
-                price = c["lab_fee_cents"] or 0
-                conn.insert("lab_invoice_items", {"invoice_id": iid, "case_id": c["id"], "description": case_label(c), "qty": 1,
-                                                  "unit_price_cents": price, "discount_cents": 0, "amount_cents": price})
+                add_case_lines(conn, iid, c, case_label(c))
                 conn.update("lab_cases", c["id"], {"invoice_id": iid, "updated_at": now_str()})
             _recalc(conn, iid)
             audit.record("lab_invoice_created", "lab_invoice", iid,
@@ -822,10 +892,8 @@ def bill_case(case_id):
                                            "doctor": c["dentist"] or "", "contact_number": client["contact_number"], "status": "draft",
                                            "due_on": (today() + timedelta(days=30)).isoformat(), "created_by": g.user.id,
                                            "created_at": now_str(), "updated_at": now_str()})
-        price = c["lab_fee_cents"] or 0
         desc = c["case_type"] + (f" · {c['teeth']}" if c["teeth"] else "") + (f" · {c['material']}" if c["material"] else "")
-        conn.insert("lab_invoice_items", {"invoice_id": iid, "case_id": c["id"], "description": desc[:200], "qty": 1,
-                                          "unit_price_cents": price, "discount_cents": 0, "amount_cents": price})
+        add_case_lines(conn, iid, c, desc)
         conn.update("lab_cases", c["id"], {"invoice_id": iid, "updated_at": now_str()})
         _recalc(conn, iid)
         audit.record("lab_invoice_created", "lab_invoice", iid, f"Draft lab invoice for case #{c['id']} ({client['clinic_name']})")
@@ -836,7 +904,9 @@ def bill_case(case_id):
 def _extras_from(form) -> tuple[dict[int, list], str | None]:
     """Additional charges typed on the new-work form: {case index: [(description, qty, unit price cents)]}, error."""
     out: dict[int, list] = {}
-    rows = zip(form.getlist("x_case"), form.getlist("x_desc"), form.getlist("x_qty"), form.getlist("x_price"))
+    descs = form.getlist("x_desc")
+    cases_ = form.getlist("x_case") or ["0"] * len(descs)
+    rows = zip(cases_, descs, form.getlist("x_qty"), form.getlist("x_price"))
     for case, desc, qty, price in rows:
         desc, qty_s, price_s = clean(desc, 200), (qty or "").strip(), (price or "").strip()
         if not desc and not price_s:
@@ -856,7 +926,8 @@ def _extras_from(form) -> tuple[dict[int, list], str | None]:
 def _extras_rows(form) -> dict[int, list]:
     """What was typed in the additional charges (to show it again after an error)."""
     out: dict[int, list] = {}
-    for case, desc, qty, price in zip(form.getlist("x_case"), form.getlist("x_desc"), form.getlist("x_qty"), form.getlist("x_price")):
+    descs = form.getlist("x_desc")
+    for case, desc, qty, price in zip(form.getlist("x_case") or ["0"] * len(descs), descs, form.getlist("x_qty"), form.getlist("x_price")):
         if desc or price:
             out.setdefault(to_int(case) or 0, []).append({"desc": desc, "qty": qty, "price": price})
     return out
@@ -875,10 +946,15 @@ def work_extras(conn, work_id) -> list:
 
 
 def _add_work_lines(conn, iid, w, description) -> None:
-    """The work's line on an invoice, then its additional charges (grouped under the work)."""
-    price = w["price_cents"] or 0
-    conn.insert("lab_invoice_items", {"invoice_id": iid, "work_id": w["id"], "description": description[:200], "qty": w["units"] or 1,
-                                      "unit_price_cents": price, "discount_cents": 0, "amount_cents": price * (w["units"] or 1)})
+    """The work's items on an invoice (one line each), then its additional charges, all grouped under the work."""
+    items = work_items(conn, w["id"])
+    if not items:
+        items = [{"case_type": w["case_type"], "units": w["units"], "teeth": w["teeth"], "material": "", "price_cents": w["price_cents"]}]
+    for it in items:
+        price = it["price_cents"] or 0
+        desc = description if len(items) == 1 else f"{w['number']} · " + item_text(it)
+        conn.insert("lab_invoice_items", {"invoice_id": iid, "work_id": w["id"], "description": desc[:200], "qty": it["units"] or 1,
+                                          "unit_price_cents": price, "discount_cents": 0, "amount_cents": price * (it["units"] or 1)})
     for x in work_extras(conn, w["id"]):
         conn.insert("lab_invoice_items", {"invoice_id": iid, "work_id": w["id"], "description": x["description"][:200], "qty": x["qty"],
                                           "unit_price_cents": x["unit_price_cents"], "discount_cents": 0,

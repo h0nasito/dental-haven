@@ -91,19 +91,33 @@ class TestLabQueue(Base):
                                            "units": ["2", "3"], "teeth": ["11, 12", "21, 22, 23"], "shade": ["A2", "A2"],
                                            "material": ["Zirconia", "E.max"], "lab_fee": ["11000", ""], "instructions": ["", "E.max press"]})
         self.assertEqual(r.status_code, 302)
-        rows = self.conn.all("SELECT * FROM lab_cases WHERE patient_id = ? ORDER BY id DESC LIMIT 2", (pid,))[::-1]
-        self.assertEqual([(c["units"], c["teeth"], c["shade"], c["material"], c["lab_fee_cents"]) for c in rows],
-                         [(2, "11, 12", "A2", "Zirconia", 1100000), (3, "21, 22, 23", "A2", "E.max", None)])
-        self.assertIn("E.max press", rows[1]["instructions"])
-        self.assertIn("Rush please", rows[0]["instructions"])
-        self.assertEqual(self.q("SELECT COUNT(*) AS n FROM lab_cases")["n"], before + 2)
-        self.assertIn("3 × Crown (zirconia", d.get(f"/staff/lab/{rows[1]['id']}").data.decode())
+        # one case for the patient, holding both items
+        self.assertEqual(self.q("SELECT COUNT(*) AS n FROM lab_cases")["n"], before + 1)
+        c = self.q("SELECT * FROM lab_cases WHERE patient_id = ? ORDER BY id DESC LIMIT 1", (pid,))
+        self.assertEqual(r.headers["Location"].rstrip("/").split("/")[-1], str(c["id"]))
+        self.assertEqual((c["units"], c["lab_fee_cents"], c["instructions"]), (5, 1100000, "Rush please"))
+        self.assertIn("2 × Crown (zirconia / all-ceramic) (Zirconia) + 3 × Crown", c["case_type"])
+        items = self.conn.all("SELECT * FROM lab_case_items WHERE case_id = ? ORDER BY sort_order", (c["id"],))
+        self.assertEqual([(i["units"], i["teeth"], i["shade"], i["material"], i["lab_fee_cents"], i["instructions"]) for i in items],
+                         [(2, "11, 12", "A2", "Zirconia", 1100000, ""), (3, "21, 22, 23", "A2", "E.max", None, "E.max press")])
+        page = d.get(f"/staff/lab/{c['id']}").data.decode()
+        self.assertIn('id="items"', page)
+        self.assertNotIn("5 × 2 ×", page)
+        # a price for each item; the case keeps the total
+        d.post(f"/staff/lab/{c['id']}", data={"status": "sent", "due_on": "", f"item_fee_{items[0]['id']}": "11000", f"item_fee_{items[1]['id']}": "16500"})
+        self.assertEqual(self.q("SELECT lab_fee_cents FROM lab_cases WHERE id = ?", (c["id"],))["lab_fee_cents"], 2750000)
+        # billed: one line per item
+        r = self.login("admin").post(f"/staff/lab/cases/{c['id']}/bill")
+        iid = int(r.headers["Location"].rstrip("/").split("/")[-1])
+        lines = self.conn.all("SELECT * FROM lab_invoice_items WHERE invoice_id = ? ORDER BY id", (iid,))
+        self.assertEqual([(x["case_item_id"], x["amount_cents"]) for x in lines], [(items[0]["id"], 1100000), (items[1]["id"], 1650000)])
+        self.assertIn("21, 22, 23", lines[1]["description"])
         # an item with bad units: nothing is saved
         r = d.post("/staff/lab/new", data={"patient_id": pid, "lab_id": lab, "branch_id": self.branch("malolos"), "dentist_id": doc,
                                            "sent_on": date.today().isoformat(), "case_type": ["Bridge", "Bridge"], "units": ["1", "0"],
                                            "teeth": ["", ""], "shade": ["", ""], "material": ["", ""], "lab_fee": ["", ""], "instructions": ["", ""]})
         self.assertIn("Item 2: enter the number of units", r.data.decode())
-        self.assertEqual(self.q("SELECT COUNT(*) AS n FROM lab_cases")["n"], before + 2)
+        self.assertEqual(self.q("SELECT COUNT(*) AS n FROM lab_cases")["n"], before + 1)
 
     def test_material_list_and_new_material(self):
         lab = self.q("SELECT id FROM laboratories WHERE name = 'DSDL'")["id"]
@@ -121,7 +135,8 @@ class TestLabQueue(Base):
                                            "material": ["E.max (lithium disilicate)", "Zirconia", "__new__"], "material_new": ["", "", "Feldspathic QT"],
                                            "lab_fee": ["", "", ""], "instructions": ["", "", ""]})
         self.assertEqual(r.status_code, 302)
-        rows = self.conn.all("SELECT material FROM lab_cases WHERE patient_id = ? ORDER BY id DESC LIMIT 3", (pid,))[::-1]
+        cid = self.q("SELECT id FROM lab_cases WHERE patient_id = ? ORDER BY id DESC LIMIT 1", (pid,))["id"]
+        rows = self.conn.all("SELECT material FROM lab_case_items WHERE case_id = ? ORDER BY sort_order", (cid,))
         self.assertEqual([x["material"] for x in rows], ["E.max (lithium disilicate)", "Zirconia", "Feldspathic QT"])
         self.assertIsNotNone(self.q("SELECT id FROM lab_materials WHERE name = 'Feldspathic QT'"))
         r = d.post("/staff/lab/new", data={"patient_id": pid, "lab_id": lab, "branch_id": self.branch("malolos"), "sent_on": date.today().isoformat(),

@@ -22,7 +22,7 @@
 {% if c.no_try_in %}<br><small class="muted">No trial fitting</small>{% elif c.try_in_on %}<br><small class="muted">Try-in {{ c.try_in_on|date }}</small>{% endif %}
 {% if c.install_on %}<br><small class="muted">Install {{ c.install_on|date }}</small>{% endif %}</td>
 <td><a href="{{ url_for('labs.case', case_id=c.id) }}"><strong>{{ c.last_name }}, {{ c.first_name }}</strong></a><br><small class="muted">{{ c.chart_no }} · sent {{ c.sent_on|date }}</small></td>
-<td>{% if c.units and c.units > 1 %}{{ c.units }} × {% endif %}{{ c.case_type }}{% if c.material %}<br><small class="muted">{{ c.material }}</small>{% endif %}</td><td>{{ c.teeth or '—' }}{% if c.shade %}<br><small class="muted">Shade {{ c.shade }}</small>{% endif %}</td>
+<td>{% if c.units and c.units > 1 and ' × ' not in c.case_type %}{{ c.units }} × {% endif %}{{ c.case_type }}{% if c.material %}<br><small class="muted">{{ c.material }}</small>{% endif %}</td><td>{{ c.teeth or '—' }}{% if c.shade %}<br><small class="muted">Shade {{ c.shade }}</small>{% endif %}</td>
 <td>{{ c.branch }}<br><small class="muted">{{ c.dentist or '—' }}</small></td><td>{{ c.lab }}</td>
 <td><span class="badge {{ lab_badge(c.status) }}">{{ c.status|lab_status }}</span></td></tr>
 {% else %}<tr><td colspan="7">{{ empty('No lab cases here') }}</td></tr>{% endfor %}</tbody></table></div></div>

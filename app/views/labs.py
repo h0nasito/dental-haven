@@ -33,6 +33,27 @@ MATERIAL_TYPES = ["Crown (PFM)", "Crown (zirconia / all-ceramic)", "Crown (metal
 ITEM_FIELDS = ("case_type", "units", "teeth", "shade", "material", "material_new", "lab_fee", "instructions")
 
 
+def case_items(conn, case_id: int) -> list:
+    return conn.all("SELECT * FROM lab_case_items WHERE case_id = ? ORDER BY sort_order, id", (case_id,))
+
+
+def item_text(it) -> str:
+    units = it["units"] or 1
+    return (f"{units} × " if units > 1 else "") + it["case_type"] + (f" ({it['material']})" if it["material"] else "")
+
+
+def case_summary(items) -> dict:
+    """What lab_cases keeps for lists: one item looks like before; several read e.g. "2 × Crown (E.max) + 3 × Bridge (Zirconia)"."""
+    if len(items) == 1:
+        it = items[0]
+        return {"case_type": it["case_type"], "units": it["units"] or 1, "teeth": it["teeth"][:60], "shade": it["shade"][:30],
+                "material": it["material"][:80], "lab_fee_cents": it["lab_fee_cents"]}
+    join = lambda k, n: "; ".join(dict.fromkeys(str(it[k]) for it in items if it[k]))[:n]  # noqa: E731
+    fees = [it["lab_fee_cents"] for it in items if it["lab_fee_cents"] is not None]
+    return {"case_type": " + ".join(item_text(it) for it in items)[:300], "units": sum(it["units"] or 1 for it in items),
+            "teeth": join("teeth", 60), "shade": join("shade", 30), "material": join("material", 80), "lab_fee_cents": sum(fees) if fees else None}
+
+
 def case_types(conn, include: str | None = None) -> list[str]:
     """The lab's services (types of case) in use, in order. The first time, the standard list is loaded.
     `include` keeps a case's current type in the list even if it was turned off."""
@@ -283,38 +304,32 @@ def new():
         if not items:
             errors.append("Add at least one item.")
         if not errors:
-            created = []
+            rows = [{"case_type": it["case_type"], "units": it["units"], "teeth": it["teeth"][:60], "shade": it["shade"][:30],
+                     "material": it["material"][:80], "lab_fee_cents": it["fee"], "instructions": it["instructions"]} for it in parsed]
+            summary = case_summary(rows)
             with conn.transaction():
                 branch = conn.one("SELECT name FROM branches WHERE id = ?", (branch_id,))
-                for i, it in enumerate(parsed):
-                    instr = "\n".join(x for x in (it["instructions"], clean(f.get("instructions_all"), 1000)) if x)
-                    if i > 0 and created and any(x and x.filename for x in request.files.getlist("photos")):
-                        instr = (instr + "\n" if instr else "") + f"Reference photos: see lab case #{created[0]}."
-                    cid = conn.insert("lab_cases", {"lab_id": lab_id, "branch_id": branch_id, "patient_id": patient["id"], "dentist_id": dentist_id,
-                                                    "case_type": it["case_type"], "units": it["units"], "teeth": it["teeth"][:60],
-                                                    "shade": it["shade"][:30], "material": it["material"][:80], "instructions": instr,
-                                                    "status": "sent", "sent_on": sent.isoformat(), "due_on": due.isoformat() if due else None,
-                                                    "lab_fee_cents": it["fee"], **targets,
-                                                    "created_by": g.user.id, "created_at": now_str(), "updated_at": now_str()})
-                    conn.insert("lab_case_events", {"case_id": cid, "user_id": g.user.id, "status": "sent",
-                                                    "note": "Case created" + (f" (item {i + 1} of {len(parsed)})" if len(parsed) > 1 else ""),
-                                                    "created_at": now_str()})
-                    audit.record("lab_case_created", "patient", patient["id"], f"Lab case #{cid}: {it['units']} × {it['case_type']}",
-                                 {"lab_case_id": cid}, branch_id)
-                    created.append(cid)
-                n_photos, photo_errors = save_case_photos(conn, created[0], request.files.getlist("photos"))
+                # instructions for the whole case; with one item its own note goes here too
+                instr = "\n".join(x for x in ((parsed[0]["instructions"] if len(parsed) == 1 else ""), clean(f.get("instructions_all"), 1000)) if x)
+                cid = conn.insert("lab_cases", {"lab_id": lab_id, "branch_id": branch_id, "patient_id": patient["id"], "dentist_id": dentist_id,
+                                                **summary, "instructions": instr,
+                                                "status": "sent", "sent_on": sent.isoformat(), "due_on": due.isoformat() if due else None,
+                                                **targets, "created_by": g.user.id, "created_at": now_str(), "updated_at": now_str()})
+                for i, r in enumerate(rows):
+                    conn.insert("lab_case_items", {"case_id": cid, **r, "sort_order": i})
+                conn.insert("lab_case_events", {"case_id": cid, "user_id": g.user.id, "status": "sent",
+                                                "note": "Case created" + (f" ({len(rows)} items)" if len(rows) > 1 else ""), "created_at": now_str()})
+                audit.record("lab_case_created", "patient", patient["id"], f"Lab case #{cid}: {summary['case_type'][:120]}",
+                             {"lab_case_id": cid, "items": len(rows)}, branch_id)
+                n_photos, photo_errors = save_case_photos(conn, cid, request.files.getlist("photos"))
                 for e_ in photo_errors:
                     flash(e_, "error")
-                what = f"{parsed[0]['units']} × {parsed[0]['case_type']}" if len(parsed) == 1 else f"{len(parsed)} items"
-                notify(conn, lab_staff(conn, lab_id), "lab_case_new",
-                       f"New lab case #{created[0]}: {what}" if len(created) == 1 else f"New lab cases #{created[0]}–#{created[-1]}: {what}",
-                       f"From {branch['name'] if branch else 'a branch'}" + (f", due {due.isoformat()}" if due else ""), f"/staff/lab/{created[0]}",
+                what = f"{rows[0]['units']} × {rows[0]['case_type']}" if len(rows) == 1 else f"{len(rows)} items"
+                notify(conn, lab_staff(conn, lab_id), "lab_case_new", f"New lab case #{cid}: {what}",
+                       f"From {branch['name'] if branch else 'a branch'}" + (f", due {due.isoformat()}" if due else ""), f"/staff/lab/{cid}",
                        exclude=g.user.id)
-            if len(created) == 1:
-                flash("Lab case created.", "success")
-                return redirect(url_for("labs.case", case_id=created[0]))
-            flash(f"{len(created)} lab cases created: " + ", ".join(f"#{c}" for c in created) + ".", "success")
-            return redirect(url_for("patients.detail", patient_id=patient["id"]) + "#lab-cases")
+            flash("Lab case created." if len(rows) == 1 else f"Lab case #{cid} created with {len(rows)} items.", "success")
+            return redirect(url_for("labs.case", case_id=cid))
         v["items"] = items
         v["instructions_all"] = f.get("instructions_all", "")
     items = v.get("items") or [{k: v.get(k, "") for k in ITEM_FIELDS}]
@@ -345,9 +360,28 @@ def case(case_id):
         due = parse_date(request.form.get("due_on"))
         if due:
             upd["due_on"] = due.isoformat()
-        fee = parse_money(request.form.get("lab_fee")) if request.form.get("lab_fee") else None
-        if fee is not None:
-            upd["lab_fee_cents"] = fee
+        items = case_items(conn, case_id)
+        if len(items) > 1:
+            # several items: a price for each; the case keeps the total
+            changed = False
+            for it in items:
+                raw = request.form.get(f"item_fee_{it['id']}")
+                if raw is None:
+                    continue
+                fee = parse_money(raw) if raw.strip() else None
+                if raw.strip() and (fee is None or fee < 0):
+                    flash(f"Enter the lab price for {item_text(it)} like 3500 or 3500.00.", "error")
+                    return redirect(url_for("labs.case", case_id=case_id))
+                if fee != it["lab_fee_cents"]:
+                    conn.execute("UPDATE lab_case_items SET lab_fee_cents = ? WHERE id = ?", (fee, it["id"]))
+                    changed = True
+            if changed:
+                upd["lab_fee_cents"] = case_summary(case_items(conn, case_id))["lab_fee_cents"]
+        else:
+            fee = parse_money(request.form.get("lab_fee")) if request.form.get("lab_fee") else None
+            if fee is not None:
+                upd["lab_fee_cents"] = fee
+                conn.execute("UPDATE lab_case_items SET lab_fee_cents = ? WHERE case_id = ?", (fee, case_id))
         if "install_on" in request.form:
             targets, terr = target_dates(request.form, parse_date(c["sent_on"]))
             if terr:
@@ -377,7 +411,8 @@ def case(case_id):
     lab_invoice = conn.one("SELECT number, status, total_cents, paid_cents FROM lab_invoices WHERE id = ?", (c["invoice_id"],)) if c["invoice_id"] else None
     photos = conn.all("SELECT ph.*, u.name AS by_name FROM lab_case_photos ph LEFT JOIN users u ON u.id = ph.uploaded_by WHERE ph.case_id = ? ORDER BY ph.id",
                       (case_id,))
-    return render_template("staff/labs/case.html", c=c, events=events, statuses=STATUSES, can_update=can_update, lab_invoice=lab_invoice, photos=photos, max_photos=MAX_CASE_PHOTOS,
+    items = case_items(conn, case_id)
+    return render_template("staff/labs/case.html", c=c, items=items, events=events, statuses=STATUSES, can_update=can_update, lab_invoice=lab_invoice, photos=photos, max_photos=MAX_CASE_PHOTOS,
                            can_bill=g.user.is_super_admin or (lab_user and g.user.can("lab.billing")),
                            comm_entries=entries(conn, case_id=c["id"]), comm_techs=technicians(conn),
                            patient_link=can_see_patient(conn, g.user, c["patient_id"]), fittings=fittings,
@@ -418,6 +453,7 @@ def remove_case(case_id):
     with conn.transaction():
         conn.execute("DELETE FROM lab_case_photos WHERE case_id = ?", (case_id,))
         conn.execute("DELETE FROM lab_case_events WHERE case_id = ?", (case_id,))
+        conn.execute("DELETE FROM lab_case_items WHERE case_id = ?", (case_id,))
         conn.execute("DELETE FROM lab_cases WHERE id = ?", (case_id,))
         audit.record("lab_case_removed", "patient", c["patient_id"], f"Removed lab case #{case_id} ({c['case_type']}): {reason}",
                      {"lab_case": {k: c[k] for k in c.keys()}, "reason": reason, "photos": len(photos)}, c["branch_id"])
