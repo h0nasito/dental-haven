@@ -902,3 +902,16 @@ section[id] { scroll-margin-top: 72px; }
 .me-pop a:hover, .me-pop .me-out:hover, .me-pop a:focus-visible, .me-pop .me-out:focus-visible { background: var(--brand-50, #eef7f6); }
 .me-pop form { margin: 0; border-top: 1px solid var(--line); margin-top: .3rem; padding-top: .3rem; }
 .me-pop .me-out { color: var(--red-700); font-weight: 600; }
+/* patient uploads: rename a file in place */
+.doc-rename { margin-top: .25rem; }
+.doc-rename summary { cursor: pointer; font-size: .82rem; color: var(--muted, #667); }
+.doc-rename-form { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .35rem; min-width: 16rem; }
+.doc-rename-form input { flex: 1 1 14rem; }
+/* suggestions under a search box (patient search) */
+.suggest-wrap { position: relative; }
+.suggest-box { position: absolute; left: 0; right: 0; top: 100%; z-index: 40; margin-top: .2rem; background: var(--surface, #fff); border: 1px solid var(--line, #dde); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12); overflow: hidden; }
+.suggest-box a { display: flex; justify-content: space-between; gap: .75rem; padding: .55rem .8rem; color: inherit; text-decoration: none; border-top: 1px solid var(--line, #eee); }
+.suggest-box a:first-child { border-top: 0; }
+.suggest-box a.active, .suggest-box a:hover { background: var(--hover, #eef3f8); }
+.suggest-box small { color: var(--muted, #667); white-space: nowrap; }
+.suggest-box .none { padding: .55rem .8rem; color: var(--muted, #667); }

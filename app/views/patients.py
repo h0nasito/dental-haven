@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import re
 
-from flask import Blueprint, abort, flash, g, redirect, render_template, request, send_file, url_for
+from flask import Blueprint, abort, flash, g, redirect, render_template, request, jsonify, send_file, url_for
 
 from .. import audit
 from ..auth import require
 from ..db import get_db
+from ..patient_search import best_first, name_match
 from ..permissions import can_see_clinical, can_see_patient, patient_scope
 from ..uploads import document_path, save_document
 from ..util import clean, now_str, parse_date, parse_money, to_int, today
@@ -73,15 +74,12 @@ def index():
     if show == "incomplete":
         # first or last name without a single letter, e.g. ",,", "-", "...", "'@@@"
         where.append("(NOT lower(p.first_name) GLOB '*[a-z]*' OR NOT lower(p.last_name) GLOB '*[a-z]*')")
+    order, order_args = "p.last_name, p.first_name", []
     if q:
-        like = f"%{q.lower()}%"
-        # Searching by mobile or email only for users allowed to see contact details (otherwise a search would reveal them).
-        contact_ok = g.user.can("patients.contact")
-        where.append("(lower(p.first_name || ' ' || p.last_name) LIKE ? OR lower(p.last_name || ', ' || p.first_name) LIKE ? "
-                     + ("OR p.phone LIKE ? OR lower(p.email) LIKE ? " if contact_ok else "")
-                     + "OR lower(p.chart_no) LIKE ? OR p.legacy_id = ? "
-                     "OR lower(p.first_name || ' ' || p.middle_name || ' ' || p.last_name) LIKE ?)")
-        args += [like, like, *([like, like] if contact_ok else []), like, q, like]
+        cond, cargs = _search_cond(q)
+        where.append(cond)
+        args += cargs
+        order, order_args = best_first(q)
     total = conn.scalar(f"SELECT COUNT(*) FROM patients p WHERE {' AND '.join(where)}", args)
     pg = paginate(total, per)
     rows = conn.all(
@@ -90,9 +88,46 @@ def index():
         "(SELECT MIN(start_at) FROM appointments a WHERE a.patient_id = p.id AND a.status IN ('requested','confirmed') AND a.start_at >= ?) AS next_visit "
         f"FROM patients p LEFT JOIN branches b ON b.id = p.preferred_branch_id LEFT JOIN users du ON du.id = p.deleted_by "
         f"WHERE {' AND '.join(where)} "
-        + ("ORDER BY p.deleted_at DESC, p.id DESC" if show == "deleted" else "ORDER BY p.last_name, p.first_name")
-        + " LIMIT ? OFFSET ?", [today().isoformat(), *args, pg["limit"], pg["offset"]])
+        + ("ORDER BY p.deleted_at DESC, p.id DESC" if show == "deleted" else f"ORDER BY {order}")
+        + " LIMIT ? OFFSET ?", [today().isoformat(), *args, *([] if show == "deleted" else order_args), pg["limit"], pg["offset"]])
     return render_template("staff/patients/index.html", rows=rows, pg=pg, q=q, show=show, per=per, can_delete=can_delete)
+
+
+def _search_cond(q: str) -> tuple[str, list]:
+    """Name / chart number (word by word), plus mobile or email for users allowed to see contact details
+    (otherwise a search would reveal them), plus the old MyMedsPH id."""
+    cond, args = name_match(q)
+    like = f"%{q.lower().strip()}%"
+    extra, eargs = "p.legacy_id = ?", [q.strip()]
+    if g.user.can("patients.contact"):
+        digits = "".join(ch for ch in q if ch.isdigit())
+        extra += " OR lower(p.email) LIKE ?"
+        eargs.append(like)
+        if len(digits) >= 4:
+            extra += " OR replace(replace(replace(p.phone, ' ', ''), '-', ''), '+63', '0') LIKE ?"
+            eargs.append(f"%{digits[-10:] if len(digits) > 10 else digits}%")
+    return f"({cond} OR {extra})", [*args, *eargs]
+
+
+@bp.route("/suggest", methods=["POST"])
+@require("patients.view")
+def suggest():
+    """Names suggested while typing in the patient search. POST, so names never end up in web addresses or server logs."""
+    conn = get_db()
+    q = clean(request.form.get("q"), 80)
+    if len(q.strip()) < 2:
+        return jsonify(results=[])
+    frag, params = patient_scope(g.user, "p")
+    cond, cargs = _search_cond(q)
+    order, oargs = best_first(q)
+    rows = conn.all(f"SELECT p.id, p.first_name, p.middle_name, p.last_name, p.chart_no, b.name AS branch FROM patients p "
+                    f"LEFT JOIN branches b ON b.id = p.preferred_branch_id WHERE {frag} AND p.active = 1 AND {cond} ORDER BY {order} LIMIT 8",
+                    [*params, *cargs, *oargs])
+    resp = jsonify(results=[{"id": r["id"], "name": f"{r['last_name']}, {r['first_name']}" + (f" {r['middle_name'][:1]}." if r["middle_name"] else ""),
+                             "chart_no": r["chart_no"] or "", "branch": r["branch"] or "",
+                             "url": url_for("patients.detail", patient_id=r["id"])} for r in rows])
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @bp.route("/bulk", methods=["POST"])
@@ -712,10 +747,48 @@ def upload(patient_id):
         flash(err, "error")
     else:
         did = conn.insert("patient_documents", {"patient_id": patient_id, "category": category, "clinical": 1 if is_clinical else 0,
-                                                "original_name": original, "stored_name": stored, "mime": mime,
+                                                "title": _doc_title(request.form.get("title")), "original_name": original, "stored_name": stored, "mime": mime,
                                                 "size_bytes": size, "uploaded_by": g.user.id, "uploaded_at": now_str()})
         audit.record("document_uploaded", "patient", patient_id, f"Uploaded {DOC_CATEGORIES[category][0]}", {"document_id": did})
         flash("Document uploaded.", "success")
+    return redirect(url_for("patients.detail", patient_id=patient_id, tab="documents"))
+
+
+def _doc_title(raw) -> str:
+    """A file's display name: one line, no path characters."""
+    t = clean(raw, 120).replace("/", "-").replace("\\", "-")
+    return " ".join(t.split())
+
+
+def download_name(d) -> str:
+    """Download as the given name, keeping the original file's extension (e.g. "Panoramic x-ray.jpeg")."""
+    if not d["title"]:
+        return d["original_name"]
+    ext = d["original_name"].rsplit(".", 1)[-1].lower() if "." in d["original_name"] else ""
+    return d["title"] + (f".{ext}" if ext and not d["title"].lower().endswith(f".{ext}") else "")
+
+
+@bp.route("/<int:patient_id>/documents/<int:doc_id>/rename", methods=["POST"])
+@require("documents.upload")
+def document_rename(patient_id, doc_id):
+    conn = get_db()
+    _load(patient_id)
+    d = conn.one("SELECT * FROM patient_documents WHERE id = ? AND patient_id = ?", (doc_id, patient_id))
+    if not d:
+        abort(404)
+    if d["clinical"] and not can_see_clinical(conn, g.user, patient_id):
+        abort(403)
+    upd = {"title": _doc_title(request.form.get("title"))}
+    category = request.form.get("category")
+    if category and category != d["category"]:
+        if category not in DOC_CATEGORIES:
+            abort(400)
+        if DOC_CATEGORIES[category][1] and not can_see_clinical(conn, g.user, patient_id):
+            abort(403)
+        upd.update(category=category, clinical=1 if DOC_CATEGORIES[category][1] else 0)
+    conn.update("patient_documents", doc_id, upd)
+    audit.record("document_renamed", "patient", patient_id, f"Renamed document #{doc_id}", {"document_id": doc_id, "category": upd.get("category")})
+    flash("File name saved.", "success")
     return redirect(url_for("patients.detail", patient_id=patient_id, tab="documents"))
 
 
@@ -731,7 +804,7 @@ def document(patient_id, doc_id):
         abort(403)
     audit.record("document_viewed", "patient", patient_id, f"Opened document #{doc_id}")
     resp = send_file(document_path(d["stored_name"]), mimetype=d["mime"], as_attachment=request.args.get("download") == "1",
-                     download_name=d["original_name"], max_age=0)
+                     download_name=download_name(d), max_age=0)
     resp.headers["Cache-Control"] = "no-store"
     resp.headers["Content-Security-Policy"] = "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox"
     return resp

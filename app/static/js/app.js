@@ -954,3 +954,52 @@ document.addEventListener('change', function (e) {
   box.hidden = sel.value !== '__new__';
   if (!box.hidden) box.focus(); else box.value = '';
 });
+
+/* Patient search: suggest names while typing (sent by POST, so names stay out of web addresses) */
+(function () {
+  var input = document.querySelector('input[data-suggest]');
+  if (!input) return;
+  var box = document.getElementById(input.getAttribute('aria-controls'));
+  var form = input.form;
+  var token = form && form.querySelector('[name=csrf_token]') ? form.querySelector('[name=csrf_token]').value : '';
+  var timer = null, seq = 0, links = [], active = -1;
+  function hide() { box.hidden = true; input.setAttribute('aria-expanded', 'false'); active = -1; }
+  function mark(i) {
+    links.forEach(function (a, j) { a.className = j === i ? 'active' : ''; a.setAttribute('aria-selected', j === i ? 'true' : 'false'); });
+    active = i;
+  }
+  function show(results, q) {
+    box.textContent = ''; links = []; active = -1;
+    if (!results.length) {
+      var d = document.createElement('div'); d.className = 'none'; d.textContent = 'No patient found for “' + q + '”. Try fewer letters or another part of the name.';
+      box.appendChild(d);
+    }
+    results.forEach(function (r) {
+      var a = document.createElement('a'); a.href = r.url; a.setAttribute('role', 'option');
+      var n = document.createElement('span'); n.textContent = r.name; a.appendChild(n);
+      var m = document.createElement('small'); m.textContent = [r.chart_no, r.branch].filter(Boolean).join(' · '); a.appendChild(m);
+      box.appendChild(a); links.push(a);
+    });
+    box.hidden = false; input.setAttribute('aria-expanded', 'true');
+  }
+  function ask() {
+    var q = input.value.trim();
+    if (q.length < 2) { hide(); return; }
+    var mine = ++seq, fd = new FormData(); fd.append('q', q);
+    fetch(input.getAttribute('data-suggest'), { method: 'POST', body: fd, credentials: 'same-origin',
+      headers: { 'Accept': 'application/json', 'X-CSRF-Token': token } })
+      .then(function (r) { return r.ok ? r.json() : { results: [] }; })
+      .then(function (d) { if (mine === seq && document.activeElement === input) show(d.results || [], q); })
+      .catch(function () {});
+  }
+  input.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(ask, 200); });
+  input.addEventListener('focus', function () { if (input.value.trim().length >= 2) ask(); });
+  input.addEventListener('keydown', function (e) {
+    if (box.hidden) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); if (links.length) mark((active + 1) % links.length); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); if (links.length) mark((active - 1 + links.length) % links.length); }
+    else if (e.key === 'Enter' && active >= 0) { e.preventDefault(); window.location = links[active].href; }
+    else if (e.key === 'Escape') { hide(); }
+  });
+  input.addEventListener('blur', function () { setTimeout(hide, 150); });
+})();

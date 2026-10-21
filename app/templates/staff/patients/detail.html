@@ -364,13 +364,18 @@
 <div class="card"><h2>Uploads</h2>
 {% if not clinical %}<p class="notice">You can see non-clinical documents only, such as consent forms and IDs.</p>{% endif %}
 <div class="table-wrap"><table><thead><tr><th>Document</th><th>Type</th><th>Size</th><th>Uploaded</th><th></th></tr></thead><tbody>
-{% for d in documents %}<tr><td>{{ d.original_name }}</td><td>{{ doc_categories[d.category][0] if d.category in doc_categories else d.category }}</td><td>{{ (d.size_bytes / 1024)|round(0)|int }} KB</td><td>{{ d.uploaded_at|dt }}<br><small class="muted">{{ d.uploader }}</small></td>
+{% for d in documents %}<tr><td>{% if d.title %}<strong>{{ d.title }}</strong><br><small class="muted">{{ d.original_name }}</small>{% else %}{{ d.original_name }}{% endif %}
+{% if current_user.can('documents.upload') %}<details class="doc-rename"><summary>Rename</summary><form method="post" action="{{ url_for('patients.document_rename', patient_id=p.id, doc_id=d.id) }}" class="doc-rename-form">{{ csrf() }}
+<label class="sr-only" for="dt{{ d.id }}">File name</label><input id="dt{{ d.id }}" name="title" value="{{ d.title }}" maxlength="120" placeholder="e.g. Panoramic x-ray before extraction">
+<label class="sr-only" for="dk{{ d.id }}">Type</label><select id="dk{{ d.id }}" name="category">{% for k, (lab, is_cl) in doc_categories.items() if clinical or not is_cl %}<option value="{{ k }}"{% if k == d.category %} selected{% endif %}>{{ lab }}</option>{% endfor %}</select>
+<button class="btn btn-secondary btn-sm">Save</button></form></details>{% endif %}</td><td>{{ doc_categories[d.category][0] if d.category in doc_categories else d.category }}</td><td>{{ (d.size_bytes / 1024)|round(0)|int }} KB</td><td>{{ d.uploaded_at|dt }}<br><small class="muted">{{ d.uploader }}</small></td>
 <td class="row"><a class="btn btn-secondary btn-sm" href="{{ url_for('patients.document', patient_id=p.id, doc_id=d.id) }}" target="_blank" rel="noopener">Open</a><a class="btn btn-ghost btn-sm" href="{{ url_for('patients.document', patient_id=p.id, doc_id=d.id, download=1) }}">Download</a>
 {% if current_user.can('documents.delete') %}<form method="post" action="{{ url_for('patients.document_delete', patient_id=p.id, doc_id=d.id) }}" data-confirm="Delete this attachment permanently?">{{ csrf() }}<button class="btn btn-danger btn-sm">Delete</button></form>{% endif %}</td></tr>
 {% else %}<tr><td colspan="5">{{ empty('No documents') }}</td></tr>{% endfor %}</tbody></table></div>
 {% if current_user.can('documents.upload') %}
 <form method="post" action="{{ url_for('patients.upload', patient_id=p.id) }}" enctype="multipart/form-data" class="toolbar mt-1">{{ csrf() }}
 <div class="field"><label for="dc">Type</label><select id="dc" name="category">{% for k, (lab, is_cl) in doc_categories.items() if clinical or not is_cl %}<option value="{{ k }}">{{ lab }}</option>{% endfor %}</select></div>
+<div class="field"><label for="dn">File name <span class="hint">Optional, e.g. Panoramic x-ray before extraction</span></label><input id="dn" name="title" maxlength="120"></div>
 <div class="field grow"><label for="df">File (PDF, JPG, PNG or WebP, up to 10 MB)</label><input id="df" type="file" name="file" accept="application/pdf,image/jpeg,image/png,image/webp" required></div>
 <button class="btn btn-secondary">Upload</button></form>
 <p class="hint">Files are stored privately under random names, and only authorised staff can open them. Each time someone opens a file, it's logged.</p>{% endif %}
