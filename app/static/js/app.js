@@ -878,3 +878,11 @@ document.addEventListener('DOMContentLoaded', function () {
   setInterval(poll, 6000);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) poll(); });
 })();
+
+/* Account menu: close when clicking elsewhere or pressing Escape. */
+(function () {
+  var m = document.getElementById('me-menu');
+  if (!m) return;
+  document.addEventListener('click', function (e) { if (m.open && !m.contains(e.target)) m.open = false; });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && m.open) { m.open = false; m.querySelector('summary').focus(); } });
+})();

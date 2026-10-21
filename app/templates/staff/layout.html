@@ -33,6 +33,7 @@
     {%- endmacro %}
     <div class="nav-group nav-top">
       {{ nav('dash.home', 'Dashboard') }}
+      {% if current_user.can('attendance.clock') %}{{ nav('timeclock.clock', '⏱ Time in / out', 'timeclock.clock') }}{% endif %}
       {{ nav('announce.index', 'Announcements & duty', 'announce.') }}
       {{ nav('chat.index', 'Group chat', 'chat.', nav_counts.get('chat')) }}
       {% if nav_lab_queue or current_user.can('bookings.manage') or current_user.can('bookings.view') or current_user.can('leads.view') or current_user.can('followups.view') %}
@@ -70,7 +71,6 @@
       {% if current_user.can('inventory.manage') %}{{ nav('inventory.items', 'Items & prices', 'inventory.items') }}{% endif %}
     {% endcall %}
     {% call group('Staff & payroll', 'staff') %}
-      {% if current_user.can('attendance.clock') %}{{ nav('timeclock.clock', 'Time clock', 'timeclock.clock') }}{% endif %}
       {% if current_user.can('leave.request') or current_user.can('leave.approve') %}{{ nav('leave.index', 'Leave forms', 'leave.', nav_counts.get('leave')) }}{% endif %}
       {% if current_user.can('reimburse.request') or current_user.can('reimburse.approve') %}{{ nav('reimburse.index', 'Reimbursements', 'reimburse.', nav_counts.get('reimburse')) }}{% endif %}
       {% if current_user.can('attendance.view') %}{{ nav('people.attendance', 'Attendance (DTR)', 'people.attendance') }}{% endif %}
@@ -119,8 +119,16 @@
       <div class="spacer"></div>
       <a class="bell" href="{{ url_for('notifications.index') }}" aria-label="Notifications{% if nav_unread %}: {{ nav_unread }} unread{% endif %}"><span aria-hidden="true">🔔</span>{% if nav_unread %}<span class="count">{{ nav_unread }}</span>{% endif %}</a>
       <div class="who hide-sm"><strong>{{ current_user.name }}</strong><br><small>{{ ROLES[current_user.access_role] }}</small></div>
-      <a class="me-link" href="{{ url_for('profile.account') }}" aria-label="My profile" title="My profile">{{ avatar(current_user.id, current_user.name, current_user.avatar, 34) }}</a>
-      <form method="post" action="{{ url_for('auth.logout') }}">{{ csrf() }}<button class="btn btn-secondary btn-sm" type="submit">Sign out</button></form>
+      <details class="me-menu" id="me-menu">
+        <summary class="me-link" aria-label="Account menu" title="Account">{{ avatar(current_user.id, current_user.name, current_user.avatar, 34) }}<span class="me-caret" aria-hidden="true">▾</span></summary>
+        <div class="me-pop" role="menu">
+          <div class="me-head">{{ avatar(current_user.id, current_user.name, current_user.avatar, 40) }}<div><strong>{{ current_user.name }}</strong><br><small class="muted">{{ ROLES[current_user.access_role] }}</small></div></div>
+          <a role="menuitem" href="{{ url_for('profile.account') }}">👤 Profile settings</a>
+          <a role="menuitem" href="{{ url_for('auth.change_password') }}">🔑 Change password</a>
+          {% if current_user.can('attendance.clock') %}<a role="menuitem" href="{{ url_for('timeclock.clock') }}">⏱ Time in / out</a>{% endif %}
+          <form method="post" action="{{ url_for('auth.logout') }}">{{ csrf() }}<button type="submit" role="menuitem" class="me-out">↪ Sign out</button></form>
+        </div>
+      </details>
     </header>
     <main id="main" class="content">
       {{ flashes() }}
