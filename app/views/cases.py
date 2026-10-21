@@ -17,6 +17,7 @@ from ..util import clean, parse_date, to_int, today
 bp = Blueprint("cases", __name__, url_prefix="/staff/my-cases")
 
 ORTHO = "Orthodontics & TMJ"
+GENERAL = "General / other"     # procedures without a service, and assigned patients with nothing coded yet
 
 
 def _dentist():
@@ -41,8 +42,11 @@ def _months_between(a: date, b: date) -> list[str]:
 
 def build_cases(conn, dentist_id: int) -> list[dict]:
     """One case per (patient, category) for patients assigned to the dentist or treated by them."""
-    pats = {r["patient_id"] for r in conn.all("SELECT patient_id FROM patient_assignments WHERE dentist_id = ?", (dentist_id,))}
+    assigned = {r["patient_id"] for r in conn.all("SELECT patient_id FROM patient_assignments WHERE dentist_id = ?", (dentist_id,))}
+    pats = set(assigned)
     pats |= {r["patient_id"] for r in conn.all("SELECT DISTINCT patient_id FROM procedures WHERE performed_by = ?", (dentist_id,))}
+    pats |= {r["patient_id"] for r in conn.all("SELECT DISTINCT patient_id FROM visit_notes WHERE dentist_id = ? AND status = 'saved' "
+                                               "AND cancelled_at IS NULL", (dentist_id,))}
     if not pats:
         return []
     marks = ",".join("?" * len(pats))
@@ -52,19 +56,28 @@ def build_cases(conn, dentist_id: int) -> list[dict]:
     def case(pid, cat):
         return cases.setdefault((pid, cat), {"patient_id": pid, "category": cat, "visits": [], "billed": 0, "paid": 0, "next": None})
 
-    for r in conn.all(f"SELECT p.patient_id, s.category, substr(COALESCE(p.performed_at, p.created_at), 1, 10) AS d FROM procedures p "
-                      f"JOIN services s ON s.id = p.service_id WHERE p.status = 'completed' AND p.patient_id IN ({marks})", P):
+    for r in conn.all(f"SELECT p.patient_id, COALESCE(s.category, ?) AS category, substr(COALESCE(p.performed_at, p.created_at), 1, 10) AS d "
+                      f"FROM procedures p LEFT JOIN services s ON s.id = p.service_id WHERE p.status = 'completed' AND p.patient_id IN ({marks})",
+                      [GENERAL, *P]):
         case(r["patient_id"], r["category"])["visits"].append(r["d"])
+    # saved progress notes (visits) with no coded procedure still count as a visit
+    for r in conn.all(f"SELECT v.patient_id, v.visit_date AS d FROM visit_notes v WHERE v.status = 'saved' AND v.cancelled_at IS NULL "
+                      f"AND v.patient_id IN ({marks}) AND NOT EXISTS (SELECT 1 FROM procedures p WHERE p.visit_note_id = v.id AND p.status = 'completed')", P):
+        case(r["patient_id"], GENERAL)["visits"].append(r["d"][:10])
+    # assigned patients with nothing recorded yet are still the dentist's cases
+    for pid in assigned:
+        if not any(k[0] == pid for k in cases):
+            case(pid, GENERAL)
     for r in conn.all(f"SELECT i.patient_id, s.category, SUM(ii.amount_cents) AS billed, i.id AS inv, i.total_cents, "
                       "(SELECT COALESCE(SUM(CASE WHEN kind = 'payment' THEN amount_cents ELSE -amount_cents END), 0) FROM payments "
                       " WHERE invoice_id = i.id AND status = 'valid') AS paid "
-                      f"FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id JOIN services s ON s.id = ii.service_id "
+                      f"FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id LEFT JOIN services s ON s.id = ii.service_id "
                       f"WHERE i.status = 'issued' AND i.patient_id IN ({marks}) GROUP BY i.id, s.category", P):
-        c = case(r["patient_id"], r["category"])
+        c = case(r["patient_id"], r["category"] or GENERAL)
         c["billed"] += r["billed"]
         c["paid"] += round(r["paid"] * r["billed"] / r["total_cents"]) if r["total_cents"] else 0
-    for r in conn.all(f"SELECT a.patient_id, s.category, MIN(a.start_at) AS nxt FROM appointments a JOIN services s ON s.id = a.service_id "
-                      f"WHERE a.patient_id IN ({marks}) AND a.status IN ('requested', 'confirmed') AND a.start_at >= ? GROUP BY a.patient_id, s.category",
+    for r in conn.all(f"SELECT a.patient_id, COALESCE(s.category, '{GENERAL}') AS category, MIN(a.start_at) AS nxt FROM appointments a LEFT JOIN services s ON s.id = a.service_id "
+                      f"WHERE a.patient_id IN ({marks}) AND a.status IN ('requested', 'confirmed') AND a.start_at >= ? GROUP BY a.patient_id, 2",
                       [*P, today().isoformat()]):
         if (r["patient_id"], r["category"]) in cases:
             cases[(r["patient_id"], r["category"])]["next"] = r["nxt"]
@@ -74,7 +87,7 @@ def build_cases(conn, dentist_id: int) -> list[dict]:
     t = today()
     for c in cases.values():
         p = info.get(c["patient_id"])
-        if not p or not (c["visits"] or c["billed"]):
+        if not p or not (c["visits"] or c["billed"] or (c["patient_id"] in assigned and c["category"] == GENERAL)):
             continue
         v = sorted(c["visits"])
         c.update(patient=p, first=v[0] if v else None, last=v[-1] if v else None, n=len(v), balance=max(0, c["billed"] - c["paid"]))
@@ -88,7 +101,7 @@ def build_cases(conn, dentist_id: int) -> list[dict]:
             ds = c["days_since"]
             c["adjust"] = "ok" if ds is not None and ds <= 35 else ("due" if ds is not None and ds <= 45 else "overdue")
         out.append(c)
-    out.sort(key=lambda c: (c["category"], c["patient"]["last_name"], c["patient"]["first_name"]))
+    out.sort(key=lambda c: (c["category"] == GENERAL, c["category"], c["patient"]["last_name"], c["patient"]["first_name"]))
     return out
 
 
@@ -133,23 +146,30 @@ def detail(patient_id):
     if not c:
         abort(404)        # only your own cases
     visits = conn.all("SELECT COALESCE(p.performed_at, p.created_at) AS at, p.description, p.tooth, s.name AS service, u.name AS dentist, b.name AS branch "
-                      "FROM procedures p JOIN services s ON s.id = p.service_id LEFT JOIN users u ON u.id = p.performed_by "
-                      "LEFT JOIN branches b ON b.id = p.branch_id WHERE p.patient_id = ? AND s.category = ? AND p.status = 'completed' "
-                      "ORDER BY at DESC", (patient_id, cat))
+                      "FROM procedures p LEFT JOIN services s ON s.id = p.service_id LEFT JOIN users u ON u.id = p.performed_by "
+                      "LEFT JOIN branches b ON b.id = p.branch_id WHERE p.patient_id = ? AND COALESCE(s.category, ?) = ? AND p.status = 'completed' "
+                      "ORDER BY at DESC", (patient_id, GENERAL, cat))
+    if cat == GENERAL:
+        visits = list(visits) + conn.all(
+            "SELECT v.visit_date AS at, 'Progress note' AS description, '' AS tooth, '—' AS service, u.name AS dentist, b.name AS branch "
+            "FROM visit_notes v LEFT JOIN users u ON u.id = v.dentist_id LEFT JOIN branches b ON b.id = v.branch_id WHERE v.patient_id = ? "
+            "AND v.status = 'saved' AND v.cancelled_at IS NULL AND NOT EXISTS (SELECT 1 FROM procedures p WHERE p.visit_note_id = v.id "
+            "AND p.status = 'completed')", (patient_id,))
+        visits.sort(key=lambda r: r["at"] or "", reverse=True)
     bills = conn.all("SELECT i.id, i.number, i.issued_at, i.total_cents, b.name AS branch, "
-                     "(SELECT COALESCE(SUM(ii.amount_cents), 0) FROM invoice_items ii JOIN services s ON s.id = ii.service_id "
-                     " WHERE ii.invoice_id = i.id AND s.category = ?) AS case_amount, "
+                     "(SELECT COALESCE(SUM(ii.amount_cents), 0) FROM invoice_items ii LEFT JOIN services s ON s.id = ii.service_id "
+                     " WHERE ii.invoice_id = i.id AND COALESCE(s.category, ?) = ?) AS case_amount, "
                      "(SELECT COALESCE(SUM(CASE WHEN kind = 'payment' THEN amount_cents ELSE -amount_cents END), 0) FROM payments "
                      " WHERE invoice_id = i.id AND status = 'valid') AS paid "
                      "FROM invoices i LEFT JOIN branches b ON b.id = i.branch_id WHERE i.patient_id = ? AND i.status = 'issued' "
-                     "AND EXISTS (SELECT 1 FROM invoice_items ii JOIN services s ON s.id = ii.service_id WHERE ii.invoice_id = i.id AND s.category = ?) "
-                     "ORDER BY i.issued_at DESC", (cat, patient_id, cat))
+                     "AND EXISTS (SELECT 1 FROM invoice_items ii LEFT JOIN services s ON s.id = ii.service_id WHERE ii.invoice_id = i.id "
+                     "AND COALESCE(s.category, ?) = ?) ORDER BY i.issued_at DESC", (GENERAL, cat, patient_id, GENERAL, cat))
     inv_ids = [x["id"] for x in bills]
     payments = conn.all(f"SELECT p.*, i.number FROM payments p JOIN invoices i ON i.id = p.invoice_id WHERE p.status = 'valid' "
                         f"AND p.invoice_id IN ({','.join('?' * len(inv_ids)) or 'NULL'}) ORDER BY p.received_at DESC", inv_ids)
     upcoming = conn.all("SELECT a.start_at, a.status, s.name AS service, u.name AS dentist, b.name AS branch FROM appointments a "
-                        "JOIN services s ON s.id = a.service_id LEFT JOIN users u ON u.id = a.dentist_id LEFT JOIN branches b ON b.id = a.branch_id "
-                        "WHERE a.patient_id = ? AND s.category = ? AND a.status IN ('requested','confirmed') AND a.start_at >= ? ORDER BY a.start_at",
-                        (patient_id, cat, today().isoformat()))
+                        "LEFT JOIN services s ON s.id = a.service_id LEFT JOIN users u ON u.id = a.dentist_id LEFT JOIN branches b ON b.id = a.branch_id "
+                        "WHERE a.patient_id = ? AND COALESCE(s.category, ?) = ? AND a.status IN ('requested','confirmed') AND a.start_at >= ? ORDER BY a.start_at",
+                        (patient_id, GENERAL, cat, today().isoformat()))
     return render_template("staff/cases/detail.html", c=c, visits=visits, bills=bills, payments=payments, upcoming=upcoming, ORTHO=ORTHO,
                            did=did if g.user.is_super_admin else None)

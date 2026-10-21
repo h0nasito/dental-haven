@@ -52,3 +52,34 @@ class TestCases(Base):
         self.assertEqual(self.login("reception.malolos").get("/staff/my-cases/").status_code, 403)
         # super admin can choose the dentist
         self.assertIn("Orthocase", self.login("admin").get(f"/staff/my-cases/?dentist={doc}").data.decode())
+
+    def test_assigned_patients_always_show(self):
+        """A patient assigned to the dentist shows even with nothing coded yet: no procedures at all, a procedure
+        without a service (e.g. imported), or only a saved progress note."""
+        from app.util import now_str, today
+        doc = self.q("SELECT id FROM users WHERE email LIKE 'dentist.malolos@%'")["id"]
+        bid = self.branch("malolos")
+        ids = []
+        for n in ("Nothingyet", "Noservice", "Onlynote"):
+            pid = self.conn.insert("patients", {"first_name": n, "last_name": "Assignedqt", "chart_no": f"DH-QA{n[:3]}", "preferred_branch_id": bid,
+                                                "created_at": now_str(), "updated_at": now_str()})
+            self.conn.execute("INSERT INTO patient_assignments (patient_id, dentist_id, created_at) VALUES (?, ?, ?)", (pid, doc, now_str()))
+            ids.append(pid)
+        d = today().isoformat()
+        self.conn.insert("procedures", {"patient_id": ids[1], "service_id": None, "branch_id": bid, "description": "Imported: cleaning",
+                                        "status": "completed", "performed_by": doc, "performed_at": d + " 09:00:00", "created_at": d + " 09:00:00"})
+        self.conn.insert("visit_notes", {"patient_id": ids[2], "branch_id": bid, "dentist_id": doc, "visit_date": d, "status": "saved",
+                                         "body": "Check-up", "created_at": now_str()})
+        c = self.login("dentist.malolos")
+        page = c.get("/staff/my-cases/").data.decode()
+        for n in ("Nothingyet", "Noservice", "Onlynote"):
+            self.assertIn(n, page)
+        self.assertIn("General / other", page)
+        # with a visit-date filter, only the ones seen in that range
+        page = c.get(f"/staff/my-cases/?from={d}&to={d}").data.decode()
+        self.assertIn("Noservice", page)
+        self.assertIn("Onlynote", page)
+        self.assertNotIn("Nothingyet", page)
+        r = c.get(f"/staff/my-cases/{ids[2]}?type=General / other")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("Progress note", r.data.decode())
