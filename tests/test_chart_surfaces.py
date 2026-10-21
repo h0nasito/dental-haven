@@ -116,5 +116,5 @@ class TestChartBatch(Base):
         c.post(f"/staff/patients/{pid}/chart", data={"items": json.dumps([{"tooth": "17", "condition": "caries"}, {"tooth": "99", "condition": "caries"}])})
         self.assertEqual(self.q("SELECT COUNT(*) AS n FROM chart_entries WHERE patient_id = ? AND deleted = 0", (pid,))["n"], before + 3)
         page = c.get(f"/staff/patients/{pid}?tab=chart").data.decode()
-        self.assertIn('id="chart-add"', page)
+        self.assertIn('id="chart-pending"', page)
         self.assertIn("data-hist=", page)

@@ -1034,7 +1034,8 @@ document.addEventListener('change', function (e) {
   paint();
 })();
 
-/* Dental chart: pick teeth on the chart, add each to a list (previewed on the chart), save them all at once */
+/* Dental chart: pick a tooth, choose finding + surfaces; moving to another tooth keeps it as a draft (shown on the chart, dashed).
+   One save records every tooth marked. Tapping a marked tooth again brings its draft back into the form. */
 (function () {
   var svg = document.getElementById('tooth-preview');
   if (!svg) return;
@@ -1048,16 +1049,17 @@ document.addEventListener('change', function (e) {
     hist = histCard ? JSON.parse(histCard.getAttribute('data-hist') || '{}') : {};
   } catch (e) { return; }
   batch.hidden = false;
-  var pending = [], original = {};
-  function chartTooth(t) { var a = document.querySelector('.odo a.otooth[href*="tooth=' + t + '#"]'); return a; }
-  function surfacesNow() {
-    return Array.prototype.filter.call(form.querySelectorAll('input[data-surface]'), function (b) { return b.checked; })
-      .map(function (b) { return b.getAttribute('data-surface'); }).join('');
-  }
+  var drafts = {}, order = [], original = {}, cur = toothSel.value, touched = false, quiet = false;
+  function chartTooth(t) { return document.querySelector('.odo a.otooth[href*="tooth=' + t + '#"]'); }
+  function boxes() { return form.querySelectorAll('input[data-surface]'); }
+  function surfacesNow() { return Array.prototype.filter.call(boxes(), function (b) { return b.checked; }).map(function (b) { return b.getAttribute('data-surface'); }).join(''); }
+  function formItem() { return { tooth: cur, condition: condSel.value, surfaces: surfacesNow(), note: (noteIn.value || '').trim() }; }
   function condLabel(c) { var o = condSel.querySelector('option[value="' + c + '"]'); return o ? o.textContent : c; }
-  /* draw one pending entry on the chart tooth */
   function drawOn(t, item) {
     var a = chartTooth(t); if (!a) return;
+    if (!(t in original)) original[t] = a.innerHTML;
+    a.innerHTML = original[t];
+    if (!item) { a.classList.remove('pending'); return; }
     var s = a.querySelector('svg'), rg = regions[t] || {}, fill = fills[item.condition] || 'f-sel', mk = marks[item.condition] || '';
     if (item.surfaces) {
       Array.prototype.forEach.call(s.querySelectorAll('[data-pos]'), function (el) {
@@ -1074,21 +1076,28 @@ document.addEventListener('change', function (e) {
     a.querySelector('.otag').textContent = tags[item.condition] || '';
     a.classList.add('pending');
   }
-  function redrawTooth(t) {
-    var a = chartTooth(t); if (!a) return;
-    if (original[t]) { a.innerHTML = original[t]; a.classList.remove('pending'); }
-    pending.filter(function (p) { return p.tooth === t; }).forEach(function (p) { drawOn(t, p); });
+  function all() {   /* every tooth marked, in the order they were done, with the current one as it is in the form */
+    var out = order.filter(function (t) { return drafts[t] && t !== cur; }).map(function (t) { return drafts[t]; });
+    if (touched) out.push(formItem());
+    return out;
   }
   function renderList() {
     list.textContent = '';
-    pending.forEach(function (p, i) {
-      var li = document.createElement('li'); li.className = 'row between';
-      var sp = document.createElement('span'); sp.textContent = 'Tooth ' + p.tooth + ' · ' + condLabel(p.condition) + (p.surfaces ? ' (' + p.surfaces + ')' : '') + (p.note ? ' · ' + p.note : '');
-      var b = document.createElement('button'); b.type = 'button'; b.className = 'btn btn-ghost btn-sm'; b.textContent = '✕'; b.setAttribute('aria-label', 'Remove from list');
-      b.addEventListener('click', function () { var t = pending[i].tooth; pending.splice(i, 1); redrawTooth(t); renderList(); });
+    var items = all();
+    items.forEach(function (p) {
+      var li = document.createElement('li'); li.className = 'row between' + (p.tooth === cur ? ' current' : '');
+      var sp = document.createElement('a'); sp.href = '#rec'; sp.textContent = 'Tooth ' + p.tooth + ' · ' + condLabel(p.condition) + (p.surfaces ? ' (' + p.surfaces + ')' : '') + (p.note ? ' · ' + p.note : '');
+      sp.addEventListener('click', function (e) { e.preventDefault(); go(p.tooth); });
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'btn btn-ghost btn-sm'; b.textContent = '✕'; b.setAttribute('aria-label', 'Remove tooth ' + p.tooth);
+      b.addEventListener('click', function () {
+        delete drafts[p.tooth]; order = order.filter(function (t) { return t !== p.tooth; });
+        if (p.tooth === cur) { Array.prototype.forEach.call(boxes(), function (x) { x.checked = false; }); noteIn.value = ''; quiet = true; condSel.dispatchEvent(new Event('change', { bubbles: true })); quiet = false; touched = false; }
+        drawOn(p.tooth, null); renderList();
+      });
       li.appendChild(sp); li.appendChild(b); list.appendChild(li);
     });
-    saveBtn.textContent = pending.length ? 'Save all to chart (' + pending.length + ')' : 'Save to chart';
+    batch.querySelector('.chart-none').hidden = items.length > 0;
+    saveBtn.textContent = items.length > 1 ? 'Save all to chart (' + items.length + ' teeth)' : 'Save to chart';
   }
   function showHistory(t) {
     if (!histCard) return;
@@ -1108,35 +1117,41 @@ document.addEventListener('change', function (e) {
     var more = document.createElement('a'); more.href = '?tab=chart&tooth=' + t + '#rec'; more.className = 'btn btn-ghost btn-sm mt-1';
     more.textContent = 'Open full history (photos, delete)'; histCard.appendChild(more);
   }
-  function selectTooth(t) {
-    toothSel.value = t; toothSel.dispatchEvent(new Event('change', { bubbles: true }));
+  /* leave the current tooth (keeping what was chosen) and open tooth t */
+  function go(t) {
+    if (touched) { drafts[cur] = formItem(); if (order.indexOf(cur) === -1) order.push(cur); }
+    cur = t; toothSel.value = t;
+    var d = drafts[t];
+    Array.prototype.forEach.call(boxes(), function (b) { b.checked = !!(d && d.surfaces.indexOf(b.getAttribute('data-surface')) !== -1); });
+    noteIn.value = d ? d.note : '';
+    if (d) condSel.value = d.condition;
+    quiet = true; condSel.dispatchEvent(new Event('change', { bubbles: true })); quiet = false;   /* repaints the big tooth */
+    touched = !!d;
     Array.prototype.forEach.call(document.querySelectorAll('.odo a.otooth.selected'), function (a) { a.classList.remove('selected'); });
     var a = chartTooth(t); if (a) a.classList.add('selected');
-    showHistory(t);
+    showHistory(t); renderList();
   }
   document.querySelector('.odo').addEventListener('click', function (e) {
     var a = e.target.closest('a.otooth'); if (!a) return;
     e.preventDefault();
-    var m = a.getAttribute('href').match(/tooth=(\d+)/); if (m) selectTooth(m[1]);
+    var m = a.getAttribute('href').match(/tooth=(\d+)/); if (m && m[1] !== cur) go(m[1]);
     var r = form.getBoundingClientRect(); if (r.top > window.innerHeight || r.bottom < 0) form.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
-  toothSel.addEventListener('change', function () {
-    var a = chartTooth(toothSel.value);
-    Array.prototype.forEach.call(document.querySelectorAll('.odo a.otooth.selected'), function (x) { if (x !== a) x.classList.remove('selected'); });
-    if (a) a.classList.add('selected');
-  });
-  function addCurrent() {
-    var t = toothSel.value, item = { tooth: t, condition: condSel.value, surfaces: surfacesNow(), note: (noteIn.value || '').trim() };
-    var a = chartTooth(t); if (a && !(t in original)) original[t] = a.innerHTML;
-    pending.push(item); drawOn(t, item); renderList();
-    Array.prototype.forEach.call(form.querySelectorAll('input[data-surface]'), function (b) { b.checked = false; });
-    noteIn.value = ''; condSel.dispatchEvent(new Event('change', { bubbles: true }));
+  toothSel.addEventListener('change', function () { if (!quiet && toothSel.value !== cur) { var t = toothSel.value; toothSel.value = cur; go(t); } });
+  /* anything chosen for the tooth: draw it on the chart now */
+  function changed() {
+    if (quiet) return;
+    touched = true; drawOn(cur, formItem()); renderList();
   }
-  document.getElementById('chart-add').addEventListener('click', addCurrent);
+  condSel.addEventListener('change', changed);
+  noteIn.addEventListener('input', changed);
+  form.addEventListener('change', function (e) { if (e.target.hasAttribute && e.target.hasAttribute('data-surface')) changed(e); });
+  svg.addEventListener('click', function (e) { if (e.target.closest('[data-pos]')) setTimeout(changed, 0); });
   form.addEventListener('submit', function () {
-    if (!pending.length) { hidden.value = ''; return; }
-    if (surfacesNow() || (noteIn.value || '').trim()) addCurrent();     // what is still in the form is saved too
-    hidden.value = JSON.stringify(pending); pending = [];
+    var items = all();
+    hidden.value = items.length > 1 || (items.length === 1 && items[0].tooth !== toothSel.value) ? JSON.stringify(items) : '';
+    drafts = {}; order = []; touched = false;
   });
-  window.addEventListener('beforeunload', function (e) { if (pending.length) { e.preventDefault(); e.returnValue = ''; } });
+  window.addEventListener('beforeunload', function (e) { if (all().length) { e.preventDefault(); e.returnValue = ''; } });
+  renderList();
 })();

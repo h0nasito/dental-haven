@@ -300,8 +300,8 @@
 <div class="surf-checks">{% for k, l in surfaces.items() %}<label class="check"><input type="checkbox" name="surface_{{ k }}" value="1" data-surface="{{ k }}"> <b>{{ k }}</b> <small class="muted">{{ l }}</small></label>{% endfor %}</div></div></fieldset>
 <div class="form-grid"><div class="field"><label for="cd">Date</label><input id="cd" type="date" name="recorded_on" value="{{ today_iso }}" max="{{ today_iso }}"></div>
 <div class="field"><label for="cn">Note</label><input id="cn" name="note"></div></div>
-<div class="chart-batch js-only" hidden><button type="button" class="btn btn-secondary" id="chart-add">+ Add to list &amp; pick another tooth</button>
-<p class="hint">Tap a tooth on the chart, choose the finding and surfaces, then <strong>Add to list</strong>. The chart shows a preview (dashed outline = not saved yet). Repeat for other teeth, then save everything once.</p>
+<div class="chart-batch" hidden><strong class="chart-batch-h">Teeth to save</strong>
+<p class="hint chart-none">Tap a tooth on the chart, choose the finding and tap its surfaces. When you tap the next tooth, the one before is kept here (dashed on the chart). Save once for all of them.</p>
 <ul class="list-plain chart-pending" id="chart-pending"></ul><input type="hidden" name="items" id="chart-items"></div>
 <div class="field"><label for="cph">Photos <span class="hint">Optional, up to 6 (JPG, PNG, WebP or PDF, 10 MB each). Also saved in Uploads.</span></label><input id="cph" type="file" name="photos" multiple accept="image/jpeg,image/png,image/webp,application/pdf"></div>
 <button class="btn" id="chart-save">Save to chart</button></form></div>
