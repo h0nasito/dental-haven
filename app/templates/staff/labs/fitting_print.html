@@ -9,7 +9,7 @@
 
 <table class="fit-table"><tbody>
 <tr><th>Patient</th><td>{{ c.first_name }} {{ c.last_name }} <small class="muted">({{ c.chart_no }})</small></td><th>Dentist</th><td>{{ dentist.name if dentist else '—' }}{% if dentist and dentist.license_no %}<br><small class="muted">License no. {{ dentist.license_no }}</small>{% endif %}</td></tr>
-<tr><th>Case</th><td>{{ c.case_type }}</td><th>Laboratory</th><td>{{ c.lab }}</td></tr>
+<tr><th>Case</th><td>{% if c.units and c.units > 1 %}{{ c.units }} × {% endif %}{{ c.case_type }}</td><th>Laboratory</th><td>{{ c.lab }}</td></tr>
 <tr><th>Teeth</th><td>{{ c.teeth or '—' }}</td><th>Shade / material</th><td>{{ c.shade or '—' }}{% if c.material %} · {{ c.material }}{% endif %}</td></tr>
 <tr><th>Result</th><td colspan="3"><strong>{{ results[f.result] }}</strong></td></tr>
 {% if f.notes %}<tr><th>Changes / notes</th><td colspan="3">{{ f.notes }}</td></tr>{% endif %}

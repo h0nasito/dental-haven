@@ -23,11 +23,28 @@
 {% if w.shade %}<dt>Shade</dt><dd>{{ w.shade }}</dd>{% endif %}
 {% if w.material %}<dt>Material</dt><dd>{{ w.material }}</dd>{% endif %}
 <dt>Price per unit</dt><dd>{{ w.price_cents|peso if w.price_cents is not none else '—' }}{% if w.price_cents %} · total {{ (w.price_cents * w.units)|peso }}{% endif %}</dd>
+{% if extras %}<dt>Additional charges</dt><dd>{{ extras_total|peso }} <a href="#extras">({{ extras|length }})</a></dd>
+<dt>Total to bill</dt><dd><strong>{{ ((w.price_cents or 0) * w.units + extras_total)|peso }}</strong></dd>{% endif %}
 <dt>Date received</dt><dd>{{ w.received_on|date }}</dd>
 <dt>Due date</dt><dd>{{ w.due_on|date if w.due_on else '—' }}{% if w.due_on and w.due_on < today and w.status in LAB_LATE %} <span class="badge badge-red">Overdue</span>{% endif %}</dd>
 <dt>Date delivered</dt><dd>{{ w.delivered_on|date if w.delivered_on else '—' }}</dd>
 </dl>
 {% if w.instructions %}<p class="pre"><strong>Instructions:</strong> {{ w.instructions }}</p>{% endif %}
+</div>
+<div class="card" id="extras"><h2>Additional charges</h2>
+<p class="hint mt-0">Extra items billed with this work, e.g. 3D printed cast, rush fee, individual tray.</p>
+{% if extras %}<ul class="list-plain">{% for x in extras %}<li class="row between" style="border-top:1px solid var(--line);padding:.45rem 0;gap:.5rem"><span>{{ x.description }} <small class="muted">· {{ x.qty }} × {{ x.unit_price_cents|peso }}</small></span>
+<span class="row" style="gap:.4rem"><strong>{{ (x.qty * x.unit_price_cents)|peso }}</strong>{% if not w.invoice_id %}<form method="post">{{ csrf() }}<input type="hidden" name="action" value="remove_extra"><input type="hidden" name="extra_id" value="{{ x.id }}"><button class="btn btn-ghost btn-sm" aria-label="Remove {{ x.description }}" data-confirm="Remove {{ x.description }}?">✕</button></form>{% endif %}</span></li>{% endfor %}</ul>
+{% else %}<p class="muted">None yet.</p>{% endif %}
+{% if w.invoice_id %}<p class="hint mb-0">This work is already on an invoice: add or remove charges on the invoice.</p>
+{% else %}<form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="add_extra"><input type="hidden" name="x_case" value="0">
+<div class="extra-row form-grid">
+{% if extras_prices %}<div class="field"><label for="xpl">From the price list</label><select id="xpl" data-price-pick data-desc="row" data-price="row"><option value="">— Pick an item —</option>
+{% set ns = namespace(cat=None) %}{% for it in extras_prices %}{% if it.category != ns.cat %}{% if ns.cat is not none %}</optgroup>{% endif %}{% set ns.cat = it.category %}<optgroup label="{{ it.category or 'Other' }}">{% endif %}<option data-name="{{ it.name }}" data-price="{{ '%.2f'|format(it.price_cents / 100) }}">{{ it.name }} · {{ it.price_cents|peso }}{% if it.unit %} {{ it.unit }}{% endif %}</option>{% if loop.last %}</optgroup>{% endif %}{% endfor %}</select></div>{% endif %}
+<div class="field"><label for="xd">Charge</label><input id="xd" name="x_desc" maxlength="200" placeholder="e.g. 3D printed cast" required></div>
+<div class="field"><label for="xq">Qty</label><input id="xq" name="x_qty" value="1" inputmode="numeric"></div>
+<div class="field"><label for="xp">Price each (₱)</label><input id="xp" name="x_price" inputmode="decimal" required></div>
+</div><button class="btn btn-secondary">+ Add charge</button></form>{% endif %}
 </div>
 <div class="card"><h2>Update status</h2>
 <form method="post">{{ csrf() }}
@@ -39,4 +56,9 @@
 <ul class="list-plain">{% for e in events %}<li><strong>{{ e.status|lab_status }}</strong> · {{ e.created_at|dt }} · {{ e.by_name or '—' }}{% if e.note %}<br><small class="muted">{{ e.note }}</small>{% endif %}</li>{% endfor %}</ul>
 </div></div>
 {% set comm_field, comm_id, comm_delivered = 'work_id', w.id, (w.delivered_on if w.status == 'delivered' else None) %}{% include "staff/lab_works/_commission.html" %}
+{% if current_user.is_super_admin %}<details class="card" style="border-color:var(--red-100)"><summary><strong>Remove this work</strong> <small class="muted">super admin · wrong input, duplicate…</small></summary>
+<form method="post" action="{{ url_for('lab_works.remove_work', work_id=w.id) }}" class="mt-1" data-confirm="Remove this work for good? It can't be undone (a copy is kept in the audit trail).">{{ csrf() }}
+<div class="field"><label for="rm-reason">Reason</label><input id="rm-reason" name="reason" maxlength="300" required placeholder="e.g. Duplicate entry, wrong patient"></div>
+<p class="hint">It disappears from all lists, queues and reports; its history and photos are removed too. Not possible once it's on an invoice or has a commission. To stop a real case instead, set its status to <strong>Cancelled</strong>.</p>
+<button class="btn btn-danger">Remove work</button></form></details>{% endif %}
 {% endblock %}

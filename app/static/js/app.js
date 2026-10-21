@@ -306,15 +306,20 @@ document.addEventListener('DOMContentLoaded', function () {
 
 /* Price list pickers: <select data-price-pick data-desc="#input" data-price="#input"> fills the description and price. */
 (function () {
-  document.querySelectorAll('select[data-price-pick]').forEach(function (sel) {
-    sel.addEventListener('change', function () {
-      var opt = sel.options[sel.selectedIndex];
-      if (!opt || !opt.getAttribute('data-price')) return;
-      var d = sel.getAttribute('data-desc') && document.querySelector(sel.getAttribute('data-desc'));
-      var p = sel.getAttribute('data-price') && document.querySelector(sel.getAttribute('data-price'));
-      if (d && opt.getAttribute('data-name')) d.value = opt.getAttribute('data-name');
-      if (p) p.value = opt.getAttribute('data-price');
-    });
+  // delegated, so pickers added later (e.g. another case on a new work) work too.
+  // data-price="block" fills the price box of the same case block.
+  document.addEventListener('change', function (e) {
+    var sel = e.target;
+    if (!sel.matches || !sel.matches('select[data-price-pick]')) return;
+    var opt = sel.options[sel.selectedIndex];
+    if (!opt || !opt.getAttribute('data-price')) return;
+    var dsel = sel.getAttribute('data-desc'), psel = sel.getAttribute('data-price');
+    var row = sel.closest('.extra-row');
+    var d = dsel === 'row' ? row.querySelector('[name="x_desc"]') : (dsel && document.querySelector(dsel));
+    var p = psel === 'row' ? row.querySelector('[name="x_price"]') :
+      (psel === 'block' ? sel.closest('.case-block').querySelector('[name="price"]') : (psel && document.querySelector(psel)));
+    if (d && opt.getAttribute('data-name')) d.value = opt.getAttribute('data-name');
+    if (p) p.value = opt.getAttribute('data-price');
   });
 })();
 
@@ -886,3 +891,64 @@ document.addEventListener('DOMContentLoaded', function () {
   document.addEventListener('click', function (e) { if (m.open && !m.contains(e.target)) m.open = false; });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && m.open) { m.open = false; m.querySelector('summary').focus(); } });
 })();
+
+
+/* New outside work: several cases in one go (+ Add another case / Remove). */
+(function () {
+  var wrap = document.getElementById('case-blocks');
+  var add = document.getElementById('add-case');
+  if (!wrap || !add) return;
+  function renumber() {
+    var blocks = wrap.querySelectorAll('.case-block');
+    blocks.forEach(function (b, i) {
+      var t = b.querySelector('.case-n'); if (t) t.textContent = (wrap.getAttribute('data-label') || 'Case') + ' ' + (i + 1);
+      var r = b.querySelector('.case-remove'); if (r) r.hidden = blocks.length < 2;
+      b.querySelectorAll('[data-id]').forEach(function (el) { el.id = el.getAttribute('data-id') + i; });
+      b.querySelectorAll('label[data-for]').forEach(function (l) { l.htmlFor = l.getAttribute('data-for') + i; });
+      b.querySelectorAll('input[name="x_case"]').forEach(function (h) { h.value = i; });   // which case each charge belongs to
+    });
+  }
+  add.addEventListener('click', function () {
+    var blocks = wrap.querySelectorAll('.case-block');
+    var last = blocks[blocks.length - 1];
+    var b = last.cloneNode(true);
+    b.querySelectorAll('input, textarea').forEach(function (el) { el.value = el.name === 'units' ? '1' : ''; });
+    b.querySelectorAll('select').forEach(function (el) { if (el.name !== 'case_type') el.selectedIndex = 0; });
+    b.querySelectorAll('.field-error').forEach(function (el) { el.remove(); });
+    b.querySelectorAll('.field.error').forEach(function (el) { el.classList.remove('error'); });
+    b.querySelectorAll('.extra-row').forEach(function (el) { el.remove(); });
+    b.querySelectorAll('.mat-new').forEach(function (el) { el.hidden = true; el.value = ''; });
+    b.querySelectorAll('select[name="material"]').forEach(function (el) { el.selectedIndex = 0; });
+
+    wrap.appendChild(b); renumber();
+    var f = b.querySelector('select[name="case_type"]'); if (f) f.focus();
+  });
+  var tpl = document.getElementById('extra-row-tpl');
+  wrap.addEventListener('click', function (e) {
+    var a = e.target.closest('.add-extra');
+    if (a && tpl) {
+      var rows = a.closest('.extras').querySelector('.extra-rows');
+      rows.appendChild(tpl.content.cloneNode(true)); renumber();
+      var last = rows.lastElementChild; var inp = last && last.querySelector('[name="x_desc"]'); if (inp) inp.focus();
+      return;
+    }
+    var x = e.target.closest('.extra-remove');
+    if (x) { x.closest('.extra-row').remove(); return; }
+    var r = e.target.closest('.case-remove'); if (!r) return;
+    if (wrap.querySelectorAll('.case-block').length < 2) return;
+    r.closest('.case-block').remove(); renumber();
+  });
+  renumber();
+})();
+
+
+
+/* Material: “+ New material…” shows a box to type it. */
+document.addEventListener('change', function (e) {
+  var sel = e.target;
+  if (!sel.matches || !sel.matches('select[name="material"]')) return;
+  var box = sel.parentNode.querySelector('.mat-new');
+  if (!box) return;
+  box.hidden = sel.value !== '__new__';
+  if (!box.hidden) box.focus(); else box.value = '';
+});

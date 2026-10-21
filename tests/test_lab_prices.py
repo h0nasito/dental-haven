@@ -89,7 +89,8 @@ class TestLabServices(TestLabCaseBilling):
         admin = self.login("admin")
         page = admin.get("/staff/lab/services").data.decode()
         self.assertIn("Crown (PFM)", page)
-        self.assertIn("Add a service", page)
+        self.assertIn("Add a type of case", page)
+        self.assertIn("E.max (lithium disilicate)", page)
         admin.post("/staff/lab/services", data={"action": "add", "name": "Crown (e.max QT)"})
         self.assertIn(">Crown (e.max QT)</option>", admin.get("/staff/lab/works/new").data.decode())
         row = self.q("SELECT * FROM lab_case_types WHERE name = 'Crown (e.max QT)'")
@@ -100,7 +101,10 @@ class TestLabServices(TestLabCaseBilling):
         admin.post("/staff/lab/services", data={"action": "add", "name": "crown (pfm)"})          # duplicate
         self.assertEqual(self.q("SELECT COUNT(*) AS n FROM lab_case_types WHERE lower(name) = 'crown (pfm)'")["n"], 1)
         # lab billing alone (no lab services & prices) can only view
-        self.assertNotIn("Add a service", self.t.get("/staff/lab/services").data.decode())
+        self.assertNotIn("Add a type of case", self.t.get("/staff/lab/services").data.decode())
+        # materials list
+        admin.post("/staff/lab/services", data={"list": "materials", "action": "add", "name": "Lithium QT"})
+        self.assertIn(">Lithium QT</option>", admin.get("/staff/lab/works/new").data.decode())
         self.assertEqual(self.t.post("/staff/lab/services", data={"action": "add", "name": "Nope QT"}).status_code, 403)
 
 

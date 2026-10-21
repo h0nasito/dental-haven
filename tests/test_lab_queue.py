@@ -75,3 +75,85 @@ class TestLabQueue(Base):
             self.assertIn("New from branches", both)
             self.assertIn("view=clinic", both)
         self.conn.execute("UPDATE lab_works SET status = 'cancelled' WHERE id = ?", (work,))
+
+    def test_send_several_items_to_lab(self):
+        lab = self.q("SELECT id FROM laboratories WHERE name = 'DSDL'")["id"]
+        doc = self.q("SELECT id FROM users WHERE email = ?", ("dentist.malolos" + DOMAIN,))["id"]
+        pid = self.q("SELECT patient_id AS id FROM patient_assignments WHERE dentist_id = ? LIMIT 1", (doc,))["id"]
+        d = self.login("dentist.malolos")
+        page = d.get(f"/staff/lab/new?patient_id={pid}").data.decode()
+        self.assertIn("+ Add another item", page)
+        before = self.q("SELECT COUNT(*) AS n FROM lab_cases")["n"]
+        # e.g. 5 units of crowns: 2 zirconia (11, 12) and 3 E.max (21, 22, 23), both shade A2
+        r = d.post("/staff/lab/new", data={"patient_id": pid, "lab_id": lab, "branch_id": self.branch("malolos"), "dentist_id": doc,
+                                           "sent_on": date.today().isoformat(), "due_on": "", "instructions_all": "Rush please",
+                                           "case_type": ["Crown (zirconia / all-ceramic)", "Crown (zirconia / all-ceramic)"],
+                                           "units": ["2", "3"], "teeth": ["11, 12", "21, 22, 23"], "shade": ["A2", "A2"],
+                                           "material": ["Zirconia", "E.max"], "lab_fee": ["11000", ""], "instructions": ["", "E.max press"]})
+        self.assertEqual(r.status_code, 302)
+        rows = self.conn.all("SELECT * FROM lab_cases WHERE patient_id = ? ORDER BY id DESC LIMIT 2", (pid,))[::-1]
+        self.assertEqual([(c["units"], c["teeth"], c["shade"], c["material"], c["lab_fee_cents"]) for c in rows],
+                         [(2, "11, 12", "A2", "Zirconia", 1100000), (3, "21, 22, 23", "A2", "E.max", None)])
+        self.assertIn("E.max press", rows[1]["instructions"])
+        self.assertIn("Rush please", rows[0]["instructions"])
+        self.assertEqual(self.q("SELECT COUNT(*) AS n FROM lab_cases")["n"], before + 2)
+        self.assertIn("3 × Crown (zirconia", d.get(f"/staff/lab/{rows[1]['id']}").data.decode())
+        # an item with bad units: nothing is saved
+        r = d.post("/staff/lab/new", data={"patient_id": pid, "lab_id": lab, "branch_id": self.branch("malolos"), "dentist_id": doc,
+                                           "sent_on": date.today().isoformat(), "case_type": ["Bridge", "Bridge"], "units": ["1", "0"],
+                                           "teeth": ["", ""], "shade": ["", ""], "material": ["", ""], "lab_fee": ["", ""], "instructions": ["", ""]})
+        self.assertIn("Item 2: enter the number of units", r.data.decode())
+        self.assertEqual(self.q("SELECT COUNT(*) AS n FROM lab_cases")["n"], before + 2)
+
+    def test_material_list_and_new_material(self):
+        lab = self.q("SELECT id FROM laboratories WHERE name = 'DSDL'")["id"]
+        doc = self.q("SELECT id FROM users WHERE email = ?", ("dentist.malolos" + DOMAIN,))["id"]
+        pid = self.q("SELECT patient_id AS id FROM patient_assignments WHERE dentist_id = ? LIMIT 1", (doc,))["id"]
+        d = self.login("dentist.malolos")
+        page = d.get(f"/staff/lab/new?patient_id={pid}").data.decode()
+        self.assertIn("+ New material", page)
+        self.assertIn(">Zirconia</option>", page)
+        # crown in E.max (11, 12) and a bridge in zirconia (23-25), plus a new material typed in
+        r = d.post("/staff/lab/new", data={"patient_id": pid, "lab_id": lab, "branch_id": self.branch("malolos"), "dentist_id": doc,
+                                           "sent_on": date.today().isoformat(),
+                                           "case_type": ["Crown (PFM)", "Bridge", "Veneer"], "units": ["2", "3", "1"],
+                                           "teeth": ["11, 12", "23, 24, 25", "13"], "shade": ["A2", "A2", "A1"],
+                                           "material": ["E.max (lithium disilicate)", "Zirconia", "__new__"], "material_new": ["", "", "Feldspathic QT"],
+                                           "lab_fee": ["", "", ""], "instructions": ["", "", ""]})
+        self.assertEqual(r.status_code, 302)
+        rows = self.conn.all("SELECT material FROM lab_cases WHERE patient_id = ? ORDER BY id DESC LIMIT 3", (pid,))[::-1]
+        self.assertEqual([x["material"] for x in rows], ["E.max (lithium disilicate)", "Zirconia", "Feldspathic QT"])
+        self.assertIsNotNone(self.q("SELECT id FROM lab_materials WHERE name = 'Feldspathic QT'"))
+        r = d.post("/staff/lab/new", data={"patient_id": pid, "lab_id": lab, "branch_id": self.branch("malolos"), "sent_on": date.today().isoformat(),
+                                           "case_type": "Bridge", "units": "1", "material": "__new__", "material_new": ""})
+        self.assertIn("type the new material", r.data.decode())
+
+    def test_super_admin_removes_wrong_lab_case(self):
+        lab = self.q("SELECT id FROM laboratories WHERE name = 'DSDL'")["id"]
+        doc = self.q("SELECT id FROM users WHERE email = ?", ("dentist.malolos" + DOMAIN,))["id"]
+        pid = self.q("SELECT patient_id AS id FROM patient_assignments WHERE dentist_id = ? LIMIT 1", (doc,))["id"]
+        d = self.login("dentist.malolos")
+        r = d.post("/staff/lab/new", data={"patient_id": pid, "lab_id": lab, "branch_id": self.branch("malolos"), "dentist_id": doc,
+                                           "sent_on": date.today().isoformat(), "case_type": "Bridge", "units": "1", "teeth": "99 QT"})
+        cid = int(r.headers["Location"].rstrip("/").split("/")[-1])
+        self.assertNotIn("Remove this lab case", d.get(f"/staff/lab/{cid}").data.decode())
+        self.assertEqual(d.post(f"/staff/lab/{cid}/remove", data={"reason": "dup"}).status_code, 403)
+        a = self.login("admin")
+        self.assertIn("Remove this lab case", a.get(f"/staff/lab/{cid}").data.decode())
+        a.post(f"/staff/lab/{cid}/remove", data={"reason": ""})                       # needs a reason
+        self.assertIsNotNone(self.q("SELECT id FROM lab_cases WHERE id = ?", (cid,)))
+        a.post(f"/staff/lab/{cid}/remove", data={"reason": "Duplicate entry"})
+        self.assertIsNone(self.q("SELECT id FROM lab_cases WHERE id = ?", (cid,)))
+        self.assertIsNone(self.q("SELECT id FROM lab_case_events WHERE case_id = ?", (cid,)))
+        log = self.q("SELECT * FROM audit_log WHERE action = 'lab_case_removed' ORDER BY id DESC LIMIT 1")
+        self.assertIn("Duplicate entry", log["summary"])
+        # a billed case can't be removed
+        r = d.post("/staff/lab/new", data={"patient_id": pid, "lab_id": lab, "branch_id": self.branch("malolos"), "dentist_id": doc,
+                                           "sent_on": date.today().isoformat(), "case_type": "Bridge", "units": "1"})
+        cid2 = int(r.headers["Location"].rstrip("/").split("/")[-1])
+        self.conn.execute("INSERT INTO lab_invoices (lab_id, client_id, clinic_name, status, created_at, updated_at) "
+                          "SELECT ?, id, clinic_name, 'draft', '2026-01-01', '2026-01-01' FROM lab_clients LIMIT 1", (lab,))
+        iid = self.q("SELECT MAX(id) AS id FROM lab_invoices")["id"]
+        self.conn.execute("INSERT INTO lab_invoice_items (invoice_id, case_id, description) VALUES (?, ?, 'x')", (iid, cid2))
+        a.post(f"/staff/lab/{cid2}/remove", data={"reason": "Wrong"})
+        self.assertIsNotNone(self.q("SELECT id FROM lab_cases WHERE id = ?", (cid2,)))

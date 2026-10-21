@@ -28,6 +28,11 @@ CASE_TYPES = ["Crown (PFM)", "Crown (zirconia / all-ceramic)", "Crown (metal)", 
 from ..lab_status import LATE, OPEN, STATUSES, sql_list  # noqa: E402
 
 
+PLAIN_TYPES = ["Crown", "Partial denture"]
+MATERIAL_TYPES = ["Crown (PFM)", "Crown (zirconia / all-ceramic)", "Crown (metal)", "Partial denture (acrylic)", "Partial denture (flexible)"]
+ITEM_FIELDS = ("case_type", "units", "teeth", "shade", "material", "material_new", "lab_fee", "instructions")
+
+
 def case_types(conn, include: str | None = None) -> list[str]:
     """The lab's services (types of case) in use, in order. The first time, the standard list is loaded.
     `include` keeps a case's current type in the list even if it was turned off."""
@@ -35,10 +40,58 @@ def case_types(conn, include: str | None = None) -> list[str]:
         from ..util import now_str
         for i, name in enumerate(CASE_TYPES):
             conn.execute("INSERT INTO lab_case_types (name, active, sort_order, created_at) VALUES (?, 1, ?, ?)", (name, i * 10, now_str()))
+    from .. import settings as _settings
+    if not _settings.get("lab.case_types_v2", conn):
+        # Once: the material is now chosen separately, so plain types (Crown, Partial denture) replace the
+        # material-specific ones, which are turned off (old cases keep them; the lab can turn them on again).
+        from ..util import now_str
+        for i, name in enumerate(PLAIN_TYPES):
+            if not conn.one("SELECT 1 AS x FROM lab_case_types WHERE name = ?", (name,)):
+                conn.execute("INSERT INTO lab_case_types (name, active, sort_order, created_at) VALUES (?, 1, ?, ?)", (name, -100 + i, now_str()))
+        for name in MATERIAL_TYPES:
+            conn.execute("UPDATE lab_case_types SET active = 0 WHERE name = ?", (name,))
+        _settings.put("lab.case_types_v2", True, None, conn)
     names = [r["name"] for r in conn.all("SELECT name FROM lab_case_types WHERE active = 1 ORDER BY sort_order, id")]
     if include and include not in names:
         names.append(include)
     return names
+
+
+MATERIALS = ["Zirconia", "E.max (lithium disilicate)", "PFM (porcelain fused to metal)", "Porcelain fused to zirconia", "Metal",
+             "Gold", "PMMA", "3D printed resin", "Composite", "Acrylic", "Flexible"]
+NEW = "__new__"
+
+
+def materials(conn, include: str | None = None) -> list[str]:
+    """The lab's materials in use, in order (the standard list is loaded the first time). `include` keeps a case's current one."""
+    if not conn.scalar("SELECT COUNT(*) FROM lab_materials"):
+        from ..util import now_str
+        for i, name in enumerate(MATERIALS):
+            conn.execute("INSERT INTO lab_materials (name, active, sort_order, created_at) VALUES (?, 1, ?, ?)", (name, i * 10, now_str()))
+    names = [r["name"] for r in conn.all("SELECT name FROM lab_materials WHERE active = 1 ORDER BY sort_order, id")]
+    if include and include not in names and include != NEW:
+        names.append(include)
+    return names
+
+
+def resolve_material(conn, chosen: str, typed: str) -> tuple[str, str | None]:
+    """The chosen material, or a new one typed after “+ New material…” (added to the lab's list). Returns (name, error)."""
+    if chosen != NEW:
+        return clean(chosen, 80), None
+    name = clean(typed, 80)
+    if len(name) < 2:
+        return "", "type the new material"
+    materials(conn)
+    have = conn.one("SELECT * FROM lab_materials WHERE lower(name) = lower(?)", (name,))
+    if have:
+        if not have["active"]:
+            conn.execute("UPDATE lab_materials SET active = 1 WHERE id = ?", (have["id"],))
+        return have["name"], None
+    from ..util import now_str
+    n = conn.scalar("SELECT COALESCE(MAX(sort_order), 0) + 10 FROM lab_materials")
+    conn.execute("INSERT INTO lab_materials (name, active, sort_order, created_at) VALUES (?, 1, ?, ?)", (name, n, now_str()))
+    audit.record("lab_material_added", "lab_material", None, f"Lab material added: {name}")
+    return name, None
 
 
 def is_case_type(conn, name: str) -> bool:
@@ -182,7 +235,7 @@ def new():
     errors = []
     v = {"lab_id": labs[0]["id"] if labs else None, "branch_id": g.user.active_branch_id or (patient["preferred_branch_id"] if patient else None),
          "dentist_id": g.user.id if g.user.role == "dentist" else None, "case_type": case_types(get_db())[0], "teeth": "", "shade": "",
-         "material": "", "instructions": "", "sent_on": today().isoformat(), "due_on": "", "lab_fee": ""}
+         "material": "", "instructions": "", "sent_on": today().isoformat(), "due_on": "", "lab_fee": "", "units": "1"}
     if request.method == "POST" and request.form.get("action") == "search":
         q = clean(request.form.get("q"), 80).lower()
         frag, params = patient_scope(g.user, "p")
@@ -191,45 +244,81 @@ def new():
                            "(lower(p.first_name || ' ' || p.last_name) LIKE ? OR lower(p.chart_no) LIKE ?) ORDER BY p.last_name LIMIT 20",
                            [*params, like, like]) if len(q) >= 2 else []
     elif request.method == "POST" and patient:
-        v = {k: clean(request.form.get(k), 1000) for k in v}
+        f = request.form
+        v = {k: clean(f.get(k), 1000) for k in v}
         lab_id, branch_id, dentist_id = to_int(v["lab_id"]), to_int(v["branch_id"]), to_int(v["dentist_id"])
         if not any(l["id"] == lab_id for l in labs):
             errors.append("Choose a laboratory.")
         if not branch_id or not g.user.in_branch(branch_id):
             errors.append("Choose one of your branches.")
-        if not is_case_type(conn, v["case_type"]):
-            errors.append("Choose the case type.")
         sent, due = parse_date(v["sent_on"]), parse_date(v["due_on"]) if v["due_on"] else None
         if not sent:
             errors.append("Enter the date sent.")
         if due and sent and due < sent:
             errors.append("The due date can't be before the date sent.")
-        fee = parse_money(v["lab_fee"]) if v["lab_fee"] else None
-        if v["lab_fee"] and fee is None:
-            errors.append("Enter the lab fee like 3500 or 3500.00.")
-        targets, terr = target_dates(request.form, sent)
+        targets, terr = target_dates(f, sent)
         errors += terr
-        v.update({k: request.form.get(k, "") for k in ("try_in_on", "install_on")}, no_try_in=targets["no_try_in"])
+        v.update({k: f.get(k, "") for k in ("try_in_on", "install_on")}, no_try_in=targets["no_try_in"])
+        # the items: one row per kind of work (e.g. 2 units zirconia crown, 3 units E.max crown)
+        cols = {k: f.getlist(k) for k in ITEM_FIELDS}
+        n = max((len(x) for x in cols.values()), default=0)
+        items = [{k: clean(cols[k][i] if i < len(cols[k]) else "", 1000) for k in ITEM_FIELDS} for i in range(n)]
+        parsed = []
+        for i, it in enumerate(items, 1):
+            label = f"Item {i}" if len(items) > 1 else "The case"
+            units = to_int(it["units"]) if it["units"] else 1
+            fee = parse_money(it["lab_fee"]) if it["lab_fee"] else None
+            if not is_case_type(conn, it["case_type"]):
+                errors.append(f"{label}: choose the case type.")
+            mat, merr = resolve_material(conn, it["material"], it["material_new"])
+            if merr:
+                errors.append(f"{label}: {merr}.")
+            else:
+                it["material"] = mat
+            if units is None or units < 1 or units > 99:
+                errors.append(f"{label}: enter the number of units (1 to 99).")
+            if it["lab_fee"] and (fee is None or fee < 0):
+                errors.append(f"{label}: enter the lab price like 3500 or 3500.00.")
+            parsed.append({**it, "units": units or 1, "fee": fee})
+        if not items:
+            errors.append("Add at least one item.")
         if not errors:
+            created = []
             with conn.transaction():
-                cid = conn.insert("lab_cases", {"lab_id": lab_id, "branch_id": branch_id, "patient_id": patient["id"], "dentist_id": dentist_id,
-                                                "case_type": v["case_type"], "teeth": v["teeth"][:60], "shade": v["shade"][:30],
-                                                "material": v["material"][:80], "instructions": v["instructions"], "status": "sent",
-                                                "sent_on": sent.isoformat(), "due_on": due.isoformat() if due else None, "lab_fee_cents": fee,
-                                                **targets,
-                                                "created_by": g.user.id, "created_at": now_str(), "updated_at": now_str()})
-                conn.insert("lab_case_events", {"case_id": cid, "user_id": g.user.id, "status": "sent", "note": "Case created", "created_at": now_str()})
-                n_photos, photo_errors = save_case_photos(conn, cid, request.files.getlist("photos"))
+                branch = conn.one("SELECT name FROM branches WHERE id = ?", (branch_id,))
+                for i, it in enumerate(parsed):
+                    instr = "\n".join(x for x in (it["instructions"], clean(f.get("instructions_all"), 1000)) if x)
+                    if i > 0 and created and any(x and x.filename for x in request.files.getlist("photos")):
+                        instr = (instr + "\n" if instr else "") + f"Reference photos: see lab case #{created[0]}."
+                    cid = conn.insert("lab_cases", {"lab_id": lab_id, "branch_id": branch_id, "patient_id": patient["id"], "dentist_id": dentist_id,
+                                                    "case_type": it["case_type"], "units": it["units"], "teeth": it["teeth"][:60],
+                                                    "shade": it["shade"][:30], "material": it["material"][:80], "instructions": instr,
+                                                    "status": "sent", "sent_on": sent.isoformat(), "due_on": due.isoformat() if due else None,
+                                                    "lab_fee_cents": it["fee"], **targets,
+                                                    "created_by": g.user.id, "created_at": now_str(), "updated_at": now_str()})
+                    conn.insert("lab_case_events", {"case_id": cid, "user_id": g.user.id, "status": "sent",
+                                                    "note": "Case created" + (f" (item {i + 1} of {len(parsed)})" if len(parsed) > 1 else ""),
+                                                    "created_at": now_str()})
+                    audit.record("lab_case_created", "patient", patient["id"], f"Lab case #{cid}: {it['units']} × {it['case_type']}",
+                                 {"lab_case_id": cid}, branch_id)
+                    created.append(cid)
+                n_photos, photo_errors = save_case_photos(conn, created[0], request.files.getlist("photos"))
                 for e_ in photo_errors:
                     flash(e_, "error")
-                audit.record("lab_case_created", "patient", patient["id"], f"Lab case #{cid}: {v['case_type']}", {"lab_case_id": cid}, branch_id)
-                branch = conn.one("SELECT name FROM branches WHERE id = ?", (branch_id,))
-                notify(conn, lab_staff(conn, lab_id), "lab_case_new", f"New lab case #{cid}: {v['case_type']}",
-                       f"From {branch['name'] if branch else 'a branch'}" + (f", due {due.isoformat()}" if due else ""), f"/staff/lab/{cid}",
+                what = f"{parsed[0]['units']} × {parsed[0]['case_type']}" if len(parsed) == 1 else f"{len(parsed)} items"
+                notify(conn, lab_staff(conn, lab_id), "lab_case_new",
+                       f"New lab case #{created[0]}: {what}" if len(created) == 1 else f"New lab cases #{created[0]}–#{created[-1]}: {what}",
+                       f"From {branch['name'] if branch else 'a branch'}" + (f", due {due.isoformat()}" if due else ""), f"/staff/lab/{created[0]}",
                        exclude=g.user.id)
-            flash("Lab case created.", "success")
-            return redirect(url_for("labs.case", case_id=cid))
-    return render_template("staff/labs/new.html", labs=labs, patient=patient, results=results, v=v, errors=errors, case_types=case_types(get_db(), v.get("case_type")),
+            if len(created) == 1:
+                flash("Lab case created.", "success")
+                return redirect(url_for("labs.case", case_id=created[0]))
+            flash(f"{len(created)} lab cases created: " + ", ".join(f"#{c}" for c in created) + ".", "success")
+            return redirect(url_for("patients.detail", patient_id=patient["id"]) + "#lab-cases")
+        v["items"] = items
+        v["instructions_all"] = f.get("instructions_all", "")
+    items = v.get("items") or [{k: v.get(k, "") for k in ITEM_FIELDS}]
+    return render_template("staff/labs/new.html", labs=labs, patient=patient, results=results, v=v, errors=errors, case_types=case_types(get_db()), items=items, materials=materials(get_db()),
                            branches=branches_for_user(g.user), dentists=dentists(g.user.branch_ids))
 
 
@@ -295,6 +384,51 @@ def case(case_id):
                            can_fit=_can_record_fitting(conn, c), fit_results=FIT_RESULTS, fit_checks=FIT_CHECKS,
                            agreement=agreement_text(conn, c), today=today().isoformat(),
                            fit_dentists=dentists([c["branch_id"]]))
+
+
+@bp.route("/<int:case_id>/remove", methods=["POST"])
+@login_required
+def remove_case(case_id):
+    """Super admin: remove a lab case entered by mistake (wrong input, duplicate…), with a reason. The audit trail keeps
+    a copy of its details. Not allowed once it is billed, has a commission, or has a trial fitting record."""
+    if not g.user.is_super_admin:
+        abort(403)
+    conn = get_db()
+    c = conn.one("SELECT * FROM lab_cases WHERE id = ?", (case_id,))
+    if not c:
+        abort(404)
+    reason = clean(request.form.get("reason"), 300)
+    back = redirect(url_for("labs.case", case_id=case_id))
+    if len(reason) < 3:
+        flash("Write the reason for removing this case (e.g. duplicate, wrong patient).", "error")
+        return back
+    blockers = []
+    if c["invoice_id"] or conn.scalar("SELECT COUNT(*) FROM lab_invoice_items WHERE case_id = ?", (case_id,)):
+        blockers.append("it is on a lab invoice (remove it from the invoice or void the invoice first)")
+    if conn.scalar("SELECT COUNT(*) FROM invoice_items WHERE lab_case_id = ?", (case_id,)):
+        blockers.append("it is linked to a patient's bill")
+    if conn.scalar("SELECT COUNT(*) FROM lab_commissions WHERE case_id = ?", (case_id,)):
+        blockers.append("it has a technician commission")
+    if conn.scalar("SELECT COUNT(*) FROM lab_case_fittings WHERE case_id = ?", (case_id,)):
+        blockers.append("it has a trial fitting record (set its status to Cancelled instead)")
+    if blockers:
+        flash("Can't remove this case: " + "; ".join(blockers) + ".", "error")
+        return back
+    photos = [r["stored_name"] for r in conn.all("SELECT stored_name FROM lab_case_photos WHERE case_id = ?", (case_id,))]
+    with conn.transaction():
+        conn.execute("DELETE FROM lab_case_photos WHERE case_id = ?", (case_id,))
+        conn.execute("DELETE FROM lab_case_events WHERE case_id = ?", (case_id,))
+        conn.execute("DELETE FROM lab_cases WHERE id = ?", (case_id,))
+        audit.record("lab_case_removed", "patient", c["patient_id"], f"Removed lab case #{case_id} ({c['case_type']}): {reason}",
+                     {"lab_case": {k: c[k] for k in c.keys()}, "reason": reason, "photos": len(photos)}, c["branch_id"])
+    from ..uploads import document_path
+    for name in photos:
+        try:
+            document_path(name).unlink(missing_ok=True)
+        except (OSError, ValueError):
+            pass
+    flash(f"Lab case #{case_id} removed. A record of it is kept in the audit trail.", "success")
+    return redirect(url_for("labs.index"))
 
 
 @bp.route("/<int:case_id>/photos", methods=["POST"])

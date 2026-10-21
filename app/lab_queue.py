@@ -40,7 +40,7 @@ def build(conn, ids: list[int], can_works: bool, can_billing: bool) -> dict:
     t = today()
     day, tomorrow = t.isoformat(), (t + timedelta(days=1)).isoformat()
     m = _marks(ids)
-    case_sel = ("SELECT c.id, c.case_type, c.status, c.due_on, c.sent_on, c.teeth, b.name AS branch, p.last_name, p.first_name, "
+    case_sel = ("SELECT c.id, c.case_type, c.units, c.status, c.due_on, c.sent_on, c.teeth, b.name AS branch, p.last_name, p.first_name, "
                 "l.name AS lab FROM lab_cases c JOIN branches b ON b.id = c.branch_id JOIN patients p ON p.id = c.patient_id "
                 f"JOIN laboratories l ON l.id = c.lab_id WHERE c.lab_id IN ({m}) ")
     work_sel = (f"SELECT w.id, w.number, w.case_type, w.status, w.due_on, w.clinic_name, w.units, w.price_cents, w.invoice_id "
@@ -99,7 +99,7 @@ def dashboard(conn, user, ids: list[int]) -> dict:
     m = _marks(ids)
     ongoing_keys = (*PRODUCTION, "try_in", "on_hold", "remake")
     ongoing = [dict(r, kind="case") for r in conn.all(
-        "SELECT c.id, c.case_type, c.status, c.due_on, c.teeth, b.name AS branch, p.last_name, p.first_name "
+        "SELECT c.id, c.case_type, c.units, c.status, c.due_on, c.teeth, b.name AS branch, p.last_name, p.first_name "
         "FROM lab_cases c JOIN branches b ON b.id = c.branch_id JOIN patients p ON p.id = c.patient_id "
         f"WHERE c.lab_id IN ({m}) AND c.status IN {sql_list(ongoing_keys)}", ids)]
     if can_works:

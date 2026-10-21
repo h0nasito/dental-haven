@@ -23,7 +23,7 @@ from ..db import get_db
 from ..notices import lab_staff, notify, run_lab_due_checks
 from ..uploads import IMAGE_TYPES, document_path, save_document, save_private_photo, sniff
 from ..util import clean, now_str, parse_date, parse_money, to_int, today
-from .labs import CASE_TYPES, case_types, is_case_type  # noqa: F401
+from .labs import CASE_TYPES, NEW, case_types, is_case_type, materials, resolve_material  # noqa: F401
 
 bp = Blueprint("lab_works", __name__, url_prefix="/staff/lab")
 
@@ -114,7 +114,8 @@ def branch_clients(conn, lab_ids) -> None:
 
 def case_label(c) -> str:
     """How a branch lab case appears on a lab invoice (chart number, not the patient's name)."""
-    return (f"Case #{c['id']} · {c['case_type']}" + (f" · {c['teeth']}" if c["teeth"] else "") + f" · {c['chart_no']}"
+    units = c["units"] if "units" in c.keys() and c["units"] else 1
+    return (f"Case #{c['id']} · " + (f"{units} × " if units > 1 else "") + f"{c['case_type']}" + (f" · {c['teeth']}" if c["teeth"] else "") + f" · {c['chart_no']}"
             + (f" · {c['dentist']}" if c["dentist"] else ""))[:200]
 
 
@@ -195,6 +196,11 @@ def _work_form(form, labs):
         errors["clinic_name"] = "Enter the dental clinic's name."
     if not is_case_type(get_db(), v["case_type"]):
         errors["case_type"] = "Choose the type of case."
+    mat, merr = resolve_material(get_db(), v["material"], form.get("material_new"))
+    if merr:
+        errors["material"] = "Type the new material."
+    else:
+        v["material"] = mat
     units = to_int(v["units"])
     if units is None or units < 1 or units > 99:
         errors["units"] = "Enter the number of units (1 to 99)."
@@ -288,6 +294,16 @@ def works():
                            clients=clients, arches=ARCHES, today=today().isoformat(), soon=(today() + timedelta(days=1)).isoformat())
 
 
+CASE_FIELDS = ("patient_ref", "case_type", "material_new", "units", "arch", "teeth", "shade", "material", "price", "instructions")
+
+
+def _multi_cases(form) -> list[dict]:
+    """The cases on a new outside work form, one dict per case block (lists of fields, same order)."""
+    cols = {k: form.getlist(k) for k in CASE_FIELDS}
+    n = max((len(x) for x in cols.values()), default=0)
+    return [{k: (cols[k][i] if i < len(cols[k]) else "") for k in CASE_FIELDS} for i in range(n)]
+
+
 @bp.route("/works/new", methods=["GET", "POST"])
 @login_required
 def work_new():
@@ -303,25 +319,57 @@ def work_new():
         if c:
             v.update({"lab_id": c["lab_id"], "clinic_name": c["clinic_name"], "doctor": c["doctor"], "contact_number": c["contact_number"]})
     errors = {}
+    cases = [{k: v.get(k, "") for k in CASE_FIELDS}]
+    case_errors: list[dict] = [{}]
     if request.method == "POST":
-        v, data, errors = _work_form(request.form, labs)
-        if not errors:
+        from werkzeug.datastructures import MultiDict
+        cases = _multi_cases(request.form) or [{k: "" for k in CASE_FIELDS}]
+        head = {k: request.form.get(k, "") for k in ("lab_id", "clinic_name", "doctor", "contact_number", "received_on", "due_on")}
+        parsed, case_errors = [], []
+        for c in cases:
+            v, data, errs = _work_form(MultiDict({**head, **c}), labs)
+            parsed.append(data)
+            case_errors.append({k: e for k, e in errs.items() if k in CASE_FIELDS})
+            for k, e in errs.items():
+                if k not in CASE_FIELDS:
+                    errors[k] = e
+        v = {**v, **head}
+        extras, xerr = _extras_from(request.form)
+        if xerr:
+            errors["extras"] = xerr
+        if not errors and not any(case_errors):
+            saved = []
             with conn.transaction():
-                cid = _client_for(conn, data["lab_id"], data["clinic_name"], data["doctor"], data["contact_number"])
-                number = _next_number(conn, "lab_works", "LW")
-                wid = conn.insert("lab_works", {**data, "number": number, "client_id": cid, "status": "accepted", "created_by": g.user.id,
-                                                "created_at": now_str(), "updated_at": now_str()})
-                conn.insert("lab_work_events", {"work_id": wid, "user_id": g.user.id, "status": "accepted", "note": "Work received", "created_at": now_str()})
-                notify(conn, lab_staff(conn, data["lab_id"]), "lab_new", f"New work {number}: {data['case_type']}",
-                       f"From {data['clinic_name']}" + (f", due {data['due_on']}" if data["due_on"] else ""), f"/staff/lab/works/{wid}",
-                       exclude=g.user.id)
-                audit.record("lab_work_created", "lab_work", wid, f"Outside work {number} from {data['clinic_name']}")
-            flash(f"Saved as {number}.", "success")
-            return redirect(url_for("lab_works.work", work_id=wid))
+                first = parsed[0]
+                cid = _client_for(conn, first["lab_id"], first["clinic_name"], first["doctor"], first["contact_number"])
+                for i, data in enumerate(parsed):
+                    number = _next_number(conn, "lab_works", "LW")
+                    wid = conn.insert("lab_works", {**data, "number": number, "client_id": cid, "status": "accepted", "created_by": g.user.id,
+                                                    "created_at": now_str(), "updated_at": now_str()})
+                    for desc, q, pc in extras.get(i, []):
+                        conn.insert("lab_work_extras", {"work_id": wid, "description": desc, "qty": q, "unit_price_cents": pc,
+                                                        "created_by": g.user.id, "created_at": now_str()})
+                    conn.insert("lab_work_events", {"work_id": wid, "user_id": g.user.id, "status": "accepted",
+                                                    "note": "Work received" + (f" (with {len(parsed) - 1} other case{'s' if len(parsed) > 2 else ''})" if len(parsed) > 1 else ""),
+                                                    "created_at": now_str()})
+                    audit.record("lab_work_created", "lab_work", wid, f"Outside work {number} from {data['clinic_name']}")
+                    saved.append((wid, number, data["case_type"]))
+                notify(conn, lab_staff(conn, first["lab_id"]), "lab_new",
+                       f"New work {saved[0][1]}: {saved[0][2]}" if len(saved) == 1 else f"{len(saved)} new works from {first['clinic_name']}",
+                       f"From {first['clinic_name']}" + (f", due {first['due_on']}" if first["due_on"] else ""),
+                       f"/staff/lab/works/{saved[0][0]}" if len(saved) == 1 else f"/staff/lab/works?client={cid}", exclude=g.user.id)
+            if len(saved) == 1:
+                flash(f"Saved as {saved[0][1]}.", "success")
+                return redirect(url_for("lab_works.work", work_id=saved[0][0]))
+            flash(f"Saved {len(saved)} works: {', '.join(n for _, n, _ in saved)}. To bill them on one invoice, open one and tap “Bill with other works”.", "success")
+            return redirect(url_for("lab_works.works", client=cid))
+        flash(errors.get("extras") or "Please check the highlighted fields.", "error")
     clinics = conn.all(f"SELECT clinic_name, doctor, contact_number FROM lab_clients WHERE lab_id IN ({_in(_lab_ids())}) AND active = 1 ORDER BY clinic_name",
                        _lab_ids())
-    return render_template("staff/lab_works/form.html", v=v, errors=errors, labs=labs, case_types=case_types(conn, v.get("case_type")), arches=ARCHES, clinics=clinics,
-                           price_list=price_items(conn, [l["id"] for l in labs]),
+    return render_template("staff/lab_works/form.html", v=v, errors=errors, labs=labs, case_types=case_types(conn), materials=materials(conn), arches=ARCHES, clinics=clinics,
+                           price_list=price_items(conn, [l["id"] for l in labs]), cases=list(zip(cases, case_errors)),
+                           extras_prices=extras_list(price_items(conn, [l["id"] for l in labs])),
+                           extras_in=_extras_rows(request.form) if request.method == "POST" else {},
                            work=None, lab_display=lab_display)
 
 
@@ -331,6 +379,31 @@ def work(work_id):
     _need("lab.works")
     conn = get_db()
     w = _work(conn, work_id)
+    if request.method == "POST" and request.form.get("action") in ("add_extra", "remove_extra"):
+        if w["invoice_id"]:
+            flash("This work is already on an invoice: add or remove charges on the invoice.", "error")
+            return redirect(url_for("lab_works.work", work_id=w["id"]))
+        f = request.form
+        if f.get("action") == "add_extra":
+            extras, xerr = _extras_from(f)
+            rows = extras.get(0, [])
+            if xerr or not rows:
+                flash(xerr or "Type the charge and its price.", "error")
+            else:
+                with conn.transaction():
+                    for desc, q, pc in rows:
+                        conn.insert("lab_work_extras", {"work_id": w["id"], "description": desc, "qty": q, "unit_price_cents": pc,
+                                                        "created_by": g.user.id, "created_at": now_str()})
+                    audit.record("lab_work_extra_added", "lab_work", w["id"], f"{w['number']}: additional charge {rows[0][0]}")
+                flash("Additional charge added.", "success")
+        else:
+            x = conn.one("SELECT * FROM lab_work_extras WHERE id = ? AND work_id = ?", (to_int(f.get("extra_id")), w["id"]))
+            if x:
+                with conn.transaction():
+                    conn.execute("DELETE FROM lab_work_extras WHERE id = ?", (x["id"],))
+                    audit.record("lab_work_extra_removed", "lab_work", w["id"], f"{w['number']}: removed additional charge {x['description']}")
+                flash("Additional charge removed.", "success")
+        return redirect(url_for("lab_works.work", work_id=w["id"]) + "#extras")
     if request.method == "POST":
         st = request.form.get("status")
         note = clean(request.form.get("note"), 500)
@@ -355,9 +428,47 @@ def work(work_id):
                       (w["id"],))
     lab = conn.one("SELECT * FROM laboratories WHERE id = ?", (w["lab_id"],))
     from ..lab_commission import entries, technicians
+    extras = work_extras(conn, w["id"])
     return render_template("staff/lab_works/work.html", w=w, events=events, statuses=STATUSES, arches=ARCHES, lab=lab, lab_display=lab_display,
+                           extras=extras, extras_total=sum(x["qty"] * x["unit_price_cents"] for x in extras),
+                           price_list=price_items(conn, [w["lab_id"]]), extras_prices=extras_list(price_items(conn, [w["lab_id"]])),
                            comm_entries=entries(conn, work_id=w["id"]), comm_techs=technicians(conn),
                            can_bill=g.user.is_super_admin or g.user.can("lab.billing"), today=today().isoformat())
+
+
+@bp.route("/works/<int:work_id>/remove", methods=["POST"])
+@login_required
+def remove_work(work_id):
+    """Super admin: remove an outside work entered by mistake, with a reason (kept in the audit trail). Not once billed
+    or with a technician commission."""
+    if not g.user.is_super_admin:
+        abort(403)
+    conn = get_db()
+    w = conn.one("SELECT * FROM lab_works WHERE id = ?", (work_id,))
+    if not w:
+        abort(404)
+    reason = clean(request.form.get("reason"), 300)
+    back = redirect(url_for("lab_works.work", work_id=work_id))
+    if len(reason) < 3:
+        flash("Write the reason for removing this work (e.g. duplicate, wrong clinic).", "error")
+        return back
+    blockers = []
+    if w["invoice_id"] or conn.scalar("SELECT COUNT(*) FROM lab_invoice_items WHERE work_id = ?", (work_id,)):
+        blockers.append("it is on a lab invoice (remove it from the invoice or void the invoice first)")
+    if conn.scalar("SELECT COUNT(*) FROM lab_commissions WHERE work_id = ?", (work_id,)):
+        blockers.append("it has a technician commission")
+    if blockers:
+        flash("Can't remove this work: " + "; ".join(blockers) + ".", "error")
+        return back
+    extras = [dict(x) for x in work_extras(conn, work_id)]
+    with conn.transaction():
+        conn.execute("DELETE FROM lab_work_extras WHERE work_id = ?", (work_id,))
+        conn.execute("DELETE FROM lab_work_events WHERE work_id = ?", (work_id,))
+        conn.execute("DELETE FROM lab_works WHERE id = ?", (work_id,))
+        audit.record("lab_work_removed", "lab_work", work_id, f"Removed outside work {w['number']} ({w['case_type']}, {w['clinic_name']}): {reason}",
+                     {"lab_work": {k: w[k] for k in w.keys()}, "extras": extras, "reason": reason})
+    flash(f"{w['number']} removed. A record of it is kept in the audit trail.", "success")
+    return redirect(url_for("lab_works.works"))
 
 
 @bp.route("/works/<int:work_id>/edit", methods=["GET", "POST"])
@@ -383,7 +494,7 @@ def work_edit(work_id):
             return redirect(url_for("lab_works.work", work_id=w["id"]))
     clinics = conn.all(f"SELECT clinic_name, doctor, contact_number FROM lab_clients WHERE lab_id IN ({_in(_lab_ids())}) AND active = 1 ORDER BY clinic_name",
                        _lab_ids())
-    return render_template("staff/lab_works/form.html", v=v, errors=errors, labs=labs, case_types=case_types(conn, v.get("case_type")), arches=ARCHES, clinics=clinics,
+    return render_template("staff/lab_works/form.html", v=v, errors=errors, labs=labs, case_types=case_types(conn, v.get("case_type")), materials=materials(conn, v.get("material")), arches=ARCHES, clinics=clinics,
                            price_list=price_items(conn, [l["id"] for l in labs]),
                            work=w, lab_display=lab_display)
 
@@ -555,9 +666,7 @@ def invoice_new():
             for w in chosen:
                 desc = f"{w['number']} · {w['case_type']}" + (f" · {w['teeth']}" if w["teeth"] else "") + (f" · {ARCHES[w['arch']]}" if w["arch"] else "") \
                     + (f" · Dr. {w['doctor']}" if w["doctor"] and not w["doctor"].lower().startswith("dr") else (f" · {w['doctor']}" if w["doctor"] else ""))
-                price = w["price_cents"] or 0
-                conn.insert("lab_invoice_items", {"invoice_id": iid, "work_id": w["id"], "description": desc[:200], "qty": w["units"],
-                                                  "unit_price_cents": price, "discount_cents": 0, "amount_cents": price * w["units"]})
+                _add_work_lines(conn, iid, w, desc)
                 conn.update("lab_works", w["id"], {"invoice_id": iid, "updated_at": now_str()})
             for c in chosen_cases:
                 price = c["lab_fee_cents"] or 0
@@ -582,54 +691,59 @@ def services():
         abort(403)
     can_edit = g.user.is_super_admin or (g.user.can("lab.prices") and bool(my_labs(conn)))
     case_types(conn)
+    materials(conn)
     if request.method == "POST":
         if not can_edit:
             abort(403)
         f = request.form
         action = f.get("action")
-        row = conn.one("SELECT * FROM lab_case_types WHERE id = ?", (to_int(f.get("id")),)) if f.get("id") else None
+        table = "lab_materials" if f.get("list") == "materials" else "lab_case_types"   # fixed names, never user input
+        what = "material" if table == "lab_materials" else "service"
+        row = conn.one(f"SELECT * FROM {table} WHERE id = ?", (to_int(f.get("id")),)) if f.get("id") else None
         name = clean(f.get("name"), 80)
         with conn.transaction():
             if action == "add":
                 if len(name) < 2:
                     flash("Type the service name.", "error")
-                elif conn.one("SELECT id FROM lab_case_types WHERE lower(name) = lower(?)", (name,)):
+                elif conn.one(f"SELECT id FROM {table} WHERE lower(name) = lower(?)", (name,)):
                     flash(f"“{name}” is already in the list.", "error")
                 else:
-                    n = conn.scalar("SELECT COALESCE(MAX(sort_order), 0) + 10 FROM lab_case_types")
-                    conn.execute("INSERT INTO lab_case_types (name, active, sort_order, created_at) VALUES (?, 1, ?, ?)", (name, n, now_str()))
-                    audit.record("lab_service_added", "lab_service", None, f"Lab service added: {name}")
+                    n = conn.scalar(f"SELECT COALESCE(MAX(sort_order), 0) + 10 FROM {table}")
+                    conn.execute(f"INSERT INTO {table} (name, active, sort_order, created_at) VALUES (?, 1, ?, ?)", (name, n, now_str()))
+                    audit.record(f"lab_{what}_added", f"lab_{what}", None, f"Lab {what} added: {name}")
                     flash(f"Added “{name}”.", "success")
             elif not row:
                 abort(404)
             elif action == "rename":
                 if len(name) < 2:
                     flash("Type the service name.", "error")
-                elif conn.one("SELECT id FROM lab_case_types WHERE lower(name) = lower(?) AND id != ?", (name, row["id"])):
+                elif conn.one(f"SELECT id FROM {table} WHERE lower(name) = lower(?) AND id != ?", (name, row["id"])):
                     flash(f"“{name}” is already in the list.", "error")
                 elif name != row["name"]:
-                    conn.execute("UPDATE lab_case_types SET name = ? WHERE id = ?", (name, row["id"]))
-                    audit.record("lab_service_renamed", "lab_service", row["id"], f"Lab service renamed: {row['name']} -> {name}")
+                    conn.execute(f"UPDATE {table} SET name = ? WHERE id = ?", (name, row["id"]))
+                    audit.record(f"lab_{what}_renamed", f"lab_{what}", row["id"], f"Lab {what} renamed: {row['name']} -> {name}")
                     flash("Renamed. Cases already saved keep the old name.", "success")
             elif action == "toggle":
-                conn.execute("UPDATE lab_case_types SET active = ? WHERE id = ?", (0 if row["active"] else 1, row["id"]))
-                audit.record("lab_service_toggled", "lab_service", row["id"], f"Lab service {'turned off' if row['active'] else 'turned on'}: {row['name']}")
+                conn.execute(f"UPDATE {table} SET active = ? WHERE id = ?", (0 if row["active"] else 1, row["id"]))
+                audit.record(f"lab_{what}_toggled", f"lab_{what}", row["id"], f"Lab {what} {'turned off' if row['active'] else 'turned on'}: {row['name']}")
                 flash(f"“{row['name']}” {'turned off: no longer offered' if row['active'] else 'is offered again'}.", "success")
             elif action in ("up", "down"):
-                rows = conn.all("SELECT id, sort_order FROM lab_case_types ORDER BY sort_order, id")
+                rows = conn.all(f"SELECT id, sort_order FROM {table} ORDER BY sort_order, id")
                 ids = [r["id"] for r in rows]
                 i = ids.index(row["id"])
                 j = i - 1 if action == "up" else i + 1
                 if 0 <= j < len(ids):
                     ids[i], ids[j] = ids[j], ids[i]
                     for k, rid in enumerate(ids):
-                        conn.execute("UPDATE lab_case_types SET sort_order = ? WHERE id = ?", (k * 10, rid))
+                        conn.execute(f"UPDATE {table} SET sort_order = ? WHERE id = ?", (k * 10, rid))
             else:
                 abort(400)
-        return redirect(url_for("lab_works.services"))
+        return redirect(url_for("lab_works.services") + ("#materials" if table == "lab_materials" else ""))
     rows = conn.all("SELECT t.*, (SELECT COUNT(*) FROM lab_cases c WHERE c.case_type = t.name) + "
                     "(SELECT COUNT(*) FROM lab_works w WHERE w.case_type = t.name) AS used FROM lab_case_types t ORDER BY t.sort_order, t.id")
-    return render_template("staff/lab_works/services.html", rows=rows, can_edit=can_edit)
+    mats = conn.all("SELECT t.*, (SELECT COUNT(*) FROM lab_cases c WHERE c.material = t.name) + "
+                    "(SELECT COUNT(*) FROM lab_works w WHERE w.material = t.name) AS used FROM lab_materials t ORDER BY t.sort_order, t.id")
+    return render_template("staff/lab_works/services.html", rows=rows, mats=mats, can_edit=can_edit)
 
 
 @bp.route("/prices", methods=["GET", "POST"])
@@ -719,6 +833,58 @@ def bill_case(case_id):
     return redirect(url_for("lab_works.invoice", invoice_id=iid))
 
 
+def _extras_from(form) -> tuple[dict[int, list], str | None]:
+    """Additional charges typed on the new-work form: {case index: [(description, qty, unit price cents)]}, error."""
+    out: dict[int, list] = {}
+    rows = zip(form.getlist("x_case"), form.getlist("x_desc"), form.getlist("x_qty"), form.getlist("x_price"))
+    for case, desc, qty, price in rows:
+        desc, qty_s, price_s = clean(desc, 200), (qty or "").strip(), (price or "").strip()
+        if not desc and not price_s:
+            continue                                   # an empty row
+        q = to_int(qty_s) if qty_s else 1
+        pc = parse_money(price_s) if price_s else None
+        if not desc:
+            return out, "Type what each additional charge is for (e.g. 3D printed cast)."
+        if q is None or q < 1 or q > 99:
+            return out, f"Enter the quantity for “{desc}” (1 to 99)."
+        if pc is None or pc < 0:
+            return out, f"Enter the price for “{desc}”, like 500."
+        out.setdefault(to_int(case) or 0, []).append((desc, q, pc))
+    return out, None
+
+
+def _extras_rows(form) -> dict[int, list]:
+    """What was typed in the additional charges (to show it again after an error)."""
+    out: dict[int, list] = {}
+    for case, desc, qty, price in zip(form.getlist("x_case"), form.getlist("x_desc"), form.getlist("x_qty"), form.getlist("x_price")):
+        if desc or price:
+            out.setdefault(to_int(case) or 0, []).append({"desc": desc, "qty": qty, "price": price})
+    return out
+
+
+EXTRAS_CATEGORIES = ("Additional services", "Additional charges", "Add-ons")
+
+
+def extras_list(items) -> list:
+    """Price list for the additional-charges picker: add-on categories (e.g. Additional services) first, then the rest."""
+    return sorted(items, key=lambda r: (0 if (r["category"] or "") in EXTRAS_CATEGORIES else 1, r["category"] or "", r["sort_order"] or 0))
+
+
+def work_extras(conn, work_id) -> list:
+    return conn.all("SELECT * FROM lab_work_extras WHERE work_id = ? ORDER BY id", (work_id,))
+
+
+def _add_work_lines(conn, iid, w, description) -> None:
+    """The work's line on an invoice, then its additional charges (grouped under the work)."""
+    price = w["price_cents"] or 0
+    conn.insert("lab_invoice_items", {"invoice_id": iid, "work_id": w["id"], "description": description[:200], "qty": w["units"] or 1,
+                                      "unit_price_cents": price, "discount_cents": 0, "amount_cents": price * (w["units"] or 1)})
+    for x in work_extras(conn, w["id"]):
+        conn.insert("lab_invoice_items", {"invoice_id": iid, "work_id": w["id"], "description": x["description"][:200], "qty": x["qty"],
+                                          "unit_price_cents": x["unit_price_cents"], "discount_cents": 0,
+                                          "amount_cents": x["unit_price_cents"] * x["qty"]})
+
+
 def _work_line(w) -> str:
     return (w["case_type"] + (f" · {w['teeth']}" if w["teeth"] else "") + (f" · {ARCHES[w['arch']]}" if w["arch"] else "")
             + (f" · {w['material']}" if w["material"] else ""))[:200]
@@ -742,13 +908,11 @@ def bill_work(work_id):
                                            "contact_number": w["contact_number"] or (client["contact_number"] if client else ""), "status": "draft",
                                            "due_on": (today() + timedelta(days=30)).isoformat(), "created_by": g.user.id,
                                            "created_at": now_str(), "updated_at": now_str()})
-        price = w["price_cents"] or 0
-        conn.insert("lab_invoice_items", {"invoice_id": iid, "work_id": w["id"], "description": _work_line(w), "qty": w["units"] or 1,
-                                          "unit_price_cents": price, "discount_cents": 0, "amount_cents": price * (w["units"] or 1)})
+        _add_work_lines(conn, iid, w, _work_line(w))
         conn.update("lab_works", w["id"], {"invoice_id": iid, "updated_at": now_str()})
         _recalc(conn, iid)
         audit.record("lab_invoice_created", "lab_invoice", iid, f"Draft lab invoice for {w['number']} ({w['clinic_name']})")
-    flash("Draft invoice started for this work. Check the units and price per unit, then add extras (e.g. casts) and any “less” lines.", "success")
+    flash("Draft invoice started for this work, with its additional charges. Check the units and prices, then add any other extras and “less” lines.", "success")
     return redirect(url_for("lab_works.invoice", invoice_id=iid))
 
 

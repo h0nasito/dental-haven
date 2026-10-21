@@ -1,17 +1,26 @@
 {% extends "staff/layout.html" %}
 {% from "macros.html" import csrf, empty %}
 {% block page_title %}Lab services{% endblock %}
-{% block content %}
-<div class="page-head"><div><h1>Lab services</h1><p>The types of case the laboratory offers. They're the choices in <strong>Type of case</strong> when a branch sends a case or the lab receives an outside work. Prices are set in the <a href="{{ url_for('lab_works.prices') }}">Lab price list</a>.</p></div></div>
-{% set active = 'services' %}{% include "staff/lab_works/_nav.html" %}
-{% if not can_edit %}<p class="hint">View only. To add or change services you need the “Laboratory services &amp; prices” permission.</p>{% endif %}
-<div class="card"><ul class="svc-list">
+{% macro item_list(rows, key, noun) -%}
+<ul class="svc-list">
 {% for r in rows %}<li class="svc {{ 'off' if not r.active }}">
-{% if can_edit %}<form method="post" class="svc-name">{{ csrf() }}<input type="hidden" name="action" value="rename"><input type="hidden" name="id" value="{{ r.id }}">
-<label class="sr-only" for="sn{{ r.id }}">Name</label><input id="sn{{ r.id }}" name="name" value="{{ r.name }}" maxlength="80"><button class="btn btn-ghost btn-sm">Rename</button></form>{% else %}<strong>{{ r.name }}</strong>{% endif %}
+{% if can_edit %}<form method="post" class="svc-name">{{ csrf() }}<input type="hidden" name="list" value="{{ key }}"><input type="hidden" name="action" value="rename"><input type="hidden" name="id" value="{{ r.id }}">
+<label class="sr-only" for="{{ key }}n{{ r.id }}">Name</label><input id="{{ key }}n{{ r.id }}" name="name" value="{{ r.name }}" maxlength="80"><button class="btn btn-ghost btn-sm">Rename</button></form>{% else %}<strong>{{ r.name }}</strong>{% endif %}
 <div class="svc-meta">{% if r.active %}<span class="badge badge-green">Offered</span>{% else %}<span class="badge">Turned off</span>{% endif %}<small class="muted">Used {{ r.used }} time{{ 's' if r.used != 1 }}</small>
-{% if can_edit %}<span class="spacer"></span><form method="post" class="row" style="gap:.25rem">{{ csrf() }}<input type="hidden" name="id" value="{{ r.id }}"><button class="btn btn-ghost btn-sm" name="action" value="up" aria-label="Move up" {% if loop.first %}disabled{% endif %}>↑</button><button class="btn btn-ghost btn-sm" name="action" value="down" aria-label="Move down" {% if loop.last %}disabled{% endif %}>↓</button><button class="btn btn-secondary btn-sm" name="action" value="toggle">{{ 'Turn off' if r.active else 'Turn on' }}</button></form>{% endif %}</div></li>
-{% else %}<li>{{ empty('No services yet') }}</li>{% endfor %}</ul></div>
+{% if can_edit %}<span class="spacer"></span><form method="post" class="row" style="gap:.25rem">{{ csrf() }}<input type="hidden" name="list" value="{{ key }}"><input type="hidden" name="id" value="{{ r.id }}"><button class="btn btn-ghost btn-sm" name="action" value="up" aria-label="Move up" {% if loop.first %}disabled{% endif %}>↑</button><button class="btn btn-ghost btn-sm" name="action" value="down" aria-label="Move down" {% if loop.last %}disabled{% endif %}>↓</button><button class="btn btn-secondary btn-sm" name="action" value="toggle">{{ 'Turn off' if r.active else 'Turn on' }}</button></form>{% endif %}</div></li>
+{% else %}<li>{{ empty('Nothing yet') }}</li>{% endfor %}</ul>
+{% if can_edit %}<form method="post" class="mt-1" style="border-top:1px solid var(--line);padding-top:.8rem">{{ csrf() }}<input type="hidden" name="list" value="{{ key }}"><input type="hidden" name="action" value="add">
+<div class="row" style="gap:.5rem;align-items:flex-end;flex-wrap:wrap"><div class="field mb-0" style="flex:1;min-width:14em"><label for="add{{ key }}">Add a {{ noun }}</label><input id="add{{ key }}" name="name" maxlength="80" required></div><button class="btn">Add</button></div></form>{% endif %}
+{%- endmacro %}
+{% block content %}
+<div class="page-head"><div><h1>Lab services</h1><p>The choices when a branch sends a case or the lab receives an outside work: the <strong>type of case</strong> (e.g. Crown, Bridge) and the <strong>material</strong> (e.g. E.max, Zirconia). Prices are set in the <a href="{{ url_for('lab_works.prices') }}">Lab price list</a>.</p></div></div>
+{% set active = 'services' %}{% include "staff/lab_works/_nav.html" %}
+{% if not can_edit %}<p class="hint">View only. To change these lists you need the “Laboratory services &amp; prices” permission.</p>{% endif %}
+<div class="grid grid-2">
+<div class="card"><h2>Types of case</h2>{{ item_list(rows, 'types', 'type of case') }}</div>
+<div class="card" id="materials"><h2>Materials</h2><p class="hint mt-0">Staff can also add a new material while sending a case (“+ New material…”).</p>{{ item_list(mats, 'materials', 'material') }}</div>
+</div>
+<p class="hint">Renaming doesn't change cases already saved. Turning one off hides it from new cases; past cases keep it.</p>
 <style>
 .svc-list{list-style:none;margin:0;padding:0}
 .svc{padding:.6rem 0;border-top:1px solid var(--line)}
@@ -22,7 +31,4 @@
 .svc-meta{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-top:.35rem}
 .svc-meta .spacer{flex:1}
 </style>
-{% if can_edit %}<form method="post" class="card">{{ csrf() }}<input type="hidden" name="action" value="add"><h2>Add a service</h2>
-<div class="row" style="gap:.5rem;align-items:flex-end;flex-wrap:wrap"><div class="field mb-0" style="flex:1;min-width:14em"><label for="nsv">Service name</label><input id="nsv" name="name" maxlength="80" required placeholder="e.g. Crown (e.max)"></div><button class="btn">Add service</button></div>
-<p class="hint mb-0">Renaming doesn't change cases already saved. Turning a service off hides it from new cases; past cases keep it.</p></form>{% endif %}
 {% endblock %}

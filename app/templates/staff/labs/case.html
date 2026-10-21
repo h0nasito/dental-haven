@@ -2,7 +2,7 @@
 {% from "macros.html" import csrf %}
 {% block page_title %}Lab case #{{ c.id }}{% endblock %}
 {% block content %}
-<div class="page-head"><div><a href="{{ url_for('labs.index') }}">← Lab cases</a><h1>{{ c.case_type }} · {{ c.last_name }}, {{ c.first_name }}</h1>
+<div class="page-head"><div><a href="{{ url_for('labs.index') }}">← Lab cases</a><h1>{% if c.units and c.units > 1 %}{{ c.units }} × {% endif %}{{ c.case_type }} · {{ c.last_name }}, {{ c.first_name }}</h1>
 <p>Case #{{ c.id }} · {{ c.lab }} · from {{ c.branch }}</p></div><span class="badge {{ lab_badge(c.status) }}">{{ c.status|lab_status }}</span></div>
 {% set cur = c.status %}{% include "staff/labs/_stages.html" %}
 <div class="grid grid-2">
@@ -75,4 +75,9 @@
 </div>
 
 {% if comm_entries is defined %}{% set comm_field, comm_id, comm_delivered = 'case_id', c.id, (c.completed_on if c.status == 'delivered' else None) %}{% include "staff/lab_works/_commission.html" %}{% endif %}
+{% if current_user.is_super_admin %}<details class="card" style="border-color:var(--red-100)"><summary><strong>Remove this lab case</strong> <small class="muted">super admin · wrong input, duplicate…</small></summary>
+<form method="post" action="{{ url_for('labs.remove_case', case_id=c.id) }}" class="mt-1" data-confirm="Remove this lab case for good? It can't be undone (a copy is kept in the audit trail).">{{ csrf() }}
+<div class="field"><label for="rm-reason">Reason</label><input id="rm-reason" name="reason" maxlength="300" required placeholder="e.g. Duplicate entry, wrong patient"></div>
+<p class="hint">It disappears from all lists, queues and reports; its history and photos are removed too. Not possible once it's on an invoice, has a commission or a trial fitting record. To stop a real case instead, set its status to <strong>Cancelled</strong>.</p>
+<button class="btn btn-danger">Remove lab case</button></form></details>{% endif %}
 {% endblock %}

@@ -16,18 +16,30 @@
 <div class="field"><label for="lab">Laboratory</label><select id="lab" name="lab_id">{% for l in labs %}<option value="{{ l.id }}" {% if v.lab_id|string == l.id|string %}selected{% endif %}>{{ l.name }}</option>{% endfor %}</select></div>
 <div class="field"><label for="br">From branch</label><select id="br" name="branch_id">{% for b in branches %}<option value="{{ b.id }}" {% if v.branch_id|string == b.id|string %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select></div>
 <div class="field"><label for="dn">Dentist</label><select id="dn" name="dentist_id"><option value="">—</option>{% for d in dentists %}<option value="{{ d.id }}" {% if v.dentist_id|string == d.id|string %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select></div>
-<div class="field"><label for="ct">Case type</label><select id="ct" name="case_type">{% for t in case_types %}<option {% if v.case_type == t %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></div>
-<div class="field"><label for="tt">Teeth</label><input id="tt" name="teeth" value="{{ v.teeth }}" placeholder="e.g. 36, 37"></div>
-<div class="field"><label for="sh">Shade</label><input id="sh" name="shade" value="{{ v.shade }}" placeholder="e.g. A2"></div>
-<div class="field"><label for="mt">Material</label><input id="mt" name="material" value="{{ v.material }}"></div>
 <div class="field"><label for="so">Date sent</label><input id="so" type="date" name="sent_on" value="{{ v.sent_on }}"></div>
 <div class="field"><label for="du">Due back</label><input id="du" type="date" name="due_on" value="{{ v.due_on }}"></div>
-<div class="field"><label for="lf">Lab price (₱, optional; the lab can set it)</label><input id="lf" name="lab_fee" value="{{ v.lab_fee }}" inputmode="decimal"></div>
 </div>
+<h2 class="mt-1">What to make</h2>
+<p class="hint mt-0">One row per kind of work, e.g. <em>2 units zirconia crown, shade A2</em> and <em>3 units E.max crown, shade A2</em>. Tap “+ Add another item” for each. Each item becomes its own lab case.</p>
+<div id="case-blocks" data-label="Item">
+{% for it in items %}<fieldset class="case-block">
+<div class="row between"><legend class="case-n">Item {{ loop.index }}</legend><button type="button" class="btn btn-ghost btn-sm case-remove" {% if items|length < 2 %}hidden{% endif %}>✕ Remove</button></div>
+<div class="form-grid">
+<div class="field"><label data-for="ct" for="ct{{ loop.index0 }}">Case type</label><select data-id="ct" id="ct{{ loop.index0 }}" name="case_type">{% for t in case_types %}<option {% if it.case_type == t %}selected{% endif %}>{{ t }}</option>{% endfor %}{% if it.case_type and it.case_type not in case_types %}<option selected>{{ it.case_type }}</option>{% endif %}</select></div>
+<div class="field"><label data-for="un" for="un{{ loop.index0 }}">Units</label><input data-id="un" id="un{{ loop.index0 }}" name="units" value="{{ it.units or 1 }}" inputmode="numeric"></div>
+<div class="field"><label data-for="tt" for="tt{{ loop.index0 }}">Teeth</label><input data-id="tt" id="tt{{ loop.index0 }}" name="teeth" value="{{ it.teeth }}" placeholder="e.g. 11, 12"></div>
+<div class="field"><label data-for="sh" for="sh{{ loop.index0 }}">Shade</label><input data-id="sh" id="sh{{ loop.index0 }}" name="shade" value="{{ it.shade }}" placeholder="e.g. A2"></div>
+<div class="field"><label data-for="mt" for="mt{{ loop.index0 }}">Material</label><select data-id="mt" id="mt{{ loop.index0 }}" name="material"><option value="">—</option>{% for m in materials %}<option {% if it.material == m %}selected{% endif %}>{{ m }}</option>{% endfor %}{% if it.material and it.material not in materials and it.material != "__new__" %}<option selected>{{ it.material }}</option>{% endif %}<option value="__new__" {% if it.material == "__new__" %}selected{% endif %}>+ New material…</option></select><input name="material_new" class="mat-new mt-1" value="{{ it.material_new or '' }}" maxlength="80" placeholder="Type the new material" aria-label="New material" {% if it.material != "__new__" %}hidden{% endif %}></div>
+<div class="field"><label data-for="lf" for="lf{{ loop.index0 }}">Lab price (₱) <span class="hint">Optional; the lab can set it</span></label><input data-id="lf" id="lf{{ loop.index0 }}" name="lab_fee" value="{{ it.lab_fee }}" inputmode="decimal"></div>
+<div class="field span-2"><label data-for="ii" for="ii{{ loop.index0 }}">Notes for this item <span class="hint">Optional</span></label><input data-id="ii" id="ii{{ loop.index0 }}" name="instructions" value="{{ it.instructions }}" maxlength="500"></div>
+</div></fieldset>{% endfor %}
+</div>
+<button type="button" class="btn btn-secondary" id="add-case">+ Add another item</button>
+<style>.case-block{border:1px solid var(--line);border-radius:12px;padding:.8rem 1rem;margin:0 0 .8rem}.case-block legend.case-n{font-weight:700;padding:0;float:left}.case-block .row.between{margin-bottom:.4rem;align-items:center}</style>
 {% set t = v %}{% include "staff/labs/_target_dates.html" %}
-<div class="field"><label for="ins">Instructions to the lab</label><textarea id="ins" name="instructions" rows="3">{{ v.instructions }}</textarea></div>
+<div class="field"><label for="ins">Instructions to the lab <span class="hint">For all items</span></label><textarea id="ins" name="instructions_all" rows="3">{{ v.instructions_all or '' }}</textarea></div>
 <div class="field"><label for="lph">Reference photos (optional)</label><input id="lph" type="file" name="photos" accept="image/png,image/jpeg,image/webp" multiple>
 <span class="hint">Shade photo, intraoral photos, models. You can pick several (up to 12) and add more later on the case.</span></div>
-<button class="btn">Create lab case</button></form>
+<button class="btn">Send to lab</button></form>
 {% endif %}
 {% endblock %}
