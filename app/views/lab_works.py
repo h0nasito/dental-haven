@@ -550,9 +550,14 @@ def work_edit(work_id):
               "price": "" if it["price_cents"] is None else f"{it['price_cents'] / 100:.2f}"} for it in work_items(conn, w["id"])]
     case_errors = [{} for _ in cases]
     errors = {}
+    extras_in = {0: [{"desc": x["description"], "qty": x["qty"], "price": f"{x['unit_price_cents'] / 100:.2f}"} for x in work_extras(conn, w["id"])]}
     if request.method == "POST":
         head, cases, items, errors, case_errors = _parse_work(request.form, labs)
         v = {**v, **head}
+        extras, xerr = _extras_from(request.form)
+        extras_in = _extras_rows(request.form)
+        if xerr:
+            errors["extras"] = xerr
         if not errors and not any(case_errors):
             data = {k: items[0]["_head"][k] for k in ("lab_id", "clinic_name", "doctor", "contact_number", "patient_ref", "received_on", "due_on")}
             with conn.transaction():
@@ -560,14 +565,21 @@ def work_edit(work_id):
                 reset = {"due_soon_notified": 0, "overdue_notified": 0} if data["due_on"] != w["due_on"] else {}
                 conn.update("lab_works", w["id"], {**data, **work_summary(items), "client_id": cid, "updated_at": now_str(), **reset})
                 _save_items(conn, w["id"], items)
+                # the additional charges as they are on the form now
+                conn.execute("DELETE FROM lab_work_extras WHERE work_id = ?", (w["id"],))
+                for rows in extras.values():
+                    for desc, q, pc in rows:
+                        conn.insert("lab_work_extras", {"work_id": w["id"], "description": desc, "qty": q, "unit_price_cents": pc,
+                                                        "created_by": g.user.id, "created_at": now_str()})
                 audit.record("lab_work_edited", "lab_work", w["id"], f"Edited {w['number']}")
             flash("Saved." + (" It's already on an invoice: update the invoice lines if the prices changed." if w["invoice_id"] else ""), "success")
             return redirect(url_for("lab_works.work", work_id=w["id"]))
+        flash(errors.get("extras") or "Please check the highlighted fields.", "error")
     clinics = conn.all(f"SELECT clinic_name, doctor, contact_number FROM lab_clients WHERE lab_id IN ({_in(_lab_ids())}) AND active = 1 ORDER BY clinic_name",
                        _lab_ids())
     return render_template("staff/lab_works/form.html", v=v, errors=errors, labs=labs, case_types=case_types(conn), materials=materials(conn),
                            arches=ARCHES, clinics=clinics, price_list=price_items(conn, [l["id"] for l in labs]), cases=list(zip(cases, case_errors)),
-                           extras_prices=[], extras_in={}, work=w, lab_display=lab_display)
+                           extras_prices=extras_list(price_items(conn, [l["id"] for l in labs])), extras_in=extras_in, work=w, lab_display=lab_display)
 
 
 @bp.route("/works/export.csv")

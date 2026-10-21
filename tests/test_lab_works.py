@@ -144,6 +144,19 @@ class TestLabWorks(Base):
             w = self.new_work(c, clinic_name="Extras QT Dental")
             c.post(f"/staff/lab/works/{w['id']}", data={"action": "add_extra", "x_desc": "Rush fee", "x_qty": "1", "x_price": "1500"})
             self.assertIsNotNone(self.q("SELECT id FROM lab_work_extras WHERE work_id = ? AND description = 'Rush fee'", (w["id"],)))
+            # the edit form shows the charges, and saving keeps (or changes) them
+            page = c.get(f"/staff/lab/works/{w['id']}/edit").data.decode()
+            self.assertIn('value="Rush fee"', page)
+            self.assertIn('value="1500.00"', page)
+            from app.util import today
+            r = c.post(f"/staff/lab/works/{w['id']}/edit", data={
+                "lab_id": self.lab, "clinic_name": "Extras QT Dental", "received_on": today().isoformat(),
+                "case_type": ["Bridge"], "units": ["3"], "teeth": ["21, 22, 23"], "price": ["3500"],
+                "x_desc": ["Rush fee", "3D printed cast"], "x_qty": ["1", "2"], "x_price": ["1500.00", "500"]})
+            self.assertEqual(r.status_code, 302)
+            got = [(x["description"], x["qty"], x["unit_price_cents"]) for x in
+                   self.conn.all("SELECT * FROM lab_work_extras WHERE work_id = ? ORDER BY id", (w["id"],))]
+            self.assertEqual(got, [("Rush fee", 1, 150000), ("3D printed cast", 2, 50000)])
         finally:
             self.revoke()
 

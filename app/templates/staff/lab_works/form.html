@@ -46,10 +46,10 @@
 </div>
 <button type="button" class="btn btn-secondary" id="add-case">+ Add another item</button>
 
-{% if not work %}<div class="extras mt-1" id="work-extras"><h2 class="mb-0">Additional charges</h2><p class="hint mt-0">Optional, e.g. 3D printed cast, rush fee, extra clasp. Billed with this work.</p>
+<div class="extras mt-1" id="work-extras"><h2 class="mb-0">Additional charges</h2><p class="hint mt-0">Optional, e.g. 3D printed cast, rush fee, extra clasp. Billed with this work.</p>
 <div class="extra-rows">{% for x in extras_in.get(0, []) %}{{ extra_row(x) }}{% endfor %}</div>
 <button type="button" class="btn btn-ghost btn-sm add-extra">+ Add a charge</button></div>
-<template id="extra-row-tpl">{{ extra_row() }}</template>{% endif %}
+<template id="extra-row-tpl">{{ extra_row() }}</template>
 
 <h2 class="mt-1">Dates</h2>
 <div class="form-grid">
