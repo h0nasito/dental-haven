@@ -13,7 +13,9 @@
 <div class="months">{% for m, ok in c.months %}<span class="mo {{ 'ok' if ok else ('now' if loop.last else 'miss') }}">{{ m }}</span>{% endfor %}</div>
 <p class="hint">Green: came that month. Red: no visit that month. On track = last visit within 35 days; due = 36–45 days; overdue = more than 45 days.</p></div>{% endif %}
 <div class="grid grid-2 mt-1">
-<div class="card"><h2>Visits</h2><ul class="list-plain">{% for v in visits %}<li><strong>{{ v.at|date }}</strong> · {{ v.service }}{% if v.tooth %} (#{{ v.tooth }}){% endif %}<br><small class="muted">{{ v.description }}{% if v.dentist %} · {{ v.dentist }}{% endif %}{% if v.branch %} · {{ v.branch }}{% endif %}</small></li>{% else %}<li class="muted">No visits recorded.</li>{% endfor %}</ul>
+<div class="card"><h2>Visits</h2><ul class="list-plain visit-days">{% for d in visits %}<li><div class="row between"><strong>{{ d.date|date }}</strong><small class="muted">{{ d['items']|length }} procedure{{ 's' if d['items']|length != 1 }}</small></div>
+<ul class="visit-items">{% for it in d['items'] %}<li>{{ it.name }}{% if it.tooth %} <small class="muted">(#{{ it.tooth }})</small>{% endif %}{% if it.note %}<br><small class="muted">{{ it.note }}</small>{% endif %}</li>{% endfor %}</ul>
+{% if d.dentists or d.branches %}<small class="muted">{{ (d.dentists + d.branches)|join(' · ') }}</small>{% endif %}</li>{% else %}<li class="muted">No visits recorded.</li>{% endfor %}</ul>
 {% if upcoming %}<h3 class="mt-1">Next appointments</h3><ul class="list-plain">{% for a in upcoming %}<li>{{ a.start_at|dt }} · {{ a.service }}<br><small class="muted">{{ a.dentist or '' }}{% if a.branch %} · {{ a.branch }}{% endif %} · {{ a.status|label }}</small></li>{% endfor %}</ul>{% else %}<p class="muted">No upcoming appointment for this case.</p>{% endif %}</div>
 <div class="card"><h2>Bills &amp; payments</h2>
 <div class="table-wrap"><table><thead><tr><th>Bill</th><th class="num">This case</th><th class="num">Bill total</th><th class="num">Paid</th></tr></thead><tbody>
@@ -21,6 +23,7 @@
 {% else %}<tr><td colspan="4" class="empty">No bills for this case.</td></tr>{% endfor %}</tbody></table></div>
 {% if payments %}<h3 class="mt-1">Payments</h3><ul class="list-plain">{% for py in payments %}<li class="row between"><span>{{ py.received_at|date }} · {{ pay_label(py.method, py.account) }}{% if py.kind == 'refund' %} (refund){% endif %}<br><small class="muted">{{ py.number }}</small></span><strong>{% if py.kind == 'refund' %}−{% endif %}{{ py.amount_cents|peso }}</strong></li>{% endfor %}</ul>{% endif %}
 <p class="hint">When a bill has other services too, its payments are shared over its lines in proportion.</p></div></div>
-<style>.months { display: flex; flex-wrap: wrap; gap: 4px; } .mo { font-size: .75rem; padding: .2rem .4rem; border-radius: 4px; background: var(--line-2); color: var(--ink-3); }
+<style>.visit-items { margin: .3rem 0 .2rem 1.1rem; padding: 0; } .visit-items li { padding: .1rem 0; border: 0; }
+.months { display: flex; flex-wrap: wrap; gap: 4px; } .mo { font-size: .75rem; padding: .2rem .4rem; border-radius: 4px; background: var(--line-2); color: var(--ink-3); }
 .mo.ok { background: var(--green-100); color: var(--green-700); font-weight: 700; } .mo.miss { background: var(--red-100); color: var(--red-700); } .mo.now { outline: 1px dashed var(--line); }</style>
 {% endblock %}

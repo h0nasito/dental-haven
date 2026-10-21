@@ -83,3 +83,26 @@ class TestCases(Base):
         r = c.get(f"/staff/my-cases/{ids[2]}?type=General / other")
         self.assertEqual(r.status_code, 200)
         self.assertIn("Progress note", r.data.decode())
+
+    def test_visits_count_days_and_name_matched_type(self):
+        """Several procedures on one day = one visit; a procedure without a service but named like one gets its type."""
+        from app.util import now_str, today
+        doc = self.q("SELECT id FROM users WHERE email LIKE 'dentist.malolos@%'")["id"]
+        bid = self.branch("malolos")
+        pid = self.conn.insert("patients", {"first_name": "Dayvisit", "last_name": "Countqt", "chart_no": "DH-QDAY1", "preferred_branch_id": bid,
+                                            "created_at": now_str(), "updated_at": now_str()})
+        self.conn.execute("INSERT INTO patient_assignments (patient_id, dentist_id, created_at) VALUES (?, ?, ?)", (pid, doc, now_str()))
+        svc = self.q("SELECT id, name FROM services WHERE category = 'Orthodontics & TMJ' LIMIT 1")
+        d = today().isoformat()
+        for i, (sid, desc) in enumerate(((svc["id"], "Braces"), (None, svc["name"].upper()), (svc["id"], "Adjustment"))):
+            self.conn.insert("procedures", {"patient_id": pid, "service_id": sid, "branch_id": bid, "description": desc, "status": "completed",
+                                            "performed_by": doc, "performed_at": f"{d} 1{i}:00:00", "created_at": now_str()})
+        from app.db import get_db  # noqa: F401
+        from app.views.cases import build_cases
+        with self.app.app_context():
+            from app.db import get_db as gdb
+            cases = [c for c in build_cases(gdb(), doc) if c["patient_id"] == pid]
+        self.assertEqual([(c["category"], c["n"]) for c in cases], [("Orthodontics & TMJ", 1)])
+        page = self.login("dentist.malolos").get(f"/staff/my-cases/{pid}?type=Orthodontics %26 TMJ").data.decode()
+        self.assertIn("3 procedures", page)
+        self.assertNotIn("None", page)

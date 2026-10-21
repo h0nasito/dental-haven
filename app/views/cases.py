@@ -18,6 +18,8 @@ bp = Blueprint("cases", __name__, url_prefix="/staff/my-cases")
 
 ORTHO = "Orthodontics & TMJ"
 GENERAL = "General / other"     # procedures without a service, and assigned patients with nothing coded yet
+# A procedure's type: its service's, else that of a service with the same name as the description (imported or typed-in notes).
+CAT_SQL = ("COALESCE(s.category, (SELECT s2.category FROM services s2 WHERE lower(trim(s2.name)) = lower(trim(p.description)) LIMIT 1), ?)")
 
 
 def _dentist():
@@ -56,7 +58,7 @@ def build_cases(conn, dentist_id: int) -> list[dict]:
     def case(pid, cat):
         return cases.setdefault((pid, cat), {"patient_id": pid, "category": cat, "visits": [], "billed": 0, "paid": 0, "next": None})
 
-    for r in conn.all(f"SELECT p.patient_id, COALESCE(s.category, ?) AS category, substr(COALESCE(p.performed_at, p.created_at), 1, 10) AS d "
+    for r in conn.all(f"SELECT p.patient_id, {CAT_SQL} AS category, substr(COALESCE(p.performed_at, p.created_at), 1, 10) AS d "
                       f"FROM procedures p LEFT JOIN services s ON s.id = p.service_id WHERE p.status = 'completed' AND p.patient_id IN ({marks})",
                       [GENERAL, *P]):
         case(r["patient_id"], r["category"])["visits"].append(r["d"])
@@ -89,7 +91,7 @@ def build_cases(conn, dentist_id: int) -> list[dict]:
         p = info.get(c["patient_id"])
         if not p or not (c["visits"] or c["billed"] or (c["patient_id"] in assigned and c["category"] == GENERAL)):
             continue
-        v = sorted(c["visits"])
+        v = sorted(set(c["visits"]))          # a visit = a day the patient came, however many procedures were done
         c.update(patient=p, first=v[0] if v else None, last=v[-1] if v else None, n=len(v), balance=max(0, c["billed"] - c["paid"]))
         c["days_since"] = (t - date.fromisoformat(c["last"])).days if c["last"] else None
         if c["category"] == ORTHO and c["first"]:
@@ -147,15 +149,26 @@ def detail(patient_id):
         abort(404)        # only your own cases
     visits = conn.all("SELECT COALESCE(p.performed_at, p.created_at) AS at, p.description, p.tooth, s.name AS service, u.name AS dentist, b.name AS branch "
                       "FROM procedures p LEFT JOIN services s ON s.id = p.service_id LEFT JOIN users u ON u.id = p.performed_by "
-                      "LEFT JOIN branches b ON b.id = p.branch_id WHERE p.patient_id = ? AND COALESCE(s.category, ?) = ? AND p.status = 'completed' "
-                      "ORDER BY at DESC", (patient_id, GENERAL, cat))
+                      f"LEFT JOIN branches b ON b.id = p.branch_id WHERE p.patient_id = ? AND {CAT_SQL} = ? AND p.status = 'completed' "
+                      "ORDER BY at DESC, p.id", (patient_id, GENERAL, cat))
     if cat == GENERAL:
         visits = list(visits) + conn.all(
-            "SELECT v.visit_date AS at, 'Progress note' AS description, '' AS tooth, '—' AS service, u.name AS dentist, b.name AS branch "
+            "SELECT v.visit_date AS at, 'Progress note' AS description, '' AS tooth, NULL AS service, u.name AS dentist, b.name AS branch "
             "FROM visit_notes v LEFT JOIN users u ON u.id = v.dentist_id LEFT JOIN branches b ON b.id = v.branch_id WHERE v.patient_id = ? "
             "AND v.status = 'saved' AND v.cancelled_at IS NULL AND NOT EXISTS (SELECT 1 FROM procedures p WHERE p.visit_note_id = v.id "
             "AND p.status = 'completed')", (patient_id,))
         visits.sort(key=lambda r: r["at"] or "", reverse=True)
+    # one visit per day, with what was done that day
+    days: dict[str, dict] = {}
+    for v in visits:
+        day = (v["at"] or "")[:10]
+        g_ = days.setdefault(day, {"date": day, "items": [], "dentists": [], "branches": []})
+        g_["items"].append({"name": v["service"] or v["description"], "tooth": v["tooth"],
+                            "note": v["description"] if v["service"] and v["description"] and v["description"].strip().lower() != v["service"].strip().lower() else ""})
+        for k, x in (("dentists", v["dentist"]), ("branches", v["branch"])):
+            if x and x not in g_[k]:
+                g_[k].append(x)
+    visit_days = sorted(days.values(), key=lambda d: d["date"], reverse=True)
     bills = conn.all("SELECT i.id, i.number, i.issued_at, i.total_cents, b.name AS branch, "
                      "(SELECT COALESCE(SUM(ii.amount_cents), 0) FROM invoice_items ii LEFT JOIN services s ON s.id = ii.service_id "
                      " WHERE ii.invoice_id = i.id AND COALESCE(s.category, ?) = ?) AS case_amount, "
@@ -171,5 +184,5 @@ def detail(patient_id):
                         "LEFT JOIN services s ON s.id = a.service_id LEFT JOIN users u ON u.id = a.dentist_id LEFT JOIN branches b ON b.id = a.branch_id "
                         "WHERE a.patient_id = ? AND COALESCE(s.category, ?) = ? AND a.status IN ('requested','confirmed') AND a.start_at >= ? ORDER BY a.start_at",
                         (patient_id, GENERAL, cat, today().isoformat()))
-    return render_template("staff/cases/detail.html", c=c, visits=visits, bills=bills, payments=payments, upcoming=upcoming, ORTHO=ORTHO,
+    return render_template("staff/cases/detail.html", c=c, visits=visit_days, bills=bills, payments=payments, upcoming=upcoming, ORTHO=ORTHO,
                            did=did if g.user.is_super_admin else None)
