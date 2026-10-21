@@ -23,7 +23,7 @@ from ..db import get_db
 from ..notices import lab_staff, notify, run_lab_due_checks
 from ..uploads import IMAGE_TYPES, document_path, save_document, save_private_photo, sniff
 from ..util import clean, now_str, parse_date, parse_money, to_int, today
-from .labs import CASE_TYPES
+from .labs import CASE_TYPES, case_types, is_case_type  # noqa: F401
 
 bp = Blueprint("lab_works", __name__, url_prefix="/staff/lab")
 
@@ -193,7 +193,7 @@ def _work_form(form, labs):
         errors["lab_id"] = "Choose the laboratory."
     if len(v["clinic_name"]) < 2:
         errors["clinic_name"] = "Enter the dental clinic's name."
-    if v["case_type"] not in CASE_TYPES:
+    if not is_case_type(get_db(), v["case_type"]):
         errors["case_type"] = "Choose the type of case."
     units = to_int(v["units"])
     if units is None or units < 1 or units > 99:
@@ -295,7 +295,7 @@ def work_new():
     conn = get_db()
     labs = my_labs(conn)
     v = {"lab_id": labs[0]["id"] if labs else None, "clinic_name": "", "doctor": "", "contact_number": "", "patient_ref": "",
-         "case_type": CASE_TYPES[0], "units": "1", "arch": "", "teeth": "", "shade": "", "material": "", "instructions": "",
+         "case_type": case_types(conn)[0], "units": "1", "arch": "", "teeth": "", "shade": "", "material": "", "instructions": "",
          "received_on": today().isoformat(), "due_on": "", "price": ""}
     client_id = to_int(request.args.get("client"))
     if client_id and request.method == "GET":
@@ -320,7 +320,7 @@ def work_new():
             return redirect(url_for("lab_works.work", work_id=wid))
     clinics = conn.all(f"SELECT clinic_name, doctor, contact_number FROM lab_clients WHERE lab_id IN ({_in(_lab_ids())}) AND active = 1 ORDER BY clinic_name",
                        _lab_ids())
-    return render_template("staff/lab_works/form.html", v=v, errors=errors, labs=labs, case_types=CASE_TYPES, arches=ARCHES, clinics=clinics,
+    return render_template("staff/lab_works/form.html", v=v, errors=errors, labs=labs, case_types=case_types(conn, v.get("case_type")), arches=ARCHES, clinics=clinics,
                            price_list=price_items(conn, [l["id"] for l in labs]),
                            work=None, lab_display=lab_display)
 
@@ -383,7 +383,7 @@ def work_edit(work_id):
             return redirect(url_for("lab_works.work", work_id=w["id"]))
     clinics = conn.all(f"SELECT clinic_name, doctor, contact_number FROM lab_clients WHERE lab_id IN ({_in(_lab_ids())}) AND active = 1 ORDER BY clinic_name",
                        _lab_ids())
-    return render_template("staff/lab_works/form.html", v=v, errors=errors, labs=labs, case_types=CASE_TYPES, arches=ARCHES, clinics=clinics,
+    return render_template("staff/lab_works/form.html", v=v, errors=errors, labs=labs, case_types=case_types(conn, v.get("case_type")), arches=ARCHES, clinics=clinics,
                            price_list=price_items(conn, [l["id"] for l in labs]),
                            work=w, lab_display=lab_display)
 
@@ -569,6 +569,67 @@ def invoice_new():
                          f"Draft lab invoice for {client['clinic_name']} ({len(chosen)} works, {len(chosen_cases)} branch cases)")
         return redirect(url_for("lab_works.invoice", invoice_id=iid))
     return render_template("staff/lab_works/invoice_new.html", client=client, clients=clients, works=works, cases=cases, arches=ARCHES)
+
+
+@bp.route("/services", methods=["GET", "POST"])
+@login_required
+def services():
+    """The lab's services (types of case) shown when sending a branch case or receiving an outside work.
+    Lab users and branch staff with lab access see it; super admins and people with "Laboratory services & prices"
+    who are assigned to the lab add, rename, reorder and turn them off. Renaming doesn't change past cases."""
+    conn = get_db()
+    if not (my_labs(conn) or g.user.can("lab.view") or g.user.can("lab.manage")):
+        abort(403)
+    can_edit = g.user.is_super_admin or (g.user.can("lab.prices") and bool(my_labs(conn)))
+    case_types(conn)
+    if request.method == "POST":
+        if not can_edit:
+            abort(403)
+        f = request.form
+        action = f.get("action")
+        row = conn.one("SELECT * FROM lab_case_types WHERE id = ?", (to_int(f.get("id")),)) if f.get("id") else None
+        name = clean(f.get("name"), 80)
+        with conn.transaction():
+            if action == "add":
+                if len(name) < 2:
+                    flash("Type the service name.", "error")
+                elif conn.one("SELECT id FROM lab_case_types WHERE lower(name) = lower(?)", (name,)):
+                    flash(f"“{name}” is already in the list.", "error")
+                else:
+                    n = conn.scalar("SELECT COALESCE(MAX(sort_order), 0) + 10 FROM lab_case_types")
+                    conn.execute("INSERT INTO lab_case_types (name, active, sort_order, created_at) VALUES (?, 1, ?, ?)", (name, n, now_str()))
+                    audit.record("lab_service_added", "lab_service", None, f"Lab service added: {name}")
+                    flash(f"Added “{name}”.", "success")
+            elif not row:
+                abort(404)
+            elif action == "rename":
+                if len(name) < 2:
+                    flash("Type the service name.", "error")
+                elif conn.one("SELECT id FROM lab_case_types WHERE lower(name) = lower(?) AND id != ?", (name, row["id"])):
+                    flash(f"“{name}” is already in the list.", "error")
+                elif name != row["name"]:
+                    conn.execute("UPDATE lab_case_types SET name = ? WHERE id = ?", (name, row["id"]))
+                    audit.record("lab_service_renamed", "lab_service", row["id"], f"Lab service renamed: {row['name']} -> {name}")
+                    flash("Renamed. Cases already saved keep the old name.", "success")
+            elif action == "toggle":
+                conn.execute("UPDATE lab_case_types SET active = ? WHERE id = ?", (0 if row["active"] else 1, row["id"]))
+                audit.record("lab_service_toggled", "lab_service", row["id"], f"Lab service {'turned off' if row['active'] else 'turned on'}: {row['name']}")
+                flash(f"“{row['name']}” {'turned off: no longer offered' if row['active'] else 'is offered again'}.", "success")
+            elif action in ("up", "down"):
+                rows = conn.all("SELECT id, sort_order FROM lab_case_types ORDER BY sort_order, id")
+                ids = [r["id"] for r in rows]
+                i = ids.index(row["id"])
+                j = i - 1 if action == "up" else i + 1
+                if 0 <= j < len(ids):
+                    ids[i], ids[j] = ids[j], ids[i]
+                    for k, rid in enumerate(ids):
+                        conn.execute("UPDATE lab_case_types SET sort_order = ? WHERE id = ?", (k * 10, rid))
+            else:
+                abort(400)
+        return redirect(url_for("lab_works.services"))
+    rows = conn.all("SELECT t.*, (SELECT COUNT(*) FROM lab_cases c WHERE c.case_type = t.name) + "
+                    "(SELECT COUNT(*) FROM lab_works w WHERE w.case_type = t.name) AS used FROM lab_case_types t ORDER BY t.sort_order, t.id")
+    return render_template("staff/lab_works/services.html", rows=rows, can_edit=can_edit)
 
 
 @bp.route("/prices", methods=["GET", "POST"])

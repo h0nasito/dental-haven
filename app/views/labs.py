@@ -28,6 +28,24 @@ CASE_TYPES = ["Crown (PFM)", "Crown (zirconia / all-ceramic)", "Crown (metal)", 
 from ..lab_status import LATE, OPEN, STATUSES, sql_list  # noqa: E402
 
 
+def case_types(conn, include: str | None = None) -> list[str]:
+    """The lab's services (types of case) in use, in order. The first time, the standard list is loaded.
+    `include` keeps a case's current type in the list even if it was turned off."""
+    if not conn.scalar("SELECT COUNT(*) FROM lab_case_types"):
+        from ..util import now_str
+        for i, name in enumerate(CASE_TYPES):
+            conn.execute("INSERT INTO lab_case_types (name, active, sort_order, created_at) VALUES (?, 1, ?, ?)", (name, i * 10, now_str()))
+    names = [r["name"] for r in conn.all("SELECT name FROM lab_case_types WHERE active = 1 ORDER BY sort_order, id")]
+    if include and include not in names:
+        names.append(include)
+    return names
+
+
+def is_case_type(conn, name: str) -> bool:
+    case_types(conn)
+    return bool(conn.one("SELECT 1 AS x FROM lab_case_types WHERE name = ?", (name,)))
+
+
 def _my_labs():
     return [r["lab_id"] for r in get_db().all("SELECT lab_id FROM user_labs WHERE user_id = ?", (g.user.id,))]
 
@@ -163,7 +181,7 @@ def new():
         patient = conn.one("SELECT * FROM patients WHERE id = ?", (patient_id,))
     errors = []
     v = {"lab_id": labs[0]["id"] if labs else None, "branch_id": g.user.active_branch_id or (patient["preferred_branch_id"] if patient else None),
-         "dentist_id": g.user.id if g.user.role == "dentist" else None, "case_type": CASE_TYPES[0], "teeth": "", "shade": "",
+         "dentist_id": g.user.id if g.user.role == "dentist" else None, "case_type": case_types(get_db())[0], "teeth": "", "shade": "",
          "material": "", "instructions": "", "sent_on": today().isoformat(), "due_on": "", "lab_fee": ""}
     if request.method == "POST" and request.form.get("action") == "search":
         q = clean(request.form.get("q"), 80).lower()
@@ -179,7 +197,7 @@ def new():
             errors.append("Choose a laboratory.")
         if not branch_id or not g.user.in_branch(branch_id):
             errors.append("Choose one of your branches.")
-        if v["case_type"] not in CASE_TYPES:
+        if not is_case_type(conn, v["case_type"]):
             errors.append("Choose the case type.")
         sent, due = parse_date(v["sent_on"]), parse_date(v["due_on"]) if v["due_on"] else None
         if not sent:
@@ -211,7 +229,7 @@ def new():
                        exclude=g.user.id)
             flash("Lab case created.", "success")
             return redirect(url_for("labs.case", case_id=cid))
-    return render_template("staff/labs/new.html", labs=labs, patient=patient, results=results, v=v, errors=errors, case_types=CASE_TYPES,
+    return render_template("staff/labs/new.html", labs=labs, patient=patient, results=results, v=v, errors=errors, case_types=case_types(get_db(), v.get("case_type")),
                            branches=branches_for_user(g.user), dentists=dentists(g.user.branch_ids))
 
 
