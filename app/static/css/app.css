@@ -952,3 +952,20 @@ section[id] { scroll-margin-top: 72px; }
 .chart-photos { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .35rem; }
 .chart-photos img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); display: block; }
 .tsvg .seg.f-incipient { fill: #fb923c; } .tsvg .seg.f-amalgam { fill: #475569; } .tsvg .seg.f-temp { fill: #22d3ee; } .tsvg .seg.f-wear { fill: #c8a27a; }
+/* soft tissue & occlusion */
+.chart-tabs { margin-bottom: .6rem; }
+.oral-pill { display: inline-block; margin: 0 .3rem .3rem 0; padding: .15rem .55rem; border-radius: 999px; background: #eef6f0; color: #1d6b3a; font-size: .85rem; }
+.oral-pill small { color: inherit; opacity: .75; }
+.oral-pill.watch { background: #fff1e6; color: #9a3412; }
+.oral-form fieldset { margin-bottom: .8rem; }
+.oral-line { display: grid; grid-template-columns: 8rem 1fr; gap: .35rem .6rem; align-items: center; padding: .35rem 0; border-bottom: 1px solid var(--line); }
+.oral-line:last-child { border-bottom: 0; }
+.oral-line select + select { grid-column: 2; }
+.oral-opts { display: flex; flex-wrap: wrap; gap: .3rem; }
+.chip { display: inline-flex; align-items: center; gap: .25rem; padding: .2rem .55rem; border: 1px solid var(--line); border-radius: 999px; font-size: .88rem; cursor: pointer; }
+.chip:has(input:checked) { background: var(--hover, #eef3f8); border-color: var(--brand-600, #1d4ed8); }
+.oral-occ { display: grid; grid-template-columns: 5rem 1fr 1fr; gap: .4rem .6rem; align-items: center; }
+@media (max-width: 560px) { .oral-line { grid-template-columns: 1fr; } .oral-line select + select { grid-column: 1; } }
+.otooth.pending { outline: 2px dashed var(--brand-600, #1d4ed8); outline-offset: 1px; }
+.chart-batch { margin: .2rem 0 .8rem; padding: .6rem .7rem; border: 1px dashed var(--line); border-radius: 10px; }
+.chart-pending li { padding: .3rem 0; border-top: 1px solid var(--line); }

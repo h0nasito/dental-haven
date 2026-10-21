@@ -251,7 +251,7 @@
 
 {% if tab == 'chart' and clinical %}
 {% macro tooth_svg(t, size=44, preview=False) -%}{% set v = chart_views.get(t|string, {}) %}{% set rg = chart_regions[t|string] %}
-<svg class="tsvg{% if v.mark %} m-{{ v.mark }}{% endif %}" viewBox="0 0 44 44" width="{{ size }}" height="{{ size }}" aria-hidden="true"{% if preview %} id="tooth-preview" data-regions='{{ chart_regions|tojson }}' data-fills='{{ fill_classes|tojson }}'{% endif %}>
+<svg class="tsvg{% if v.mark %} m-{{ v.mark }}{% endif %}" viewBox="0 0 44 44" width="{{ size }}" height="{{ size }}" aria-hidden="true"{% if preview %} id="tooth-preview" data-regions='{{ chart_regions|tojson }}' data-fills='{{ fill_classes|tojson }}' data-tags='{{ cond_tags|tojson }}' data-marks='{{ mark_classes|tojson }}'{% endif %}>
 <circle class="t-base" cx="22" cy="22" r="20.5"/>
 {% for pos in ['top', 'right', 'bottom', 'left'] %}{% set k = rg[pos] %}<path class="seg {{ (v.surf or {}).get(k) or v.whole or '' }}" data-pos="{{ pos }}" d="{{ seg_paths[pos] }}"><title>{{ surfaces[k] }}</title></path>{% endfor %}
 <circle class="seg {{ (v.surf or {}).get('O') or v.whole or '' }}" data-pos="center" cx="22" cy="22" r="8.5"><title>{{ surfaces['O'] }}</title></circle>
@@ -263,6 +263,9 @@
 <span class="otag">{{ v.tag or '' }}</span><span class="ono">{{ t }}</span>{{ tooth_svg(t) }}<span class="sr-only">{{ v.label or 'no finding' }}</span></a>
 {% if loop.index == (teeth|length // 2) %}<span class="odo-mid" aria-hidden="true"></span>{% endif %}{% endfor %}</div>
 {%- endmacro %}
+{% macro oral_pills(x) -%}{% for label, text, watch in x.summary %}<span class="oral-pill{{ ' watch' if watch }}"><small>{{ label }}</small> {{ text }}</span>{% endfor %}{%- endmacro %}
+<div class="tabs chart-tabs"><a class="{{ 'active' if chart_view == 'teeth' }}" href="?tab=chart">Teeth</a><a class="{{ 'active' if chart_view == 'oral' }}" href="?tab=chart&view=oral">Soft tissue &amp; occlusion{% if oral_latest %} <small class="muted">· {{ oral_latest.exam_date|date }}</small>{% endif %}</a></div>
+{% if chart_view == 'teeth' %}
 <div class="card" id="chart">
 <div class="card-head"><h2>Dental chart</h2><small class="muted">Right ← patient → Left</small></div>
 <p class="hint">Click a tooth to see its history{% if current_user.can('chart.edit') %} or record a finding/treatment{% endif %}. FDI numbering (e.g. 36 = lower left first molar); child (primary) teeth are the small rows. Shown from the patient's front: their right is on your left. Each tooth is split into its five surfaces: centre = occlusal / incisal, top and bottom = buccal or lingual, sides = mesial (towards the middle) and distal.</p>
@@ -277,7 +280,7 @@
 <div class="odo-legend">{% for code, (label, tag, cls) in conditions.items() %}<span class="legend-item"><svg viewBox="0 0 44 44" width="18" height="18" aria-hidden="true" class="tsvg{% if mark_classes.get(code) %} m-{{ mark_classes[code] }}{% endif %}"><circle class="t-base" cx="22" cy="22" r="20.5"/><circle class="seg {{ fill_classes[code] }}" cx="22" cy="22" r="19"/>{% set mk = mark_classes.get(code, '') %}{% if mk.startswith('x') %}<path class="t-x" d="M8 8 L36 36 M36 8 L8 36"/>{% elif mk.startswith('ring') %}<circle class="t-ring" cx="22" cy="22" r="21.5"/>{% endif %}</svg> <b class="otag-mini">{{ tag }}</b> {{ label }}</span>{% endfor %}</div>
 </div>
 <div class="grid grid-2">
-<div class="card">{% if sel_tooth %}<h2>Tooth {{ sel_tooth }}</h2>
+<div class="card" id="tooth-hist" data-hist='{{ chart_hist|tojson }}'>{% if sel_tooth %}<h2>Tooth {{ sel_tooth }}</h2>
 {% if sel_entries %}<ul class="list-plain">{% for e in sel_entries %}<li class="row between"><span><strong>{{ conditions[e.condition][0] }}</strong>{% if e.surfaces %} · {{ e.surfaces }}{% endif %}{% if e.note %}<br><small>{{ e.note }}</small>{% endif %}<br><small class="muted">{{ e.recorded_on|date }} · {{ e.by_name }}</small>
 {% if chart_photos.get(e.id) %}<span class="chart-photos">{% for ph in chart_photos[e.id] %}<a href="{{ url_for('patients.document', patient_id=p.id, doc_id=ph.id) }}" target="_blank" rel="noopener" title="{{ ph.title or ph.original_name }}">{% if ph.mime.startswith('image/') %}<img src="{{ url_for('patients.document', patient_id=p.id, doc_id=ph.id) }}" alt="Photo of tooth {{ e.tooth }}" loading="lazy">{% else %}📄 {{ ph.original_name }}{% endif %}</a>{% endfor %}</span>{% endif %}</span>
 {% if current_user.can('chart.delete') %}<form method="post" action="{{ url_for('chart.delete', patient_id=p.id) }}" data-confirm="Delete this chart entry?">{{ csrf() }}<input type="hidden" name="entry_id" value="{{ e.id }}"><button class="btn btn-ghost btn-sm">Delete</button></form>{% endif %}</li>{% endfor %}</ul>
@@ -297,10 +300,48 @@
 <div class="surf-checks">{% for k, l in surfaces.items() %}<label class="check"><input type="checkbox" name="surface_{{ k }}" value="1" data-surface="{{ k }}"> <b>{{ k }}</b> <small class="muted">{{ l }}</small></label>{% endfor %}</div></div></fieldset>
 <div class="form-grid"><div class="field"><label for="cd">Date</label><input id="cd" type="date" name="recorded_on" value="{{ today_iso }}" max="{{ today_iso }}"></div>
 <div class="field"><label for="cn">Note</label><input id="cn" name="note"></div></div>
+<div class="chart-batch js-only" hidden><button type="button" class="btn btn-secondary" id="chart-add">+ Add to list &amp; pick another tooth</button>
+<p class="hint">Tap a tooth on the chart, choose the finding and surfaces, then <strong>Add to list</strong>. The chart shows a preview (dashed outline = not saved yet). Repeat for other teeth, then save everything once.</p>
+<ul class="list-plain chart-pending" id="chart-pending"></ul><input type="hidden" name="items" id="chart-items"></div>
 <div class="field"><label for="cph">Photos <span class="hint">Optional, up to 6 (JPG, PNG, WebP or PDF, 10 MB each). Also saved in Uploads.</span></label><input id="cph" type="file" name="photos" multiple accept="image/jpeg,image/png,image/webp,application/pdf"></div>
-<button class="btn">Save to chart</button></form></div>
+<button class="btn" id="chart-save">Save to chart</button></form></div>
 {% endif %}
 </div>
+{% if oral_latest %}<p class="hint"><a href="?tab=chart&view=oral">Soft tissue &amp; occlusion</a> ({{ oral_latest.exam_date|date }}): {% for label, text, watch in oral_latest.summary %}{% if watch or label.startswith('Molar') %}{{ label }} {{ text }}{{ ', ' if not loop.last }}{% endif %}{% endfor %}</p>{% endif %}
+{% else %}
+<div class="grid grid-2">
+<div class="card"><div class="card-head"><h2>Soft tissue &amp; occlusion</h2>{% if oral_latest %}<small class="muted">Last exam {{ oral_latest.exam_date|date }} · {{ oral_latest.by_name }}</small>{% endif %}</div>
+{% if oral_latest %}
+<dl class="kv oral-kv">{% for group in ['Gingiva', 'Frenum', 'Tongue', 'Buccal mucosa', 'Palate', 'Occlusion'] %}{% set items = oral_latest.groups.get(group, []) %}
+<dt>{{ group }}</dt><dd>{% for label, text, watch in items %}<span class="oral-pill{{ ' watch' if watch }}">{% if group in ('Gingiva', 'Occlusion') %}<small>{{ label }}</small> {% endif %}{{ text }}</span>{% else %}<span class="muted">—</span>{% endfor %}</dd>{% endfor %}
+{% if oral_latest.note %}<dt>Note</dt><dd class="pre">{{ oral_latest.note }}</dd>{% endif %}</dl>
+<p class="hint">Highlighted = needs attention.</p>
+{% else %}<p class="muted">No soft tissue or occlusion exam recorded yet.</p>{% endif %}
+{% if oral_exams|length > 1 %}<details class="mt-1"><summary>Earlier exams ({{ oral_exams|length - 1 }})</summary><ul class="list-plain">{% for x in oral_exams[1:] %}<li><strong>{{ x.exam_date|date }}</strong> <small class="muted">· {{ x.by_name }}</small><br>{{ oral_pills(x) }}{% if x.note %}<br><small>{{ x.note }}</small>{% endif %}
+{% if current_user.can('chart.delete') %}<form method="post" action="{{ url_for('chart.oral_exam', patient_id=p.id) }}" class="inline-form" data-confirm="Delete this exam?">{{ csrf() }}<input type="hidden" name="action" value="delete"><input type="hidden" name="exam_id" value="{{ x.id }}"><button class="btn btn-ghost btn-sm">Delete</button></form>{% endif %}</li>{% endfor %}</ul></details>{% endif %}
+{% if oral_latest and current_user.can('chart.delete') %}<form method="post" action="{{ url_for('chart.oral_exam', patient_id=p.id) }}" class="mt-1" data-confirm="Delete the latest exam?">{{ csrf() }}<input type="hidden" name="action" value="delete"><input type="hidden" name="exam_id" value="{{ oral_latest.id }}"><button class="btn btn-ghost btn-sm">Delete latest exam</button></form>{% endif %}
+</div>
+{% if current_user.can('chart.edit') %}
+<div class="card"><h2>{{ 'Update' if oral_latest else 'Record' }} exam</h2>
+<p class="hint mt-0">Starts from the last exam; change what's different and save. Each save is kept as a dated record.</p>
+<form method="post" action="{{ url_for('chart.oral_exam', patient_id=p.id) }}" class="oral-form">{{ csrf() }}
+<div class="field"><label for="oxd">Exam date</label><input id="oxd" type="date" name="exam_date" value="{{ today_iso }}" max="{{ today_iso }}"></div>
+<fieldset><legend>Soft tissues</legend>
+{% for k in ['gingivitis', 'periodontitis'] %}{% set grp, label, opts = oral_fields[k] %}{% set ek = oral_extent_of[k] %}
+<div class="oral-line"><label for="ox-{{ k }}">{{ label }}</label><select id="ox-{{ k }}" name="{{ k }}"><option value="">—</option>{% for c, t in opts.items() %}<option value="{{ c }}"{% if oral_latest and oral_latest[k] == c %} selected{% endif %}>{{ t }}</option>{% endfor %}</select>
+<select name="{{ ek }}" aria-label="{{ label }}: localized or generalized"><option value="">Localized / generalized…</option>{% for c, t in oral_extent.items() %}<option value="{{ c }}"{% if oral_latest and oral_latest[ek] == c %} selected{% endif %}>{{ t }}</option>{% endfor %}</select></div>{% endfor %}
+{% for k in ['frenum', 'tongue', 'buccal_mucosa', 'palate'] %}{% set grp, label, opts = oral_fields[k] %}
+<div class="oral-line"><span class="oral-lbl">{{ label }}</span><span class="oral-opts">{% for c, t in opts.items() %}<label class="chip"><input type="radio" name="{{ k }}" value="{{ c }}"{% if oral_latest and oral_latest[k] == c %} checked{% endif %}> {{ t }}</label>{% endfor %}</span></div>{% endfor %}
+</fieldset>
+<fieldset><legend>Occlusion</legend>
+<div class="oral-occ"><span></span><b>Right</b><b>Left</b>
+{% for part in ['molar', 'canine'] %}<span class="oral-lbl">{{ part|capitalize }}</span>{% for side in ['right', 'left'] %}{% set k = part ~ '_' ~ side %}<select name="{{ k }}" aria-label="{{ part }} {{ side }}"><option value="">—</option>{% for c, t in oral_fields[k][2].items() %}<option value="{{ c }}"{% if oral_latest and oral_latest[k] == c %} selected{% endif %}>{{ t }}</option>{% endfor %}</select>{% endfor %}{% endfor %}</div>
+</fieldset>
+<div class="field"><label for="oxn">Note <span class="hint">e.g. what is abnormal on the buccal mucosa</span></label><textarea id="oxn" name="note" rows="2"></textarea></div>
+<button class="btn">Save exam</button></form></div>
+{% endif %}
+</div>
+{% endif %}
 {% endif %}
 
 {% if tab == 'billing' %}

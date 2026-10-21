@@ -468,6 +468,16 @@ def detail(patient_id):
                               f"AND chart_entry_id IN ({','.join('?' * len(ids))}) ORDER BY id", [patient_id, *ids]):
                 photos.setdefault(d["chart_entry_id"], []).append(d)
         ctx["chart_photos"] = photos
+        hist: dict[str, list] = {}
+        for e in entries:
+            hist.setdefault(e["tooth"], []).append({"l": CONDITIONS[e["condition"]][0] if e["condition"] in CONDITIONS else e["condition"],
+                                                    "s": e["surfaces"], "n": e["note"], "d": e["recorded_on"], "b": e["by_name"] or ""})
+        ctx["chart_hist"] = hist
+        ctx["cond_tags"] = {k: v[1] for k, v in CONDITIONS.items()}
+        from .chart import EXTENT, EXTENT_OF, ORAL, oral_state
+        exams = oral_state(conn, patient_id)
+        ctx.update(chart_view="oral" if request.args.get("view") == "oral" else "teeth", oral_exams=exams,
+                   oral_latest=exams[0] if exams else None, oral_fields=ORAL, oral_extent=EXTENT, oral_extent_of=EXTENT_OF)
     if g.user.can("lab.view") or g.user.is_super_admin:
         ctx["lab_cases"] = conn.all("SELECT c.*, l.name AS lab FROM lab_cases c JOIN laboratories l ON l.id = c.lab_id "
                                     "WHERE c.patient_id = ? ORDER BY c.id DESC LIMIT 10", (patient_id,))

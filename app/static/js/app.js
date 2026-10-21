@@ -1033,3 +1033,110 @@ document.addEventListener('change', function (e) {
   form.addEventListener('change', function (e) { if (e.target === toothSel || e.target === condSel || e.target.hasAttribute('data-surface')) paint(); });
   paint();
 })();
+
+/* Dental chart: pick teeth on the chart, add each to a list (previewed on the chart), save them all at once */
+(function () {
+  var svg = document.getElementById('tooth-preview');
+  if (!svg) return;
+  var form = svg.closest('form'), toothSel = form.querySelector('[name=tooth]'), condSel = form.querySelector('[name=condition]');
+  var batch = form.querySelector('.chart-batch'), list = document.getElementById('chart-pending'), hidden = document.getElementById('chart-items');
+  var saveBtn = document.getElementById('chart-save'), noteIn = form.querySelector('[name=note]'), histCard = document.getElementById('tooth-hist');
+  var regions = {}, fills = {}, tags = {}, marks = {}, hist = {};
+  try {
+    regions = JSON.parse(svg.getAttribute('data-regions') || '{}'); fills = JSON.parse(svg.getAttribute('data-fills') || '{}');
+    tags = JSON.parse(svg.getAttribute('data-tags') || '{}'); marks = JSON.parse(svg.getAttribute('data-marks') || '{}');
+    hist = histCard ? JSON.parse(histCard.getAttribute('data-hist') || '{}') : {};
+  } catch (e) { return; }
+  batch.hidden = false;
+  var pending = [], original = {};
+  function chartTooth(t) { var a = document.querySelector('.odo a.otooth[href*="tooth=' + t + '#"]'); return a; }
+  function surfacesNow() {
+    return Array.prototype.filter.call(form.querySelectorAll('input[data-surface]'), function (b) { return b.checked; })
+      .map(function (b) { return b.getAttribute('data-surface'); }).join('');
+  }
+  function condLabel(c) { var o = condSel.querySelector('option[value="' + c + '"]'); return o ? o.textContent : c; }
+  /* draw one pending entry on the chart tooth */
+  function drawOn(t, item) {
+    var a = chartTooth(t); if (!a) return;
+    var s = a.querySelector('svg'), rg = regions[t] || {}, fill = fills[item.condition] || 'f-sel', mk = marks[item.condition] || '';
+    if (item.surfaces) {
+      Array.prototype.forEach.call(s.querySelectorAll('[data-pos]'), function (el) {
+        if (item.surfaces.indexOf(rg[el.getAttribute('data-pos')]) !== -1) el.setAttribute('class', 'seg ' + fill);
+      });
+    } else {
+      Array.prototype.forEach.call(s.querySelectorAll('[data-pos]'), function (el) { el.setAttribute('class', 'seg' + (fills[item.condition] ? ' ' + fill : '')); });
+      s.setAttribute('class', 'tsvg' + (mk ? ' m-' + mk : ''));
+      Array.prototype.forEach.call(s.querySelectorAll('.t-x, .t-ring'), function (el) { el.remove(); });
+      var ns = 'http://www.w3.org/2000/svg';
+      if (mk.indexOf('x') === 0) { var x = document.createElementNS(ns, 'path'); x.setAttribute('class', 't-x'); x.setAttribute('d', 'M8 8 L36 36 M36 8 L8 36'); s.appendChild(x); }
+      else if (mk.indexOf('ring') === 0) { var c = document.createElementNS(ns, 'circle'); c.setAttribute('class', 't-ring'); c.setAttribute('cx', 22); c.setAttribute('cy', 22); c.setAttribute('r', 21.5); s.appendChild(c); }
+    }
+    a.querySelector('.otag').textContent = tags[item.condition] || '';
+    a.classList.add('pending');
+  }
+  function redrawTooth(t) {
+    var a = chartTooth(t); if (!a) return;
+    if (original[t]) { a.innerHTML = original[t]; a.classList.remove('pending'); }
+    pending.filter(function (p) { return p.tooth === t; }).forEach(function (p) { drawOn(t, p); });
+  }
+  function renderList() {
+    list.textContent = '';
+    pending.forEach(function (p, i) {
+      var li = document.createElement('li'); li.className = 'row between';
+      var sp = document.createElement('span'); sp.textContent = 'Tooth ' + p.tooth + ' · ' + condLabel(p.condition) + (p.surfaces ? ' (' + p.surfaces + ')' : '') + (p.note ? ' · ' + p.note : '');
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'btn btn-ghost btn-sm'; b.textContent = '✕'; b.setAttribute('aria-label', 'Remove from list');
+      b.addEventListener('click', function () { var t = pending[i].tooth; pending.splice(i, 1); redrawTooth(t); renderList(); });
+      li.appendChild(sp); li.appendChild(b); list.appendChild(li);
+    });
+    saveBtn.textContent = pending.length ? 'Save all to chart (' + pending.length + ')' : 'Save to chart';
+  }
+  function showHistory(t) {
+    if (!histCard) return;
+    histCard.textContent = '';
+    var h = document.createElement('h2'); h.textContent = 'Tooth ' + t; histCard.appendChild(h);
+    var rows = hist[t] || [];
+    if (!rows.length) { var p = document.createElement('p'); p.className = 'muted'; p.textContent = 'Nothing recorded for this tooth yet.'; histCard.appendChild(p); }
+    var ul = document.createElement('ul'); ul.className = 'list-plain';
+    rows.forEach(function (r) {
+      var li = document.createElement('li'), st = document.createElement('strong'); st.textContent = r.l; li.appendChild(st);
+      if (r.s) li.appendChild(document.createTextNode(' · ' + r.s));
+      if (r.n) { li.appendChild(document.createElement('br')); var n = document.createElement('small'); n.textContent = r.n; li.appendChild(n); }
+      li.appendChild(document.createElement('br')); var m = document.createElement('small'); m.className = 'muted'; m.textContent = r.d + (r.b ? ' · ' + r.b : ''); li.appendChild(m);
+      ul.appendChild(li);
+    });
+    histCard.appendChild(ul);
+    var more = document.createElement('a'); more.href = '?tab=chart&tooth=' + t + '#rec'; more.className = 'btn btn-ghost btn-sm mt-1';
+    more.textContent = 'Open full history (photos, delete)'; histCard.appendChild(more);
+  }
+  function selectTooth(t) {
+    toothSel.value = t; toothSel.dispatchEvent(new Event('change', { bubbles: true }));
+    Array.prototype.forEach.call(document.querySelectorAll('.odo a.otooth.selected'), function (a) { a.classList.remove('selected'); });
+    var a = chartTooth(t); if (a) a.classList.add('selected');
+    showHistory(t);
+  }
+  document.querySelector('.odo').addEventListener('click', function (e) {
+    var a = e.target.closest('a.otooth'); if (!a) return;
+    e.preventDefault();
+    var m = a.getAttribute('href').match(/tooth=(\d+)/); if (m) selectTooth(m[1]);
+    var r = form.getBoundingClientRect(); if (r.top > window.innerHeight || r.bottom < 0) form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  toothSel.addEventListener('change', function () {
+    var a = chartTooth(toothSel.value);
+    Array.prototype.forEach.call(document.querySelectorAll('.odo a.otooth.selected'), function (x) { if (x !== a) x.classList.remove('selected'); });
+    if (a) a.classList.add('selected');
+  });
+  function addCurrent() {
+    var t = toothSel.value, item = { tooth: t, condition: condSel.value, surfaces: surfacesNow(), note: (noteIn.value || '').trim() };
+    var a = chartTooth(t); if (a && !(t in original)) original[t] = a.innerHTML;
+    pending.push(item); drawOn(t, item); renderList();
+    Array.prototype.forEach.call(form.querySelectorAll('input[data-surface]'), function (b) { b.checked = false; });
+    noteIn.value = ''; condSel.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  document.getElementById('chart-add').addEventListener('click', addCurrent);
+  form.addEventListener('submit', function () {
+    if (!pending.length) { hidden.value = ''; return; }
+    if (surfacesNow() || (noteIn.value || '').trim()) addCurrent();     // what is still in the form is saved too
+    hidden.value = JSON.stringify(pending); pending = [];
+  });
+  window.addEventListener('beforeunload', function (e) { if (pending.length) { e.preventDefault(); e.returnValue = ''; } });
+})();

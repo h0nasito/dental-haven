@@ -63,3 +63,58 @@ class TestChartPhotos(Base):
         c.post(f"/staff/patients/{pid}/chart", data={"tooth": "26", "condition": "caries", "photos": [(io.BytesIO(b"hello"), "x.png")]},
                content_type="multipart/form-data")
         self.assertEqual(self.q("SELECT COUNT(*) AS n FROM chart_entries WHERE patient_id = ?", (pid,))["n"], n)
+
+
+class TestOralExam(Base):
+    def test_soft_tissue_and_occlusion(self):
+        pid = self.q("SELECT id FROM patients WHERE active = 1 ORDER BY id DESC LIMIT 1")["id"]
+        c = self.login("admin")
+        page = c.get(f"/staff/patients/{pid}?tab=chart&view=oral").data.decode()
+        self.assertIn("No soft tissue or occlusion exam recorded yet", page)
+        r = c.post(f"/staff/patients/{pid}/oral-exam", data={
+            "exam_date": "2026-10-01", "gingivitis": "mild", "gingivitis_extent": "generalized", "periodontitis": "none",
+            "periodontitis_extent": "localized", "frenum": "high", "tongue": "normal", "buccal_mucosa": "normal", "palate": "high_vault",
+            "molar_right": "I", "molar_left": "II", "canine_right": "I", "canine_left": "na", "tongue_x": "bad"})
+        self.assertEqual(r.status_code, 302)
+        x = self.q("SELECT * FROM oral_exams WHERE patient_id = ? ORDER BY id DESC LIMIT 1", (pid,))
+        self.assertEqual((x["gingivitis"], x["gingivitis_extent"], x["periodontitis_extent"], x["molar_left"], x["canine_left"]),
+                         ("mild", "generalized", "", "II", "na"))
+        page = c.get(f"/staff/patients/{pid}?tab=chart&view=oral").data.decode()
+        self.assertIn("Generalized mild gingivitis", page)
+        self.assertIn("High frenum attachment", page)
+        self.assertIn("Cannot be determined", page)
+        self.assertIn('value="II" selected', page)          # the form starts from the last exam
+        # a second exam keeps the first as history
+        c.post(f"/staff/patients/{pid}/oral-exam", data={"exam_date": "2026-10-20", "gingivitis": "none", "tongue": "tongue_tied"})
+        page = c.get(f"/staff/patients/{pid}?tab=chart&view=oral").data.decode()
+        self.assertIn("Earlier exams (1)", page)
+        self.assertIn("Tongue-tied", page)
+        # bad values are ignored; nothing chosen -> not saved
+        n = self.q("SELECT COUNT(*) AS n FROM oral_exams WHERE patient_id = ?", (pid,))["n"]
+        c.post(f"/staff/patients/{pid}/oral-exam", data={"tongue": "<b>"})
+        self.assertEqual(self.q("SELECT COUNT(*) AS n FROM oral_exams WHERE patient_id = ?", (pid,))["n"], n)
+        # the teeth view shows a one-line summary
+        self.assertIn("Soft tissue &amp; occlusion</a>", c.get(f"/staff/patients/{pid}?tab=chart").data.decode())
+
+
+class TestChartBatch(Base):
+    def test_save_several_teeth_at_once(self):
+        import json
+        pid = self.q("SELECT id FROM patients WHERE active = 1 ORDER BY id LIMIT 1 OFFSET 2")["id"]
+        c = self.login("admin")
+        before = self.q("SELECT COUNT(*) AS n FROM chart_entries WHERE patient_id = ? AND deleted = 0", (pid,))["n"]
+        items = [{"tooth": "17", "condition": "caries", "surfaces": "OD"}, {"tooth": "46", "condition": "missing", "surfaces": ""},
+                 {"tooth": "11", "condition": "restoration", "surfaces": "MXB", "note": "composite"}]
+        r = c.post(f"/staff/patients/{pid}/chart", data={"items": json.dumps(items), "recorded_on": "2026-10-01", "tooth": "11", "condition": "sound"})
+        self.assertEqual(r.status_code, 302)
+        rows = self.conn.all("SELECT tooth, condition, surfaces, note, recorded_on FROM chart_entries WHERE patient_id = ? AND deleted = 0 "
+                             "ORDER BY id DESC LIMIT 3", (pid,))[::-1]
+        self.assertEqual([(x["tooth"], x["condition"], x["surfaces"], x["note"]) for x in rows],
+                         [("17", "caries", "OD", ""), ("46", "missing", "", ""), ("11", "restoration", "MB", "composite")])
+        self.assertEqual(self.q("SELECT COUNT(*) AS n FROM chart_entries WHERE patient_id = ? AND deleted = 0", (pid,))["n"], before + 3)
+        # one bad entry: nothing saved
+        c.post(f"/staff/patients/{pid}/chart", data={"items": json.dumps([{"tooth": "17", "condition": "caries"}, {"tooth": "99", "condition": "caries"}])})
+        self.assertEqual(self.q("SELECT COUNT(*) AS n FROM chart_entries WHERE patient_id = ? AND deleted = 0", (pid,))["n"], before + 3)
+        page = c.get(f"/staff/patients/{pid}?tab=chart").data.decode()
+        self.assertIn('id="chart-add"', page)
+        self.assertIn("data-hist=", page)

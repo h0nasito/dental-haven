@@ -95,6 +95,52 @@ def tooth_views(entries) -> dict:
     return out
 
 
+# ---- soft tissue & occlusion (one dated exam per row) ----
+EXTENT = {"localized": "Localized", "generalized": "Generalized"}
+CLASSES = {"I": "Class I", "II": "Class II", "III": "Class III", "na": "Cannot be determined"}
+ORAL = {   # field: (group, label, {code: text})
+    "gingivitis": ("Gingiva", "Gingivitis", {"none": "None", "mild": "Mild gingivitis", "moderate": "Moderate gingivitis", "severe": "Severe gingivitis"}),
+    "periodontitis": ("Gingiva", "Periodontitis", {"none": "None", "early": "Early periodontitis", "chronic": "Chronic periodontitis"}),
+    "frenum": ("Frenum", "Frenum", {"normal": "Normal", "high": "High frenum attachment"}),
+    "tongue": ("Tongue", "Tongue", {"normal": "Normal", "macroglossia": "Macroglossia", "tongue_tied": "Tongue-tied"}),
+    "buccal_mucosa": ("Buccal mucosa", "Buccal mucosa", {"normal": "Normal", "abnormal": "Abnormal"}),
+    "palate": ("Palate", "Palate", {"normal": "Normal", "high_vault": "High vault"}),
+    "molar_right": ("Occlusion", "Molar · right", CLASSES), "molar_left": ("Occlusion", "Molar · left", CLASSES),
+    "canine_right": ("Occlusion", "Canine · right", CLASSES), "canine_left": ("Occlusion", "Canine · left", CLASSES),
+}
+EXTENT_OF = {"gingivitis": "gingivitis_extent", "periodontitis": "periodontitis_extent"}
+WATCH = {"mild", "moderate", "severe", "early", "chronic", "high", "macroglossia", "tongue_tied", "abnormal", "high_vault", "II", "III"}
+
+
+def oral_summary(x) -> list[tuple[str, str, bool]]:
+    """(label, value, needs attention) for what was recorded in an exam."""
+    out = []
+    for k, (_g, label, opts) in ORAL.items():
+        val = x[k]
+        if not val:
+            continue
+        text = opts.get(val, val)
+        ext = x[EXTENT_OF[k]] if k in EXTENT_OF else ""
+        if ext and val != "none":
+            text = f"{EXTENT.get(ext, ext)} {text[0].lower()}{text[1:]}"
+        out.append((label, text, val in WATCH))
+    return out
+
+
+def oral_state(conn, patient_id) -> list:
+    rows = conn.all("SELECT o.*, u.name AS by_name FROM oral_exams o LEFT JOIN users u ON u.id = o.recorded_by "
+                    "WHERE o.patient_id = ? AND o.deleted = 0 ORDER BY o.exam_date DESC, o.id DESC", (patient_id,))
+    out = []
+    for r in rows:
+        summary = oral_summary(r)
+        group_of = {label: grp for grp, label, _o in ORAL.values()}
+        groups: dict[str, list] = {}
+        for item in summary:
+            groups.setdefault(group_of[item[0]], []).append(item)
+        out.append(dict(r, summary=summary, groups=groups))
+    return out
+
+
 def _check(patient_id):
     if not can_see_clinical(get_db(), g.user, patient_id):
         abort(403)
@@ -109,43 +155,75 @@ def chart_state(conn, patient_id):
     return rows, latest
 
 
+MAX_ITEMS = 64
+
+
+def _items(form) -> tuple[list[dict], str | None]:
+    """The entries to save: the list built on the chart (JSON in "items"), else the single tooth in the form."""
+    import json
+    raw = form.get("items") or ""
+    rows = []
+    if raw.strip():
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            return [], "The list of teeth couldn't be read. Please try again."
+        if not isinstance(data, list) or len(data) > MAX_ITEMS:
+            return [], "Too many entries at once (up to 64)."
+        for x in data:
+            if not isinstance(x, dict):
+                return [], "The list of teeth couldn't be read. Please try again."
+            rows.append({"tooth": str(x.get("tooth", "")).strip(), "condition": str(x.get("condition", "")),
+                         "surfaces": "".join(k for k in SURFACES if k in str(x.get("surfaces", ""))), "note": clean(str(x.get("note", "")), 500)})
+    else:
+        rows = [{"tooth": t.strip(), "condition": form.get("condition", ""), "surfaces": "".join(k for k in SURFACES if form.get(f"surface_{k}")),
+                 "note": clean(form.get("note"), 500)} for t in form.getlist("tooth") if t.strip()]
+    for r in rows:
+        if r["tooth"] not in VALID_TEETH or r["condition"] not in CONDITIONS:
+            return [], "Choose a tooth and a finding for every entry."
+    return rows, None
+
+
 @bp.route("/<int:patient_id>/chart", methods=["POST"])
 @require("chart.edit")
 def add_entry(patient_id):
     conn = get_db()
     _check(patient_id)
-    teeth = [t.strip() for t in request.form.getlist("tooth") if t.strip() in VALID_TEETH]
-    condition = request.form.get("condition")
-    surfaces = "".join(s for s in SURFACES if request.form.get(f"surface_{s}"))
     d = parse_date(request.form.get("recorded_on")) or today()
     photos = [f for f in request.files.getlist("photos") if f and f.filename][:MAX_PHOTOS]
-    if not teeth or condition not in CONDITIONS or d > today():
-        flash("Choose a tooth, a condition and a date that isn't in the future.", "error")
-    else:
-        saved = []
-        for f in photos:
-            stored, mime, size, original, err = save_document(f)
-            if err:
-                for x in saved:
-                    document_path(x[0]).unlink(missing_ok=True)
-                flash(f"{f.filename}: {err} Nothing was saved.", "error")
-                return redirect(url_for("patients.detail", patient_id=patient_id, tab="chart", tooth=teeth[0]) + "#rec")
-            saved.append((stored, mime, size, original))
-        with conn.transaction():
-            first = None
-            for t in teeth:
-                eid = conn.insert("chart_entries", {"patient_id": patient_id, "tooth": t, "surfaces": surfaces, "condition": condition,
-                                                    "note": clean(request.form.get("note"), 500), "recorded_by": g.user.id,
-                                                    "recorded_on": d.isoformat(), "created_at": now_str()})
-                first = first or eid
-            title = f"Tooth {', '.join(teeth)} · {CONDITIONS[condition][0]}" + (f" ({surfaces})" if surfaces else "")
-            for stored, mime, size, original in saved:
-                conn.insert("patient_documents", {"patient_id": patient_id, "category": "clinical_photo", "clinical": 1, "title": title[:120],
-                                                  "original_name": original, "stored_name": stored, "mime": mime, "size_bytes": size,
-                                                  "uploaded_by": g.user.id, "uploaded_at": now_str(), "chart_entry_id": first})
-            audit.record("chart_updated", "patient", patient_id, f"Chart: {CONDITIONS[condition][0]} on tooth {', '.join(teeth)}"
-                         + (f", {len(saved)} photo{'s' if len(saved) > 1 else ''}" if saved else ""))
-        flash("Chart updated." + (f" {len(saved)} photo{'s' if len(saved) > 1 else ''} added (also in Uploads)." if saved else ""), "success")
+    # several teeth at once (the list built on the chart), or the one tooth in the form
+    items, bad = _items(request.form)
+    if bad or not items or d > today():
+        flash(bad or "Choose a tooth, a condition and a date that isn't in the future.", "error")
+        return redirect(url_for("patients.detail", patient_id=patient_id, tab="chart") + "#rec")
+    teeth = list(dict.fromkeys(it["tooth"] for it in items))
+    saved = []
+    for f in photos:
+        stored, mime, size, original, err = save_document(f)
+        if err:
+            for x in saved:
+                document_path(x[0]).unlink(missing_ok=True)
+            flash(f"{f.filename}: {err} Nothing was saved.", "error")
+            return redirect(url_for("patients.detail", patient_id=patient_id, tab="chart", tooth=teeth[0]) + "#rec")
+        saved.append((stored, mime, size, original))
+    with conn.transaction():
+        first = None
+        for it in items:
+            eid = conn.insert("chart_entries", {"patient_id": patient_id, "tooth": it["tooth"], "surfaces": it["surfaces"],
+                                                "condition": it["condition"], "note": it["note"], "recorded_by": g.user.id,
+                                                "recorded_on": d.isoformat(), "created_at": now_str()})
+            first = first or eid
+        it0 = items[0]
+        title = (f"Tooth {it0['tooth']} · {CONDITIONS[it0['condition']][0]}" + (f" ({it0['surfaces']})" if it0["surfaces"] else "")) \
+            if len(items) == 1 else f"Teeth {', '.join(teeth)} · chart {d.isoformat()}"
+        for stored, mime, size, original in saved:
+            conn.insert("patient_documents", {"patient_id": patient_id, "category": "clinical_photo", "clinical": 1, "title": title[:120],
+                                              "original_name": original, "stored_name": stored, "mime": mime, "size_bytes": size,
+                                              "uploaded_by": g.user.id, "uploaded_at": now_str(), "chart_entry_id": first})
+        what = CONDITIONS[it0["condition"]][0] if len({i["condition"] for i in items}) == 1 else f"{len(items)} entries"
+        audit.record("chart_updated", "patient", patient_id, f"Chart: {what} on tooth {', '.join(teeth)}"
+                     + (f", {len(saved)} photo{'s' if len(saved) > 1 else ''}" if saved else ""))
+    flash(("Chart updated." if len(items) == 1 else f"Chart updated: {len(items)} entries saved.") + (f" {len(saved)} photo{'s' if len(saved) > 1 else ''} added (also in Uploads)." if saved else ""), "success")
     return redirect(url_for("patients.detail", patient_id=patient_id, tab="chart", tooth=teeth[0] if teeth else None,
                             dentition=request.form.get("dentition", "adult")))
 
@@ -169,3 +247,37 @@ def delete(patient_id):
         audit.record("chart_entry_deleted", "patient", patient_id, f"Deleted chart entry on tooth {e['tooth']}", {"entry": dict(e)})
         flash("Chart entry deleted.", "success")
     return redirect(url_for("patients.detail", patient_id=patient_id, tab="chart"))
+
+
+@bp.route("/<int:patient_id>/oral-exam", methods=["POST"])
+@require("chart.edit")
+def oral_exam(patient_id):
+    conn = get_db()
+    _check(patient_id)
+    f = request.form
+    back = redirect(url_for("patients.detail", patient_id=patient_id, tab="chart", view="oral"))
+    if f.get("action") == "delete":
+        if not g.user.can("chart.delete"):
+            abort(403)
+        x = conn.one("SELECT * FROM oral_exams WHERE id = ? AND patient_id = ? AND deleted = 0", (to_int(f.get("exam_id")), patient_id))
+        if not x:
+            abort(404)
+        conn.execute("UPDATE oral_exams SET deleted = 1 WHERE id = ?", (x["id"],))
+        audit.record("oral_exam_deleted", "patient", patient_id, f"Deleted soft tissue / occlusion exam of {x['exam_date']}", {"exam": dict(x)})
+        flash("Exam deleted.", "success")
+        return back
+    d = parse_date(f.get("exam_date")) or today()
+    if d > today():
+        flash("The exam date can't be in the future.", "error")
+        return back
+    row = {k: (f.get(k) if f.get(k) in opts else "") for k, (_g, _l, opts) in ORAL.items()}
+    for k, ek in EXTENT_OF.items():
+        row[ek] = f.get(ek) if f.get(ek) in EXTENT and row[k] not in ("", "none") else ""
+    if not any(row.values()) and not clean(f.get("note"), 1000):
+        flash("Choose at least one finding.", "error")
+        return back
+    conn.insert("oral_exams", {"patient_id": patient_id, "exam_date": d.isoformat(), **row, "note": clean(f.get("note"), 1000),
+                               "recorded_by": g.user.id, "created_at": now_str()})
+    audit.record("oral_exam_recorded", "patient", patient_id, f"Soft tissue / occlusion exam {d.isoformat()}")
+    flash("Soft tissue & occlusion saved.", "success")
+    return back
