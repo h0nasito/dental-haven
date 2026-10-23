@@ -1,0 +1,65 @@
+{% extends "staff/layout.html" %}
+{% block page_title %}Business report {{ label }}{% endblock %}
+{% macro chg(now, before, good_up=true) -%}
+{% if before %}{% set c = ((now - before) * 100 / (before|abs))|round|int %}<span class="br-chg {{ '' if c == 0 else ('good' if (c > 0) == good_up else 'bad') }}">{{ '▲' if c > 0 else ('▼' if c < 0 else '•') }} {{ c|abs }}%</span>{% else %}<span class="br-chg muted">—</span>{% endif %}
+{%- endmacro %}
+{% macro pts(now, before, good_up=true) -%}
+{% if now is not none and before is not none %}{% set d = (now - before)|round(1) %}<span class="br-chg {{ '' if d == 0 else ('good' if (d > 0) == good_up else 'bad') }}">{{ '▲' if d > 0 else ('▼' if d < 0 else '•') }} {{ d|abs }} pts</span>{% else %}<span class="br-chg muted">—</span>{% endif %}
+{%- endmacro %}
+{% block content %}
+<div class="page-head"><div><h1>Monthly business report</h1>
+<p>{{ label }}{% if partial %} so far (to {{ cur.end|date }}){% endif %} · {{ shown|map(attribute='name')|join(', ') if shown|length < mine|length else 'All my branches' }} · compared with {{ prev_range[0]|date }} – {{ prev_range[1]|date }}</p></div>
+<div class="row no-print">{% if current_user.can('reports.export') %}<a class="btn btn-secondary btn-sm" href="{{ url_for('billing.business', month=month.strftime('%Y-%m'), branch=bid, format='csv') }}">CSV</a>{% endif %}
+<button type="button" class="btn btn-secondary btn-sm" data-print>Print / PDF</button></div></div>
+<form class="toolbar no-print" method="get">
+<div class="field"><label for="bm">Month</label><select id="bm" name="month" data-autosubmit>{% for m in months %}<option value="{{ m.strftime('%Y-%m') }}" {% if m == month %}selected{% endif %}>{{ m.strftime('%B %Y') }}</option>{% endfor %}</select></div>
+{% if mine|length > 1 %}<div class="field"><label for="bb">Branch</label><select id="bb" name="branch" data-autosubmit><option value="">All my branches</option>{% for b in mine %}<option value="{{ b.id }}" {% if bid == b.id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select></div>{% endif %}
+<button class="btn btn-secondary js-hide">Show</button></form>
+
+<h2 class="br-h">1. Scorecard</h2>
+<div class="br-grid">
+<div class="br-card"><div class="br-l">Gross collections</div><div class="br-v">{{ cur.gross|peso }}</div><div class="br-s">{{ chg(cur.gross, prev.gross) }} vs {{ plabel }}</div></div>
+<div class="br-card"><div class="br-l">Total expenses</div><div class="br-v">{{ cur.expenses|peso }}</div><div class="br-s">{{ chg(cur.expenses, prev.expenses, false) }} vs {{ plabel }} <small class="muted">· excl. payroll</small></div></div>
+<div class="br-card"><div class="br-l">Total payroll</div><div class="br-v">{{ cur.payroll|peso }}</div><div class="br-s">{{ chg(cur.payroll, prev.payroll, false) }} vs {{ plabel }}</div></div>
+<div class="br-card {{ 'neg' if cur.net < 0 else 'pos' }}"><div class="br-l">Net profit</div><div class="br-v">{{ cur.net|peso }}</div><div class="br-s">{{ chg(cur.net, prev.net) }} vs {{ plabel }}</div></div>
+</div>
+
+<h2 class="br-h">2. Key ratios <small class="muted">(of gross collections)</small></h2>
+<div class="br-grid br-3">
+<div class="br-card"><div class="br-l">Net profit margin</div><div class="br-v">{{ '%.1f%%'|format(cur.margin) if cur.margin is not none else '—' }}</div><div class="br-s">{{ pts(cur.margin, prev.margin) }} · {{ plabel }} {{ '%.1f%%'|format(prev.margin) if prev.margin is not none else '—' }}</div></div>
+<div class="br-card"><div class="br-l">Dental supply / lab cost</div><div class="br-v">{{ '%.1f%%'|format(cur.supply_pct) if cur.supply_pct is not none else '—' }}</div><div class="br-s">{{ pts(cur.supply_pct, prev.supply_pct, false) }} · {{ plabel }} {{ '%.1f%%'|format(prev.supply_pct) if prev.supply_pct is not none else '—' }}</div></div>
+<div class="br-card"><div class="br-l">Payroll cost</div><div class="br-v">{{ '%.1f%%'|format(cur.payroll_pct) if cur.payroll_pct is not none else '—' }}</div><div class="br-s">{{ pts(cur.payroll_pct, prev.payroll_pct, false) }} · {{ plabel }} {{ '%.1f%%'|format(prev.payroll_pct) if prev.payroll_pct is not none else '—' }}</div></div>
+</div>
+
+<div class="br-two">
+<div class="card"><h2>3. Costs by group</h2>
+<div class="table-wrap"><table class="br-t"><thead><tr><th></th><th class="num">{{ label.split(' ')[0] }}</th><th class="num">% of coll.</th><th class="num">{{ plabel }}</th></tr></thead>
+{% for gname, gv in cur.groups.items() %}<tbody><tr class="br-g"><td><strong>{{ gname }}</strong></td><td class="num"><strong>{{ gv.total|peso }}</strong></td>
+<td class="num">{{ '%.1f%%'|format(gv.pct) if gv.pct is not none else '—' }}<span class="br-bar" style="width:{{ [gv.pct or 0, 100]|min }}%"></span></td>
+<td class="num muted">{{ prev.groups[gname].total|peso }}</td></tr>
+{% for item, amt in gv.lines %}<tr class="br-i"><td>{{ item }}</td><td class="num">{{ amt|peso }}</td><td></td><td></td></tr>{% endfor %}
+{% if not gv.lines %}<tr class="br-i"><td class="muted" colspan="4">Nothing recorded.</td></tr>{% endif %}</tbody>{% endfor %}
+<tfoot><tr><td><strong>All costs</strong></td><td class="num"><strong>{{ (cur.expenses + cur.payroll)|peso }}</strong></td><td class="num">{{ ('%.1f%%'|format(100 * (cur.expenses + cur.payroll) / cur.gross)) if cur.gross else '—' }}</td><td class="num muted">{{ (prev.expenses + prev.payroll)|peso }}</td></tr></tfoot></table></div></div>
+<div class="card"><h2>4. Key takeaways</h2><ul class="br-notes">{% for n in notes %}<li>{{ n }}</li>{% endfor %}</ul>
+{% if cur.double_payroll %}<p class="notice">Both “Salaries & wages” expenses and an approved payroll run are counted this month. If the expenses are the same salaries, record them in only one place.</p>{% endif %}
+<details class="mt-1"><summary class="muted">Where the numbers come from</summary><ul class="hint">
+<li><strong>Gross collections</strong>: money received this month (payments and deposits, less refunds), as in the Financial report.</li>
+<li><strong>Expenses</strong>: entries in Expenses and Monthly bills by the date paid (posted and not yet posted), plus lab fees on bills paid. Categories are grouped: supplies &amp; lab = Dental supplies, Laboratory fees, lab fees on bills; fixed overhead = rent, utilities, internet, equipment, repairs, permits; administrative &amp; marketing = marketing, professional fees, office, transport, pantry, food, miscellaneous.</li>
+<li><strong>Payroll</strong>: “Salaries &amp; wages” expenses, dentist commissions, and approved payroll runs ending this month (gross pay).</li>
+<li>A month that isn't over is compared with the same days of the month before.</li></ul></details></div>
+</div>
+<style>
+.br-h{font-size:1rem;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3);margin:1rem 0 .5rem}
+.br-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.8rem}.br-grid.br-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media (max-width:900px){.br-grid,.br-grid.br-3{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.br-card{background:var(--surface,#fff);border:1px solid var(--line);border-radius:14px;padding:.9rem 1rem}
+.br-card.pos{border-color:#86efac;background:#f0fdf4}.br-card.neg{border-color:#fca5a5;background:#fef2f2}
+.br-l{font-weight:700;font-size:.85rem;color:var(--ink-3)}.br-v{font-size:1.45rem;font-weight:800;margin:.25rem 0;white-space:nowrap}
+.br-s{font-size:.82rem;color:var(--ink-3)}.br-chg{font-weight:700}.br-chg.good{color:#15803d}.br-chg.bad{color:#b91c1c}
+.br-two{display:grid;grid-template-columns:minmax(0,3fr) minmax(240px,2fr);gap:1rem;margin-top:1rem}@media (max-width:900px){.br-two{grid-template-columns:1fr}}
+.br-t{width:100%}.br-t td.num,.br-t th.num{white-space:nowrap}.br-t td:first-child{white-space:normal}.br-g td{border-top:2px solid var(--line);background:#f8fafc}.br-i td:first-child{padding-left:1.4rem;color:var(--ink-2,#374151)}
+.br-bar{display:block;height:.4rem;border-radius:3px;background:#ea8a28;margin-top:.2rem;margin-left:auto;max-width:100%}
+.br-notes li{margin:.4rem 0;line-height:1.45}
+@media print{.no-print,.sidebar,.topbar{display:none!important}.br-two{grid-template-columns:1fr}}
+</style>
+{% endblock %}

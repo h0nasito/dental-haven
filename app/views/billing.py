@@ -885,3 +885,57 @@ def patient_credit(patient_id):
                      {"credit_id": cid, "reason": note}, branch_id)
     flash("Deposit recorded as account credit." if action == "deposit" else "Credit refund recorded.", "success")
     return back
+
+
+@bp.route("/reports/business")
+@require("reports.sales")
+def business():
+    """Monthly business report: scorecard, key ratios, costs by group, takeaways (vs the month before)."""
+    from datetime import date as _date
+    from .. import business_report as br
+    conn = get_db()
+    raw = request.args.get("month") or today().strftime("%Y-%m")
+    try:
+        m = _date(int(raw[:4]), int(raw[5:7]), 1)
+    except (ValueError, IndexError):
+        m = today().replace(day=1)
+    mine = [b for b in conn.all("SELECT * FROM branches WHERE active = 1 ORDER BY sort_order") if b["id"] in g.user.branch_ids]
+    bid = to_int(request.args.get("branch"))
+    shown = [b for b in mine if b["id"] == bid] or mine
+    start, end = br.month_bounds(m)
+    end = min(end, today()) if start <= today() else end
+    prev_m = (start - timedelta(days=1)).replace(day=1)
+    p0, p1 = br.month_bounds(prev_m)
+    if start <= today() <= br.month_bounds(m)[1]:
+        p1 = min(p1, p0 + (end - start))          # month so far: compare with the same days of the month before
+    cur, prev = br.figures(conn, shown, start, end), br.figures(conn, shown, p0, p1)
+    label, plabel = start.strftime("%B %Y"), prev_m.strftime("%B")
+    notes = br.takeaways(cur, prev, label, plabel)
+    if request.args.get("format") == "csv":
+        if not g.user.can("reports.export"):
+            abort(403)
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow([f"Business report {label}", ", ".join(b["name"] for b in shown)])
+        w.writerow(["Item", f"{label} (PHP)", f"{prev_m.strftime('%B %Y')} (PHP)"])
+        for k, lab in (("gross", "Gross collections"), ("expenses", "Total expenses"), ("payroll", "Total payroll"), ("net", "Net profit")):
+            w.writerow([lab, cur[k] / 100, prev[k] / 100])
+        for k, lab in (("margin", "Net profit margin %"), ("supply_pct", "Dental supply / lab cost %"), ("payroll_pct", "Payroll cost %")):
+            w.writerow([lab, cur[k] if cur[k] is not None else "", prev[k] if prev[k] is not None else ""])
+        for gname, gv in cur["groups"].items():
+            w.writerow([gname, gv["total"] / 100, prev["groups"][gname]["total"] / 100])
+            for item, amt in gv["lines"]:
+                w.writerow([f"  {item}", amt / 100, ""])
+        for n in notes:
+            w.writerow(["Takeaway", n])
+        audit.record("business_report_exported", "report", None, f"Business report {label}")
+        return Response("﻿" + buf.getvalue(), mimetype="text/csv",
+                        headers={"Content-Disposition": f'attachment; filename="business-report-{start.strftime("%Y-%m")}.csv"', "Cache-Control": "no-store"})
+    months = []
+    d = today().replace(day=1)
+    for _ in range(24):
+        months.append(d)
+        d = (d - timedelta(days=1)).replace(day=1)
+    return render_template("staff/billing/business.html", cur=cur, prev=prev, label=label, plabel=plabel, notes=notes, groups=br.GROUPS,
+                           month=start, months=months, mine=mine, shown=shown, bid=bid if len(shown) == 1 and len(mine) > 1 else None,
+                           partial=end < br.month_bounds(m)[1], prev_range=(p0, p1))
