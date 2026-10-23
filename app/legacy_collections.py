@@ -65,7 +65,11 @@ def _cells(r) -> list[str]:
 
 def read_reports(files: list[tuple[str, bytes]]) -> dict:
     """Read MyMedsPH collection report workbooks -> {"rows": [...], "files": [...], "errors": [...]}."""
-    import openpyxl
+    try:
+        import openpyxl
+    except ImportError as exc:
+        raise CollectionFileError("The server can't read Excel files yet. Run the update on the server (dental-haven-update), "
+                                  "which installs the Excel reader, then try again.") from exc
     rows, info, errors = [], [], []
     seen_count: dict[str, int] = defaultdict(int)
     for name, data in files:
