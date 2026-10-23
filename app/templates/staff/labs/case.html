@@ -2,33 +2,47 @@
 {% from "macros.html" import csrf %}
 {% block page_title %}Lab case #{{ c.id }}{% endblock %}
 {% block content %}{% from "staff/labs/_item_text.html" import item_text %}
-<div class="page-head"><div><a href="{{ url_for('labs.index') }}">← Lab cases</a><h1>{% if c.units and c.units > 1 and ' × ' not in c.case_type %}{{ c.units }} × {% endif %}{{ c.case_type }} · {{ c.last_name }}, {{ c.first_name }}</h1>
-<p>Case #{{ c.id }} · {{ c.lab }} · from {{ c.branch }}</p></div><span class="badge {{ lab_badge(c.status) }}">{{ c.status|lab_status }}</span></div>
+<div class="page-head"><div><a href="{{ url_for('labs.index') }}">← Branch cases</a>
+<h1>Case #{{ c.id }} · {% if c.units and c.units > 1 and ' × ' not in c.case_type %}{{ c.units }} × {% endif %}{{ c.case_type }}</h1><p>{{ c.last_name }}, {{ c.first_name }} · {{ c.branch }}{% if c.dentist %} · {{ c.dentist }}{% endif %}</p></div>
+<div class="row"><span class="badge {{ lab_badge(c.status) }}">{{ c.status|lab_status }}</span>
+{% if can_bill %}{% if c.invoice_id %}<a class="btn btn-secondary" href="{{ url_for('lab_works.invoice', invoice_id=c.invoice_id) }}">Invoice {{ lab_invoice.number if lab_invoice and lab_invoice.number else '(draft)' }}</a>{% elif c.status != 'cancelled' %}<form method="post" action="{{ url_for('lab_works.bill_case', case_id=c.id) }}">{{ csrf() }}<button class="btn">Bill this case</button></form>{% endif %}{% endif %}</div></div>
 {% set cur = c.status %}{% include "staff/labs/_stages.html" %}
 <div class="grid grid-2">
 <div class="card"><h2>Details</h2>
-<dl class="kv"><dt>Patient</dt><dd>{% if patient_link %}<a href="{{ url_for('patients.detail', patient_id=c.patient_id) }}">{{ c.last_name }}, {{ c.first_name }}</a>{% else %}{{ c.last_name }}, {{ c.first_name }}{% endif %} <small class="muted">{{ c.chart_no }}</small></dd>
-<dt>Dentist</dt><dd>{{ c.dentist or '—' }}</dd>{% if items|length <= 1 %}<dt>Teeth</dt><dd>{{ c.teeth or '—' }}</dd><dt>Shade</dt><dd>{{ c.shade or '—' }}</dd><dt>Material</dt><dd>{{ c.material or '—' }}</dd>{% else %}<dt>Items</dt><dd>{{ items|length }} items, {{ c.units }} units · see the list below</dd>{% endif %}
-<dt>Sent</dt><dd>{{ c.sent_on|date }}</dd><dt>Due back</dt><dd>{{ c.due_on|date if c.due_on else '—' }}</dd>
+<dl class="dl">
+<dt>Laboratory</dt><dd>{{ c.lab }}</dd>
+<dt>Branch</dt><dd>{{ c.branch }}</dd>
+<dt>Dentist</dt><dd>{{ c.dentist or '—' }}</dd>
+<dt>Patient</dt><dd>{% if patient_link %}<a href="{{ url_for('patients.detail', patient_id=c.patient_id) }}">{{ c.last_name }}, {{ c.first_name }}</a>{% else %}{{ c.last_name }}, {{ c.first_name }}{% endif %} <small class="muted">{{ c.chart_no }}</small></dd>
+<dt>Total lab price</dt><dd><strong>{{ c.lab_fee_cents|peso if c.lab_fee_cents is not none else '—' }}</strong>{% if lab_invoice %}<br><small class="muted">On lab invoice {{ lab_invoice.number or '(draft)' }}{% if lab_invoice.status == 'issued' %} · {{ 'paid' if lab_invoice.paid_cents >= lab_invoice.total_cents else 'unpaid' }}{% endif %}</small>{% elif c.lab_fee_cents %}<br><small class="muted">Not invoiced yet</small>{% endif %}</dd>
+<dt>Date sent</dt><dd>{{ c.sent_on|date }}</dd>
+<dt>Due date</dt><dd>{{ c.due_on|date if c.due_on else '—' }}{% if c.due_on and c.due_on < today and c.status in LAB_LATE %} <span class="badge badge-red">Overdue</span>{% endif %}</dd>
 <dt>Trial fitting target</dt><dd>{% if c.no_try_in %}<span class="badge">None: direct to installation</span>{% else %}{{ c.try_in_on|date if c.try_in_on else '—' }}{% if c.try_in_on and c.try_in_on == c.install_on %} <small class="muted">(same day as installation)</small>{% endif %}{% endif %}</dd>
-<dt>Final installation target</dt><dd>{{ c.install_on|date if c.install_on else '—' }}</dd>{% if c.completed_on %}<dt>Delivered</dt><dd>{{ c.completed_on|date }}</dd>{% endif %}
-<dt>Lab price</dt><dd>{{ c.lab_fee_cents|peso if c.lab_fee_cents is not none else '—' }}{% if lab_invoice %}<br><small class="muted">Billed to the branch on lab invoice {{ lab_invoice.number or '(draft)' }}{% if lab_invoice.status == 'issued' %} · {{ 'paid' if lab_invoice.paid_cents >= lab_invoice.total_cents else 'unpaid' }}{% endif %}</small>{% elif c.lab_fee_cents %}<br><small class="muted">Not invoiced yet</small>{% endif %}
-{% if can_bill %}<br>{% if c.invoice_id %}<a class="btn btn-secondary btn-sm mt-1" href="{{ url_for('lab_works.invoice', invoice_id=c.invoice_id) }}">Open lab invoice</a>{% else %}<form method="post" action="{{ url_for('lab_works.bill_case', case_id=c.id) }}" class="mt-1">{{ csrf() }}<button class="btn btn-secondary btn-sm">Bill this case</button></form>{% endif %}{% endif %}</dd><dt>Instructions</dt><dd class="pre">{{ c.instructions or '—' }}</dd></dl></div>
-<div>
-{% if can_update %}<div class="card"><h2>Update status</h2><form method="post">{{ csrf() }}
-<div class="form-grid"><div class="field"><label for="st">Status</label>{% set cur = c.status %}{% include "staff/labs/_status_select.html" %}</div>
-<div class="field"><label for="du">Due back</label><input id="du" type="date" name="due_on" value="{{ c.due_on or '' }}"></div>
-{% if items|length <= 1 %}<div class="field"><label for="lf">Lab price (₱) <span class="hint">what the branch pays the lab</span></label><input id="lf" name="lab_fee" value="{{ (c.lab_fee_cents / 100) if c.lab_fee_cents is not none else '' }}"></div>{% endif %}</div>
-{% if items|length > 1 %}<fieldset class="item-fees"><legend>Lab price per item (₱) <span class="hint">what the branch pays the lab; the case total adds them up</span></legend>
+<dt>Final installation target</dt><dd>{{ c.install_on|date if c.install_on else '—' }}</dd>
+<dt>Date delivered</dt><dd>{{ c.completed_on|date if c.completed_on else '—' }}</dd>
+</dl>
+{% if c.instructions %}<p class="pre"><strong>Instructions:</strong> {{ c.instructions }}</p>{% endif %}
+</div>
+<div class="card" id="items"><h2>Items</h2>
+<div class="table-wrap"><table><thead><tr><th>Item</th><th>Teeth</th><th>Shade</th><th class="num">Units</th><th class="num">Price</th></tr></thead><tbody>
+{% for it in items %}<tr><td><strong>{{ it.case_type }}</strong>{% if it.material %}<br><small class="muted">{{ it.material }}</small>{% endif %}{% if it.instructions and items|length > 1 %}<br><small class="pre">{{ it.instructions }}</small>{% endif %}</td><td>{{ it.teeth or '—' }}</td><td>{{ it.shade or '—' }}</td><td class="num">{{ it.units }}</td><td class="num">{{ it.lab_fee_cents|peso if it.lab_fee_cents is not none else '—' }}</td></tr>
+{% else %}<tr><td><strong>{{ c.case_type }}</strong>{% if c.material %}<br><small class="muted">{{ c.material }}</small>{% endif %}</td><td>{{ c.teeth or '—' }}</td><td>{{ c.shade or '—' }}</td><td class="num">{{ c.units or 1 }}</td><td class="num">{{ c.lab_fee_cents|peso if c.lab_fee_cents is not none else '—' }}</td></tr>{% endfor %}
+{% if items|length > 1 %}<tr><td colspan="3"><strong>Total</strong></td><td class="num"><strong>{{ c.units }}</strong></td><td class="num"><strong>{{ c.lab_fee_cents|peso if c.lab_fee_cents is not none else '—' }}</strong></td></tr>{% endif %}
+</tbody></table></div>
+{% if can_update %}<p class="hint mb-0 mt-1">Set the lab price in <strong>Update status</strong>.</p>{% endif %}</div>
+<div class="card">{% if can_update %}<h2>Update status</h2>
+<form method="post">{{ csrf() }}
+<div class="field"><label for="st">Status</label>{% set cur = c.status %}{% include "staff/labs/_status_select.html" %}</div>
+<div class="field"><label for="du">Due date</label><input id="du" type="date" name="due_on" value="{{ c.due_on or '' }}"></div>
+{% if items|length <= 1 %}<div class="field"><label for="lf">Lab price (₱) <span class="hint">what the branch pays the lab</span></label><input id="lf" name="lab_fee" inputmode="decimal" value="{{ (c.lab_fee_cents / 100) if c.lab_fee_cents is not none else '' }}"></div>
+{% else %}<fieldset class="item-fees"><legend>Lab price per item (₱) <span class="hint">what the branch pays the lab; the case total adds them up</span></legend>
 {% for it in items %}<div class="field"><label for="if{{ it.id }}">{{ item_text(it) }}{% if it.teeth %} · {{ it.teeth }}{% endif %}</label><input id="if{{ it.id }}" name="item_fee_{{ it.id }}" inputmode="decimal" value="{{ '%.2f'|format(it.lab_fee_cents / 100) if it.lab_fee_cents is not none else '' }}"{% if c.invoice_id %} readonly title="Already on a lab invoice; change the price there"{% endif %}></div>{% endfor %}</fieldset>{% endif %}
 {% set t = c %}{% include "staff/labs/_target_dates.html" %}
-<div class="field"><label for="nt">Note</label><input id="nt" name="note" placeholder="e.g. Try-in done, needs shade adjustment"></div>
-<button class="btn">Save</button></form>{% include "staff/labs/_stage_help.html" %}</div>{% endif %}
-<div class="card"><h2>History</h2><ul class="list-plain">{% for e in events %}<li><strong>{{ e.status|lab_status }}</strong>{% if e.note %} — {{ e.note }}{% endif %}<br><small class="muted">{{ e.created_at|dt }} · {{ e.by_name }}</small></li>{% endfor %}</ul></div>
+<div class="field"><label for="nt">Note <span class="hint">Optional</span></label><input id="nt" name="note" maxlength="500" placeholder="e.g. Try-in done, needs shade adjustment"></div>
+<button class="btn">Update</button></form>{% include "staff/labs/_stage_help.html" %}{% else %}<p class="muted mt-0">View only: this case belongs to another branch.</p>{% endif %}
+<h2 class="{{ 'mt-1' if can_update else '' }}">History</h2>
+<ul class="list-plain">{% for e in events %}<li><strong>{{ e.status|lab_status }}</strong> · {{ e.created_at|dt }} · {{ e.by_name or '—' }}{% if e.note %}<br><small class="muted">{{ e.note }}</small>{% endif %}</li>{% endfor %}</ul>
 </div></div>
-{% if items|length > 1 %}<div class="card" id="items"><h2>Items</h2><div class="table-wrap"><table><thead><tr><th>Item</th><th>Teeth</th><th>Shade</th><th class="num">Units</th><th class="num">Lab price</th></tr></thead><tbody>
-{% for it in items %}<tr><td><strong>{{ it.case_type }}</strong>{% if it.material %}<br><small class="muted">{{ it.material }}</small>{% endif %}{% if it.instructions %}<br><small class="pre">{{ it.instructions }}</small>{% endif %}</td><td>{{ it.teeth or '—' }}</td><td>{{ it.shade or '—' }}</td><td class="num">{{ it.units }}</td><td class="num">{{ it.lab_fee_cents|peso if it.lab_fee_cents is not none else '—' }}</td></tr>{% endfor %}
-<tr><td colspan="3"><strong>Total</strong></td><td class="num"><strong>{{ c.units }}</strong></td><td class="num"><strong>{{ c.lab_fee_cents|peso if c.lab_fee_cents is not none else '—' }}</strong></td></tr></tbody></table></div></div>{% endif %}
 <div class="card" id="photos"><div class="card-head"><h2>Reference photos</h2>{% if photos %}<small class="muted">{{ photos|length }} photo{{ 's' if photos|length != 1 }} · click to open full size</small>{% endif %}</div>
 {% if photos %}<div class="case-photos">{% for ph in photos %}<figure>
 <a href="{{ url_for('labs.case_photo', case_id=c.id, photo_id=ph.id) }}" target="_blank" rel="noopener"><img src="{{ url_for('labs.case_photo', case_id=c.id, photo_id=ph.id) }}" alt="{{ ph.caption or 'Case photo' }}" loading="lazy"></a>

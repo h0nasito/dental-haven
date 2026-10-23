@@ -219,9 +219,18 @@ def index():
     elif status in STATUSES:
         where.append("c.status = ?")
         args.append(status)
-    rows = conn.all("SELECT c.*, l.name AS lab, b.name AS branch, p.first_name, p.last_name, p.chart_no, u.name AS dentist "
+    else:
+        status = "all"
+    q = clean(request.args.get("q"), 80).lower()
+    if q:
+        like = f"%{q}%"
+        where.append("(LOWER(p.last_name || ', ' || p.first_name) LIKE ? OR LOWER(p.first_name || ' ' || p.last_name) LIKE ? "
+                     "OR LOWER(p.chart_no) LIKE ? OR LOWER(COALESCE(u.name, '')) LIKE ? OR LOWER(c.case_type) LIKE ? OR LOWER(COALESCE(li.number, '')) LIKE ?)")
+        args += [like] * 6
+    rows = conn.all("SELECT c.*, l.name AS lab, b.name AS branch, p.first_name, p.last_name, p.chart_no, u.name AS dentist, li.number AS invoice_number "
                     "FROM lab_cases c JOIN laboratories l ON l.id = c.lab_id JOIN branches b ON b.id = c.branch_id "
                     "JOIN patients p ON p.id = c.patient_id LEFT JOIN users u ON u.id = c.dentist_id "
+                    "LEFT JOIN lab_invoices li ON li.id = c.invoice_id "
                     f"WHERE {' AND '.join(where)} ORDER BY CASE WHEN c.due_on IS NULL THEN 1 ELSE 0 END, c.due_on, c.id DESC LIMIT 300", args)
     counts = {r["status"]: r["n"] for r in conn.all(f"SELECT c.status, COUNT(*) AS n FROM lab_cases c WHERE {frag} GROUP BY c.status", params)}
     t = today()
@@ -238,7 +247,7 @@ def index():
     workload_cols = [k for k in workload_cols if any(w[k] for w in workload)]
     return render_template("staff/labs/index.html", rows=rows, status=status, statuses=STATUSES, counts=counts,
                            today=t.isoformat(), lab_user=bool(_my_labs()), workload=workload, workload_cols=workload_cols, all_view=all_view,
-                           branch_list=branch_list, branch=branch)
+                           branch_list=branch_list, branch=branch, q=q, soon=(t + timedelta(days=1)).isoformat())
 
 
 @bp.route("/new", methods=["GET", "POST"])

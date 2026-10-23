@@ -50,7 +50,7 @@ class TestLabCaseBilling(Base):
         # issue, then the branch sees it was billed
         self.t.post(f"/staff/lab/invoices/{iid}", data={"action": "issue"})
         case_page = self.login("dentist.malolos").get(f"/staff/lab/{self.case}").data.decode()
-        self.assertIn("Billed to the branch on lab invoice LI-", case_page)
+        self.assertIn("On lab invoice LI-", case_page)
         # not offered again; voiding frees it
         self.assertNotIn(f"name=\"c_{self.case}\"", self.t.get(f"/staff/lab/invoices/new?client={client['id']}").data.decode())
         self.t.post(f"/staff/lab/invoices/{iid}", data={"action": "void", "reason": "Wrong price"})
@@ -77,7 +77,7 @@ class TestLabCaseBilling(Base):
             self.assertIn(part, page)
         # the case page now opens that invoice
         self.assertEqual(self.t.post(f"/staff/lab/cases/{self.case}/bill").headers["Location"].rstrip("/").split("/")[-1], str(iid))
-        self.assertIn("Open lab invoice", self.t.get(f"/staff/lab/{self.case}").data.decode())
+        self.assertIn("On lab invoice", self.t.get(f"/staff/lab/{self.case}").data.decode())
 
     def test_branch_cannot_bill(self):
         self.assertEqual(self.login("dentist.malolos").post(f"/staff/lab/cases/{self.case}/bill").status_code, 403)
