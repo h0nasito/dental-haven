@@ -22,6 +22,9 @@
       {%- elif name == 'billing' %}<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>
       {%- elif name == 'staff' %}<rect x="4" y="3" width="16" height="18" rx="2"/><circle cx="12" cy="10" r="3"/><path d="M8 17c.8-1.8 2.2-2.7 4-2.7s3.2.9 4 2.7"/>
       {%- elif name == 'admin' %}<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>
+      {%- elif name == 'reports' %}<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>
+      {%- elif name == 'clinic' %}<path d="M3 21h18M5 21V8l7-5 7 5v13"/><path d="M10 21v-5h4v5M12 8v4M10 10h4"/>
+      {%- elif name == 'globe' %}<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/>
       {%- elif name == 'lab' %}<path d="M9 3h6M10 3v6L4.5 19a1.5 1.5 0 0 0 1.3 2h12.4a1.5 1.5 0 0 0 1.3-2L14 9V3"/><path d="M7 15h10"/>
       {%- endif %}</svg>
     {%- endmacro %}
@@ -30,6 +33,9 @@
       {% if links|trim %}<details class="nav-acc" {% if 'nav active' in links %}open{% endif %}>
         <summary>{{ icon(ico) }}<span>{{ title }}</span>{% if 'class="count"' in links and 'nav active' not in links %}<span class="dot" aria-label="has items"></span>{% endif %}</summary>
         <div class="nav-acc-body">{{ links }}</div></details>{% endif %}
+    {%- endmacro %}
+    {% macro section(title) -%}
+      {% set links = caller() %}{% if links|trim %}<div class="nav-sub">{{ title }}</div>{{ links }}{% endif %}
     {%- endmacro %}
     <div class="nav-group nav-top">
       {{ nav('dash.home', 'Dashboard') }}
@@ -53,51 +59,77 @@
       {% if current_user.can('reportcards.generate') or current_user.can('reportcards.review') %}{{ nav('reportcards.index', 'Report cards', 'reportcards.', nav_counts.reviews) }}{% endif %}
     {% endif %}{% endcall %}
     {% call group('Front desk', 'desk') %}
-      {% if current_user.can('leads.view') %}{{ nav('leads.index', 'Leads', 'leads.lead') }}{% endif %}
+      {% if current_user.can('leads.view') %}{{ nav('leads.index', 'Lead inbox', 'leads.lead') }}{% endif %}
       {% if current_user.can('followups.view') %}{{ nav('leads.followups', 'Follow-ups', 'leads.followup', nav_counts.overdue) }}{% endif %}
       {% if current_user.can('reminders.view') %}{{ nav('leads.reminders', 'Reminders', 'leads.reminder') }}{% endif %}
-      {% if current_user.can('templates.manage') or current_user.can('leads.view') %}{{ nav('leads.templates', 'Response templates', 'leads.template') }}{% endif %}
+      {% if current_user.can('templates.manage') or current_user.can('leads.view') %}{{ nav('leads.templates', 'Reply templates', 'leads.template') }}{% endif %}
+      {% if current_user.is_super_admin %}{{ nav('emails.index', 'Patient emails', 'emails.') }}{% endif %}
     {% endcall %}
-    {% call group('Billing & reports', 'billing') %}
-      {% if current_user.can('quotes.view') %}{{ nav('quotes.index', 'Quotations', 'quotes.') }}{% endif %}
-      {% if current_user.can('billing.view') %}{{ nav('billing.invoices', 'Invoices', 'billing.invoice') }}{% endif %}
+    {% call group('Finance', 'billing') %}
+      {% call section('Billing') %}
+        {% if current_user.can('quotes.view') %}{{ nav('quotes.index', 'Quotations', 'quotes.') }}{% endif %}
+        {% if current_user.can('billing.view') %}{{ nav('billing.invoices', 'Bills & invoices', 'billing.invoice') }}{% endif %}
+        {% if current_user.can('deposits.view') or current_user.can('deposits.manage') %}{{ nav('deposits.index', 'Bank deposits', 'deposits.') }}{% endif %}
+      {% endcall %}
+      {% call section('Expenses') %}
+        {% if current_user.can('expenses.view') or current_user.can('expenses.add') %}{{ nav('expenses.index', 'Expenses', 'expenses.index') }}{{ nav('expenses.bills', 'Monthly bills', 'expenses.bills') }}{% endif %}
+      {% endcall %}
+    {% endcall %}
+    {% call group('Reports', 'reports') %}
       {% if current_user.can('reports.sales') %}{{ nav('billing.sales', 'Sales & collections', 'billing.sales') }}{{ nav('billing.daily_collection', 'Daily collection report', 'billing.daily_collection') }}{{ nav('billing.financial', 'Financial report', 'billing.financial') }}{{ nav('billing.business', 'Monthly business report', 'billing.business') }}{% endif %}
       {% if current_user.can('reports.operations') %}{{ nav('billing.operations', 'Operations report', 'billing.operations') }}{% endif %}
-      {% if current_user.can('expenses.view') or current_user.can('expenses.add') %}{{ nav('expenses.index', 'Expenses', 'expenses.index') }}{{ nav('expenses.bills', 'Monthly bills', 'expenses.bills') }}{% endif %}
-      {% if current_user.can('deposits.view') or current_user.can('deposits.manage') %}{{ nav('deposits.index', 'Bank deposits', 'deposits.') }}{% endif %}
     {% endcall %}
     {% call group('Inventory', 'box') %}
-      {% if current_user.can('inventory.view') or current_user.can('inventory.manage') %}{{ nav('inventory.index', 'Stock', 'inventory.location') }}{% endif %}
-      {% if current_user.can('inventory.order') or current_user.can('inventory.order_approve') %}{{ nav('inv_orders.index', 'Order lists', 'inv_orders.') }}{% endif %}
+      {% if current_user.can('inventory.view') or current_user.can('inventory.manage') %}{{ nav('inventory.index', 'Stock levels', 'inventory.location') }}{% endif %}
+      {% if current_user.can('inventory.order') or current_user.can('inventory.order_approve') %}{{ nav('inv_orders.index', 'Supply orders', 'inv_orders.') }}{% endif %}
       {% if current_user.can('inventory.manage') %}{{ nav('inventory.items', 'Items & prices', 'inventory.items') }}{% endif %}
     {% endcall %}
     {% call group('Staff & payroll', 'staff') %}
-      {% if current_user.can('leave.request') or current_user.can('leave.approve') %}{{ nav('leave.index', 'Leave forms', 'leave.', nav_counts.get('leave')) }}{% endif %}
-      {% if current_user.can('reimburse.request') or current_user.can('reimburse.approve') %}{{ nav('reimburse.index', 'Reimbursements', 'reimburse.', nav_counts.get('reimburse')) }}{% endif %}
-      {% if current_user.can('attendance.view') %}{{ nav('people.attendance', 'Attendance (DTR)', 'people.attendance') }}{% endif %}
-      {% if current_user.can('attendance.manage') %}{{ nav('timeclock.log', 'Time clock log', 'timeclock.log') }}{{ nav('people.holidays', 'Holidays', 'people.holidays') }}{% endif %}
-      {% if current_user.can('compensation.manage') or current_user.can('attendance.manage') %}{{ nav('people.employees', 'Employees', 'people.employee') }}{% endif %}
-      {% if current_user.can('payroll.prepare') or current_user.can('payroll.approve') %}{{ nav('people.payroll', 'Payroll review', 'people.payroll') }}{% endif %}
-      {% if current_user.can('evaluations.answer') or current_user.can('evaluations.manage') %}{{ nav('evals.index', 'Staff evaluations', 'evals.') }}{% endif %}
-    {% endcall %}
-    {% call group('Administration', 'admin') %}
-      {% if current_user.can('users.manage') %}{{ nav('admin.users', 'Users', 'admin.user') }}{% endif %}
-      {% if current_user.can('roles.manage') %}{{ nav('admin.roles', 'Role access', 'admin.role') }}{% endif %}
-      {% if current_user.can('settings.manage') %}{{ nav('admin.branches', 'Branches & chairs', 'admin.branch') }}
-      {{ nav('admin.services', 'Services', 'admin.service') }}
-      {{ nav('admin.schedules', 'Dentist schedules', 'admin.schedule') }}{% endif %}
-      {% if current_user.can('content.manage') %}{{ nav('admin.website_sections', 'Website sections', 'admin.website_sections') }}{{ nav('admin.content', 'Website content', 'admin.content') }}{{ nav('about_admin.index', 'About us (team & activities)', 'about_admin.') }}{{ nav('admin.prices', 'Price list', 'admin.prices') }}{% endif %}
-      {% if current_user.can('fees.manage') %}{{ nav('fees.index', 'Fee schedule (billing)', 'fees.') }}{% endif %}
-      {% if current_user.can('attendance.manage') %}{{ nav('timeclock.setup', 'Time clock setup', 'timeclock.setup') }}{% endif %}
-      {% if current_user.is_super_admin %}{{ nav('emails.index', 'Patient emails', 'emails.') }}{% endif %}{% if current_user.can('system.settings') %}{{ nav('admin.system', 'System settings', 'admin.system') }}{{ nav('admin.backup_page', 'Backup & download', 'admin.backup') }}{{ nav('admin.import_data', 'Import from MyMedsPH', 'admin.import') }}{% endif %}
-      {% if current_user.can('audit.view') %}{{ nav('admin.audit_log', 'Audit trail', 'admin.audit') }}{% endif %}
+      {% call section('Requests') %}
+        {% if current_user.can('leave.request') or current_user.can('leave.approve') %}{{ nav('leave.index', 'Leave requests', 'leave.', nav_counts.get('leave')) }}{% endif %}
+        {% if current_user.can('reimburse.request') or current_user.can('reimburse.approve') %}{{ nav('reimburse.index', 'Reimbursements', 'reimburse.', nav_counts.get('reimburse')) }}{% endif %}
+      {% endcall %}
+      {% call section('Time & attendance') %}
+        {% if current_user.can('attendance.view') %}{{ nav('people.attendance', 'Attendance (DTR)', 'people.attendance') }}{% endif %}
+        {% if current_user.can('attendance.manage') %}{{ nav('timeclock.log', 'Time clock log', 'timeclock.log') }}{{ nav('people.holidays', 'Holidays', 'people.holidays') }}{{ nav('timeclock.setup', 'Time clock setup', 'timeclock.setup') }}{% endif %}
+      {% endcall %}
+      {% call section('People & pay') %}
+        {% if current_user.can('compensation.manage') or current_user.can('attendance.manage') %}{{ nav('people.employees', 'Employees', 'people.employee') }}{% endif %}
+        {% if current_user.can('payroll.prepare') or current_user.can('payroll.approve') %}{{ nav('people.payroll', 'Payroll', 'people.payroll') }}{% endif %}
+        {% if current_user.can('evaluations.answer') or current_user.can('evaluations.manage') %}{{ nav('evals.index', 'Staff evaluations', 'evals.') }}{% endif %}
+      {% endcall %}
     {% endcall %}
     {% call group('Laboratory', 'lab') %}{% if nav_lab %}
-      {{ nav('labs.index', 'Branch cases', 'labs.') }}
-      {% if nav_lab_works %}{{ nav('lab_works.works', 'Outside clinic works', 'lab_works.work') }}{{ nav('lab_works.clients', 'Clinics', 'lab_works.clients') }}{% endif %}
-      {{ nav('lab_works.services', 'Lab services', 'lab_works.services') }}{{ nav('lab_works.prices', 'Lab price list', 'lab_works.prices') }}
-      {% if nav_lab_billing %}{{ nav('lab_works.invoices', 'Lab invoices & receipts', 'lab_works.invoice') }}{{ nav('lab_works.collections', 'Lab collection report', 'lab_works.collections') }}{{ nav('lab_works.financial', 'Lab financial report', 'lab_works.financial') }}{% endif %}
+      {% call section('Cases') %}
+        {{ nav('labs.index', 'Branch cases', 'labs.') }}
+        {% if nav_lab_works %}{{ nav('lab_works.works', 'Outside clinic works', 'lab_works.work') }}{{ nav('lab_works.clients', 'Partner clinics', 'lab_works.clients') }}{% endif %}
+      {% endcall %}
+      {% call section('Services & prices') %}
+        {{ nav('lab_works.services', 'Lab services', 'lab_works.services') }}{{ nav('lab_works.prices', 'Lab price list', 'lab_works.prices') }}
+      {% endcall %}
+      {% call section('Billing & reports') %}
+        {% if nav_lab_billing %}{{ nav('lab_works.invoices', 'Lab invoices & receipts', 'lab_works.invoice') }}{{ nav('lab_works.collections', 'Lab collection report', 'lab_works.collections') }}{{ nav('lab_works.financial', 'Lab financial report', 'lab_works.financial') }}{% endif %}
+      {% endcall %}
     {% endif %}{% endcall %}
+    {% call group('Clinic setup', 'clinic') %}
+      {% if current_user.can('settings.manage') %}{{ nav('admin.branches', 'Branches & chairs', 'admin.branch') }}
+      {{ nav('admin.services', 'Clinic services', 'admin.service') }}{% endif %}
+      {% if current_user.can('fees.manage') %}{{ nav('fees.index', 'Fee schedule', 'fees.') }}{% endif %}
+      {% if current_user.can('settings.manage') %}{{ nav('admin.schedules', 'Dentist schedule setup', 'admin.schedule') }}{% endif %}
+    {% endcall %}
+    {% call group('Website', 'globe') %}{% if current_user.can('content.manage') %}
+      {{ nav('admin.website_sections', 'Home page', 'admin.website_sections') }}{{ nav('admin.content', 'Gallery, guides & texts', 'admin.content') }}{{ nav('about_admin.index', 'About us page', 'about_admin.') }}{{ nav('admin.prices', 'Chat price list', 'admin.prices') }}
+    {% endif %}{% endcall %}
+    {% call group('Administration', 'admin') %}
+      {% call section('Accounts & access') %}
+        {% if current_user.can('users.manage') %}{{ nav('admin.users', 'User accounts', 'admin.user') }}{% endif %}
+        {% if current_user.can('roles.manage') %}{{ nav('admin.roles', 'Roles & permissions', 'admin.role') }}{% endif %}
+        {% if current_user.can('audit.view') %}{{ nav('admin.audit_log', 'Audit trail', 'admin.audit') }}{% endif %}
+      {% endcall %}
+      {% call section('System & data') %}
+        {% if current_user.can('system.settings') %}{{ nav('admin.system', 'System settings', 'admin.system') }}{{ nav('admin.backup_page', 'Backup & download', 'admin.backup') }}{{ nav('admin.import_data', 'Import from MyMedsPH', 'admin.import') }}{% endif %}
+      {% endcall %}
+    {% endcall %}
     <div class="nav-group">
       <a class="nav" href="{{ url_for('public.home') }}" target="_blank" rel="noopener">View public site ↗</a>
     </div>

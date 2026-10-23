@@ -974,3 +974,7 @@ section[id] { scroll-margin-top: 72px; }
 .notice-card { background: #fff8e6; border-color: #f2d48a; }
 .spam-card { background: #fff1f0; border-color: #f3b4ad; }
 .mb-1 { margin-bottom: .8rem; }
+/* sub-headings inside a menu group (e.g. Staff & payroll → Requests / Time & attendance / People & pay) */
+.nav-sub { font-size: .66rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: rgba(255, 255, 255, .45);
+  padding: .55rem .6rem .2rem; }
+.nav-acc-body > .nav-sub:first-child { padding-top: .25rem; }
