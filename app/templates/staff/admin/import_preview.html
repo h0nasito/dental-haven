@@ -14,7 +14,11 @@
 <div class="stat {% if s.rows_with_errors %}warn{% endif %}"><div class="label">Rows with problems</div><div class="value">{{ s.rows_with_errors }}</div><div class="sub">These rows are skipped</div></div>
 </div>
 <div class="grid grid-2">
-<div class="card"><h2>Files found</h2><ul class="list-plain">{% for kind, f in s.files.items() %}<li class="row between"><span>{{ kind|label }} <small class="muted">{{ f.file }}</small></span><strong>{{ f.rows }} rows</strong></li>{% endfor %}</ul></div>
+<div class="card"><h2>Files found</h2><ul class="list-plain">{% for kind, f in s.files.items() %}<li class="row between"><span>{{ kind|label }} <small class="muted">{{ f.file }}</small></span><strong>{{ f.rows }} rows</strong></li>{% endfor %}</ul>
+{% if s.unused_files or s.bill_cols_unused %}<h3 class="mt-1">Not read by this import</h3>
+<p class="hint mt-0">Only file and column names are shown, no patient data. If payments or balances are in here, tell your developer these names so they can be brought in.</p>
+<ul class="list-plain">{% for f in s.unused_files %}<li><strong>{{ f.file }}</strong> <small class="muted">({{ f.rows }} rows)</small><br><small>{{ f.cols|join(', ') }}</small></li>{% endfor %}
+{% if s.bill_cols_unused %}<li><strong>Bills file, extra columns</strong><br><small>{{ s.bill_cols_unused|join(', ') }}</small></li>{% endif %}</ul>{% endif %}</div>
 <div class="card"><h2>Problems</h2>{% if s.rows_with_errors %}
 <p class="muted">These rows are <strong>not</strong> imported. Summary by reason:</p>
 <table class="table"><tbody>{% for label, n in s.problem_counts|dictsort(by='value', reverse=true) %}<tr><td><small>{{ label }}</small></td><td class="num"><strong>{{ '{:,}'.format(n) }}</strong></td></tr>{% endfor %}</tbody></table>

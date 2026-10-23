@@ -76,3 +76,18 @@ class TestLegacyBills(Base):
                 st = lb.convert(get_db(), lb.saved_map(get_db()), None, 1)
         self.assertEqual(st["bills"], 1)            # p1's paid bill; p2 has no branch and no default -> stays history
         self.assertEqual(st["no_branch"], 1)
+
+
+class TestUnreadColumns(Base):
+    def test_preview_lists_files_and_columns_not_read(self):
+        from app.importer import read_export, run_import
+        pat = "PATIENT ID,FIRSTNAME,LASTNAME,BIRTHDAY\n977001,Colqt,Test,2000-01-01\n".encode()
+        bills = "patient_id,bill_dt,service_type,qty,unit_price,total_amount,status,amount_paid,balance\n977001,2025-01-01,Consultation,1,500,500,3,200,300\n".encode()
+        pays = "patient_id,payment_dt,amount,mode\n977001,2025-01-01,200,cash\n".encode()
+        data = read_export([("patients.csv", pat), ("bills.csv", bills), ("payments.csv", pays)])
+        with self.app.app_context():
+            from app.db import get_db
+            s = run_import(get_db(), data, branch_id=None, user_id=1, commit=False)
+        self.assertEqual([f["file"] for f in s["unused_files"]], ["payments.csv"])
+        self.assertIn("amount", s["unused_files"][0]["cols"])
+        self.assertEqual(s["bill_cols_unused"], ["amount_paid", "balance"])

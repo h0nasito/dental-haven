@@ -38,6 +38,8 @@ SIGNATURES = {
     "certificates": {"patient id", "certificate"},
 }
 NAME_COLS = {"firstname", "middlename", "lastname"}
+BILL_COLS_USED = {"patient_id", "firstname", "middlename", "lastname", "bill_dt", "service_type", "item", "qty", "unit", "unit_price",
+                  "discount_amount", "discount_percentage", "total_amount", "remarks", "status"}
 
 
 class ImportFileError(Exception):
@@ -88,14 +90,17 @@ def read_export(files: list[tuple[str, bytes]]) -> dict:
                 raise ImportFileError("The zip file could not be opened.") from exc
         elif name.lower().endswith(".csv"):
             csvs.append((name, data))
-    found = {}
+    found, unused = {}, []
     for name, data in csvs:
         cols, rows = _read_csv(data)
         colset = set(cols)
         for kind, sig in SIGNATURES.items():
             if sig <= colset and kind not in found:
-                found[kind] = {"file": name, "rows": rows}
+                found[kind] = {"file": name, "rows": rows, "cols": cols}
                 break
+        else:
+            unused.append({"file": name, "rows": len(rows), "cols": [c for c in cols if c][:40]})
+    found["_unused"] = unused
     if "patients" not in found:
         raise ImportFileError("No patients file found. Upload the MyMedsPH export zip (it must contain patients.csv).")
     return found
@@ -180,7 +185,11 @@ def run_import(conn, data: dict, *, branch_id: int | None, user_id: int, commit:
     s["errors"] = []
     s["problem_rows"] = []   # every problem (file, line, patient ID, reason) when all_errors=True; no names
     s["problem_counts"] = {}  # "file: reason" -> number of rows
-    s["files"] = {k: {"file": v["file"], "rows": len(v["rows"])} for k, v in data.items()}
+    s["files"] = {k: {"file": v["file"], "rows": len(v["rows"])} for k, v in data.items() if not k.startswith("_")}
+    # files and bill columns this import doesn't read yet (names only, never the data), to spot e.g. payment details
+    s["unused_files"] = data.get("_unused", [])
+    if "bills" in data:
+        s["bill_cols_unused"] = [c for c in data["bills"].get("cols", []) if c and c not in BILL_COLS_USED]
 
     def err(kind, row, msg):
         s["rows_with_errors"] += 1
