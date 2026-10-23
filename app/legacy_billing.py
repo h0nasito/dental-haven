@@ -93,20 +93,21 @@ def convert(conn, mapping: dict, default_branch_id: int | None, user_id: int) ->
 
 def undo(conn) -> dict:
     """Remove converted bills again (lines go back to history), except bills staff have worked on since:
-    a new payment, a dentist set on a line, account credit, a signature or commission entry, or voided."""
-    out = {"removed": 0, "kept": 0}
-    for inv in conn.all("SELECT id, status FROM invoices WHERE legacy = 1"):
-        i = inv["id"]
-        used = (conn.scalar("SELECT COUNT(*) FROM payments WHERE invoice_id = ? AND method != ?", (i, LEGACY_METHOD))
-                or conn.scalar("SELECT COUNT(*) FROM invoice_items WHERE invoice_id = ? AND dentist_id IS NOT NULL", (i,))
-                or any(conn.scalar(f"SELECT COUNT(*) FROM {t} WHERE invoice_id = ?", (i,))
-                       for t in ("patient_credits", "payment_signatures", "dentist_commissions", "quotations", "visit_notes")))
-        if used or inv["status"] != "issued":
-            out["kept"] += 1
-            continue
-        conn.execute("UPDATE legacy_bills SET invoice_id = NULL WHERE invoice_id = ?", (inv["id"],))
-        conn.execute("DELETE FROM payments WHERE invoice_id = ?", (inv["id"],))
-        conn.execute("DELETE FROM invoice_items WHERE invoice_id = ?", (inv["id"],))
-        conn.execute("DELETE FROM invoices WHERE id = ?", (inv["id"],))
-        out["removed"] += 1
-    return out
+    a new payment, a dentist set on a line, account credit, a signature or commission entry, or voided.
+    Done in a few set-based steps, so tens of thousands of bills go quickly."""
+    total = conn.scalar("SELECT COUNT(*) FROM invoices WHERE legacy = 1") or 0
+    conn.execute("DROP TABLE IF EXISTS tmp_legacy_undo")
+    conn.execute("CREATE TEMP TABLE tmp_legacy_undo (id INTEGER PRIMARY KEY)")
+    conn.execute("INSERT INTO tmp_legacy_undo (id) SELECT id FROM invoices WHERE legacy = 1 AND status = 'issued'")
+    # keep bills staff have worked on: one pass over each table
+    conn.execute("DELETE FROM tmp_legacy_undo WHERE id IN (SELECT invoice_id FROM payments WHERE method != ?)", (LEGACY_METHOD,))
+    conn.execute("DELETE FROM tmp_legacy_undo WHERE id IN (SELECT invoice_id FROM invoice_items WHERE dentist_id IS NOT NULL)")
+    for t in ("patient_credits", "payment_signatures", "dentist_commissions", "quotations", "visit_notes"):
+        conn.execute(f"DELETE FROM tmp_legacy_undo WHERE id IN (SELECT invoice_id FROM {t} WHERE invoice_id IS NOT NULL)")
+    removed = conn.scalar("SELECT COUNT(*) FROM tmp_legacy_undo") or 0
+    conn.execute("UPDATE legacy_bills SET invoice_id = NULL WHERE invoice_id IN (SELECT id FROM tmp_legacy_undo)")
+    conn.execute("DELETE FROM payments WHERE invoice_id IN (SELECT id FROM tmp_legacy_undo)")
+    conn.execute("DELETE FROM invoice_items WHERE invoice_id IN (SELECT id FROM tmp_legacy_undo)")
+    conn.execute("DELETE FROM invoices WHERE id IN (SELECT id FROM tmp_legacy_undo)")
+    conn.execute("DROP TABLE tmp_legacy_undo")
+    return {"removed": removed, "kept": total - removed}

@@ -4,6 +4,8 @@
 {% block content %}
 <div class="page-head"><div><h1>Import from MyMedsPH</h1><p>Upload your MyMedsPH export to add or update patients, visit history, treatment plans, notes and billing history.</p></div>
 <a class="btn btn-secondary" href="{{ url_for('admin.import_bills') }}">MyMedsPH bills → real bills</a></div>
+{% if converted %}<div class="card notice-card"><strong>{{ converted }} MyMedsPH bill{{ 's' if converted != 1 }} converted into real bills</strong> (numbered MM-…).
+<form method="post" action="{{ url_for('admin.import_bills') }}" class="mt-1" data-confirm="Remove the converted MM- bills? Their lines go back to history. Bills staff have worked on (new payment, dentist set, voided) are kept.">{{ csrf() }}<input type="hidden" name="action" value="undo"><button class="btn btn-danger">↩ Undo conversion (remove the MM- bills)</button></form></div>{% endif %}
 <div class="grid grid-2">
 <div class="card"><h2>1. Upload the export</h2>
 {% if demo %}<div class="flash flash-warning">Importing is switched off on the demo site. It's public and resets itself, so real patient records must not go here. Use the import on your paid (live) site.</div>{% endif %}

@@ -5,7 +5,7 @@
 <div class="page-head"><div><a href="{{ url_for('admin.import_data') }}">← Import from MyMedsPH</a><h1>Turn MyMedsPH bills into real bills</h1>
 <p>Old bills come in from MyMedsPH as history only. Convert them, and they show in each patient's Bills &amp; Payment like any bill, and count in sales, collections and dentist commission.</p></div></div>
 {% if done.n %}<div class="card notice-card"><strong>{{ done.n }} bill{{ 's' if done.n != 1 }} already converted</strong> ({{ done.total|peso }}; {{ done.paid or 0 }} marked paid). They're numbered MM-…, dated on the MyMedsPH bill date.
-<form method="post" class="mt-1" data-confirm="Remove the converted bills again? Their lines go back to history. Bills staff have worked on (new payment, dentist set, voided) are kept.">{{ csrf() }}<input type="hidden" name="action" value="undo"><button class="btn btn-ghost btn-sm">Undo conversion</button></form></div>{% endif %}
+<form method="post" class="mt-1" data-confirm="Remove the converted bills again? Their lines go back to history. Bills staff have worked on (new payment, dentist set, voided) are kept.">{{ csrf() }}<input type="hidden" name="action" value="undo"><button class="btn btn-danger">↩ Undo conversion (remove the MM- bills)</button></form></div>{% endif %}
 {% if summary %}
 <form method="post" class="card">{{ csrf() }}<input type="hidden" name="action" value="convert">
 <h2>1. What does each MyMedsPH status mean?</h2>

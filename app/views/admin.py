@@ -1408,7 +1408,8 @@ def import_data():
         branch = next((b for b in branches if b["id"] == branch_id), None) or {"name": "all branches (shared)"}
         return render_template("staff/admin/import_preview.html", s=summary, token=token, branch=branch,
                                filename=", ".join(f.filename for f in uploads))
-    return render_template("staff/admin/import.html", branches=branches, runs=runs, demo=demo)
+    converted = conn.scalar("SELECT COUNT(*) FROM invoices WHERE legacy = 1")
+    return render_template("staff/admin/import.html", branches=branches, runs=runs, demo=demo, converted=converted)
 
 
 @bp.route("/import/problems", methods=["POST"])
