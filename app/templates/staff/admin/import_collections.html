@@ -1,0 +1,36 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}MyMedsPH payments{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('admin.import_bills') }}">← MyMedsPH bills</a><h1>Check the payments before adding them</h1>
+<p>From MyMedsPH collection reports. Nothing has been saved yet.</p></div></div>
+<div class="grid grid-4" style="margin-bottom:1rem">
+<div class="stat"><div class="label">Payments in the files</div><div class="value">{{ '{:,}'.format(s.rows) }}</div><div class="sub">{{ s.total|peso }}</div></div>
+<div class="stat"><div class="label">Matched to a patient</div><div class="value">{{ '{:,}'.format(s.matched) }}</div><div class="sub">{{ s.matched_total|peso }} · {{ '{:,}'.format(s.patients) }} patients</div></div>
+<div class="stat {% if s.unmatched or s.ambiguous %}warn{% endif %}"><div class="label">Name not matched</div><div class="value">{{ '{:,}'.format(s.unmatched + s.ambiguous) }}</div><div class="sub">{{ s.unmatched_total|peso }} · skipped</div></div>
+<div class="stat"><div class="label">Already added before</div><div class="value">{{ '{:,}'.format(s.already) }}</div><div class="sub">skipped, not added twice</div></div>
+</div>
+<div class="grid grid-2">
+<div class="card"><h2>What happens when you confirm</h2><ul class="list-plain">
+<li>Every MyMedsPH bill line becomes a real bill (one per patient per day), unless its status is set to "Keep as history".</li>
+<li>Each payment goes to the patient's bills: first a bill with the procedure it paid for, else the oldest bill with a balance. A payment bigger than a bill's balance is split over the next bills.</li>
+<li>If a patient paid more than their MyMedsPH bills add up to, the extra becomes account credit.</li>
+<li>The payment keeps its date, branch, payment type (cash, GCash, bank…) and remarks. The dentist from the report is set on the bill line for that procedure, when the dentist has an account here.</li>
+<li>Payments count in Sales &amp; collections for their dates. Uploading the same reports again adds nothing twice.</li>
+</ul>
+<h3 class="mt-1">Files</h3><ul class="list-plain">{% for f in s.files %}<li class="row between"><span>{{ f.file }}</span><span>{{ '{:,}'.format(f.rows) }} payments · {{ f.total|peso }}</span></li>{% endfor %}</ul>
+{% if s.dentists_unmatched %}<p class="hint mt-1"><strong>Dentists without an account here</strong> ({{ s.dentists_unmatched|length }} of {{ s.dentists }}): {{ s.dentists_unmatched|join(', ') }}. Their payments are still added; the bill line's dentist stays empty. To have it set, give them an account with the same name before confirming.</p>{% endif %}
+</div>
+<div class="card"><h2>Names not matched ({{ s.unmatched_names|length }})</h2>
+{% if s.unmatched_names %}<p class="hint mt-0">The report has names but no patient ID, so each name must match exactly one patient (first + last name). These payments are skipped now. Fix the name on the patient here (or merge duplicates), then upload the same reports again: only the missing payments are added.</p>
+<div class="table-wrap" style="max-height:22rem;overflow:auto"><table><thead><tr><th>Name in report</th><th>Why</th><th class="num">Payments</th><th class="num">Amount</th></tr></thead><tbody>
+{% for name, why, n, amt in s.unmatched_names[:200] %}<tr><td>{{ name }}</td><td><small>{{ why }}</small></td><td class="num">{{ n }}</td><td class="num">{{ amt|peso }}</td></tr>{% endfor %}</tbody></table></div>
+{% if s.unmatched_names|length > 200 %}<p class="muted">Showing the 200 largest. Download the full list.</p>{% endif %}
+<form method="post" action="{{ url_for('admin.import_collections_confirm') }}" class="mt-1">{{ csrf() }}<input type="hidden" name="token" value="{{ token }}"><button class="btn btn-secondary btn-sm" name="action" value="unmatched">Download the list (CSV)</button></form>
+{% else %}<p class="muted">Every name matched one patient.</p>{% endif %}</div>
+</div>
+<form method="post" action="{{ url_for('admin.import_collections_confirm') }}" class="row mt-1" data-confirm="Add these payments now?">{{ csrf() }}<input type="hidden" name="token" value="{{ token }}">
+<button class="btn btn-lg" name="action" value="confirm">Add payments</button>
+<button class="btn btn-secondary btn-lg" name="action" value="cancel" formnovalidate>Cancel</button></form>
+<p class="hint mt-1">This can take a minute for many years of payments. Keep this page open until it finishes.</p>
+{% endblock %}

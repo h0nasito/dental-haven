@@ -241,7 +241,7 @@ def invoice_edit(invoice_id):
                     flash("Enter the commission % (0–100) or the commission amount, e.g. 500 or 500.00.", "error")
                     return redirect(url_for("billing.invoice", invoice_id=invoice_id))
                 conn.execute("UPDATE invoice_items SET dentist_id = ?, done_on = ?, lab_fee_cents = ?, lab_case_id = ?, "
-                             "commission_mode = ?, commission_bp = ?, commission_cents = ? WHERE id = ?",
+                             "commission_mode = ?, commission_bp = ?, commission_cents = ?, legacy_dentist = 0 WHERE id = ?",
                              (extra["dentist_id"], extra["done_on"], extra["lab_fee_cents"], extra["lab_case_id"],
                               extra.get("commission_mode", item["commission_mode"]), extra.get("commission_bp", item["commission_bp"]),
                               extra.get("commission_cents", item["commission_cents"]), item["id"]))

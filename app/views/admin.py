@@ -1336,7 +1336,7 @@ def _import_dir():
     d.mkdir(parents=True, exist_ok=True)
     # remove uploads that were never confirmed (older than 1 day)
     import time
-    for f in d.glob("*.upload"):
+    for f in list(d.glob("*.upload")) + list(d.glob("*.collections.json")):
         if f.stat().st_mtime < time.time() - 86400:
             f.unlink(missing_ok=True)
     return d
@@ -1512,7 +1512,95 @@ def import_bills():
     done = conn.one("SELECT COUNT(*) AS n, COALESCE(SUM(total_cents), 0) AS total, "
                     "SUM(CASE WHEN EXISTS (SELECT 1 FROM payments p WHERE p.invoice_id = invoices.id AND p.method = 'mymeds') THEN 1 ELSE 0 END) AS paid "
                     "FROM invoices WHERE legacy = 1")
-    return render_template("staff/admin/import_bills.html", summary=lb.status_summary(conn), choices=lb.CHOICES, saved=saved,
+    coll = conn.one("SELECT COUNT(*) AS n, COALESCE(SUM(amount_cents), 0) AS total FROM payments WHERE legacy_key LIKE 'mmc:%'")
+    from flask import current_app
+    return render_template("staff/admin/import_bills.html", summary=lb.status_summary(conn), choices=lb.CHOICES, saved=saved, coll=coll,
+                           demo=current_app.config["APP_ENV"] == "demo",
                            branches=branches, default_branch=settings.get(lb.BRANCH_KEY, conn), done=done,
                            shared=conn.scalar("SELECT COUNT(DISTINCT lb.patient_id) FROM legacy_bills lb JOIN patients p ON p.id = lb.patient_id "
                                               "WHERE lb.invoice_id IS NULL AND p.preferred_branch_id IS NULL"))
+
+
+# ---- MyMedsPH collection reports -> payments ------------------------------------------------------------
+
+def _collections_file(token: str):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{20,60}", token or ""):
+        abort(400)
+    return _import_dir() / f"{token}.collections.json"
+
+
+@bp.route("/import/collections", methods=["POST"])
+@require("system.settings")
+def import_collections():
+    """Upload MyMedsPH collection reports (Excel, any number of years) -> preview of what will be added."""
+    from flask import current_app
+    from .. import legacy_collections as lc
+    if current_app.config["APP_ENV"] == "demo":
+        abort(403)
+    uploads = [f for f in request.files.getlist("files") if f and f.filename]
+    if not uploads:
+        flash("Choose the MyMedsPH collection report files (.xlsx).", "error")
+        return redirect(url_for("admin.import_bills"))
+    try:
+        data = lc.read_reports([(f.filename, f.read()) for f in uploads])
+    except lc.CollectionFileError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("admin.import_bills"))
+    conn = get_db()
+    s = lc.preview(conn, data)
+    token = secrets.token_urlsafe(24)
+    _collections_file(token).write_text(json.dumps(data))
+    return render_template("staff/admin/import_collections.html", s=s, token=token)
+
+
+@bp.route("/import/collections/confirm", methods=["POST"])
+@require("system.settings")
+def import_collections_confirm():
+    from .. import legacy_collections as lc
+    path = _collections_file(request.form.get("token"))
+    if not path.exists():
+        flash("That upload has expired. Please upload the collection reports again.", "error")
+        return redirect(url_for("admin.import_bills"))
+    data = json.loads(path.read_text())
+    if request.form.get("action") == "unmatched":
+        import csv
+        import io
+        conn = get_db()
+        s = lc.preview(conn, data)
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["Patient name in MyMedsPH report", "Why", "Payments", "Amount (PHP)"])
+        for name, why, n, amt in s["unmatched_names"]:
+            w.writerow([("'" + name) if name[:1] in "=+-@" else name, why, n, f"{amt / 100:.2f}"])
+        audit.record("legacy_collections_unmatched_downloaded", "invoice", None, f"Downloaded {len(s['unmatched_names'])} unmatched names")
+        from flask import Response
+        return Response("﻿" + buf.getvalue(), mimetype="text/csv",
+                        headers={"Content-Disposition": "attachment; filename=mymedsph-payments-not-matched.csv", "Cache-Control": "no-store"})
+    if request.form.get("action") == "cancel":
+        path.unlink(missing_ok=True)
+        flash("Nothing was imported.", "success")
+        return redirect(url_for("admin.import_bills"))
+    conn = get_db()
+    with conn.transaction():
+        st = lc.apply(conn, data, g.user.id)
+        audit.record("legacy_collections_imported", "invoice", None,
+                     f"MyMedsPH collections: {st['payments']} payments, {st['credit']} account credits", st)
+    path.unlink(missing_ok=True)
+    flash(f"Added {st['payments']:,} payments (₱{st['paid_total'] / 100:,.2f}) to MyMedsPH bills"
+          + (f", and ₱{st['credit_total'] / 100:,.2f} as account credit where patients paid more than their MyMedsPH bills" if st["credit"] else "")
+          + f". Dentist set on {st['lines_dentist']:,} bill lines."
+          + (f" {st['already']:,} payments were already here." if st["already"] else "")
+          + (f" {st['skipped']:,} payments skipped (name not matched)." if st["skipped"] else ""), "success")
+    return redirect(url_for("admin.import_bills"))
+
+
+@bp.route("/import/collections/undo", methods=["POST"])
+@require("system.settings")
+def import_collections_undo():
+    from .. import legacy_collections as lc
+    conn = get_db()
+    with conn.transaction():
+        r = lc.undo(conn)
+        audit.record("legacy_collections_removed", "invoice", None, f"Removed {r['payments']} MyMedsPH payments and {r['credits']} credits")
+    flash(f"Removed {r['payments']:,} payments and {r['credits']:,} account credits brought in from MyMedsPH collection reports.", "success")
+    return redirect(url_for("admin.import_bills"))

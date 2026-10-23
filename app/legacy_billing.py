@@ -22,6 +22,7 @@ from .util import now_str
 CHOICES = {"paid": "Paid", "unpaid": "Unpaid (balance to collect)", "history": "Keep as history only"}
 MAP_KEY = "legacy.bill_status_map"
 BRANCH_KEY = "legacy.bill_default_branch"
+COLLECTIONS_KEY = "legacy.collections_imported"   # payments come from MyMedsPH collection reports, not from statuses
 
 
 def saved_map(conn) -> dict:
@@ -47,8 +48,9 @@ def status_summary(conn) -> list[dict]:
     return out
 
 
-def convert(conn, mapping: dict, default_branch_id: int | None, user_id: int) -> dict:
-    """Create bills for the old lines whose status is mapped to paid/unpaid. Call inside a transaction."""
+def convert(conn, mapping: dict, default_branch_id: int | None, user_id: int, with_payments: bool = True) -> dict:
+    """Create bills for the old lines whose status is mapped to paid/unpaid. Call inside a transaction.
+    with_payments=False: no "paid in MyMedsPH" payments (the real payments come from the collection reports)."""
     stats = {"bills": 0, "lines": 0, "paid": 0, "unpaid": 0, "no_branch": 0, "total": 0}
     wanted = {c: k for c, k in mapping.items() if k in ("paid", "unpaid")}
     if not wanted:
@@ -80,7 +82,7 @@ def convert(conn, mapping: dict, default_branch_id: int | None, user_id: int) ->
                                           "unit_price_cents": i["unit_price_cents"] or (i["total_cents"] // max(1, i["qty"] or 1)),
                                           "discount_cents": i["discount_cents"], "amount_cents": i["total_cents"], "done_on": day})
             conn.execute("UPDATE legacy_bills SET invoice_id = ? WHERE id = ?", (iid, i["id"]))
-        if kind == "paid" and total > 0:
+        if with_payments and kind == "paid" and total > 0:
             conn.insert("payments", {"invoice_id": iid, "branch_id": branch, "kind": "payment", "amount_cents": total, "method": LEGACY_METHOD,
                                      "reference": "", "received_at": f"{day} 12:00:00", "received_by": user_id, "status": "valid",
                                      "notes": "Paid in MyMedsPH (imported)", "created_at": ts})
@@ -100,8 +102,9 @@ def undo(conn) -> dict:
     conn.execute("CREATE TEMP TABLE tmp_legacy_undo (id INTEGER PRIMARY KEY)")
     conn.execute("INSERT INTO tmp_legacy_undo (id) SELECT id FROM invoices WHERE legacy = 1 AND status = 'issued'")
     # keep bills staff have worked on: one pass over each table
-    conn.execute("DELETE FROM tmp_legacy_undo WHERE id IN (SELECT invoice_id FROM payments WHERE method != ?)", (LEGACY_METHOD,))
-    conn.execute("DELETE FROM tmp_legacy_undo WHERE id IN (SELECT invoice_id FROM invoice_items WHERE dentist_id IS NOT NULL)")
+    conn.execute("DELETE FROM tmp_legacy_undo WHERE id IN (SELECT invoice_id FROM payments WHERE method != ? "
+                 "AND (legacy_key IS NULL OR legacy_key NOT LIKE 'mmc:%'))", (LEGACY_METHOD,))
+    conn.execute("DELETE FROM tmp_legacy_undo WHERE id IN (SELECT invoice_id FROM invoice_items WHERE dentist_id IS NOT NULL AND legacy_dentist = 0)")
     for t in ("patient_credits", "payment_signatures", "dentist_commissions", "quotations", "visit_notes"):
         conn.execute(f"DELETE FROM tmp_legacy_undo WHERE id IN (SELECT invoice_id FROM {t} WHERE invoice_id IS NOT NULL)")
     removed = conn.scalar("SELECT COUNT(*) FROM tmp_legacy_undo") or 0
@@ -110,4 +113,8 @@ def undo(conn) -> dict:
     conn.execute("DELETE FROM invoice_items WHERE invoice_id IN (SELECT id FROM tmp_legacy_undo)")
     conn.execute("DELETE FROM invoices WHERE id IN (SELECT id FROM tmp_legacy_undo)")
     conn.execute("DROP TABLE tmp_legacy_undo")
+    # account credit made from collection-report payments goes too (it came with these bills)
+    conn.execute("DELETE FROM patient_credits WHERE legacy_key LIKE 'mmc:%' AND kind = 'deposit' "
+                 "AND NOT EXISTS (SELECT 1 FROM patient_credits a WHERE a.patient_id = patient_credits.patient_id AND a.kind != 'deposit')")
+    settings.put(COLLECTIONS_KEY, False, None, conn)
     return {"removed": removed, "kept": total - removed}

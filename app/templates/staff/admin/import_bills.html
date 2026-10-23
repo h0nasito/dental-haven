@@ -6,8 +6,19 @@
 <p>Old bills come in from MyMedsPH as history only. Convert them, and they show in each patient's Bills &amp; Payment like any bill, and count in sales, collections and dentist commission.</p></div></div>
 {% if done.n %}<div class="card notice-card"><strong>{{ done.n }} bill{{ 's' if done.n != 1 }} already converted</strong> ({{ done.total|peso }}; {{ done.paid or 0 }} marked paid). They're numbered MM-…, dated on the MyMedsPH bill date.
 <form method="post" class="mt-1" data-confirm="Remove the converted bills again? Their lines go back to history. Bills staff have worked on (new payment, dentist set, voided) are kept.">{{ csrf() }}<input type="hidden" name="action" value="undo"><button class="btn btn-danger">↩ Undo conversion (remove the MM- bills)</button></form></div>{% endif %}
+<div class="card"><h2>Recommended: add the payments from MyMedsPH collection reports</h2>
+<p class="mt-0">The MyMedsPH data export has bills but no payments. The <strong>collection report</strong> (MyMedsPH Reports &gt; Collections, exported to Excel, one file per year) has every payment, including partial payments. Upload all the years at once: the bills are created and each payment is put on them, so balances match MyMedsPH.</p>
+{% if coll.n %}<p class="notice"><strong>{{ '{:,}'.format(coll.n) }} payments</strong> ({{ coll.total|peso }}) already brought in from collection reports. Uploading newer reports adds only payments not here yet.</p>{% endif %}
+{% if demo %}<div class="flash flash-warning">Switched off on the demo site.</div>{% else %}
+<form method="post" action="{{ url_for('admin.import_collections') }}" enctype="multipart/form-data">{{ csrf() }}
+<div class="field"><label for="cf">Collection report files (.xlsx)</label><input id="cf" type="file" name="files" accept=".xlsx" multiple required>
+<span class="hint">Select all the year files at once (hold Ctrl and click each). You'll see a preview before anything is saved. The files aren't kept on the server.</span></div>
+<button class="btn">Check files &amp; preview</button></form>{% endif %}
+{% if coll.n %}<form method="post" action="{{ url_for('admin.import_collections_undo') }}" class="mt-1" data-confirm="Remove all payments brought in from collection reports? The bills stay.">{{ csrf() }}<button class="btn btn-ghost btn-sm">Remove these payments</button></form>{% endif %}
+</div>
 {% if summary %}
-<form method="post" class="card">{{ csrf() }}<input type="hidden" name="action" value="convert">
+<details class="card"><summary><strong>Without collection reports: choose what each status means</strong> <small class="muted">(only if you can't export the collection reports)</small></summary>
+<form method="post">{{ csrf() }}<input type="hidden" name="action" value="convert">
 <h2>1. What does each MyMedsPH status mean?</h2>
 <p class="hint mt-0">The export gives each bill line a status number but no payments. Open a few of these bills in MyMedsPH and choose what the number means. Your choice is remembered and used for bills that come with later imports.</p>
 <div class="table-wrap"><table><thead><tr><th>Status</th><th class="num">Lines</th><th class="num">Patients</th><th class="num">Total</th><th>Dates</th><th>Examples</th><th>Means</th></tr></thead><tbody>
@@ -28,6 +39,6 @@
 <li>These bills count in Sales &amp; collections and reports for their dates. Cash counts aren't affected, because "Paid in MyMedsPH" isn't cash.</li>
 </ul>
 <button class="btn" data-confirm="Create the bills now?">Convert bills</button>
-</form>
+</form></details>
 {% else %}<div class="card"><p class="muted">{% if done.n %}All MyMedsPH bill lines are converted.{% else %}No MyMedsPH bills imported yet. Import the export with its bills file first.{% endif %}</p></div>{% endif %}
 {% endblock %}

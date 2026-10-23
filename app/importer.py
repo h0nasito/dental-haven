@@ -470,7 +470,8 @@ def run_import(conn, data: dict, *, branch_id: int | None, user_id: int, commit:
                 from . import legacy_billing, settings as _st
                 lmap = legacy_billing.saved_map(conn)
                 if bill_rows and any(v in ("paid", "unpaid") for v in lmap.values()):
-                    s["bills_converted"] = legacy_billing.convert(conn, lmap, _st.get(legacy_billing.BRANCH_KEY, conn), user_id)["bills"]
+                    s["bills_converted"] = legacy_billing.convert(conn, lmap, _st.get(legacy_billing.BRANCH_KEY, conn), user_id,
+                                                                  with_payments=not _st.get(legacy_billing.COLLECTIONS_KEY, conn))["bills"]
 
             if not commit:
                 raise _DryRun(s)
