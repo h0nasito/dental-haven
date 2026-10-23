@@ -674,14 +674,60 @@ def financial():
         w.writerow(["Total expenses", *[st["expenses"][b["id"]] / 100 for b in shown], st["expenses_total"] / 100])
         w.writerow(["NET", *[st["net"][b["id"]] / 100 for b in shown], st["net_total"] / 100])
         w.writerow([])
+        by, summary = _financial_summary(conn, shown, start, end, posted_only)
+        w.writerow([f"Summary by {by}", *[b["name"] for b in shown], "Collections (PHP)", "Expenses (PHP)", "Net (PHP)"])
+        for r in summary:
+            w.writerow([r["label"], *[r["by_branch"][b["id"]] / 100 for b in shown], r["gross"] / 100, r["expenses"] / 100, r["net"] / 100])
+        w.writerow([])
         w.writerow(["Account", "Paid in directly", "Cash deposited", "Total (PHP)"])
         for a in rep["accounts"]:
             w.writerow([a["name"], a["direct"] / 100, a["cash_deposited"] / 100, a["total"] / 100])
         audit.record("financial_report_exported", "report", None, f"Financial report {start} to {end}")
         return Response("\ufeff" + buf.getvalue(), mimetype="text/csv",
                         headers={"Content-Disposition": f'attachment; filename="financial-report-{start}-to-{end}.csv"', "Cache-Control": "no-store"})
+    by, summary = _financial_summary(conn, shown, start, end, posted_only)
+    t = today()
+    ly = t.replace(year=t.year - 1, month=1, day=1)
+    lm_end = t.replace(day=1) - timedelta(days=1)
+    presets = [("Today", t, t), ("This month", t.replace(day=1), t), ("Last month", lm_end.replace(day=1), lm_end),
+               ("This year", t.replace(month=1, day=1), t), ("Last year", ly, ly.replace(month=12, day=31))]
     return render_template("staff/billing/financial.html", rep=rep, st=st, posted_only=posted_only, shown=shown, mine=mine, bid=bid if len(shown) == 1 and len(mine) > 1 else None,
-                           start=start, end=end, banks=banks(conn))
+                           start=start, end=end, banks=banks(conn), by=by, summary=summary, presets=presets)
+
+
+def _financial_summary(conn, shown, start, end, posted_only: bool):
+    """Collections, expenses and net per day, month or year inside the chosen dates (?by=day|month|year;
+    by default days for up to two months, months for up to three years, else years)."""
+    from .. import finance_report
+    days = (end - start).days + 1
+    by = request.args.get("by") if request.args.get("by") in ("day", "month", "year") else \
+        ("day" if days <= 62 else "month" if days <= 1100 else "year")
+    if by == "day" and days > 400:
+        by = "month"
+    buckets, d = [], start
+    while d <= end:
+        if by == "day":
+            e = d
+            label = d.strftime("%a, %b %-d, %Y")
+        elif by == "month":
+            nxt = d.replace(day=1, year=d.year + (d.month == 12), month=d.month % 12 + 1)
+            e = min(end, nxt - timedelta(days=1))
+            label = d.strftime("%B %Y")
+        else:
+            e = min(end, d.replace(month=12, day=31))
+            label = str(d.year)
+        buckets.append((label, d, e))
+        d = e + timedelta(days=1)
+    rows = []
+    for label, s0, e0 in buckets:
+        rep = finance_report.build(conn, shown, s0.isoformat(), e0.isoformat())
+        st = finance_report.statement(conn, shown, s0.isoformat(), e0.isoformat(), rep["branch_totals"], posted_only)
+        rows.append({"label": label, "start": s0, "end": e0, "gross": st["gross_total"], "expenses": st["expenses_total"], "net": st["net_total"],
+                     "by_branch": {b["id"]: st["gross"].get(b["id"], 0) for b in shown}})
+    top = max([r["gross"] for r in rows] + [1])
+    for r in rows:
+        r["pct"] = round(100 * max(0, r["gross"]) / top)
+    return by, rows
 
 
 @bp.route("/reports/sales")

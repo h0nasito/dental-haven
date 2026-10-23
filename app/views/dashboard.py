@@ -196,3 +196,22 @@ def switch_branch():
     if not target.startswith("/staff") or "//" in target:
         target = url_for("dash.home")
     return redirect(target)
+
+
+@bp.route("/overview")
+@login_required
+def overview():
+    """Clinic & lab overview (owners / admins): today at a glance, money owed, lab workload, collections chart."""
+    if not (g.user.is_super_admin or g.user.can("reports.sales")):
+        abort(403)
+    from .. import overview as ov
+    conn = get_db()
+    period = request.args.get("period") if request.args.get("period") in ov.PERIODS else "day"
+    ids = list(g.user.scope_branch_ids)
+    t = today()
+    d = ov.build(conn, ids, t, period)
+    coll = ov.line_chart(d["chart_coll"], d["chart_prev"], d["chart_labels"])
+    pts = ov.bar_chart(d["chart_new"], d["chart_ret"], d["chart_labels"])
+    branch = conn.one("SELECT name FROM branches WHERE id = ?", (g.user.active_branch_id,)) if g.user.active_branch_id else None
+    return render_template("staff/overview.html", d=d, coll=coll, pts=pts, period=period, branch=branch, periods=ov.PERIODS,
+                           period_total=sum(v for v in d["chart_coll"] if v), prev_total=sum(d["chart_prev"]))

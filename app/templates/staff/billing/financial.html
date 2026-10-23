@@ -9,8 +9,19 @@
 <div class="field"><label for="ft">To</label><input id="ft" type="date" name="to" value="{{ end.isoformat() }}"></div>
 {% if mine|length > 1 %}<div class="field"><label for="fb">Branch</label><select id="fb" name="branch"><option value="">All my branches</option>{% for b in mine %}<option value="{{ b.id }}" {% if bid == b.id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select></div>{% endif %}
 <button class="btn btn-secondary">Show</button></form>
+<div class="row fin-presets">{% for label, a, b in presets %}<a class="btn btn-sm {{ 'btn-secondary is-active' if a == start and b == end else 'btn-ghost' }}" href="{{ url_for('billing.financial', branch=bid, **{'from': a.isoformat(), 'to': b.isoformat()}) }}">{{ label }}</a>{% endfor %}</div>
 
-<div class="card"><h2>Collections by where the payment went</h2>
+<div class="card"><div class="card-head"><h2>Summary {{ {'day': 'by day', 'month': 'by month', 'year': 'by year'}[by] }}</h2>
+<div class="tabs" style="margin:0;border:0">{% for k, l in [('day', 'Daily'), ('month', 'Monthly'), ('year', 'Yearly')] %}<a class="{{ 'active' if by == k }}" href="{{ url_for('billing.financial', branch=bid, by=k, posted=1 if posted_only else none, **{'from': start.isoformat(), 'to': end.isoformat()}) }}">{{ l }}</a>{% endfor %}</div></div>
+<div class="table-wrap" style="max-height:32rem;overflow:auto"><table class="fin fin-sum"><thead><tr><th>{{ {'day': 'Day', 'month': 'Month', 'year': 'Year'}[by] }}</th>{% if shown|length > 1 %}{% for b in shown %}<th class="num">{{ b.name }}</th>{% endfor %}{% endif %}<th class="num">Collections</th><th class="num">Expenses</th><th class="num">Net</th>{% if shown|length == 1 %}<th style="width:22%"></th>{% endif %}</tr></thead><tbody>
+{% for r in summary %}<tr><td style="white-space:nowrap"><a href="{{ url_for('billing.financial', branch=bid, **{'from': r.start.isoformat(), 'to': r.end.isoformat()}) }}">{{ r.label }}</a></td>
+{% if shown|length > 1 %}{% for b in shown %}<td class="num">{{ r.by_branch[b.id]|peso if r.by_branch[b.id] else '—' }}</td>{% endfor %}{% endif %}
+<td class="num"><strong>{{ r.gross|peso }}</strong></td><td class="num">{{ ('−' ~ (r.expenses|peso)) if r.expenses else '—' }}</td><td class="num"><strong {% if r.net < 0 %}class="text-danger"{% endif %}>{{ r.net|peso }}</strong></td>
+{% if shown|length == 1 %}<td><span class="fin-bar" style="width:{{ r.pct }}%"></span></td>{% endif %}</tr>{% endfor %}</tbody>
+<tfoot><tr><td><strong>Total</strong></td>{% if shown|length > 1 %}{% for b in shown %}<td class="num">{{ rep.branch_totals[b.id]|peso }}</td>{% endfor %}{% endif %}<td class="num"><strong>{{ st.gross_total|peso }}</strong></td><td class="num">−{{ st.expenses_total|peso }}</td><td class="num"><strong>{{ st.net_total|peso }}</strong></td>{% if shown|length == 1 %}<td></td>{% endif %}</tr></tfoot></table></div>
+<p class="hint">Click a {{ by }} to see its full report below. Collections are after refunds; expenses include monthly bills, lab fees and dentist commissions, as in "Gross less expenses".</p></div>
+
+<div class="card mt-1"><h2>Collections by where the payment went</h2>
 <div class="table-wrap"><table class="fin"><thead><tr><th>Payment went to</th>{% if shown|length > 1 %}{% for b in shown %}<th class="num">{{ b.name }}</th>{% endfor %}{% endif %}<th class="num">Total</th></tr></thead><tbody>
 {% for r in rep.rows %}<tr><td>{{ r.label }}{% if r.refunds %}<br><small class="muted">collected {{ r.collected|peso }} · refunds −{{ r.refunds|peso }}</small>{% endif %}</td>
 {% if shown|length > 1 %}{% for b in shown %}<td class="num">{{ r.net[b.id]|peso if r.net[b.id] else '—' }}</td>{% endfor %}{% endif %}<td class="num"><strong>{{ r.total|peso }}</strong></td></tr>
@@ -38,5 +49,7 @@
 <details class="card mt-1"><summary><strong>Bank accounts</strong> <small class="muted">({{ banks|join(', ') }})</small></summary>
 <form method="post" class="mt-1">{{ csrf() }}<div class="field"><label for="fbk">One bank per line <span class="hint">These show as “Bank transfer – …” in the payment form and in Bank deposits. GCash is always there.</span></label>
 <textarea id="fbk" name="banks" rows="6">{{ banks|join('\n') }}</textarea></div><button class="btn btn-secondary btn-sm">Save</button></form></details>{% endif %}
-<style>.fin td.num, .fin th.num { white-space: nowrap; }</style>
+<style>.fin td.num, .fin th.num { white-space: nowrap; }
+.fin-sum th, .fin-sum th.num{white-space:normal;vertical-align:bottom}.fin-sum{font-size:.92rem}
+.fin-presets{gap:.4rem;margin:-.3rem 0 .8rem;flex-wrap:wrap}.fin-bar{display:block;height:.6rem;border-radius:4px;background:#ea8a28;min-width:2px}</style>
 {% endblock %}

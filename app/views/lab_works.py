@@ -317,11 +317,11 @@ def works():
 # What a work bills: its items (price x units) plus its additional charges. NULL when no item has a price and there are no charges.
 WORK_TOTAL_SQL = ("(SELECT CASE WHEN EXISTS (SELECT 1 FROM lab_work_items wi WHERE wi.work_id = w.id AND wi.price_cents IS NOT NULL)"
                   " OR EXISTS (SELECT 1 FROM lab_work_extras wx WHERE wx.work_id = w.id) THEN"
-                  " COALESCE((SELECT SUM(wi.price_cents * wi.units) FROM lab_work_items wi WHERE wi.work_id = w.id AND wi.price_cents IS NOT NULL), 0)"
+                  " COALESCE((SELECT SUM(wi.price_cents * wi.units - wi.discount_cents) FROM lab_work_items wi WHERE wi.work_id = w.id AND wi.price_cents IS NOT NULL), 0)"
                   " + COALESCE((SELECT SUM(wx.qty * wx.unit_price_cents) FROM lab_work_extras wx WHERE wx.work_id = w.id), 0) END)")
 
 
-CASE_FIELDS = ("case_type", "material_new", "units", "arch", "teeth", "shade", "material", "price", "instructions")
+CASE_FIELDS = ("case_type", "material_new", "units", "arch", "teeth", "shade", "material", "price", "discount", "instructions")
 HEAD_FIELDS = ("lab_id", "clinic_name", "doctor", "contact_number", "patient_ref", "received_on", "due_on")
 
 
@@ -334,6 +334,38 @@ def item_text(it) -> str:
     units = it["units"] or 1
     return ((f"{units} × " if units > 1 else "") + it["case_type"] + (f" ({it['material']})" if it["material"] else "")
             + (f" · {it['teeth']}" if it["teeth"] else ""))
+
+
+def item_gross(it) -> int:
+    return (it["price_cents"] or 0) * (it["units"] or 1)
+
+
+def parse_discount(raw: str, gross: int) -> tuple[int, int | None, str | None]:
+    """'500' / '500.00' -> P500 off; '10%' -> 10% of the item. Returns (cents, basis points or None, error)."""
+    raw = (raw or "").strip().replace(",", "")
+    if not raw:
+        return 0, None, None
+    if raw.endswith("%"):
+        try:
+            pct = float(raw[:-1].strip())
+        except ValueError:
+            return 0, None, "Enter the discount like 500 or 10%."
+        if not 0 <= pct <= 100:
+            return 0, None, "A discount can be 0% to 100%."
+        bp = round(pct * 100)
+        return round(gross * bp / 10000), bp, None
+    cents = parse_money(raw)
+    if cents is None or cents < 0:
+        return 0, None, "Enter the discount like 500 or 10%."
+    if cents > gross:
+        return 0, None, "The discount is more than the item's price x units."
+    return cents, None, None
+
+
+def discount_text(it) -> str:
+    if it["discount_bp"]:
+        return f"{it['discount_bp'] / 100:g}%"
+    return f"{it['discount_cents'] / 100:.2f}" if it["discount_cents"] else ""
 
 
 def work_summary(items: list[dict]) -> dict:
@@ -357,6 +389,7 @@ def _save_items(conn, work_id, items: list[dict]) -> None:
     for i, it in enumerate(items):
         conn.insert("lab_work_items", {"work_id": work_id, "case_type": it["case_type"], "units": it["units"], "arch": it["arch"],
                                        "teeth": it["teeth"], "shade": it["shade"], "material": it["material"], "price_cents": it["price_cents"],
+                                       "discount_cents": it.get("discount_cents", 0), "discount_bp": it.get("discount_bp"),
                                        "instructions": it["instructions"], "sort_order": i})
 
 
@@ -368,8 +401,15 @@ def _parse_work(form, labs):
     items, errors, case_errors = [], {}, []
     for c in cases:
         v, data, errs = _work_form(MultiDict({**head, **c}), labs)
+        gross = (data["price_cents"] or 0) * (data["units"] or 1)
+        disc, disc_bp, derr = parse_discount(c.get("discount", ""), gross)
+        if derr:
+            errs["discount"] = derr
+        elif disc and data["price_cents"] is None:
+            errs["discount"] = "Enter the price first, then the discount."
         items.append({"case_type": data["case_type"], "units": data["units"], "arch": data["arch"], "teeth": data["teeth"], "shade": data["shade"],
-                      "material": data["material"], "price_cents": data["price_cents"], "instructions": data["instructions"], "_head": data})
+                      "material": data["material"], "price_cents": data["price_cents"], "discount_cents": disc, "discount_bp": disc_bp,
+                      "instructions": data["instructions"], "_head": data})
         case_errors.append({k: e for k, e in errs.items() if k in CASE_FIELDS})
         for k, e in errs.items():
             if k not in CASE_FIELDS:
@@ -494,7 +534,8 @@ def work(work_id):
     from ..lab_commission import entries, technicians
     extras = work_extras(conn, w["id"])
     items = work_items(conn, w["id"])
-    return render_template("staff/lab_works/work.html", items=items, items_total=sum((i["price_cents"] or 0) * i["units"] for i in items), w=w, events=events, statuses=STATUSES, arches=ARCHES, lab=lab, lab_display=lab_display,
+    return render_template("staff/lab_works/work.html", items=items, items_total=sum(item_gross(i) - (i["discount_cents"] or 0) for i in items),
+                           items_discount=sum(i["discount_cents"] or 0 for i in items), w=w, events=events, statuses=STATUSES, arches=ARCHES, lab=lab, lab_display=lab_display,
                            extras=extras, extras_total=sum(x["qty"] * x["unit_price_cents"] for x in extras),
                            price_list=price_items(conn, [w["lab_id"]]), extras_prices=extras_list(price_items(conn, [w["lab_id"]])),
                            comm_entries=entries(conn, work_id=w["id"]), comm_techs=technicians(conn),
@@ -546,7 +587,7 @@ def work_edit(work_id):
     labs = my_labs(conn)
     v = {k: (w[k] if w[k] is not None else "") for k in HEAD_FIELDS}
     cases = [{"case_type": it["case_type"], "units": it["units"], "arch": it["arch"], "teeth": it["teeth"], "shade": it["shade"],
-              "material": it["material"], "material_new": "", "instructions": it["instructions"],
+              "material": it["material"], "material_new": "", "instructions": it["instructions"], "discount": discount_text(it),
               "price": "" if it["price_cents"] is None else f"{it['price_cents'] / 100:.2f}"} for it in work_items(conn, w["id"])]
     case_errors = [{} for _ in cases]
     errors = {}
@@ -964,9 +1005,12 @@ def _add_work_lines(conn, iid, w, description) -> None:
         items = [{"case_type": w["case_type"], "units": w["units"], "teeth": w["teeth"], "material": "", "price_cents": w["price_cents"]}]
     for it in items:
         price = it["price_cents"] or 0
+        disc = min(item_gross(it), (it["discount_cents"] if "discount_cents" in it.keys() else 0) or 0)
         desc = description if len(items) == 1 else f"{w['number']} · " + item_text(it)
+        if "discount_bp" in it.keys() and it["discount_bp"]:
+            desc += f" · less {it['discount_bp'] / 100:g}%"
         conn.insert("lab_invoice_items", {"invoice_id": iid, "work_id": w["id"], "description": desc[:200], "qty": it["units"] or 1,
-                                          "unit_price_cents": price, "discount_cents": 0, "amount_cents": price * (it["units"] or 1)})
+                                          "unit_price_cents": price, "discount_cents": disc, "amount_cents": item_gross(it) - disc})
     for x in work_extras(conn, w["id"]):
         conn.insert("lab_invoice_items", {"invoice_id": iid, "work_id": w["id"], "description": x["description"][:200], "qty": x["qty"],
                                           "unit_price_cents": x["unit_price_cents"], "discount_cents": 0,

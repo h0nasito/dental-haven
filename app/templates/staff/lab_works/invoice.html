@@ -13,7 +13,7 @@
 {% for gr in groups %}
 {% if gr.case %}<tr class="li-case"><td colspan="6"><strong>Case #{{ gr.case.id }} · {{ gr.case.case_type }}</strong>{% if gr.case.teeth %} · {{ gr.case.teeth }}{% endif %} · {{ gr.case.chart_no }}{% if gr.case.dentist %} · {{ gr.case.dentist }}{% endif %}
 <a href="{{ url_for('labs.case', case_id=gr.case.id) }}" class="muted" style="margin-left:.4rem">open case</a></td></tr>
-{% elif gr.work %}<tr class="li-case"><td colspan="6"><strong>{{ gr.work.number }} · {{ gr.work.case_type }}</strong>{% if gr.work.teeth %} · {{ gr.work.teeth }}{% endif %}{% if gr.work.doctor %} · {{ gr.work.doctor }}{% endif %}
+{% elif gr.work %}<tr class="li-case"><td colspan="6"><strong>{{ gr.work.number }} · {{ gr.work.case_type }}</strong>{% if gr.work.teeth %} · {{ gr.work.teeth }}{% endif %}{% if gr.work.doctor %} · {{ gr.work.doctor }}{% endif %}{% if gr.work.patient_ref %}<br><span class="li-patient">Patient: <strong>{{ gr.work.patient_ref }}</strong></span>{% endif %}
 <a href="{{ url_for('lab_works.work', work_id=gr.work.id) }}" class="muted" style="margin-left:.4rem">open work</a></td></tr>
 {% elif groups|length > 1 %}<tr class="li-case"><td colspan="6"><strong>Other items</strong></td></tr>{% endif %}
 {% for it in gr["items"] %}<tr>

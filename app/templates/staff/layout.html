@@ -33,6 +33,7 @@
     {%- endmacro %}
     <div class="nav-group nav-top">
       {{ nav('dash.home', 'Dashboard') }}
+      {% if current_user.is_super_admin or current_user.can('reports.sales') %}{{ nav('dash.overview', 'Clinic & lab overview', 'dash.overview') }}{% endif %}
       {% if current_user.can('attendance.clock') %}{{ nav('timeclock.clock', '⏱ Time in / out', 'timeclock.clock') }}{% endif %}
       {{ nav('announce.index', 'Announcements & duty', 'announce.') }}
       {{ nav('chat.index', 'Group chat', 'chat.', nav_counts.get('chat')) }}

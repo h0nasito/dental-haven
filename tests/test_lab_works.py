@@ -118,6 +118,8 @@ class TestLabWorks(Base):
             iid = int(r.headers["Location"].rstrip("/").split("/")[-1])
             lines = [(i["qty"], i["amount_cents"]) for i in self.conn.all("SELECT * FROM lab_invoice_items WHERE invoice_id = ? ORDER BY id", (iid,))]
             self.assertEqual(lines, [(2, 1100000), (3, 1650000), (2, 100000)])
+            self.assertIn("Patient: <strong>JD-1</strong>", c.get(f"/staff/lab/invoices/{iid}").data.decode())
+            self.assertIn("Patient: <strong>JD-1</strong>", c.get(f"/staff/lab/invoices/{iid}/print").data.decode())
             # edit: change an item, add one
             c.post(f"/staff/lab/works/{w['id']}/edit", data={
                 "lab_id": self.lab, "clinic_name": "Items QT Dental", "doctor": "Dr. QT", "patient_ref": "JD-1", "received_on": today().isoformat(),
@@ -134,6 +136,38 @@ class TestLabWorks(Base):
             self.assertIn("Enter the number of units", r.data.decode())
             self.assertIn('value="22"', r.data.decode())
             self.assertEqual(self.q("SELECT COUNT(*) AS n FROM lab_works")["n"], before + 1)
+        finally:
+            self.revoke()
+
+    def test_discount_per_item(self):
+        from app.util import today
+        self.grant("lab.works", "lab.billing")
+        try:
+            c = self.tech()
+            base = {"lab_id": self.lab, "clinic_name": "Disc QT Dental", "patient_ref": "PT-9", "received_on": today().isoformat(),
+                    "case_type": ["Bridge", "Bridge", "Crown"], "units": ["4", "2", "1"], "teeth": ["44-47", "11, 12", "36"],
+                    "price": ["5500", "5500", "3000"], "discount": ["10%", "1000", ""]}
+            # too big a discount is refused
+            r = c.post("/staff/lab/works/new", data={**base, "discount": ["10%", "99999", ""]})
+            self.assertEqual(r.status_code, 200)
+            self.assertIn("more than the item", r.data.decode())
+            r = c.post("/staff/lab/works/new", data=base)
+            self.assertEqual(r.status_code, 302)
+            w = self.q("SELECT * FROM lab_works WHERE clinic_name = 'Disc QT Dental'")
+            items = self.conn.all("SELECT discount_cents, discount_bp FROM lab_work_items WHERE work_id = ? ORDER BY sort_order", (w["id"],))
+            self.assertEqual([(i["discount_cents"], i["discount_bp"]) for i in items], [(220000, 1000), (100000, None), (0, None)])
+            page = c.get(f"/staff/lab/works/{w['id']}").data.decode()
+            self.assertIn("32,800.00", page)              # 22,000 - 2,200 + 11,000 - 1,000 + 3,000
+            # the edit form shows the discounts as typed
+            page = c.get(f"/staff/lab/works/{w['id']}/edit").data.decode()
+            self.assertIn('value="10%"', page)
+            self.assertIn('value="1000.00"', page)
+            r = c.post(f"/staff/lab/works/{w['id']}/bill")
+            iid = int(r.headers["Location"].rstrip("/").split("/")[-1])
+            lines = [(x["qty"], x["unit_price_cents"], x["discount_cents"], x["amount_cents"]) for x in
+                     self.conn.all("SELECT * FROM lab_invoice_items WHERE invoice_id = ? ORDER BY id", (iid,))]
+            self.assertEqual(lines, [(4, 550000, 220000, 1980000), (2, 550000, 100000, 1000000), (1, 300000, 0, 300000)])
+            self.assertEqual(self.q("SELECT total_cents FROM lab_invoices WHERE id = ?", (iid,))["total_cents"], 3280000)
         finally:
             self.revoke()
 

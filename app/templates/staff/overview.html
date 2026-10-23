@@ -1,0 +1,95 @@
+{% extends "staff/layout.html" %}
+{% block page_title %}Clinic & lab overview{% endblock %}
+{% macro tile(label, value, sub='', change=none, icon='', tone='', href=none) -%}
+<{{ 'a href=' ~ href if href else 'div' }} class="ov-tile {{ tone }}">
+<div class="ov-top"><span class="ov-label">{{ label }}</span>{% if icon %}<span class="ov-ico" aria-hidden="true">{{ icon }}</span>{% endif %}</div>
+{% set v = value|string %}<div class="ov-value{{ ' money' if v.startswith('₱') }}">{{ v[:-3] if v.startswith('₱') and v.endswith('.00') else v }}</div>
+<div class="ov-sub">{% if change is not none %}<span class="{{ 'up' if change >= 0 else 'down' }}">{{ '+' if change > 0 }}{{ change }}%</span> vs {{ d.range.vs }}{% if sub %} · {% endif %}{% endif %}{{ sub }}</div>
+</{{ 'a' if href else 'div' }}>
+{%- endmacro %}
+{% block content %}
+{% set pword = {'day': 'today', 'week': 'this week', 'month': 'this month', 'year': 'this year'}[period] %}
+<div class="page-head"><div><h1>Clinic &amp; lab overview</h1><p>{{ d.today.strftime('%A, %B %-d, %Y') }} · {{ branch.name if branch else 'All my branches' }} <small class="muted">(change with the branch picker at the top)</small></p></div>
+<div class="tabs ov-periods" style="margin:0">{% for k, l in periods.items() %}<a class="{{ 'active' if period == k }}" href="?period={{ k }}">{{ l }}</a>{% endfor %}</div></div>
+<p class="muted mt-0">{% if period == 'day' %}{{ d.range.start|date }}{% else %}{{ d.range.start|date }} – {{ d.range.end|date }}{% endif %} · percentages compare with {{ d.range.vs }} ({{ d.range.pstart|date }}{% if d.range.pstart != d.range.pend %} – {{ d.range.pend|date }}{% endif %}).</p>
+
+<h2 class="ov-h">Clinic {{ pword }}</h2>
+<div class="ov-grid">
+{{ tile('Appointments', d.appts.all[0], '', d.appts.all[1], '📅', href=url_for('sched.appointments')) }}
+{{ tile('Waiting now', d.waiting_now, 'checked in today', none, '👥', 'amber') }}
+{{ tile('Completed', d.appts.completed[0], '', d.appts.completed[1], '✔', 'green') }}
+{{ tile('Cancelled / no-show', d.appts.cancelled[0], '', d.appts.cancelled[1], '✕', 'red') }}
+{{ tile('Online bookings', d.bookings, 'waiting for reply', none, '🕒', 'blue', url_for('sched.requests')) }}
+{{ tile('Collected', d.collected[0]|peso, '', d.collected[1], '₱', 'gold', url_for('billing.financial')) }}
+</div>
+<div class="ov-grid ov-grid-3">
+{{ tile('Unpaid bills', d.unpaid[0] ~ ' unpaid', d.unpaid[1]|peso ~ ' to collect (all dates)' ~ (' · ' ~ d.drafts ~ ' draft' ~ ('s' if d.drafts != 1 else '') if d.drafts else ''), none, '🧾', 'amber') }}
+{{ tile('New patients', d.new_patients[0], d.recalls_due ~ ' recalls due', d.new_patients[1], '🦷', 'blue') }}
+{{ tile('Collected this month', d.collected_month|peso, 'since ' ~ d.today.replace(day=1).strftime('%b 1'), none, '📈', 'green') }}
+</div>
+
+<h2 class="ov-h">Laboratory <small class="muted" style="text-transform:none;letter-spacing:0">· work in the lab now, and {{ pword }}'s numbers</small></h2>
+<div class="ov-grid">
+{{ tile('Open lab work', d.lab.open_cases + d.lab.open_works, d.lab.open_cases ~ ' branch cases · ' ~ d.lab.open_works ~ ' outside works', none, '🧪') }}
+{{ tile('Overdue', d.lab.overdue, 'past the due date', none, '⚠', 'red' if d.lab.overdue else '') }}
+{{ tile('Due today', d.lab.due_today, 'still in the lab', none, '⏰', 'amber' if d.lab.due_today else '') }}
+{{ tile('Ready', d.lab.ready, 'to deliver / pick up', none, '📦', 'green') }}
+{{ tile('Received / delivered', d.lab.received ~ ' / ' ~ d.lab.delivered, pword ~ (' · ' ~ d.lab.to_bill ~ ' delivered, not billed' if d.lab.to_bill else ''), none, '🔁', 'amber' if d.lab.to_bill else '') }}
+{{ tile('Lab collected', d.lab.collected|peso, pword ~ ' · ' ~ (d.lab.unpaid|peso) ~ ' unpaid', none, '₱', 'gold') }}
+</div>
+
+<div class="ov-two">
+<div class="card"><div class="card-head"><h2>Collections</h2>
+<small class="muted">{{ {'day': 'last 14 days', 'week': 'per day', 'month': 'per day', 'year': 'per month'}[period] }}</small></div>
+<p class="muted mt-0">{{ period_total|peso }} <small>· the {{ {'day': 'week before each day', 'week': 'week before', 'month': 'month before', 'year': 'year before'}[period] }}: {{ prev_total|peso }} (dashed)</small></p>
+<svg class="ov-chart" viewBox="0 0 {{ coll.w }} {{ coll.h }}" role="img" aria-label="Collections per day">
+{% for tk in coll.ticks %}<line x1="52" x2="{{ coll.w - 8 }}" y1="{{ tk.y }}" y2="{{ tk.y }}" class="grid"/><text x="46" y="{{ tk.y + 4 }}" text-anchor="end">{{ tk.label }}</text>{% endfor %}
+{% if coll.prev %}<polyline points="{{ coll.prev }}" class="prev"/>{% endif %}
+{% if coll.area %}<polygon points="{{ coll.area }}" class="area"/><polyline points="{{ coll.line }}" class="line"/>{% endif %}
+{% for p in coll.dots %}<circle cx="{{ p.x }}" cy="{{ p.y }}" r="3" class="dot"/>{% endfor %}
+{% for l in coll.xl %}<text x="{{ l.x }}" y="{{ coll.h - 6 }}" text-anchor="{{ 'end' if loop.last else ('start' if loop.first else 'middle') }}">{{ l.label }}</text>{% endfor %}
+</svg></div>
+<div class="card"><div class="card-head"><h2>New / returning patients</h2><small class="muted">completed visits</small></div>
+<p class="muted mt-0"><span class="key new"></span> first visit · <span class="key ret"></span> returning</p>
+<svg class="ov-chart" viewBox="0 0 {{ pts.w }} {{ pts.h }}" role="img" aria-label="New and returning patients per day">
+{% for tk in pts.ticks %}<line x1="30" x2="{{ pts.w - 8 }}" y1="{{ tk.y }}" y2="{{ tk.y }}" class="grid"/><text x="24" y="{{ tk.y + 4 }}" text-anchor="end">{{ tk.label }}</text>{% endfor %}
+{% for b in pts.bars %}{% if b.new %}<rect x="{{ b.x }}" y="{{ b.new_y }}" width="{{ b.w }}" height="{{ b.new_h }}" class="bar-new"><title>{{ b.new }} new</title></rect>{% endif %}{% if b.ret %}<rect x="{{ b.x }}" y="{{ b.ret_y }}" width="{{ b.w }}" height="{{ b.ret_h }}" class="bar-ret"><title>{{ b.ret }} returning</title></rect>{% endif %}{% endfor %}
+{% for l in pts.xl %}<text x="{{ l.x }}" y="{{ pts.h - 6 }}" text-anchor="middle">{{ l.label }}</text>{% endfor %}
+</svg></div>
+</div>
+
+<div class="ov-two">
+<div class="card"><div class="card-head"><h2>Today's appointments</h2><a href="{{ url_for('sched.calendar') }}">Calendar</a></div>
+<ul class="list-plain ov-list">{% for a in d.today_appts %}<li><span><a href="{{ url_for('sched.appointment', appt_id=a.id) }}"><strong>{{ a.first_name }} {{ a.last_name }}</strong></a><br><small class="muted">{{ a.service }}{% if a.dentist %} · {{ a.dentist }}{% endif %} · {{ a.branch }}</small></span>
+<span class="ov-time">{{ a.start_at[11:16] }}<br><small class="badge">{{ a.status|label }}</small></span></li>{% else %}<li class="muted">No appointments today.</li>{% endfor %}</ul></div>
+<div class="card"><div class="card-head"><h2>Lab: due in the next 2 days</h2><a href="{{ url_for('dash.queue') }}">Work queue</a></div>
+<ul class="list-plain ov-list">{% for r in d.lab.soon %}<li><span>{% if r.kind == 'work' %}<a href="{{ url_for('lab_works.work', work_id=r.id) }}"><strong>{{ r.number }}</strong></a>{% else %}<a href="{{ url_for('labs.case', case_id=r.id) }}"><strong>Case #{{ r.id }}</strong></a>{% endif %}
+<br><small class="muted">{{ r.case_type }} · {{ r.place }}</small></span><span class="ov-time{{ ' late' if r.due_on < d.today.isoformat() }}">{{ r.due_on|date }}<br><small class="badge">{{ r.status|lab_status }}</small></span></li>{% else %}<li class="muted">Nothing due in the next 2 days.</li>{% endfor %}</ul></div>
+</div>
+<style>
+.ov-periods a{white-space:nowrap}
+.ov-h{font-size:1rem;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);margin:1rem 0 .5rem}
+.ov-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:.8rem;margin-bottom:.8rem}
+.ov-grid-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media (max-width:1250px){.ov-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:640px){.ov-grid,.ov-grid-3{grid-template-columns:repeat(2,minmax(0,1fr))}.ov-value{font-size:1.4rem}}
+.ov-tile{display:block;background:var(--surface,#fff);border:1px solid var(--line);border-radius:14px;padding:.9rem 1rem;color:inherit;text-decoration:none;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+a.ov-tile:hover{border-color:var(--brand-600,#1d4ed8)}
+.ov-top{display:flex;justify-content:space-between;align-items:center}
+.ov-label{font-weight:700;font-size:.85rem;color:var(--ink-3)}
+.ov-ico{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;background:#eef2f7;font-size:1.05rem}
+.ov-tile.amber .ov-ico{background:#fff3e0}.ov-tile.green .ov-ico{background:#e7f7ee}.ov-tile.red .ov-ico{background:#fdeceb}.ov-tile.blue .ov-ico{background:#e8efff}.ov-tile.gold .ov-ico{background:#fff7da}
+.ov-value{font-size:1.7rem;font-weight:800;line-height:1.2;margin:.3rem 0 .1rem;overflow-wrap:anywhere}
+.ov-value.money{font-size:1.3rem;white-space:nowrap;overflow-wrap:normal;margin:.55rem 0 .3rem}
+.ov-sub{font-size:.82rem;color:var(--ink-3)}.ov-sub .up{color:#15803d;font-weight:700}.ov-sub .down{color:#b91c1c;font-weight:700}
+.ov-two{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1rem;margin-top:.4rem}
+.ov-chart{width:100%;height:auto}.ov-chart text{font-size:11px;fill:#6b7280}.ov-chart .grid{stroke:#e5e7eb;stroke-dasharray:3 3}
+.ov-chart .area{fill:rgba(234,138,40,.18)}.ov-chart .line{fill:none;stroke:#ea8a28;stroke-width:2.5}.ov-chart .dot{fill:#ea8a28}
+.ov-chart .prev{fill:none;stroke:#9ca3af;stroke-width:1.5;stroke-dasharray:5 4}
+.ov-chart .bar-new{fill:#2563eb}.ov-chart .bar-ret{fill:#93c5fd}
+.key{display:inline-block;width:.8rem;height:.8rem;border-radius:3px;vertical-align:-1px}.key.new{background:#2563eb}.key.ret{background:#93c5fd}
+.ov-list li{display:flex;justify-content:space-between;align-items:flex-start;gap:.8rem;flex-wrap:nowrap}
+.ov-list li>span:first-child{min-width:0}
+.ov-time{text-align:right;white-space:nowrap;font-weight:600;flex:none}.ov-time.late{color:#b91c1c}
+</style>
+{% endblock %}

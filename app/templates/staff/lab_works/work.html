@@ -18,7 +18,7 @@
 <dt>Contact number</dt><dd>{{ w.contact_number or '—' }}</dd>
 {% if w.patient_ref %}<dt>Patient reference</dt><dd>{{ w.patient_ref }}</dd>{% endif %}
 {% if extras %}<dt>Additional charges</dt><dd>{{ extras_total|peso }} <a href="#extras">({{ extras|length }})</a></dd>{% endif %}
-<dt>Total to bill</dt><dd><strong>{{ (items_total + extras_total)|peso }}</strong></dd>
+<dt>Total to bill</dt><dd><strong>{{ (items_total + extras_total)|peso }}</strong>{% if items_discount %}<br><small class="muted">after {{ items_discount|peso }} discount</small>{% endif %}</dd>
 <dt>Date received</dt><dd>{{ w.received_on|date }}</dd>
 <dt>Due date</dt><dd>{{ w.due_on|date if w.due_on else '—' }}{% if w.due_on and w.due_on < today and w.status in LAB_LATE %} <span class="badge badge-red">Overdue</span>{% endif %}</dd>
 <dt>Date delivered</dt><dd>{{ w.delivered_on|date if w.delivered_on else '—' }}</dd>
@@ -28,7 +28,7 @@
 <div class="card" id="items"><h2>Items</h2>
 <div class="table-wrap"><table><thead><tr><th>Item</th><th>Teeth</th><th>Shade</th><th class="num">Units</th><th class="num">Price</th><th class="num">Amount</th></tr></thead><tbody>
 {% for it in items %}<tr><td><strong>{{ it.case_type }}</strong>{% if it.material %}<br><small class="muted">{{ it.material }}</small>{% endif %}{% if it.arch %}<br><small class="muted">{{ arches[it.arch] }}</small>{% endif %}{% if it.instructions %}<br><small>{{ it.instructions }}</small>{% endif %}</td>
-<td>{{ it.teeth or '—' }}</td><td>{{ it.shade or '—' }}</td><td class="num">{{ it.units }}</td><td class="num">{{ it.price_cents|peso if it.price_cents is not none else '—' }}</td><td class="num">{{ (it.price_cents * it.units)|peso if it.price_cents is not none else '—' }}</td></tr>{% endfor %}
+<td>{{ it.teeth or '—' }}</td><td>{{ it.shade or '—' }}</td><td class="num">{{ it.units }}</td><td class="num">{{ it.price_cents|peso if it.price_cents is not none else '—' }}</td><td class="num">{% if it.price_cents is not none %}{% if it.discount_cents %}<small class="muted"><s>{{ (it.price_cents * it.units)|peso }}</s> less {{ ('%g%%'|format(it.discount_bp / 100)) if it.discount_bp else it.discount_cents|peso }}</small><br>{% endif %}{{ (it.price_cents * it.units - it.discount_cents)|peso }}{% else %}—{% endif %}</td></tr>{% endfor %}
 </tbody></table></div>
 <p class="mb-0 mt-1"><a class="btn btn-secondary btn-sm" href="{{ url_for('lab_works.work_edit', work_id=w.id) }}">Edit items</a></p></div>
 <div class="card" id="extras"><h2>Additional charges</h2>
