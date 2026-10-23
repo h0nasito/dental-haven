@@ -1,0 +1,33 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}MyMedsPH bills{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('admin.import_data') }}">← Import from MyMedsPH</a><h1>Turn MyMedsPH bills into real bills</h1>
+<p>Old bills come in from MyMedsPH as history only. Convert them, and they show in each patient's Bills &amp; Payment like any bill, and count in sales, collections and dentist commission.</p></div></div>
+{% if done.n %}<div class="card notice-card"><strong>{{ done.n }} bill{{ 's' if done.n != 1 }} already converted</strong> ({{ done.total|peso }}; {{ done.paid or 0 }} marked paid). They're numbered MM-…, dated on the MyMedsPH bill date.
+<form method="post" class="mt-1" data-confirm="Remove the converted bills again? Their lines go back to history. Bills staff have worked on (new payment, dentist set, voided) are kept.">{{ csrf() }}<input type="hidden" name="action" value="undo"><button class="btn btn-ghost btn-sm">Undo conversion</button></form></div>{% endif %}
+{% if summary %}
+<form method="post" class="card">{{ csrf() }}<input type="hidden" name="action" value="convert">
+<h2>1. What does each MyMedsPH status mean?</h2>
+<p class="hint mt-0">The export gives each bill line a status number but no payments. Open a few of these bills in MyMedsPH and choose what the number means. Your choice is remembered and used for bills that come with later imports.</p>
+<div class="table-wrap"><table><thead><tr><th>Status</th><th class="num">Lines</th><th class="num">Patients</th><th class="num">Total</th><th>Dates</th><th>Examples</th><th>Means</th></tr></thead><tbody>
+{% for r in summary %}<tr><td><strong>{{ r.code or '(blank)' }}</strong></td><td class="num">{{ r.n }}</td><td class="num">{{ r.patients }}</td><td class="num">{{ r.total|peso }}</td>
+<td><small>{{ r.first|date }} – {{ r.last|date }}</small></td>
+<td><small>{% for s in r.samples %}{{ s.bill_date|date }} · {{ s.service }} · {{ s.total_cents|peso }}{% if not loop.last %}<br>{% endif %}{% endfor %}</small></td>
+<td><select style="min-width:14rem" name="m_{{ r.code }}" aria-label="Status {{ r.code }} means">{% for k, l in choices.items() %}<option value="{{ k }}"{% if saved.get(r.code, 'history') == k %} selected{% endif %}>{{ l }}</option>{% endfor %}</select></td></tr>{% endfor %}
+</tbody></table></div>
+<h2 class="mt-1">2. Branch for shared patients</h2>
+<div class="field"><label for="br">Bills of patients filed under All branches go to</label><select id="br" name="branch_id"><option value="">Leave those as history</option>{% for b in branches %}<option value="{{ b.id }}"{% if default_branch == b.id %} selected{% endif %}>{{ b.name }}</option>{% endfor %}</select>
+<span class="hint">{{ shared or 0 }} patient{{ 's' if shared != 1 }} with old bills {{ 'has' if shared == 1 else 'have' }} no branch. Other patients' bills go to their own branch.</span></div>
+<h2 class="mt-1">3. Convert</h2>
+<ul class="hint">
+<li>Lines of the same patient on the same day become one bill, numbered MM-…, dated that day.</li>
+<li><strong>Paid</strong>: the bill gets a payment of its full amount on that day, shown as "Paid in MyMedsPH".</li>
+<li><strong>Unpaid</strong>: the bill keeps its balance, to collect like any bill.</li>
+<li>The dentist is left empty because MyMedsPH doesn't export it. Set it on a bill line when needed, and commission follows.</li>
+<li>These bills count in Sales &amp; collections and reports for their dates. Cash counts aren't affected, because "Paid in MyMedsPH" isn't cash.</li>
+</ul>
+<button class="btn" data-confirm="Create the bills now?">Convert bills</button>
+</form>
+{% else %}<div class="card"><p class="muted">{% if done.n %}All MyMedsPH bill lines are converted.{% else %}No MyMedsPH bills imported yet. Import the export with its bills file first.{% endif %}</p></div>{% endif %}
+{% endblock %}

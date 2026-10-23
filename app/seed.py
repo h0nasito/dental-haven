@@ -627,6 +627,15 @@ def seed_base(conn):
                 if not conn.one("SELECT 1 AS x FROM user_permissions WHERE user_id = ? AND permission = 'lab.prices'", (r["user_id"],)):
                     conn.execute("INSERT INTO user_permissions (user_id, permission, granted) VALUES (?, 'lab.prices', 1)", (r["user_id"],))
             _settings2.put("seed.lab_prices_v1", True, None, conn)
+        # Once: set aside website messages already received that look like spam (still New, from the website or chat).
+        if not _settings2.get("seed.spam_scan_v1", conn):
+            from .spam import spam_reasons
+            for r in conn.all("SELECT id, full_name, email, message FROM leads WHERE status = 'new' AND spam = 0 AND source IN ('website', 'chat') "
+                              "AND patient_id IS NULL"):
+                why = spam_reasons(r["full_name"], r["email"], r["message"])
+                if why:
+                    conn.execute("UPDATE leads SET spam = 1, spam_reason = ? WHERE id = ?", ("; ".join(why)[:300], r["id"]))
+            _settings2.put("seed.spam_scan_v1", True, None, conn)
         # Access roles added later (HR, Supervisor, Cashier) start with their recommended access, once.
         if conn.scalar("SELECT COUNT(*) FROM role_permissions"):
             for role in ("hr", "supervisor", "cashier", "technician", "lab_receptionist"):

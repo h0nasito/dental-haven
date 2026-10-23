@@ -5,6 +5,7 @@ from . import settings
 from .util import today
 
 CREDIT_METHOD = "account_credit"  # payments made from a patient's account credit (not new money received)
+LEGACY_METHOD = "mymeds"          # bills marked paid in MyMedsPH, brought over when old bills are converted (method unknown)
 
 PAYMENT_METHODS = {
     "cash": "Cash", "gcash": "GCash", "maya": "Maya", "card": "Debit/credit card", "bank_transfer": "Bank transfer",
@@ -46,7 +47,8 @@ def parse_pay(value: str, conn=None) -> tuple[str, str] | None:
 
 
 def pay_label(method: str, account: str = "") -> str:
-    label = PAYMENT_METHODS.get(method, "Account credit" if method == CREDIT_METHOD else method)
+    label = PAYMENT_METHODS.get(method, "Account credit" if method == CREDIT_METHOD else
+                                "Paid in MyMedsPH" if method == LEGACY_METHOD else method)
     return f"{label} – {account}" if account and method in BANK_METHODS else label
 
 

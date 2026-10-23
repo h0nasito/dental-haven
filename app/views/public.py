@@ -17,6 +17,7 @@ from ..util import clean, fmt_dt, now, now_str, parse_date, to_int, today
 
 bp = Blueprint("public", __name__)
 
+from ..spam import PHONE_HELP, phone_ok, spam_reasons  # noqa: E402
 PHONE_RE = re.compile(r"^[0-9+()\-\s]{7,20}$")
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -372,7 +373,7 @@ def book():
             errors["time"] = "Choose an available time."
         if len(v["full_name"]) < 2:
             errors["full_name"] = "Enter your name."
-        if not PHONE_RE.match(v["phone"]):
+        if not phone_ok(v["phone"]):
             errors["phone"] = "Enter a mobile number we can reach you on."
         if v["email"] and not EMAIL_RE.match(v["email"]):
             errors["email"] = "Check the email address."
@@ -492,8 +493,8 @@ def inquire():
             errors["full_name"] = "Enter your name."
         if not v["phone"] and not v["email"]:
             errors["phone"] = "Give a mobile number or email so we can reply."
-        if v["phone"] and not PHONE_RE.match(v["phone"]):
-            errors["phone"] = "Check the mobile number."
+        if v["phone"] and not phone_ok(v["phone"]):
+            errors["phone"] = PHONE_HELP
         if v["email"] and not EMAIL_RE.match(v["email"]):
             errors["email"] = "Check the email address."
         if v["branch_id"] and not any(b["id"] == v["branch_id"] for b in branches):
@@ -505,14 +506,17 @@ def inquire():
         if not v["consent_privacy"]:
             errors["consent_privacy"] = "Please agree to the privacy notice so we can reply."
         if not errors:
+            why = spam_reasons(v["full_name"], v["email"], v["message"])
             lead_id = conn.insert("leads", {
                 "full_name": v["full_name"], "phone": v["phone"], "email": v["email"], "source": "website",
                 "branch_id": v["branch_id"], "service_id": v["service_id"], "message": v["message"], "status": "new",
                 "consent_contact": 1 if v["consent_contact"] else 0, "created_at": now_str(),
+                "spam": 1 if why else 0, "spam_reason": "; ".join(why)[:300],
             })
             conn.execute("INSERT INTO lead_activities (lead_id, kind, body, created_at) VALUES (?, 'created', ?, ?)",
-                         (lead_id, "Website inquiry form", now_str()))
-            audit.record("lead_created", "lead", lead_id, "Website inquiry", branch_id=v["branch_id"], actor_id=None)
+                         (lead_id, "Website inquiry form" + (" (set aside as spam)" if why else ""), now_str()))
+            audit.record("lead_spam" if why else "lead_created", "lead", lead_id, "Website inquiry" + (" marked as spam" if why else ""),
+                         branch_id=v["branch_id"], actor_id=None)
             return redirect(url_for("public.inquire_received"))
     return render_template("public/inquire.html", v=v, errors=errors, services=services, branches=branches,
                            started=int(time.time()))
@@ -620,8 +624,8 @@ def chat_message():
         errors["full_name"] = "Enter your name."
     if not v["phone"] and not v["email"]:
         errors["phone"] = "Give a mobile number or email so we can reply."
-    if v["phone"] and not PHONE_RE.match(v["phone"]):
-        errors["phone"] = "Check the mobile number."
+    if v["phone"] and not phone_ok(v["phone"]):
+        errors["phone"] = PHONE_HELP
     if v["email"] and not EMAIL_RE.match(v["email"]):
         errors["email"] = "Check the email address."
     if len(v["message"]) < 3:
@@ -634,13 +638,15 @@ def chat_message():
         return jsonify({"ok": False, "errors": errors}), 400
     if v["branch_id"] and not conn.one("SELECT id FROM branches WHERE id = ? AND active = 1", (v["branch_id"],)):
         v["branch_id"] = None
+    why = spam_reasons(v["full_name"], v["email"], v["message"])
     lead_id = conn.insert("leads", {
         "full_name": v["full_name"], "phone": v["phone"], "email": v["email"], "source": "chat", "branch_id": v["branch_id"],
         "service_id": None, "message": v["message"], "status": "new", "consent_contact": 1 if v["consent_contact"] else 0,
-        "created_at": now_str()})
+        "created_at": now_str(), "spam": 1 if why else 0, "spam_reason": "; ".join(why)[:300]})
     conn.execute("INSERT INTO lead_activities (lead_id, kind, body, created_at) VALUES (?, 'created', ?, ?)",
-                 (lead_id, "Website chat", now_str()))
-    audit.record("lead_created", "lead", lead_id, "Website chat inquiry", branch_id=v["branch_id"], actor_id=None)
+                 (lead_id, "Website chat" + (" (set aside as spam)" if why else ""), now_str()))
+    audit.record("lead_spam" if why else "lead_created", "lead", lead_id, "Website chat inquiry" + (" marked as spam" if why else ""),
+                 branch_id=v["branch_id"], actor_id=None)
     return jsonify({"ok": True})
 
 

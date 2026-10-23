@@ -457,6 +457,11 @@ def run_import(conn, data: dict, *, branch_id: int | None, user_id: int, commit:
                     conn.executemany("INSERT INTO legacy_bills (patient_id, bill_date, service, item, qty, unit_price_cents, discount_cents, "
                                      "total_cents, status_code, remarks, legacy_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", bill_rows)
                 s["bills"] += len(bill_rows)
+                # once an admin has said what MyMedsPH statuses mean, new old-bills become real bills straight away
+                from . import legacy_billing, settings as _st
+                lmap = legacy_billing.saved_map(conn)
+                if bill_rows and any(v in ("paid", "unpaid") for v in lmap.values()):
+                    s["bills_converted"] = legacy_billing.convert(conn, lmap, _st.get(legacy_billing.BRANCH_KEY, conn), user_id)["bills"]
 
             if not commit:
                 raise _DryRun(s)

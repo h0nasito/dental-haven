@@ -28,7 +28,7 @@ def register_context(app):
         new_leads = 0
         if user.can("leads.view"):
             lf, lp = branch_filter(user, "branch_id")
-            new_leads = conn.scalar(f"SELECT COUNT(*) FROM leads WHERE status='new' AND ({lf} OR branch_id IS NULL)", lp)
+            new_leads = conn.scalar(f"SELECT COUNT(*) FROM leads WHERE status='new' AND spam = 0 AND ({lf} OR branch_id IS NULL)", lp)
         counts["queue"] = (counts["requests"] or 0) + (counts["overdue"] or 0) + (new_leads or 0)
         if user.can("reportcards.review"):
             if user.role == "dentist":

@@ -971,3 +971,6 @@ section[id] { scroll-margin-top: 72px; }
 .chart-pending li { padding: .3rem 0; border-top: 1px solid var(--line); }
 .chart-pending li.current a { font-weight: 700; }
 .chart-batch-h { display: block; font-size: .9rem; margin-bottom: .2rem; }
+.notice-card { background: #fff8e6; border-color: #f2d48a; }
+.spam-card { background: #fff1f0; border-color: #f3b4ad; }
+.mb-1 { margin-bottom: .8rem; }

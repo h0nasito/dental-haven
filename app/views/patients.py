@@ -430,8 +430,10 @@ def detail(patient_id):
         ctx["credit_rows"] = conn.all("SELECT c.*, u.name AS by_name FROM patient_credits c LEFT JOIN users u ON u.id = c.created_by "
                                       "WHERE c.patient_id = ? ORDER BY c.id DESC LIMIT 30", (patient_id,))
         ctx["my_branches"] = branches_for_user(g.user)
-        ctx["legacy_bills"] = conn.all("SELECT * FROM legacy_bills WHERE patient_id = ? ORDER BY bill_date DESC, id DESC LIMIT 100", (patient_id,))
-        ctx["legacy_total"] = conn.one("SELECT COUNT(*) AS n, COALESCE(SUM(total_cents), 0) AS total FROM legacy_bills WHERE patient_id = ?", (patient_id,))
+        ctx["legacy_bills"] = conn.all("SELECT * FROM legacy_bills WHERE patient_id = ? AND invoice_id IS NULL ORDER BY bill_date DESC, id DESC LIMIT 100",
+                                       (patient_id,))
+        ctx["legacy_total"] = conn.one("SELECT COUNT(*) AS n, COALESCE(SUM(total_cents), 0) AS total FROM legacy_bills WHERE patient_id = ? "
+                                       "AND invoice_id IS NULL", (patient_id,))
     ctx["assigned"] = conn.all("SELECT u.id, u.name FROM patient_assignments pa JOIN users u ON u.id = pa.dentist_id "
                                "WHERE pa.patient_id = ? ORDER BY u.name", (patient_id,))
     if clinical:

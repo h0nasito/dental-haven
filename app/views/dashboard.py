@@ -42,9 +42,9 @@ def home():
     if user.can("leads.view"):
         lf, lp = branch_filter(user, "branch_id")
         since = (t - timedelta(days=30)).isoformat()
-        data["new_leads"] = conn.scalar(f"SELECT COUNT(*) FROM leads WHERE status='new' AND ({lf} OR branch_id IS NULL)", lp)
-        total30 = conn.scalar(f"SELECT COUNT(*) FROM leads WHERE created_at >= ? AND ({lf} OR branch_id IS NULL)", [since, *lp])
-        conv30 = conn.scalar(f"SELECT COUNT(*) FROM leads WHERE created_at >= ? AND status IN ('booked','converted') "
+        data["new_leads"] = conn.scalar(f"SELECT COUNT(*) FROM leads WHERE status='new' AND spam = 0 AND ({lf} OR branch_id IS NULL)", lp)
+        total30 = conn.scalar(f"SELECT COUNT(*) FROM leads WHERE spam = 0 AND created_at >= ? AND ({lf} OR branch_id IS NULL)", [since, *lp])
+        conv30 = conn.scalar(f"SELECT COUNT(*) FROM leads WHERE spam = 0 AND created_at >= ? AND status IN ('booked','converted') "
                              f"AND ({lf} OR branch_id IS NULL)", [since, *lp])
         data["leads30"] = total30
         data["conversion"] = round(100 * conv30 / total30) if total30 else None
@@ -165,11 +165,11 @@ def queue():
         lf, lp = branch_filter(user, "l.branch_id")
         q["new_leads"] = conn.all(
             "SELECT l.*, b.name AS branch, s.name AS service FROM leads l LEFT JOIN branches b ON b.id = l.branch_id "
-            f"LEFT JOIN services s ON s.id = l.service_id WHERE l.status='new' AND ({lf} OR l.branch_id IS NULL) "
+            f"LEFT JOIN services s ON s.id = l.service_id WHERE l.status='new' AND l.spam = 0 AND ({lf} OR l.branch_id IS NULL) "
             "ORDER BY l.created_at", lp)
         q["lead_followups"] = conn.all(
             "SELECT l.*, b.name AS branch FROM leads l LEFT JOIN branches b ON b.id = l.branch_id "
-            f"WHERE l.status IN ('contacted','qualified') AND l.next_follow_up_at IS NOT NULL AND l.next_follow_up_at < ? "
+            f"WHERE l.status IN ('contacted','qualified') AND l.spam = 0 AND l.next_follow_up_at IS NOT NULL AND l.next_follow_up_at < ? "
             f"AND ({lf} OR l.branch_id IS NULL) ORDER BY l.next_follow_up_at", [tomorrow, *lp])
     if user.can("followups.view"):
         fq, fp = followup_scope(user)

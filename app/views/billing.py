@@ -725,7 +725,7 @@ def operations():
                          f"FROM branches b LEFT JOIN appointments a ON a.branch_id = b.id AND a.start_at >= ? AND a.start_at < ? "
                          f"WHERE b.id IN ({marks}) GROUP BY b.name, b.sort_order ORDER BY b.sort_order", [s, e, *ids])
     leads = conn.all(f"SELECT source, COUNT(*) AS n, SUM(CASE WHEN status IN ('booked','converted') THEN 1 ELSE 0 END) AS won "
-                     f"FROM leads WHERE (branch_id IN ({marks}) OR branch_id IS NULL) AND created_at >= ? AND created_at < ? GROUP BY source ORDER BY n DESC",
+                     f"FROM leads WHERE spam = 0 AND (branch_id IN ({marks}) OR branch_id IS NULL) AND created_at >= ? AND created_at < ? GROUP BY source ORDER BY n DESC",
                      [*ids, s, e])
     new_patients = conn.scalar(f"SELECT COUNT(*) FROM patients WHERE preferred_branch_id IN ({marks}) AND created_at >= ? AND created_at < ?", [*ids, s, e])
     requests_ = conn.all(f"SELECT status, COUNT(*) AS n FROM booking_requests WHERE branch_id IN ({marks}) AND created_at >= ? AND created_at < ? GROUP BY status",

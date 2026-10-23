@@ -69,6 +69,7 @@ def index():
     scope, params = _lead_scope()
     where, args = [scope], list(params)
     status = request.args.get("status", "open")
+    where.append("l.spam = 1" if status == "spam" else "l.spam = 0")
     if status == "open":
         where.append("l.status IN ('new','contacted','qualified')")
     elif status in LEAD_STATUSES:
@@ -93,9 +94,31 @@ def index():
                     [*args, pg["limit"], pg["offset"]])
     since = (today() - timedelta(days=30)).isoformat()
     stats = conn.all(f"SELECT l.source, COUNT(*) AS total, SUM(CASE WHEN l.status IN ('booked','converted') THEN 1 ELSE 0 END) AS won "
-                     f"FROM leads l WHERE {scope} AND l.created_at >= ? GROUP BY l.source ORDER BY total DESC", [*params, since])
+                     f"FROM leads l WHERE {scope} AND l.spam = 0 AND l.created_at >= ? GROUP BY l.source ORDER BY total DESC", [*params, since])
+    n_spam = conn.scalar(f"SELECT COUNT(*) FROM leads l WHERE {scope} AND l.spam = 1", params)
     return render_template("staff/leads/index.html", rows=rows, pg=pg, status=status, source=source, owner=owner,
-                           stats=stats, now_s=now_str())
+                           stats=stats, now_s=now_str(), n_spam=n_spam)
+
+
+@bp.route("/leads/spam/clear", methods=["POST"])
+@require("leads.manage")
+def spam_clear():
+    """Delete every message in the Spam tab (that the user can see)."""
+    conn = get_db()
+    scope, params = _lead_scope()
+    ids = [r["id"] for r in conn.all(f"SELECT l.id FROM leads l WHERE {scope} AND l.spam = 1 AND l.patient_id IS NULL", params)]
+    with conn.transaction():
+        for i in ids:
+            _delete_lead(conn, i)
+        audit.record("lead_spam_cleared", "lead", None, f"Deleted {len(ids)} spam message{'s' if len(ids) != 1 else ''}")
+    flash(f"Deleted {len(ids)} spam message{'s' if len(ids) != 1 else ''}.", "success")
+    return redirect(url_for("leads.index", status="spam"))
+
+
+def _delete_lead(conn, lead_id: int) -> None:
+    conn.execute("UPDATE follow_ups SET lead_id = NULL WHERE lead_id = ?", (lead_id,))
+    conn.execute("DELETE FROM lead_activities WHERE lead_id = ?", (lead_id,))
+    conn.execute("DELETE FROM leads WHERE id = ?", (lead_id,))
 
 
 @bp.route("/leads/new", methods=["GET", "POST"])
@@ -147,6 +170,22 @@ def lead_detail(lead_id):
         if not g.user.can("leads.manage"):
             abort(403)
         action = request.form.get("action")
+        if action in ("spam", "not_spam"):
+            spam = action == "spam"
+            conn.update("leads", lead_id, {"spam": 1 if spam else 0, "spam_reason": "Marked by staff" if spam else "", "updated_at": now_str()})
+            conn.execute("INSERT INTO lead_activities (lead_id, user_id, kind, body, created_at) VALUES (?, ?, 'update', ?, ?)",
+                         (lead_id, g.user.id, "Marked as spam" if spam else "Marked as not spam", now_str()))
+            audit.record("lead_spam" if spam else "lead_not_spam", "lead", lead_id, "Marked as spam" if spam else "Marked as not spam",
+                         branch_id=lead["branch_id"])
+            flash("Moved to Spam." if spam else "Moved back to the lead inbox.", "success")
+            return redirect(url_for("leads.index", status="spam") if spam else url_for("leads.lead_detail", lead_id=lead_id))
+        if action == "delete_spam":
+            if not lead["spam"] or lead["patient_id"]:
+                abort(400)
+            _delete_lead(conn, lead_id)
+            audit.record("lead_deleted", "lead", lead_id, "Deleted a spam message", branch_id=lead["branch_id"])
+            flash("Spam message deleted.", "success")
+            return redirect(url_for("leads.index", status="spam"))
         if action == "update":
             status = request.form.get("status")
             nf_raw = clean(request.form.get("next_follow_up_at"), 16)

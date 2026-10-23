@@ -1468,3 +1468,50 @@ def import_confirm():
     flash(f"Import finished: {summary['patients_new']} new patients, {summary['patients_updated']} updated, "
           f"{summary['procedures']} visit records, {summary['bills']} bill lines. The uploaded file was not kept.", "success")
     return redirect(url_for("admin.import_data"))
+
+
+@bp.route("/import/bills", methods=["GET", "POST"])
+@require("system.settings")
+def import_bills():
+    """Turn the MyMedsPH bills (history) into real bills: choose what each MyMedsPH status number means, convert, undo."""
+    from .. import legacy_billing as lb
+    conn = get_db()
+    branches = conn.all("SELECT * FROM branches WHERE active = 1 ORDER BY sort_order")
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "undo":
+            with conn.transaction():
+                r = lb.undo(conn)
+                settings.put(lb.MAP_KEY, {}, g.user.id, conn)
+                audit.record("legacy_bills_unconverted", "invoice", None, f"Undid MyMedsPH bill conversion: {r['removed']} bills removed, {r['kept']} kept")
+            flash(f"Removed {r['removed']} converted bill{'s' if r['removed'] != 1 else ''}; their lines are history again."
+                  + (f" {r['kept']} kept because staff worked on them (new payment, dentist set, voided...)." if r["kept"] else ""), "success")
+            return redirect(url_for("admin.import_bills"))
+        codes = {r["code"] for r in conn.all("SELECT DISTINCT status_code AS code FROM legacy_bills")}
+        mapping = {c: request.form.get(f"m_{c}") for c in codes if request.form.get(f"m_{c}") in lb.CHOICES}
+        branch_id = to_int(request.form.get("branch_id"))
+        if branch_id and not any(b["id"] == branch_id for b in branches):
+            abort(400)
+        if not any(v in ("paid", "unpaid") for v in mapping.values()):
+            flash("Choose Paid or Unpaid for at least one status.", "error")
+            return redirect(url_for("admin.import_bills"))
+        with conn.transaction():
+            settings.put(lb.MAP_KEY, {**lb.saved_map(conn), **mapping}, g.user.id, conn)
+            settings.put(lb.BRANCH_KEY, branch_id, g.user.id, conn)
+            st = lb.convert(conn, mapping, branch_id, g.user.id)
+            audit.record("legacy_bills_converted", "invoice", None, f"Converted MyMedsPH bills: {st['bills']} bills ({st['paid']} paid, {st['unpaid']} unpaid)",
+                         {"mapping": mapping, **st})
+        msg = (f"Created {st['bills']} bill{'s' if st['bills'] != 1 else ''} from {st['lines']} MyMedsPH lines "
+               f"({st['paid']} paid, {st['unpaid']} with a balance), total ₱{st['total'] / 100:,.2f}.")
+        if st["no_branch"]:
+            msg += f" {st['no_branch']} lines were left as history because the patient has no branch: choose a branch for them and convert again."
+        flash(msg, "success")
+        return redirect(url_for("admin.import_bills"))
+    saved = lb.saved_map(conn)
+    done = conn.one("SELECT COUNT(*) AS n, COALESCE(SUM(total_cents), 0) AS total, "
+                    "SUM(CASE WHEN EXISTS (SELECT 1 FROM payments p WHERE p.invoice_id = invoices.id AND p.method = 'mymeds') THEN 1 ELSE 0 END) AS paid "
+                    "FROM invoices WHERE legacy = 1")
+    return render_template("staff/admin/import_bills.html", summary=lb.status_summary(conn), choices=lb.CHOICES, saved=saved,
+                           branches=branches, default_branch=settings.get(lb.BRANCH_KEY, conn), done=done,
+                           shared=conn.scalar("SELECT COUNT(DISTINCT lb.patient_id) FROM legacy_bills lb JOIN patients p ON p.id = lb.patient_id "
+                                              "WHERE lb.invoice_id IS NULL AND p.preferred_branch_id IS NULL"))
