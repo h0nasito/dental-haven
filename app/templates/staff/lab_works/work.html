@@ -9,6 +9,8 @@
 {% if can_bill %}{% if w.invoice_id %}<a class="btn btn-secondary" href="{{ url_for('lab_works.invoice', invoice_id=w.invoice_id) }}">Invoice {{ w.invoice_number or '(draft)' }}</a>{% elif w.status != 'cancelled' %}<form method="post" action="{{ url_for('lab_works.bill_work', work_id=w.id) }}">{{ csrf() }}<button class="btn">Bill this work</button></form>
 <a class="btn btn-ghost" href="{{ url_for('lab_works.invoice_new', client=w.client_id) }}" title="One invoice for several works of this clinic">Bill with other works</a>{% endif %}{% endif %}</div></div>
 {% set cur = w.status %}{% include "staff/labs/_stages.html" %}
+{% if out_of_date %}<div class="card notice-card"><strong>The invoice doesn't match this work any more.</strong> On invoice {{ w.invoice_number or '(draft)' }} this work adds up to {{ billed|peso }}; it's now {{ (items_total + extras_total)|peso }}.
+{% if can_bill %}<form method="post" action="{{ url_for('lab_works.refresh_invoice', work_id=w.id) }}" class="mt-1" data-confirm="Replace this work's lines on invoice {{ w.invoice_number or '(draft)' }} with its current items, discounts and charges?">{{ csrf() }}<button class="btn">Update invoice</button></form>{% endif %}</div>{% endif %}
 <div class="grid grid-2">
 <div class="card"><h2>Details</h2>
 <dl class="dl">

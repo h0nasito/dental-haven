@@ -171,6 +171,32 @@ class TestLabWorks(Base):
         finally:
             self.revoke()
 
+    def test_invoice_follows_work_edits(self):
+        from app.util import today
+        self.grant("lab.works", "lab.billing")
+        try:
+            c = self.tech()
+            head = {"lab_id": self.lab, "clinic_name": "Edit QT Dental", "patient_ref": "PT-E", "received_on": today().isoformat()}
+            c.post("/staff/lab/works/new", data={**head, "case_type": ["Bridge"], "units": ["4"], "teeth": ["44-47"], "price": ["5500"]})
+            w = self.q("SELECT * FROM lab_works WHERE clinic_name = 'Edit QT Dental'")
+            iid = int(c.post(f"/staff/lab/works/{w['id']}/bill").headers["Location"].rstrip("/").split("/")[-1])
+            total = lambda: self.q("SELECT total_cents FROM lab_invoices WHERE id = ?", (iid,))["total_cents"]  # noqa: E731
+            self.assertEqual(total(), 2200000)
+            # draft invoice: editing the work updates it straight away
+            c.post(f"/staff/lab/works/{w['id']}/edit", data={**head, "case_type": ["Bridge"], "units": ["4"], "teeth": ["44-47"], "price": ["5500"], "discount": ["10%"]})
+            self.assertEqual(total(), 1980000)
+            # issued invoice: the work page offers "Update invoice"
+            c.post(f"/staff/lab/invoices/{iid}", data={"action": "issue"})
+            self.assertEqual(self.q("SELECT status FROM lab_invoices WHERE id = ?", (iid,))["status"], "issued")
+            c.post(f"/staff/lab/works/{w['id']}/edit", data={**head, "case_type": ["Bridge"], "units": ["4"], "teeth": ["44-47"], "price": ["5500"], "discount": ["2000"]})
+            self.assertEqual(total(), 1980000)
+            self.assertIn("Update invoice", c.get(f"/staff/lab/works/{w['id']}").data.decode())
+            c.post(f"/staff/lab/works/{w['id']}/refresh-invoice")
+            self.assertEqual(total(), 2000000)
+            self.assertNotIn("doesn't match this work", c.get(f"/staff/lab/works/{w['id']}").data.decode())
+        finally:
+            self.revoke()
+
     def test_additional_charges_on_the_work_page(self):
         self.grant("lab.works")
         try:

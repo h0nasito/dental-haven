@@ -113,6 +113,12 @@ def index():
                            branches=branches_for_user(g.user), today=today().isoformat(), now_hm=now().strftime("%H:%M"))
 
 
+def _back():
+    """Back to the page the button was on (the expenses list or monthly bills), never somewhere else."""
+    nxt = request.form.get("next") or ""
+    return nxt if nxt.startswith("/staff/expenses") and "//" not in nxt else url_for("expenses.index")
+
+
 def _load(expense_id):
     e = get_db().one("SELECT * FROM expenses WHERE id = ?", (expense_id,))
     if not e or not g.user.in_branch(e["branch_id"]):
@@ -129,7 +135,8 @@ def post(expense_id):
         conn.execute("UPDATE expenses SET status = 'posted', posted_by = ?, posted_at = ? WHERE id = ?", (g.user.id, now_str(), expense_id))
         audit.record("expense_posted", "expense", expense_id, f"Posted expense {peso(e['amount_cents'])}", branch_id=e["branch_id"])
         flash("Expense posted.", "success")
-    return redirect(request.referrer if request.referrer and "/staff/expenses" in request.referrer else url_for("expenses.index"))
+    return redirect(request.form.get("next") if (request.form.get("next") or "").startswith("/staff/expenses") and "//" not in request.form.get("next")
+                    else request.referrer if request.referrer and "/staff/expenses" in request.referrer else url_for("expenses.index"))
 
 
 @bp.route("/<int:expense_id>/void", methods=["POST"])
@@ -144,7 +151,7 @@ def void(expense_id):
         conn.execute("UPDATE expenses SET status = 'void', void_reason = ? WHERE id = ?", (reason, expense_id))
         audit.record("expense_voided", "expense", expense_id, f"Voided expense {peso(e['amount_cents'])}", {"reason": reason}, e["branch_id"])
         flash("Expense voided.", "success")
-    return redirect(url_for("expenses.index"))
+    return redirect(_back())
 
 
 @bp.route("/<int:expense_id>/delete", methods=["POST"])
@@ -157,7 +164,7 @@ def delete_draft(expense_id):
     conn.execute("DELETE FROM expenses WHERE id = ?", (expense_id,))
     audit.record("expense_draft_deleted", "expense", expense_id, f"Deleted draft expense {peso(e['amount_cents'])}", dict(e), e["branch_id"])
     flash("Draft expense deleted.", "success")
-    return redirect(url_for("expenses.index"))
+    return redirect(_back())
 
 
 @bp.route("/export.csv")
@@ -338,6 +345,19 @@ def bills():
                     conn.execute("UPDATE branch_bills SET item = ?, payee = ?, amount_cents = ?, due_day = ?, active = ? WHERE id = ?",
                                  (clean(f.get("item"), 150), clean(f.get("payee"), 150), amt, due or None, 1 if f.get("active") else 0, b["id"]))
                     flash("Saved.", "success")
+        elif action == "delete_bill":
+            if not g.user.can("expenses.post"):
+                abort(403)
+            b = conn.one("SELECT * FROM branch_bills WHERE id = ?", (to_int(f.get("bill_id")),))
+            if not b or b["branch_id"] not in my_ids:
+                abort(404)
+            if conn.scalar("SELECT COUNT(*) FROM expenses WHERE bill_id = ? AND status != 'void'", (b["id"],)):
+                flash("This bill has payments recorded, so it can't be deleted. Untick “In use” to stop it showing.", "error")
+            else:
+                conn.execute("UPDATE expenses SET bill_id = NULL WHERE bill_id = ?", (b["id"],))
+                conn.execute("DELETE FROM branch_bills WHERE id = ?", (b["id"],))
+                audit.record("branch_bill_deleted", "expense", None, f"Monthly bill deleted: {b['item']}", dict(b), b["branch_id"])
+                flash(f"Monthly bill “{b['item']}” deleted.", "success")
         elif action == "record":
             if not g.user.can("expenses.add"):
                 abort(403)
@@ -365,7 +385,7 @@ def bills():
         return redirect(url_for("expenses.bills", month=mkey))
     marks = ",".join("?" * len(my_ids)) or "NULL"
     rows = conn.all(f"SELECT * FROM branch_bills WHERE branch_id IN ({marks}) ORDER BY active DESC, branch_id, COALESCE(due_day, 99), id", my_ids)
-    done = {r["bill_id"]: r for r in conn.all(f"SELECT id, bill_id, amount_cents, status, expense_date FROM expenses WHERE bill_month = ? "
+    done = {r["bill_id"]: r for r in conn.all(f"SELECT id, bill_id, amount_cents, status, expense_date, created_by FROM expenses WHERE bill_month = ? "
                                                f"AND status != 'void' AND branch_id IN ({marks})", [mkey, *my_ids])}
     groups = []
     for b in branches:

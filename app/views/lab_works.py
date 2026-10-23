@@ -534,7 +534,12 @@ def work(work_id):
     from ..lab_commission import entries, technicians
     extras = work_extras(conn, w["id"])
     items = work_items(conn, w["id"])
-    return render_template("staff/lab_works/work.html", items=items, items_total=sum(item_gross(i) - (i["discount_cents"] or 0) for i in items),
+    now_total = sum(item_gross(i) - (i["discount_cents"] or 0) for i in items) + sum(x["qty"] * x["unit_price_cents"] for x in extras)
+    billed = work_billed_total(conn, w)
+    inv_status = conn.scalar("SELECT status FROM lab_invoices WHERE id = ?", (w["invoice_id"],)) if w["invoice_id"] else None
+    return render_template("staff/lab_works/work.html", billed=billed, inv_status=inv_status,
+                           out_of_date=billed is not None and billed != now_total and inv_status in ("draft", "issued"),
+                           items=items, items_total=sum(item_gross(i) - (i["discount_cents"] or 0) for i in items),
                            items_discount=sum(i["discount_cents"] or 0 for i in items), w=w, events=events, statuses=STATUSES, arches=ARCHES, lab=lab, lab_display=lab_display,
                            extras=extras, extras_total=sum(x["qty"] * x["unit_price_cents"] for x in extras),
                            price_list=price_items(conn, [w["lab_id"]]), extras_prices=extras_list(price_items(conn, [w["lab_id"]])),
@@ -613,7 +618,16 @@ def work_edit(work_id):
                         conn.insert("lab_work_extras", {"work_id": w["id"], "description": desc, "qty": q, "unit_price_cents": pc,
                                                         "created_by": g.user.id, "created_at": now_str()})
                 audit.record("lab_work_edited", "lab_work", w["id"], f"Edited {w['number']}")
-            flash("Saved." + (" It's already on an invoice: update the invoice lines if the prices changed." if w["invoice_id"] else ""), "success")
+            msg = "Saved."
+            if w["invoice_id"]:
+                inv = conn.one("SELECT status, number FROM lab_invoices WHERE id = ?", (w["invoice_id"],))
+                if inv and inv["status"] == "draft":
+                    with conn.transaction():
+                        refresh_work_lines(conn, conn.one("SELECT * FROM lab_works WHERE id = ?", (w["id"],)))
+                    msg += " The draft invoice was updated too."
+                elif inv and inv["status"] == "issued":
+                    msg += f" It's on invoice {inv['number']}: press “Update invoice” below to put the changes on it."
+            flash(msg, "success")
             return redirect(url_for("lab_works.work", work_id=w["id"]))
         flash(errors.get("extras") or "Please check the highlighted fields.", "error")
     clinics = conn.all(f"SELECT clinic_name, doctor, contact_number FROM lab_clients WHERE lab_id IN ({_in(_lab_ids())}) AND active = 1 ORDER BY clinic_name",
@@ -1017,9 +1031,54 @@ def _add_work_lines(conn, iid, w, description) -> None:
                                           "amount_cents": x["unit_price_cents"] * x["qty"]})
 
 
+def refresh_work_lines(conn, w) -> int | None:
+    """Put the work's current items and charges on its invoice again (replacing its old lines there). Other works'
+    lines and hand-added lines stay. Returns the invoice id, or None when the work isn't on an invoice that can change."""
+    if not w["invoice_id"]:
+        return None
+    inv = conn.one("SELECT id, status FROM lab_invoices WHERE id = ?", (w["invoice_id"],))
+    if not inv or inv["status"] == "void":
+        return None
+    conn.execute("DELETE FROM lab_invoice_items WHERE invoice_id = ? AND work_id = ?", (inv["id"], w["id"]))
+    _add_work_lines(conn, inv["id"], w, _work_line(w))
+    _recalc(conn, inv["id"])
+    return inv["id"]
+
+
+def work_billed_total(conn, w) -> int | None:
+    """What the work's lines on its invoice add up to (None when not on an invoice)."""
+    if not w["invoice_id"]:
+        return None
+    return conn.scalar("SELECT COALESCE(SUM(amount_cents), 0) FROM lab_invoice_items WHERE invoice_id = ? AND work_id = ?",
+                       (w["invoice_id"], w["id"])) or 0
+
+
 def _work_line(w) -> str:
     return (w["case_type"] + (f" · {w['teeth']}" if w["teeth"] else "") + (f" · {ARCHES[w['arch']]}" if w["arch"] else "")
             + (f" · {w['material']}" if w["material"] else ""))[:200]
+
+
+@bp.route("/works/<int:work_id>/refresh-invoice", methods=["POST"])
+@login_required
+def refresh_invoice(work_id):
+    """Update the work's lines on its invoice after the work was edited (items, prices, discounts, charges)."""
+    _need("lab.billing")
+    conn = get_db()
+    w = _work(conn, work_id)
+    before = work_billed_total(conn, w)
+    with conn.transaction():
+        iid = refresh_work_lines(conn, conn.one("SELECT * FROM lab_works WHERE id = ?", (w["id"],)))
+        if iid:
+            after = work_billed_total(conn, w)
+            audit.record("lab_invoice_updated_from_work", "lab_invoice", iid,
+                         f"Lines of {w['number']} updated from the work: {before / 100:,.2f} -> {after / 100:,.2f}")
+    if not iid:
+        flash("This work isn't on an invoice that can be changed (it may be void).", "error")
+    else:
+        inv = conn.one("SELECT number, total_cents, paid_cents FROM lab_invoices WHERE id = ?", (iid,))
+        flash(f"Invoice {inv['number'] or '(draft)'} updated: total now ₱{inv['total_cents'] / 100:,.2f}."
+              + (" It's now paid more than its total; record a refund or adjust." if inv["paid_cents"] > inv["total_cents"] else ""), "success")
+    return redirect(url_for("lab_works.invoice", invoice_id=iid) if iid else url_for("lab_works.work", work_id=w["id"]))
 
 
 @bp.route("/works/<int:work_id>/bill", methods=["POST"])

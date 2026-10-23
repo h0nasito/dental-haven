@@ -16,10 +16,15 @@
 <div class="field"><label for="bp{{ b.id }}">Paid to</label><input id="bp{{ b.id }}" name="payee" value="{{ b.payee }}" maxlength="150"></div>
 <div class="field"><label for="ba{{ b.id }}">Usual amount (₱)</label><input id="ba{{ b.id }}" name="amount" value="{{ '%.2f'|format(b.amount_cents / 100) if b.amount_cents else '' }}" inputmode="decimal"></div>
 <div class="field"><label for="bd{{ b.id }}">Due day</label><input id="bd{{ b.id }}" name="due_day" value="{{ b.due_day or '' }}" inputmode="numeric"></div></div>
-<label class="check"><input type="checkbox" name="active" value="1" {% if b.active %}checked{% endif %}> In use</label> <button class="btn btn-secondary btn-sm">Save</button></form></details>{% endif %}</td>
+<label class="check"><input type="checkbox" name="active" value="1" {% if b.active %}checked{% endif %}> In use</label> <button class="btn btn-secondary btn-sm">Save</button></form>
+<form method="post" class="mt-1" data-confirm="Delete the monthly bill “{{ b.item }}”? Only possible when no payment was recorded for it.">{{ csrf() }}<input type="hidden" name="action" value="delete_bill"><input type="hidden" name="bill_id" value="{{ b.id }}"><input type="hidden" name="month" value="{{ mkey }}"><button class="btn btn-ghost btn-sm">🗑 Delete this bill</button></form></details>{% endif %}</td>
 <td>{{ ('every ' ~ b.due_day ~ ('st' if b.due_day in (1, 21, 31) else 'nd' if b.due_day in (2, 22) else 'rd' if b.due_day in (3, 23) else 'th')) if b.due_day else '—' }}</td>
 <td class="num">{{ b.amount_cents|peso if b.amount_cents else 'varies' }}</td>
 <td>{% if e %}<span class="badge {{ 'badge-green' if e.status == 'posted' else 'badge-amber' }}">{{ 'Recorded' if e.status == 'posted' else 'Recorded, not posted yet' }}</span> <strong>{{ e.amount_cents|peso }}</strong><br><small class="muted">paid {{ e.expense_date|date }}</small>
+<span class="bill-acts">{% set back = url_for('expenses.bills', month=mkey) %}
+{% if e.status == 'draft' and current_user.can('expenses.post') %}<form method="post" action="{{ url_for('expenses.post', expense_id=e.id) }}">{{ csrf() }}<input type="hidden" name="next" value="{{ back }}"><button class="btn btn-ghost btn-sm">Post</button></form>{% endif %}
+{% if e.status == 'draft' and (e.created_by == current_user.id or current_user.can('expenses.post')) %}<form method="post" action="{{ url_for('expenses.delete_draft', expense_id=e.id) }}" data-confirm="Remove this {{ b.item }} payment? You can record it again.">{{ csrf() }}<input type="hidden" name="next" value="{{ back }}"><button class="btn btn-ghost btn-sm">✕ Remove</button></form>
+{% elif e.status == 'posted' and current_user.can('expenses.post') %}<details class="bill-void"><summary><small>✕ Void</small></summary><form method="post" action="{{ url_for('expenses.void', expense_id=e.id) }}" class="row" style="gap:.3rem">{{ csrf() }}<input type="hidden" name="next" value="{{ back }}"><input name="reason" placeholder="Reason, e.g. wrong amount" required aria-label="Reason for voiding"><button class="btn btn-danger btn-sm">Void</button></form></details>{% endif %}</span>
 {% elif b.active and current_user.can('expenses.add') %}<form method="post" class="row bill-rec" style="gap:.35rem;flex-wrap:wrap;align-items:center">{{ csrf() }}<input type="hidden" name="action" value="record"><input type="hidden" name="bill_id" value="{{ b.id }}"><input type="hidden" name="month" value="{{ mkey }}">
 <input name="amount" value="{{ '%.2f'|format(b.amount_cents / 100) if b.amount_cents else '' }}" placeholder="Amount" inputmode="decimal" style="width:7.5em" aria-label="Amount for {{ b.item }}" required>
 <input type="date" name="paid_on" value="{{ today }}" max="{{ today }}" aria-label="Date paid">
@@ -40,4 +45,5 @@
 <div class="field"><label for="nm">Usually paid by</label><select id="nm" name="method">{% for k, l in PAYMENT_METHODS.items() %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></div>
 </div><button class="btn btn-secondary">Add bill</button></form>{% endif %}
 <style>.bill-rec input, .bill-rec select { width: auto; min-width: 0; } .bill-rec input[type=date] { width: 9.5em; }</style>
+<style>.bill-acts{display:inline-flex;gap:.3rem;align-items:center;flex-wrap:wrap;margin-left:.3rem;vertical-align:middle}.bill-void summary{cursor:pointer;color:var(--red-700,#b91c1c)}</style>
 {% endblock %}
