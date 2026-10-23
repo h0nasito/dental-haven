@@ -31,7 +31,7 @@ class TestCases(Base):
         self.conn.insert("payments", {"invoice_id": inv, "branch_id": bid, "kind": "payment", "amount_cents": 1000000, "method": "cash",
                                       "received_at": now_str(), "status": "valid", "created_at": now_str()})
         d = self.login("dentist.malolos")
-        page = d.get("/staff/my-cases/?type=Orthodontics+%26+TMJ&q=orthocase").data.decode()
+        page = d.get("/staff/my-cases/?type=Braces%2C+Aligners+%26+Orthodontics&q=orthocase").data.decode()
         self.assertIn("Testpatient, Orthocase", page)
         self.assertIn("Adjustment overdue", page)
         self.assertIn("₱35,000.00", page)                       # balance
@@ -40,7 +40,7 @@ class TestCases(Base):
         self.assertIn("Orthocase", d.get(f"/staff/my-cases/?q=orthocase&from={f90}&to={t.isoformat()}").data.decode())
         self.assertNotIn("Testpatient, Orthocase", d.get(f"/staff/my-cases/?q=orthocase&from={f30}&to={t.isoformat()}").data.decode())
         self.assertIn("Procedure", page)
-        detail = d.get(f"/staff/my-cases/{pid}?type=Orthodontics+%26+TMJ").data.decode()
+        detail = d.get(f"/staff/my-cases/{pid}?type=Braces%2C+Aligners+%26+Orthodontics").data.decode()
         self.assertIn("Monthly adjustments", detail)
         self.assertIn("TCASE-1", detail)
         self.assertIn("₱10,000.00", detail)
@@ -48,7 +48,7 @@ class TestCases(Base):
         # another dentist doesn't see it; receptionists can't open My cases
         other = self.login("dentist.sjdm")
         self.assertNotIn("Orthocase", other.get("/staff/my-cases/").data.decode())
-        self.assertEqual(other.get(f"/staff/my-cases/{pid}?type=Orthodontics+%26+TMJ").status_code, 404)
+        self.assertEqual(other.get(f"/staff/my-cases/{pid}?type=Braces%2C+Aligners+%26+Orthodontics").status_code, 404)
         self.assertEqual(self.login("reception.malolos").get("/staff/my-cases/").status_code, 403)
         # super admin can choose the dentist
         self.assertIn("Orthocase", self.login("admin").get(f"/staff/my-cases/?dentist={doc}").data.decode())
@@ -102,7 +102,7 @@ class TestCases(Base):
         with self.app.app_context():
             from app.db import get_db as gdb
             cases = [c for c in build_cases(gdb(), doc) if c["patient_id"] == pid]
-        self.assertEqual([(c["category"], c["n"]) for c in cases], [("Orthodontics & TMJ", 1)])
-        page = self.login("dentist.malolos").get(f"/staff/my-cases/{pid}?type=Orthodontics %26 TMJ").data.decode()
+        self.assertEqual([(c["category"], c["n"]) for c in cases], [("Braces, Aligners & Orthodontics", 1)])
+        page = self.login("dentist.malolos").get(f"/staff/my-cases/{pid}?type=Braces%2C Aligners %26 Orthodontics").data.decode()
         self.assertIn("3 procedures", page)
         self.assertNotIn("None", page)

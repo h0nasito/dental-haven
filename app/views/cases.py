@@ -16,10 +16,7 @@ from ..util import clean, parse_date, to_int, today
 
 bp = Blueprint("cases", __name__, url_prefix="/staff/my-cases")
 
-ORTHO = "Orthodontics & TMJ"
-GENERAL = "General / other"     # procedures without a service, and assigned patients with nothing coded yet
-# A procedure's type: its service's, else that of a service with the same name as the description (imported or typed-in notes).
-CAT_SQL = ("COALESCE(s.category, (SELECT s2.category FROM services s2 WHERE lower(trim(s2.name)) = lower(trim(p.description)) LIMIT 1), ?)")
+from ..case_types import GENERAL, ORTHO, Classifier  # noqa: E402  (type of case: fee schedule groups, see case_types.py)
 
 
 def _dentist():
@@ -49,6 +46,15 @@ def build_cases(conn, dentist_id: int) -> list[dict]:
     pats |= {r["patient_id"] for r in conn.all("SELECT DISTINCT patient_id FROM procedures WHERE performed_by = ?", (dentist_id,))}
     pats |= {r["patient_id"] for r in conn.all("SELECT DISTINCT patient_id FROM visit_notes WHERE dentist_id = ? AND status = 'saved' "
                                                "AND cancelled_at IS NULL", (dentist_id,))}
+    # patients whose bill lines name this dentist (e.g. from the MyMedsPH collection reports, which say who did the
+    # procedure): only the types of case of those lines are theirs
+    kind = Classifier(conn)
+    by_bill: dict[int, set] = {}
+    for r in conn.all("SELECT i.patient_id, ii.description, s.category AS scat FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id "
+                      "LEFT JOIN services s ON s.id = ii.service_id WHERE ii.dentist_id = ? AND i.status = 'issued'", (dentist_id,)):
+        by_bill.setdefault(r["patient_id"], set()).add(kind(r["description"], r["scat"]))
+    only = {pid: cats for pid, cats in by_bill.items() if pid not in pats}
+    pats |= set(by_bill)
     if not pats:
         return []
     marks = ",".join("?" * len(pats))
@@ -58,10 +64,9 @@ def build_cases(conn, dentist_id: int) -> list[dict]:
     def case(pid, cat):
         return cases.setdefault((pid, cat), {"patient_id": pid, "category": cat, "visits": [], "billed": 0, "paid": 0, "next": None})
 
-    for r in conn.all(f"SELECT p.patient_id, {CAT_SQL} AS category, substr(COALESCE(p.performed_at, p.created_at), 1, 10) AS d "
-                      f"FROM procedures p LEFT JOIN services s ON s.id = p.service_id WHERE p.status = 'completed' AND p.patient_id IN ({marks})",
-                      [GENERAL, *P]):
-        case(r["patient_id"], r["category"])["visits"].append(r["d"])
+    for r in conn.all(f"SELECT p.patient_id, p.description, s.name AS service, s.category AS scat, substr(COALESCE(p.performed_at, p.created_at), 1, 10) AS d "
+                      f"FROM procedures p LEFT JOIN services s ON s.id = p.service_id WHERE p.status = 'completed' AND p.patient_id IN ({marks})", P):
+        case(r["patient_id"], kind(r["description"] or r["service"], r["scat"]))["visits"].append(r["d"])
     # saved progress notes (visits) with no coded procedure still count as a visit
     for r in conn.all(f"SELECT v.patient_id, v.visit_date AS d FROM visit_notes v WHERE v.status = 'saved' AND v.cancelled_at IS NULL "
                       f"AND v.patient_id IN ({marks}) AND NOT EXISTS (SELECT 1 FROM procedures p WHERE p.visit_note_id = v.id AND p.status = 'completed')", P):
@@ -70,19 +75,26 @@ def build_cases(conn, dentist_id: int) -> list[dict]:
     for pid in assigned:
         if not any(k[0] == pid for k in cases):
             case(pid, GENERAL)
-    for r in conn.all(f"SELECT i.patient_id, s.category, SUM(ii.amount_cents) AS billed, i.id AS inv, i.total_cents, "
+    # each bill's lines by type of case; its payments are shared over the lines in proportion
+    lines: dict[tuple, dict] = {}
+    for r in conn.all(f"SELECT i.patient_id, i.id AS inv, i.total_cents, ii.amount_cents, ii.description, s.category AS scat, "
                       "(SELECT COALESCE(SUM(CASE WHEN kind = 'payment' THEN amount_cents ELSE -amount_cents END), 0) FROM payments "
                       " WHERE invoice_id = i.id AND status = 'valid') AS paid "
                       f"FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id LEFT JOIN services s ON s.id = ii.service_id "
-                      f"WHERE i.status = 'issued' AND i.patient_id IN ({marks}) GROUP BY i.id, s.category", P):
-        c = case(r["patient_id"], r["category"] or GENERAL)
-        c["billed"] += r["billed"]
-        c["paid"] += round(r["paid"] * r["billed"] / r["total_cents"]) if r["total_cents"] else 0
-    for r in conn.all(f"SELECT a.patient_id, COALESCE(s.category, '{GENERAL}') AS category, MIN(a.start_at) AS nxt FROM appointments a LEFT JOIN services s ON s.id = a.service_id "
-                      f"WHERE a.patient_id IN ({marks}) AND a.status IN ('requested', 'confirmed') AND a.start_at >= ? GROUP BY a.patient_id, 2",
+                      f"WHERE i.status = 'issued' AND i.patient_id IN ({marks})", P):
+        k = (r["inv"], kind(r["description"], r["scat"]))
+        x = lines.setdefault(k, {"patient_id": r["patient_id"], "billed": 0, "paid": r["paid"], "total": r["total_cents"]})
+        x["billed"] += r["amount_cents"]
+    for (inv, cat_), x in lines.items():
+        c = case(x["patient_id"], cat_)
+        c["billed"] += x["billed"]
+        c["paid"] += round(x["paid"] * x["billed"] / x["total"]) if x["total"] else 0
+    for r in conn.all(f"SELECT a.patient_id, s.name AS service, s.category AS scat, a.start_at FROM appointments a LEFT JOIN services s ON s.id = a.service_id "
+                      f"WHERE a.patient_id IN ({marks}) AND a.status IN ('requested', 'confirmed') AND a.start_at >= ? ORDER BY a.start_at",
                       [*P, today().isoformat()]):
-        if (r["patient_id"], r["category"]) in cases:
-            cases[(r["patient_id"], r["category"])]["next"] = r["nxt"]
+        k = (r["patient_id"], kind(r["service"], r["scat"]) if r["service"] else GENERAL)
+        if k in cases and not cases[k]["next"]:
+            cases[k]["next"] = r["start_at"]
     info = {r["id"]: r for r in conn.all(f"SELECT p.id, p.first_name, p.last_name, p.chart_no, b.name AS branch FROM patients p "
                                          f"LEFT JOIN branches b ON b.id = p.preferred_branch_id WHERE p.id IN ({marks}) AND p.deleted_at IS NULL", P)}
     out = []
@@ -91,6 +103,8 @@ def build_cases(conn, dentist_id: int) -> list[dict]:
         p = info.get(c["patient_id"])
         if not p or not (c["visits"] or c["billed"] or (c["patient_id"] in assigned and c["category"] == GENERAL)):
             continue
+        if c["patient_id"] in only and c["category"] not in only[c["patient_id"]]:
+            continue            # another dentist's procedure for this patient
         v = sorted(set(c["visits"]))          # a visit = a day the patient came, however many procedures were done
         c.update(patient=p, first=v[0] if v else None, last=v[-1] if v else None, n=len(v), balance=max(0, c["billed"] - c["paid"]))
         c["days_since"] = (t - date.fromisoformat(c["last"])).days if c["last"] else None
@@ -147,10 +161,12 @@ def detail(patient_id):
     c = allc.get((patient_id, cat))
     if not c:
         abort(404)        # only your own cases
-    visits = conn.all("SELECT COALESCE(p.performed_at, p.created_at) AS at, p.description, p.tooth, s.name AS service, u.name AS dentist, b.name AS branch "
-                      "FROM procedures p LEFT JOIN services s ON s.id = p.service_id LEFT JOIN users u ON u.id = p.performed_by "
-                      f"LEFT JOIN branches b ON b.id = p.branch_id WHERE p.patient_id = ? AND {CAT_SQL} = ? AND p.status = 'completed' "
-                      "ORDER BY at DESC, p.id", (patient_id, GENERAL, cat))
+    kind = Classifier(conn)
+    visits = [v for v in conn.all("SELECT COALESCE(p.performed_at, p.created_at) AS at, p.description, p.tooth, s.name AS service, s.category AS scat, "
+                                  "u.name AS dentist, b.name AS branch FROM procedures p LEFT JOIN services s ON s.id = p.service_id "
+                                  "LEFT JOIN users u ON u.id = p.performed_by LEFT JOIN branches b ON b.id = p.branch_id "
+                                  "WHERE p.patient_id = ? AND p.status = 'completed' ORDER BY at DESC, p.id", (patient_id,))
+              if kind(v["description"] or v["service"], v["scat"]) == cat]
     if cat == GENERAL:
         visits = list(visits) + conn.all(
             "SELECT v.visit_date AS at, 'Progress note' AS description, '' AS tooth, NULL AS service, u.name AS dentist, b.name AS branch "
@@ -169,20 +185,25 @@ def detail(patient_id):
             if x and x not in g_[k]:
                 g_[k].append(x)
     visit_days = sorted(days.values(), key=lambda d: d["date"], reverse=True)
-    bills = conn.all("SELECT i.id, i.number, i.issued_at, i.total_cents, b.name AS branch, "
-                     "(SELECT COALESCE(SUM(ii.amount_cents), 0) FROM invoice_items ii LEFT JOIN services s ON s.id = ii.service_id "
-                     " WHERE ii.invoice_id = i.id AND COALESCE(s.category, ?) = ?) AS case_amount, "
-                     "(SELECT COALESCE(SUM(CASE WHEN kind = 'payment' THEN amount_cents ELSE -amount_cents END), 0) FROM payments "
-                     " WHERE invoice_id = i.id AND status = 'valid') AS paid "
-                     "FROM invoices i LEFT JOIN branches b ON b.id = i.branch_id WHERE i.patient_id = ? AND i.status = 'issued' "
-                     "AND EXISTS (SELECT 1 FROM invoice_items ii LEFT JOIN services s ON s.id = ii.service_id WHERE ii.invoice_id = i.id "
-                     "AND COALESCE(s.category, ?) = ?) ORDER BY i.issued_at DESC", (GENERAL, cat, patient_id, GENERAL, cat))
+    amounts: dict[int, int] = {}
+    for r in conn.all("SELECT ii.invoice_id, ii.amount_cents, ii.description, s.category AS scat FROM invoice_items ii "
+                      "JOIN invoices i ON i.id = ii.invoice_id LEFT JOIN services s ON s.id = ii.service_id "
+                      "WHERE i.patient_id = ? AND i.status = 'issued'", (patient_id,)):
+        if kind(r["description"], r["scat"]) == cat:
+            amounts[r["invoice_id"]] = amounts.get(r["invoice_id"], 0) + r["amount_cents"]
+    bills = [dict(b, case_amount=amounts[b["id"]]) for b in conn.all(
+        "SELECT i.id, i.number, i.issued_at, i.total_cents, b.name AS branch, "
+        "(SELECT COALESCE(SUM(CASE WHEN kind = 'payment' THEN amount_cents ELSE -amount_cents END), 0) FROM payments "
+        " WHERE invoice_id = i.id AND status = 'valid') AS paid "
+        "FROM invoices i LEFT JOIN branches b ON b.id = i.branch_id WHERE i.patient_id = ? AND i.status = 'issued' ORDER BY i.issued_at DESC",
+        (patient_id,)) if b["id"] in amounts]
     inv_ids = [x["id"] for x in bills]
     payments = conn.all(f"SELECT p.*, i.number FROM payments p JOIN invoices i ON i.id = p.invoice_id WHERE p.status = 'valid' "
                         f"AND p.invoice_id IN ({','.join('?' * len(inv_ids)) or 'NULL'}) ORDER BY p.received_at DESC", inv_ids)
-    upcoming = conn.all("SELECT a.start_at, a.status, s.name AS service, u.name AS dentist, b.name AS branch FROM appointments a "
-                        "LEFT JOIN services s ON s.id = a.service_id LEFT JOIN users u ON u.id = a.dentist_id LEFT JOIN branches b ON b.id = a.branch_id "
-                        "WHERE a.patient_id = ? AND COALESCE(s.category, ?) = ? AND a.status IN ('requested','confirmed') AND a.start_at >= ? ORDER BY a.start_at",
-                        (patient_id, GENERAL, cat, today().isoformat()))
+    upcoming = [a for a in conn.all("SELECT a.start_at, a.status, s.name AS service, s.category AS scat, u.name AS dentist, b.name AS branch FROM appointments a "
+                                    "LEFT JOIN services s ON s.id = a.service_id LEFT JOIN users u ON u.id = a.dentist_id LEFT JOIN branches b ON b.id = a.branch_id "
+                                    "WHERE a.patient_id = ? AND a.status IN ('requested','confirmed') AND a.start_at >= ? ORDER BY a.start_at",
+                                    (patient_id, today().isoformat()))
+                if (kind(a["service"], a["scat"]) if a["service"] else GENERAL) == cat]
     return render_template("staff/cases/detail.html", c=c, visits=visit_days, bills=bills, payments=payments, upcoming=upcoming, ORTHO=ORTHO,
                            did=did if g.user.is_super_admin else None)
