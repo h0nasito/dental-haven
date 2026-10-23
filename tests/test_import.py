@@ -245,3 +245,37 @@ class TestMyMedsImport(Base):
         with self.app.app_context():
             seed_base(self.conn)
         self.assertEqual(self.q("SELECT body FROM clinical_notes WHERE id = ?", (nid,))["body"], "Pain on 36 & 37")
+
+
+class TestReimportChangedRows(Base):
+    """A newer MyMedsPH export where bills got paid and notes were edited: nothing is imported twice."""
+
+    def _import(self, c, data):
+        r = c.post("/staff/admin/import", data={"branch_id": str(self.branch("bocaue")), "files": (io.BytesIO(data), "export.zip")},
+                   content_type="multipart/form-data")
+        token = re.search(rb'name="token" value="([^"]+)"', r.data).group(1).decode()
+        c.post("/staff/admin/import/confirm", data={"token": token, "action": "confirm"})
+
+    def test_changed_status_and_remarks_are_not_duplicated(self):
+        c = self.login("admin")
+        self._import(c, synthetic_export())
+        pid = self.q("SELECT id FROM patients WHERE legacy_id = '900001'")["id"]
+        count = lambda t: self.q(f"SELECT COUNT(*) AS n FROM {t} WHERE patient_id = ?", (pid,))["n"]  # noqa: E731
+        before = (count("legacy_bills"), count("procedures"), count("follow_ups"))
+        # the next export: the bill is now paid (other status), remarks and follow-up reason edited, one new visit and bill
+        z = zipfile.ZipFile(io.BytesIO(synthetic_export()))
+        files = {n: z.read(n).decode("utf-8-sig") for n in z.namelist()}
+        files["bills.csv"] = files["bills.csv"].replace(",4\r\n", ",3\r\n").replace("800,,4", "800,paid,3") \
+            + "900001,,,,2026-10-20,Consultation,,1,pcs,500.00,0.00,0.00,500,,4\r\n"
+        files["progress_notes.csv"] = files["progress_notes.csv"].replace(",ok\r\n", ",ok - edited later\r\n") \
+            .replace("Check filling", "Check filling and bite") \
+            + "900001,,,,2026-10-20,Consultation,,500.00,,,,,,,,,\r\n"
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as out:
+            for n, t in files.items():
+                out.writestr(n, t)
+        self._import(c, buf.getvalue())
+        self.assertEqual((count("legacy_bills"), count("procedures"), count("follow_ups")), (before[0] + 1, before[1] + 1, before[2]))
+        # and once more with the very same file: nothing new
+        self._import(c, buf.getvalue())
+        self.assertEqual((count("legacy_bills"), count("procedures"), count("follow_ups")), (before[0] + 1, before[1] + 1, before[2]))

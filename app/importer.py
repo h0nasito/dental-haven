@@ -21,6 +21,7 @@ import csv
 import hashlib
 import io
 import zipfile
+from collections import Counter
 from datetime import date, datetime
 
 from .util import fmt_dt, html_to_text, now_str, today
@@ -306,7 +307,13 @@ def run_import(conn, data: dict, *, branch_id: int | None, user_id: int, commit:
             # --- visits / procedures + follow-ups -------------------------
             if "progress_notes" in data:
                 seen, fseen = keys("procedures"), keys("follow_ups")
+                # A visit exported again may have edited notes, remarks or follow-up, which changes its fingerprint: it is
+                # also recognised by patient, date, tooth and service.
+                have = Counter((r["patient_id"], (r["performed_at"] or "")[:10], r["tooth"] or "", (r["description"] or "").split("\n", 1)[0])
+                               for r in conn.all("SELECT patient_id, performed_at, tooth, description FROM procedures WHERE legacy_key IS NOT NULL"))
+                fu_have = {(r["patient_id"], (r["due_at"] or "")[:10]) for r in conn.all("SELECT patient_id, due_at FROM follow_ups WHERE legacy_key LIKE 'fu-%'")}
                 proc_rows, fu_rows, fix_rows = [], [], []
+                parsed = []
                 for row in data["progress_notes"]["rows"]:
                     pid = patient_of("progress_notes", row)
                     if pid is None:
@@ -316,6 +323,12 @@ def run_import(conn, data: dict, *, branch_id: int | None, user_id: int, commit:
                     if not d:
                         err("progress_notes", row, "invalid visit date - skipped")
                         continue
+                    sig = (pid, d.isoformat(), _clean(row.get("tooth_no"), 40), (_clean(row.get("service"), 250) or "Visit"))
+                    if k in seen:
+                        have[sig] -= 1
+                    parsed.append((k, sig, d, row))
+                for k, sig, d, row in parsed:
+                    pid = sig[0]
                     desc = _clean(row.get("service"), 250) or "Visit"
                     notes = "\n".join(x for x in (_clean(row.get("progress_notes"), 6000), _clean(row.get("remarks"), 1000)) if x)
                     if notes:
@@ -323,11 +336,15 @@ def run_import(conn, data: dict, *, branch_id: int | None, user_id: int, commit:
                     if k in seen:
                         s["skipped_existing"] += 1
                         fix_rows.append((desc, k))
+                    elif have[sig] > 0:
+                        have[sig] -= 1
+                        s["skipped_existing"] += 1
                     else:
                         seen.add(k)
                         proc_rows.append((pid, pbranch.get(pid), _clean(row.get("tooth_no"), 40), desc, d.isoformat(), ts, k))
                     fd = _date(row.get("followup_date"))
-                    if fd and fd >= today():
+                    if fd and fd >= today() and (pid, fd.isoformat()) not in fu_have:
+                        fu_have.add((pid, fd.isoformat()))
                         fk = "fu-" + k
                         if fk not in fseen:
                             fseen.add(fk)
@@ -441,7 +458,12 @@ def run_import(conn, data: dict, *, branch_id: int | None, user_id: int, commit:
             # --- bills -> billing history -----------------------------------
             if "bills" in data:
                 seen = keys("legacy_bills")
-                bill_rows = []
+                # The same bill line exported again may have a new status (unpaid -> paid) or remarks, which changes its
+                # fingerprint: it is also recognised by patient, date, service, item, qty and amounts.
+                have = Counter((r["patient_id"], r["bill_date"], r["service"], r["item"], r["qty"], r["unit_price_cents"], r["discount_cents"],
+                                r["total_cents"]) for r in conn.all("SELECT patient_id, bill_date, service, item, qty, unit_price_cents, "
+                                                                     "discount_cents, total_cents FROM legacy_bills"))
+                parsed = []
                 for row in data["bills"]["rows"]:
                     pid = patient_of("bills", row)
                     if pid is None:
@@ -450,18 +472,28 @@ def run_import(conn, data: dict, *, branch_id: int | None, user_id: int, commit:
                     if not d:
                         err("bills", row, "invalid bill date - skipped")
                         continue
-                    k = ukey("bill", row)
-                    if k in seen:
-                        s["skipped_existing"] += 1
-                        continue
-                    seen.add(k)
                     try:
                         qty = max(1, int(float(row.get("qty") or 1)))
                     except ValueError:
                         qty = 1
-                    bill_rows.append((pid, d.isoformat(), _clean(row.get("service_type"), 250), _clean(row.get("item"), 250), qty,
-                                      _cents(row.get("unit_price")), _cents(row.get("discount_amount")), _cents(row.get("total_amount")),
-                                      (row.get("status") or "")[:20], _clean(row.get("remarks"), 500), k))
+                    sig = (pid, d.isoformat(), _clean(row.get("service_type"), 250), _clean(row.get("item"), 250), qty,
+                           _cents(row.get("unit_price")), _cents(row.get("discount_amount")), _cents(row.get("total_amount")))
+                    parsed.append((ukey("bill", row), sig, row))
+                fresh = []
+                for k, sig, row in parsed:          # first the lines that are exactly as before
+                    if k in seen:
+                        s["skipped_existing"] += 1
+                        have[sig] -= 1
+                    else:
+                        fresh.append((k, sig, row))
+                bill_rows = []
+                for k, sig, row in fresh:           # then lines whose status or remarks changed since
+                    if have[sig] > 0:
+                        have[sig] -= 1
+                        s["skipped_existing"] += 1
+                        continue
+                    seen.add(k)
+                    bill_rows.append((*sig, (row.get("status") or "")[:20], _clean(row.get("remarks"), 500), k))
                 if bill_rows:
                     conn.executemany("INSERT INTO legacy_bills (patient_id, bill_date, service, item, qty, unit_price_cents, discount_cents, "
                                      "total_cents, status_code, remarks, legacy_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", bill_rows)

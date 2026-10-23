@@ -20,7 +20,8 @@
 </form></div>
 <div class="card"><h2>How updating works</h2>
 <ul class="list-plain">
-<li><strong>Safe to repeat.</strong> Patients are matched by their MyMedsPH patient ID. Import a newer export any time: new patients are added, and records already imported are skipped.</li>
+<li><strong>To bring in the latest from MyMedsPH:</strong> 1. upload the newest export here; 2. then upload the newest collection report on <a href="{{ url_for('admin.import_bills') }}">MyMedsPH bills → real bills</a>. Always in that order, so each payment finds its bill. Old files can be used again: anything already imported is skipped.</li>
+<li><strong>Safe to repeat.</strong> Patients are matched by their MyMedsPH patient ID. Records already imported are skipped, also when a bill's status (e.g. now paid) or a note's remarks changed in MyMedsPH since. Changes made in MyMedsPH to records already here aren't copied over: make those here.</li>
 <li><strong>Contact details are refreshed</strong> from the file (name, mobile, email, address), but a blank value never erases what's already here.</li>
 <li><strong>Health history is only filled when it's empty</strong>, so edits your dentists made here are kept.</li>
 <li><strong>Old bills</strong> come in as history on each patient's record. To have them as real bills (balances, sales, commission), use <a href="{{ url_for('admin.import_bills') }}">Turn MyMedsPH bills into real bills</a>.</li>
