@@ -1,7 +1,7 @@
 {# Laboratory dashboard section. expects: L (lab_queue.dashboard), lab_names #}
 {% macro lab_row(r) -%}
-<li class="lab-line">{% if r.kind == 'work' %}<a href="{{ url_for('lab_works.work', work_id=r.id) }}"><strong>{{ r.number }}</strong></a> <small class="muted">{{ r.case_type }}{% if r.units and r.units > 1 and ' × ' not in r.case_type %} × {{ r.units }}{% endif %} · {{ r.clinic_name }}</small>
-{% else %}<a href="{{ url_for('labs.case', case_id=r.id) }}"><strong>{{ r.last_name }}, {{ r.first_name[:1] }}.</strong></a> <small class="muted">{% if r.units and r.units > 1 and ' × ' not in r.case_type %}{{ r.units }} × {% endif %}{{ r.case_type }}{% if r.teeth %} #{{ r.teeth }}{% endif %} · {{ r.branch }}</small>{% endif %}
+<li class="lab-line">{% if r.kind == 'work' %}<a href="{{ url_for('lab_works.work', work_id=r.id) }}"><strong>{{ r.number }}</strong></a> <small class="muted">{{ r.case_type }}{% if r.units and r.units > 1 and ' × ' not in r.case_type and ' + ' not in r.case_type %} × {{ r.units }}{% endif %} · {{ r.clinic_name }}</small>
+{% else %}<a href="{{ url_for('labs.case', case_id=r.id) }}"><strong>{{ r.last_name }}, {{ r.first_name[:1] }}.</strong></a> <small class="muted">{% if r.units and r.units > 1 and ' × ' not in r.case_type and ' + ' not in r.case_type %}{{ r.units }} × {% endif %}{{ r.case_type }}{% if r.teeth %} #{{ r.teeth }}{% endif %} · {{ r.branch }}</small>{% endif %}
 <span class="lab-meta"><span class="badge {{ 'badge-amber' if r.status in ('on_hold', 'try_in') else ('badge-red' if r.status == 'remake' else ('badge-green' if r.status == 'ready' else 'badge-blue')) }}">{{ r.status|lab_status }}</span>
 {% if r.due_on %}<small class="{{ 'c-red' if r.due_on < L.q.today and r.status not in ('ready', 'try_in') else 'muted' }}">due {{ r.due_on|date }}{% if r.due_on == L.q.today %} (today){% endif %}</small>{% endif %}</span></li>
 {%- endmacro %}

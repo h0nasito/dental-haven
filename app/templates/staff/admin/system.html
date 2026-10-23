@@ -3,9 +3,8 @@
 {% block page_title %}System settings{% endblock %}
 {% block content %}
 <div class="page-head"><div><h1>System settings</h1><p>Only super admins can change these. Every change is recorded in the audit trail.</p></div></div>
-<div class="card"><div class="card-head"><h2>Backups</h2>
-<form method="post" action="{{ url_for('admin.download_backup') }}">{{ csrf() }}<button class="btn btn-secondary btn-sm">Download full backup</button></form></div>
-<p class="mb-0">Downloads a zip with the whole database (patients, appointments, billing, users) and all uploaded files. Download one every week and keep it somewhere safe and private, such as an encrypted drive. <strong>It contains all patient records.</strong> Each download is recorded in the audit trail.</p></div>
+<div class="card"><div class="card-head"><h2>Backups</h2><a class="btn btn-secondary btn-sm" href="{{ url_for('admin.backup_page') }}">Backup &amp; download</a></div>
+<p class="mb-0">Download everything (database, uploaded files and an Excel copy) from <strong>Administration → Backup &amp; download</strong>.</p></div>
 <div class="card"><div class="card-head"><h2>Dentist appointment emails</h2>
 {% if mail.state == 'on' %}<form method="post" action="{{ url_for('admin.email_test') }}">{{ csrf() }}<button class="btn btn-secondary btn-sm">Send me a test email</button></form>{% endif %}</div>
 {% if mail.state == 'demo' %}<p><span class="badge badge-amber">Off on the demo site</span> The demo never sends emails. Each appointment page shows which emails <em>would</em> have been sent.</p>

@@ -1,0 +1,53 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Backup & download{% endblock %}
+{% block head %}{% if preparing %}<meta http-equiv="refresh" content="4">{% endif %}{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Backup &amp; download</h1><p>Download a copy of everything in the system, to keep in a safe place.</p></div></div>
+<p class="notice"><strong>The backup contains every patient record.</strong> Keep it private, e.g. on an encrypted drive or a private cloud folder only you can open, and never send it by chat or email. Each download is recorded in the audit trail.</p>
+{% if jobs %}<div class="card"><h2>Your backups</h2><ul class="list-plain bk-jobs">{% for j in jobs %}<li class="row between">
+<span>{% if j.state == 'ready' %}<strong>{{ j.file }}</strong> <small class="muted">· {{ j.size }} · deleted from the server in {{ j.expires_in }} min</small>
+{% elif j.state == 'preparing' %}<span class="badge badge-amber">Preparing…</span> <small class="muted">this page updates by itself</small>
+{% else %}<span class="badge badge-red">Failed</span> <small>{{ j.error }}</small>{% endif %}</span>
+<span class="row" style="gap:.4rem">{% if j.state == 'ready' %}<a class="btn" href="{{ url_for('admin.backup_download', job=j.id) }}">⬇ Download</a>{% endif %}
+{% if j.state != 'preparing' %}<form method="post">{{ csrf() }}<input type="hidden" name="action" value="delete"><input type="hidden" name="job" value="{{ j.id }}"><button class="btn btn-ghost btn-sm" aria-label="Delete this backup from the server">✕</button></form>{% endif %}</span></li>{% endfor %}</ul></div>{% endif %}
+<div class="grid grid-2">
+<div class="card"><h2>Make a backup</h2>
+{% if not inv.sqlite %}<p class="muted">This server uses PostgreSQL: make backups with <code>pg_dump</code> (see docs/DEPLOYMENT.md).</p>{% else %}
+<form method="post">{{ csrf() }}
+<label class="check bk-opt"><input type="checkbox" name="parts" value="database" checked> <span><strong>Database</strong> <small class="muted">· {{ inv.db_size }}</small><br><small class="muted">All the records: patients, charts, progress notes, appointments, bills and payments, lab cases and works, expenses, payroll, inventory, staff accounts, settings and the audit trail. This is what a restore uses.</small></span></label>
+<label class="check bk-opt"><input type="checkbox" name="parts" value="files" checked> <span><strong>Uploaded files</strong> <small class="muted">· {% for f in inv.folders %}{{ f.files }} {{ f.label|lower }} ({{ f.size }}){{ ', ' if not loop.last }}{% endfor %}</small><br><small class="muted">Patient uploads, X-rays and photos, lab case photos, receipts and website images.</small></span></label>
+<label class="check bk-opt"><input type="checkbox" name="parts" value="excel" checked> <span><strong>Excel copy</strong><br><small class="muted">The same data as one spreadsheet ({{ inv.tables }} sheets, one per table, with a Contents sheet), to open without the system. Passwords are left out.</small></span></label>
+<p class="hint">It's prepared on the server (a big one can take a few minutes), then a <strong>Download</strong> button appears above. You get one .zip file with a README explaining what's in it and how to restore it. The file is deleted from the server after 2 hours.</p>
+<button class="btn" {% if preparing %}disabled{% endif %}>Prepare backup</button></form>{% endif %}
+</div>
+<div class="card"><h2>What's in the system now</h2>
+<table class="bk-t"><tbody>{% for label, n in inv.records %}<tr><td>{{ label }}</td><td class="num">{{ '{:,}'.format(n) }}</td></tr>{% endfor %}</tbody></table>
+<h2 class="mt-1">Recent downloads</h2>
+<ul class="list-plain">{% for a in inv.last %}<li>{{ a.at|dt }} · {{ a.name or '—' }}</li>{% else %}<li class="muted">No backup downloaded yet.</li>{% endfor %}</ul>
+</div>
+{% if current_user.is_super_admin %}<div class="card" id="restore"><h2>Restore a backup</h2>
+<p class="hint mt-0">Upload a backup .zip you downloaded here. You'll see what's in it before anything changes; a safety copy of the current data is saved first.</p>
+{% for r in restores %}<p class="mb-0"><a href="{{ url_for('admin.restore_review', jid=r.id) }}">{{ r.name }}</a> ·
+{% if r.state == 'ready' %}<span class="badge badge-amber">Waiting for you to confirm</span>{% elif r.state == 'restoring' %}<span class="badge badge-amber">Restoring…</span>{% elif r.state == 'done' %}<span class="badge badge-green">Restored</span>{% elif r.state == 'invalid' %}<span class="badge badge-red">Can't be used</span>{% else %}<span class="badge badge-red">Failed</span>{% endif %}</p>{% endfor %}
+{% if inv.sqlite %}<form class="mt-1" data-restore-upload action="{{ url_for('admin.restore_start') }}">{{ csrf() }}
+<div class="field"><label for="rz">Backup file (.zip)</label><input id="rz" type="file" accept=".zip,application/zip" required></div>
+<div class="rs-progress" hidden><div class="rs-bar"><span></span></div><small class="muted" data-restore-msg></small></div>
+<button class="btn btn-secondary">Upload and check</button>
+<noscript><p class="hint">Turn on JavaScript to upload a backup.</p></noscript></form>{% endif %}
+{% if safety %}<h3 class="mt-1" id="safety">Safety copies</h3><p class="hint mt-0">Saved automatically just before each restore (up to 3 kept). Restore one to undo a restore.</p>
+<ul class="list-plain">{% for sc in safety %}<li class="row between" style="gap:.4rem;flex-wrap:wrap"><span>Data before the restore of {{ sc.made|dt }} <small class="muted">· {{ sc.size }}</small></span>
+<span class="row" style="gap:.4rem"><a class="btn btn-ghost btn-sm" href="{{ url_for('admin.safety_download', sid=sc.id) }}">⬇ Download</a>
+<form method="post" action="{{ url_for('admin.safety_restore', sid=sc.id) }}">{{ csrf() }}<button class="btn btn-secondary btn-sm">Restore this…</button></form></span></li>{% endfor %}</ul>{% endif %}
+</div>{% endif %}
+<div class="card"><h2>Good habits</h2><ul class="hint bk-tips">
+<li>Download a backup <strong>every week</strong>, and before big changes such as an import from MyMedsPH.</li>
+<li>Keep at least two copies in different places (e.g. an encrypted USB drive and a private cloud folder).</li>
+<li>The server also saves the database by itself every night at 11:30 PM and keeps 14 days (DigitalOcean setup).</li>
+<li>Not included: the server settings file (<code>/etc/dental-haven/env</code>, with the secret key and email passwords). Keep a copy of it separately.</li>
+</ul></div>
+</div>
+<style>.bk-opt{display:flex;gap:.6rem;align-items:flex-start;padding:.6rem 0;border-bottom:1px solid var(--line)}.bk-opt input{margin-top:.3rem}
+.bk-t{width:100%}.bk-t td{padding:.3rem 0;border-bottom:1px solid var(--line)}.bk-tips li{margin:.35rem 0}.rs-bar{height:.5rem;background:var(--line);border-radius:4px;overflow:hidden;margin:.4rem 0}.rs-bar span{display:block;height:100%;width:0;background:#ea8a28}
+.bk-jobs li{padding:.5rem 0;border-top:1px solid var(--line);gap:.6rem;flex-wrap:wrap}</style>
+{% endblock %}

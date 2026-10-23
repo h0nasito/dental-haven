@@ -21,7 +21,7 @@
 {% if c.install_on %}<br><small class="muted">Install {{ c.install_on|date }}</small>{% endif %}</td>
 <td><a href="{{ url_for('labs.case', case_id=c.id) }}"><strong>{{ c.last_name }}, {{ c.first_name }}</strong></a><br><small class="muted">{{ c.chart_no }}</small></td>
 <td>{{ c.branch }}<br><small class="muted">{{ c.dentist or '—' }}</small></td>
-<td>{% if c.units and c.units > 1 and ' × ' not in c.case_type %}{{ c.units }} × {% endif %}{{ c.case_type }}{% if c.material and ' + ' not in c.case_type and '(' not in c.case_type %} ({{ c.material }}){% endif %}{% if c.teeth or c.shade %}<br><small class="muted">{{ c.teeth }}{% if c.teeth and c.shade %} · {% endif %}{% if c.shade %}Shade {{ c.shade }}{% endif %}</small>{% endif %}</td>
+<td>{% if c.units and c.units > 1 and ' × ' not in c.case_type and ' + ' not in c.case_type %}{{ c.units }} × {% endif %}{{ c.case_type }}{% if c.material and ' + ' not in c.case_type and '(' not in c.case_type %} ({{ c.material }}){% endif %}{% if c.teeth or c.shade %}<br><small class="muted">{{ c.teeth }}{% if c.teeth and c.shade %} · {% endif %}{% if c.shade %}Shade {{ c.shade }}{% endif %}</small>{% endif %}</td>
 <td class="num">{{ c.units or 1 }}</td><td>{{ c.lab }}</td><td>{{ c.sent_on|date }}</td><td>{{ c.completed_on|date if c.completed_on else '—' }}</td>
 <td><span class="badge {{ lab_badge(c.status) }}">{{ c.status|lab_status }}</span>{% if c.invoice_number %}<br><small class="muted">{{ c.invoice_number }}</small>{% endif %}</td></tr>
 {% else %}<tr><td colspan="9">{{ empty('No lab cases here') }}</td></tr>{% endfor %}</tbody></table></div></div>

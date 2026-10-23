@@ -1,0 +1,41 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Restore a backup{% endblock %}
+{% block head %}{% if st.state == 'restoring' %}<meta http-equiv="refresh" content="4">{% endif %}{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('admin.backup_page') }}">← Backup &amp; download</a><h1>Restore a backup</h1><p>{{ st.name }}</p></div></div>
+{% if st.state == 'invalid' %}
+<div class="card"><h2>This backup can't be restored</h2><p>{{ st.error }}</p>
+<form method="post">{{ csrf() }}<input type="hidden" name="action" value="cancel"><button class="btn btn-secondary">Back</button></form></div>
+{% elif st.state == 'ready' %}
+<div class="card"><h2>What's in this backup</h2>
+<p class="muted mt-0">{% if st.made %}Made {{ st.made|dt }}{% endif %}{% if st.last_activity %}{{ ' · ' if st.made }}last activity recorded in it: {{ st.last_activity|dt }}{% endif %}</p>
+<div class="table-wrap"><table class="rs-t"><thead><tr><th></th><th class="num">In the backup</th><th class="num">In the system now</th></tr></thead><tbody>
+{% for label, n in st.backup_counts.items() %}{% set m = now.get(label) %}<tr><td>{{ label }}</td><td class="num"><strong>{{ '{:,}'.format(n) if n is not none else '—' }}</strong></td><td class="num">{{ '{:,}'.format(m) if m is not none else '—' }}{% if n is not none and m is not none and m > n %} <span class="badge badge-amber">{{ '{:,}'.format(m - n) }} more now</span>{% endif %}</td></tr>{% endfor %}
+<tr><td>Uploaded files</td><td class="num"><strong>{{ '{:,}'.format(st.files.values()|sum) }}</strong></td><td class="num muted">—</td></tr>
+</tbody></table></div>
+{% if st.updates %}<p class="hint">It was made by an older version of the system; it's brought up to date automatically ({{ st.updates }} update{{ 's' if st.updates != 1 }}).</p>{% endif %}
+</div>
+<div class="card rs-warn"><h2>Restore it</h2>
+<ul class="rs-list">
+<li><strong>Everything in the system is replaced</strong> by this backup. Anything added or changed after the backup was made will be gone{% if st.last_activity %} (after {{ st.last_activity|dt }}){% endif %}.</li>
+<li>Before restoring, a <strong>safety copy</strong> of the current data and files is saved automatically. If something is wrong, you can restore that copy from the Backup page to undo this.</li>
+<li><strong>Everyone is logged out.</strong> Log in again with the password you had when the backup was made.</li>
+<li>Do it when nobody is using the system: work saved while it restores is lost.</li>
+</ul>
+<form method="post">{{ csrf() }}
+{% if st.files.values()|sum %}<label class="check"><input type="checkbox" name="with_files" value="1" checked> Also restore the uploaded files ({{ '{:,}'.format(st.files.values()|sum) }}): the current files are replaced</label>
+{% else %}<p class="hint">This backup has no uploaded files: only the database is restored and the current files stay as they are.</p>{% endif %}
+<div class="field mt-1" style="max-width:320px"><label for="rc">Type <strong>RESTORE</strong> to confirm</label><input id="rc" name="confirm" autocomplete="off" required></div>
+<div class="row"><button class="btn btn-danger">Restore this backup</button></div></form>
+<form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="cancel"><button class="btn btn-ghost">Cancel and delete the upload</button></form>
+</div>
+{% elif st.state == 'restoring' %}
+<div class="card"><h2><span class="badge badge-amber">Restoring…</span></h2><p>{{ st.step }}</p><p class="hint">This page updates by itself. Don't close the server; you'll be logged out when it finishes.</p></div>
+{% elif st.state == 'done' %}
+<div class="card"><h2><span class="badge badge-green">Restored</span></h2><p>The backup was restored{% if st.with_files %} with its uploaded files{% else %} (database only){% endif %}. A safety copy of the data from before is on the <a href="{{ url_for('admin.backup_page') }}#safety">Backup page</a>, in case you need to undo it.</p></div>
+{% else %}
+<div class="card"><h2><span class="badge badge-red">Restore failed</span></h2><p>{{ st.error or 'Something went wrong.' }}</p><p><a href="{{ url_for('admin.backup_page') }}#safety">Safety copies</a></p></div>
+{% endif %}
+<style>.rs-t{width:100%;max-width:640px}.rs-warn{border-color:var(--red-100)}.rs-list li{margin:.4rem 0;line-height:1.45}</style>
+{% endblock %}

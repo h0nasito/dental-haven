@@ -9,7 +9,7 @@ import secrets
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
 
 from .. import audit, settings
-from ..auth import hash_password, require, revoke_user_sessions
+from ..auth import hash_password, require, require_super_admin, revoke_user_sessions
 from ..db import get_db
 from ..permissions import (ACCESS_FOR_POSITION, CATALOG, LOCKED, PERM_KEYS, POSITION_FOR_ROLE, POSITIONS, ROLE_DEFAULTS, ROLES,
                            base_role, grantable)
@@ -1233,47 +1233,161 @@ def system():
                            bool_keys=BOOL_KEYS, int_keys=INT_KEYS, seqs=seqs, mail=mail)
 
 
+@bp.route("/backup", methods=["GET", "POST"])
+@require("system.settings")
+def backup_page():
+    """Super admin: back up everything (database, uploaded files, a readable Excel copy). A backup is prepared in the
+    background, then downloaded from this page (kept for 2 hours)."""
+    from .. import backup
+    from flask import current_app
+    conn = get_db()
+    if request.method == "POST":
+        if request.form.get("action") == "delete":
+            backup.remove(current_app, request.form.get("job", ""))
+            flash("Backup file deleted from the server.", "success")
+            return redirect(url_for("admin.backup_page"))
+        parts = {p for p in request.form.getlist("parts") if p in backup.PARTS}
+        if not backup.db_path(current_app):
+            flash("Backup download works with the built-in database only. For PostgreSQL use pg_dump (docs/DEPLOYMENT.md).", "error")
+        elif not parts:
+            flash("Choose at least one thing to include.", "error")
+        elif any(j["state"] == "preparing" for j in backup.jobs(current_app)):
+            flash("A backup is already being prepared. Wait for it to finish.", "error")
+        else:
+            backup.start(current_app._get_current_object(), parts, g.user.id)
+            flash("Preparing the backup. This page updates by itself; the Download button appears when it's ready.", "success")
+        return redirect(url_for("admin.backup_page"))
+    jobs = backup.jobs(current_app)
+    from .. import restore
+    restores = restore.active(current_app) if g.user.is_super_admin else []
+    return render_template("staff/admin/backup.html", inv=backup.inventory(current_app, conn), parts=backup.PARTS, jobs=jobs,
+                           preparing=any(j["state"] == "preparing" for j in jobs), restores=restores,
+                           safety=restore.safety_copies(current_app) if g.user.is_super_admin else [])
+
+
+@bp.route("/backup/<job>/download")
+@require("system.settings")
+def backup_download(job):
+    from .. import backup
+    from flask import current_app, send_file
+    f = backup.job_file(current_app, job)
+    if not f:
+        flash("That backup isn't available any more. Make a new one.", "error")
+        return redirect(url_for("admin.backup_page"))
+    what = ", ".join(backup.PARTS[p].split(" (")[0].lower() for p in backup.PARTS if f"{p}" in (backup._status(f.parent) or {}).get("parts", []))
+    audit.record("backup_downloaded", "settings", None, f"Downloaded a backup ({what})", {"file": f.name})
+    return send_file(f, as_attachment=True, download_name=f.name, mimetype="application/zip", max_age=0)
+
+
+# --------------------------------------------------------------------------- restore (super admin only)
+
+def _restore_job(jid):
+    from .. import restore
+    from flask import current_app
+    d = restore.job(current_app, jid)
+    if not d:
+        abort(404)
+    return d
+
+
+@bp.route("/backup/restore/start", methods=["POST"])
+@require_super_admin
+def restore_start():
+    from .. import restore
+    from flask import current_app, jsonify
+    if not current_app.config["DATABASE_URL"].startswith("sqlite:///"):
+        abort(400)
+    if any(j.get("state") == "restoring" for j in restore.active(current_app)):
+        return jsonify(error="A restore is already running."), 409
+    return jsonify(id=restore.new_upload(current_app, request.form.get("name", ""), g.user.id))
+
+
+@bp.route("/backup/restore/<jid>/chunk", methods=["POST"])
+@require_super_admin
+def restore_chunk(jid):
+    from .. import restore
+    from flask import jsonify
+    d = _restore_job(jid)
+    if restore.status(d).get("state") != "uploading":
+        abort(409)
+    try:
+        size = restore.add_chunk(d, int(request.args.get("offset", "-1")), request.get_data(cache=False))
+    except ValueError:
+        return jsonify(error="Upload out of order; please try again."), 409
+    return jsonify(size=size)
+
+
+@bp.route("/backup/restore/<jid>/finish", methods=["POST"])
+@require_super_admin
+def restore_finish(jid):
+    from .. import restore
+    from flask import current_app, jsonify
+    d = _restore_job(jid)
+    if restore.status(d).get("state") == "uploading":
+        restore.check(current_app, d)
+    return jsonify(next=url_for("admin.restore_review", jid=jid))
+
+
+@bp.route("/backup/restore/<jid>", methods=["GET", "POST"])
+@require_super_admin
+def restore_review(jid):
+    """Review what's in the uploaded backup next to what's in the system now, then restore it (type RESTORE)."""
+    from .. import restore
+    from flask import current_app
+    d = _restore_job(jid)
+    st = restore.status(d)
+    if request.method == "POST":
+        if request.form.get("action") == "cancel":
+            import shutil
+            if st.get("state") != "restoring":
+                shutil.rmtree(d, ignore_errors=True)
+            flash("Restore cancelled; the uploaded backup was deleted from the server.", "success")
+            return redirect(url_for("admin.backup_page"))
+        if st.get("state") != "ready":
+            abort(409)
+        if request.form.get("confirm", "").strip().upper() != "RESTORE":
+            flash("Type RESTORE in the box to confirm.", "error")
+            return redirect(url_for("admin.restore_review", jid=jid))
+        if any(j.get("state") == "restoring" for j in restore.active(current_app)):
+            flash("Another restore is running. Wait for it to finish.", "error")
+            return redirect(url_for("admin.restore_review", jid=jid))
+        audit.record("backup_restore_started", "settings", None, f"Started restoring a backup: {st.get('name')}")
+        restore.start(current_app._get_current_object(), d, bool(request.form.get("with_files")), g.user.id, g.user.name)
+        return redirect(url_for("admin.restore_review", jid=jid))
+    now = restore.current_counts(current_app) if st.get("state") == "ready" else {}
+    return render_template("staff/admin/restore.html", st=st, jid=jid, now=now)
+
+
+@bp.route("/backup/safety/<sid>/download")
+@require_super_admin
+def safety_download(sid):
+    from .. import restore
+    from flask import current_app, send_file
+    f = restore.safety_file(current_app, sid)
+    if not f:
+        abort(404)
+    audit.record("backup_downloaded", "settings", None, f"Downloaded a safety copy ({f.name})")
+    return send_file(f, as_attachment=True, download_name=f.name, mimetype="application/zip", max_age=0)
+
+
+@bp.route("/backup/safety/<sid>/restore", methods=["POST"])
+@require_super_admin
+def safety_restore(sid):
+    """Undo a restore: use the safety copy made just before it."""
+    from .. import restore
+    from flask import current_app
+    jid = restore.from_safety(current_app, sid, g.user.id)
+    if not jid:
+        abort(404)
+    restore.check(current_app, restore.job(current_app, jid))
+    return redirect(url_for("admin.restore_review", jid=jid))
+
+
 @bp.route("/system/backup", methods=["POST"])
 @require("system.settings")
 def download_backup():
-    """Super admin: download a zip with a consistent copy of the database plus uploaded files.
-    Contains all patient data: keep it encrypted and private."""
-    import sqlite3
-    import tempfile
-    import zipfile
-    from pathlib import Path
-
-    from flask import after_this_request, current_app, send_file
-    url = current_app.config["DATABASE_URL"]
-    if not url.startswith("sqlite:///"):
-        flash("Backup download works with the built-in database only. For PostgreSQL use pg_dump (docs/DEPLOYMENT.md).", "error")
-        return redirect(url_for("admin.system"))
-    stamp = now_str()[:16].replace(" ", "_").replace(":", "")
-    tmpdir = Path(tempfile.mkdtemp(dir=current_app.config["DATA_DIR"]))
-    db_copy = tmpdir / "dental_haven.db"
-    src = sqlite3.connect(url[len("sqlite:///"):])
-    dst = sqlite3.connect(db_copy)
-    try:
-        src.backup(dst)  # consistent snapshot even while the site is in use
-    finally:
-        dst.close()
-        src.close()
-    zpath = tmpdir / f"dental-haven-backup-{stamp}.zip"
-    with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.write(db_copy, "dental_haven.db")
-        for key, arc in (("UPLOAD_DIR", "patient-documents"), ("PUBLIC_UPLOAD_DIR", "website-images")):
-            root = Path(current_app.config[key])
-            for f in root.rglob("*"):
-                if f.is_file():
-                    zf.write(f, f"{arc}/{f.relative_to(root)}")
-    audit.record("backup_downloaded", "settings", None, "Downloaded a full backup (database and uploaded files)")
-
-    @after_this_request
-    def _cleanup(resp):
-        import shutil
-        shutil.rmtree(tmpdir, ignore_errors=True)
-        return resp
-    return send_file(zpath, as_attachment=True, download_name=zpath.name, mimetype="application/zip", max_age=0)
+    """The older button: now on the Backup & download page."""
+    return redirect(url_for("admin.backup_page"))
 
 
 @bp.route("/system/test-email", methods=["POST"])

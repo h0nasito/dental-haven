@@ -54,6 +54,34 @@ def case_summary(items) -> dict:
             "teeth": join("teeth", 60), "shade": join("shade", 30), "material": join("material", 80), "lab_fee_cents": sum(fees) if fees else None}
 
 
+def case_total(conn, case_id: int):
+    """What the branch pays the lab for the case: its items' prices plus its additional charges (None when nothing is priced)."""
+    fees = [it["lab_fee_cents"] for it in case_items(conn, case_id) if it["lab_fee_cents"] is not None]
+    extras = conn.all("SELECT qty, unit_price_cents FROM lab_case_extras WHERE case_id = ?", (case_id,))
+    if not fees and not extras:
+        return None
+    return sum(fees) + sum(x["qty"] * x["unit_price_cents"] for x in extras)
+
+
+def after_case_change(conn, case_id: int) -> str:
+    """After items or charges change: refresh the case's summary and total, and its lines on a draft lab invoice.
+    Returns a sentence for the flash message about the invoice."""
+    from .lab_works import refresh_case_lines
+    summary = case_summary(case_items(conn, case_id))
+    summary["lab_fee_cents"] = case_total(conn, case_id)
+    conn.update("lab_cases", case_id, {**summary, "updated_at": now_str()})
+    c = conn.one("SELECT * FROM lab_cases WHERE id = ?", (case_id,))
+    if not c["invoice_id"]:
+        return ""
+    inv = conn.one("SELECT number, status FROM lab_invoices WHERE id = ?", (c["invoice_id"],))
+    if inv and inv["status"] == "draft":
+        refresh_case_lines(conn, c)
+        return " The draft lab invoice was updated too."
+    if inv and inv["status"] != "void":
+        return f" It's on lab invoice {inv['number']}: use Update invoice on the case to bill the change."
+    return ""
+
+
 def case_types(conn, include: str | None = None) -> list[str]:
     """The lab's services (types of case) in use, in order. The first time, the standard list is loaded.
     `include` keeps a case's current type in the list even if it was turned off."""
@@ -356,6 +384,33 @@ def case(case_id):
     lab_user = c["lab_id"] in _my_labs()
     # Other branches' cases are view only: updates stay with the branch that sent the case (and the lab).
     can_update = (g.user.can("lab.manage") and g.user.in_branch(c["branch_id"])) or lab_user or g.user.is_super_admin
+    if request.method == "POST" and request.form.get("action") in ("add_extra", "remove_extra"):
+        if not can_update:
+            abort(403)
+        from .lab_works import _extras_from
+        f = request.form
+        with conn.transaction():
+            if f.get("action") == "add_extra":
+                extras, xerr = _extras_from(f)
+                rows = extras.get(0, [])
+                if xerr or not rows:
+                    flash(xerr or "Type the charge and its price.", "error")
+                    return redirect(url_for("labs.case", case_id=case_id) + "#extras")
+                for desc, q, pc in rows:
+                    conn.insert("lab_case_extras", {"case_id": case_id, "description": desc, "qty": q, "unit_price_cents": pc,
+                                                    "created_by": g.user.id, "created_at": now_str()})
+                what = f"Added charge: {rows[0][0]}"
+            else:
+                x = conn.one("SELECT * FROM lab_case_extras WHERE id = ? AND case_id = ?", (to_int(f.get("extra_id")), case_id))
+                if not x:
+                    abort(404)
+                conn.execute("DELETE FROM lab_case_extras WHERE id = ?", (x["id"],))
+                what = f"Removed charge: {x['description']}"
+            more = after_case_change(conn, case_id)
+            conn.insert("lab_case_events", {"case_id": case_id, "user_id": g.user.id, "status": c["status"], "note": what, "created_at": now_str()})
+            audit.record("lab_case_charge", "patient", c["patient_id"], f"Lab case #{case_id}: {what}", None, c["branch_id"])
+        flash(what + "." + more, "success")
+        return redirect(url_for("labs.case", case_id=case_id) + "#extras")
     if request.method == "POST":
         if not can_update:
             abort(403)
@@ -385,12 +440,12 @@ def case(case_id):
                     conn.execute("UPDATE lab_case_items SET lab_fee_cents = ? WHERE id = ?", (fee, it["id"]))
                     changed = True
             if changed:
-                upd["lab_fee_cents"] = case_summary(case_items(conn, case_id))["lab_fee_cents"]
+                upd["lab_fee_cents"] = case_total(conn, case_id)
         else:
             fee = parse_money(request.form.get("lab_fee")) if request.form.get("lab_fee") else None
             if fee is not None:
-                upd["lab_fee_cents"] = fee
                 conn.execute("UPDATE lab_case_items SET lab_fee_cents = ? WHERE case_id = ?", (fee, case_id))
+                upd["lab_fee_cents"] = case_total(conn, case_id) if items else fee
         if "install_on" in request.form:
             targets, terr = target_dates(request.form, parse_date(c["sent_on"]))
             if terr:
@@ -421,13 +476,109 @@ def case(case_id):
     photos = conn.all("SELECT ph.*, u.name AS by_name FROM lab_case_photos ph LEFT JOIN users u ON u.id = ph.uploaded_by WHERE ph.case_id = ? ORDER BY ph.id",
                       (case_id,))
     items = case_items(conn, case_id)
-    return render_template("staff/labs/case.html", c=c, items=items, events=events, statuses=STATUSES, can_update=can_update, lab_invoice=lab_invoice, photos=photos, max_photos=MAX_CASE_PHOTOS,
+    from .lab_works import case_billed_total, case_extras, extras_list, price_items
+    extras = case_extras(conn, case_id)
+    billed = case_billed_total(conn, c) if lab_invoice and lab_invoice["status"] not in ("draft", "void") else None
+    now_total = case_total(conn, case_id) or 0
+    return render_template("staff/labs/case.html", c=c, items=items, extras=extras, extras_total=sum(x["qty"] * x["unit_price_cents"] for x in extras),
+                           extras_prices=extras_list(price_items(conn, [c["lab_id"]])) if can_update else [],
+                           out_of_date=billed is not None and billed != now_total, billed=billed, now_total=now_total, events=events, statuses=STATUSES, can_update=can_update, lab_invoice=lab_invoice, photos=photos, max_photos=MAX_CASE_PHOTOS,
                            can_bill=g.user.is_super_admin or (lab_user and g.user.can("lab.billing")),
                            comm_entries=entries(conn, case_id=c["id"]), comm_techs=technicians(conn),
                            patient_link=can_see_patient(conn, g.user, c["patient_id"]), fittings=fittings,
                            can_fit=_can_record_fitting(conn, c), fit_results=FIT_RESULTS, fit_checks=FIT_CHECKS,
                            agreement=agreement_text(conn, c), today=today().isoformat(),
                            fit_dentists=dentists([c["branch_id"]]))
+
+
+@bp.route("/<int:case_id>/edit", methods=["GET", "POST"])
+@login_required
+def edit(case_id):
+    """Change what the lab makes for a case: its items (add, change, remove), instructions and additional charges."""
+    if not _can_access():
+        abort(403)
+    conn = get_db()
+    c = _load(case_id)
+    if not ((g.user.can("lab.manage") and g.user.in_branch(c["branch_id"])) or c["lab_id"] in _my_labs() or g.user.is_super_admin):
+        abort(403)
+    from .lab_works import _extras_from, _extras_rows, case_extras, extras_list, price_items
+    current = case_items(conn, case_id)
+    if not current:          # a case from before items: show it as one item
+        current = [{"id": "", "case_type": c["case_type"], "units": c["units"] or 1, "teeth": c["teeth"], "shade": c["shade"],
+                    "material": c["material"], "lab_fee_cents": c["lab_fee_cents"], "instructions": ""}]
+    items = [{"item_id": it["id"], "case_type": it["case_type"], "units": it["units"], "teeth": it["teeth"], "shade": it["shade"],
+              "material": it["material"], "material_new": "", "instructions": it["instructions"],
+              "lab_fee": f"{it['lab_fee_cents'] / 100:.2f}" if it["lab_fee_cents"] is not None else ""} for it in current]
+    extras_in = {0: [{"desc": x["description"], "qty": x["qty"], "price": f"{x['unit_price_cents'] / 100:.2f}"} for x in case_extras(conn, case_id)]}
+    instructions = c["instructions"]
+    errors = []
+    if request.method == "POST":
+        f = request.form
+        instructions = clean(f.get("instructions_all"), 1000)
+        cols = {k: f.getlist(k) for k in (*ITEM_FIELDS, "item_id")}
+        n = len(cols["case_type"])
+        items = [{k: clean(cols[k][i] if i < len(cols[k]) else "", 1000) for k in (*ITEM_FIELDS, "item_id")} for i in range(n)]
+        parsed = []
+        for i, it in enumerate(items, 1):
+            label = f"Item {i}" if len(items) > 1 else "The case"
+            units = to_int(it["units"]) if it["units"] else 1
+            fee = parse_money(it["lab_fee"]) if it["lab_fee"] else None
+            if not is_case_type(conn, it["case_type"]) and it["case_type"] not in {x["case_type"] for x in current}:
+                errors.append(f"{label}: choose the case type.")
+            mat, merr = resolve_material(conn, it["material"], it["material_new"])
+            if merr:
+                errors.append(f"{label}: {merr}.")
+            else:
+                it["material"] = mat
+            if units is None or units < 1 or units > 99:
+                errors.append(f"{label}: enter the number of units (1 to 99).")
+            if it["lab_fee"] and (fee is None or fee < 0):
+                errors.append(f"{label}: enter the lab price like 3500 or 3500.00.")
+            parsed.append({**it, "units": units or 1, "fee": fee})
+        if not items:
+            errors.append("Keep at least one item.")
+        extras, xerr = _extras_from(f)
+        extras_in = _extras_rows(f)
+        if xerr:
+            errors.append(xerr)
+        if not errors:
+            mine = {it["id"] for it in case_items(conn, case_id)}
+            with conn.transaction():
+                keep = set()
+                for i, it in enumerate(parsed):
+                    row = {"case_type": it["case_type"], "units": it["units"], "teeth": it["teeth"][:60], "shade": it["shade"][:30],
+                           "material": it["material"][:80], "lab_fee_cents": it["fee"], "instructions": it["instructions"][:500], "sort_order": i}
+                    iid = to_int(it["item_id"])
+                    if iid in mine:
+                        conn.update("lab_case_items", iid, row)
+                        keep.add(iid)
+                    else:
+                        conn.insert("lab_case_items", {"case_id": case_id, **row})
+                for gone in mine - keep:
+                    conn.execute("UPDATE lab_invoice_items SET case_item_id = NULL WHERE case_item_id = ?", (gone,))
+                    conn.execute("DELETE FROM lab_case_items WHERE id = ?", (gone,))
+                conn.execute("DELETE FROM lab_case_extras WHERE case_id = ?", (case_id,))
+                for rows in extras.values():
+                    for desc, q, pc in rows:
+                        conn.insert("lab_case_extras", {"case_id": case_id, "description": desc, "qty": q, "unit_price_cents": pc,
+                                                        "created_by": g.user.id, "created_at": now_str()})
+                conn.update("lab_cases", case_id, {"instructions": instructions})
+                more = after_case_change(conn, case_id)
+                n_x = sum(len(r) for r in extras.values())
+                note = f"Items edited ({len(parsed)} item{'s' if len(parsed) != 1 else ''}" + (f", {n_x} charge{'s' if n_x != 1 else ''}" if n_x else "") + ")"
+                conn.insert("lab_case_events", {"case_id": case_id, "user_id": g.user.id, "status": c["status"], "note": note, "created_at": now_str()})
+                audit.record("lab_case_edited", "patient", c["patient_id"], f"Lab case #{case_id}: {note}", None, c["branch_id"])
+                if c["lab_id"] not in _my_labs():
+                    notify(conn, lab_staff(conn, c["lab_id"]), "lab_case_status", f"Lab case #{case_id} items changed", note,
+                           f"/staff/lab/{case_id}", exclude=g.user.id)
+            flash("Case saved." + more, "success")
+            return redirect(url_for("labs.case", case_id=case_id))
+    used = [it["case_type"] for it in items]
+    types = case_types(conn)
+    types += [t for t in dict.fromkeys(used) if t and t not in types]
+    return render_template("staff/labs/edit.html", c=c, items=items, case_types=types, materials=materials(conn), errors=errors,
+                           instructions=instructions, extras_in=extras_in, extras_prices=extras_list(price_items(conn, [c["lab_id"]])),
+                           on_invoice=bool(c["invoice_id"]))
 
 
 @bp.route("/<int:case_id>/remove", methods=["POST"])

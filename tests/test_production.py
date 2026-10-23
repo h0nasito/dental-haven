@@ -25,14 +25,16 @@ class TestProductionSetup(Base):
         c.post("/staff/admin/content/gallery", content_type="multipart/form-data", data={
             "action": "add", "title": "Backup check", "authorization_note": "x", "authorized": "1",
             "image": (io.BytesIO(tiny_png()), "a.png")})
-        r = c.post("/staff/admin/system/backup")
+        c.post("/staff/admin/backup", data={"parts": ["database", "files"]})
+        import re
+        r = c.get(re.findall(r'href="(/staff/admin/backup/[0-9a-f]+/download)"', c.get("/staff/admin/backup").data.decode())[0])
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.mimetype, "application/zip")
         names = zipfile.ZipFile(io.BytesIO(r.data)).namelist()
         self.assertIn("dental_haven.db", names)
         self.assertTrue(any(n.startswith("website-images/gallery/") for n in names))
         self.assertIsNotNone(self.q("SELECT id FROM audit_log WHERE action = 'backup_downloaded'"))
-        self.assertEqual(self.login("staff.malolos").post("/staff/admin/system/backup").status_code, 403)
+        self.assertEqual(self.login("staff.malolos").post("/staff/admin/backup").status_code, 403)
         # the gallery image is served from PUBLIC_UPLOAD_DIR
         g = self.q("SELECT image_path FROM gallery_items WHERE title = 'Backup check'")
         self.assertEqual(self.app.test_client().get("/static/" + g["image_path"]).status_code, 200)

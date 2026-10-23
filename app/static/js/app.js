@@ -1155,3 +1155,46 @@ document.addEventListener('change', function (e) {
   window.addEventListener('beforeunload', function (e) { if (all().length) { e.preventDefault(); e.returnValue = ''; } });
   renderList();
 })();
+
+/* Backup restore: send the chosen .zip in pieces (any size), then open the review page. */
+(function () {
+  var form = document.querySelector('form[data-restore-upload]');
+  if (!form) return;
+  var CHUNK = 8 * 1024 * 1024;
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var file = form.querySelector('input[type=file]').files[0];
+    if (!file) return;
+    var token = form.querySelector('[name=csrf_token]').value;
+    var btn = form.querySelector('button'), box = form.querySelector('.rs-progress'), bar = box.querySelector('.rs-bar span'), msg = box.querySelector('[data-restore-msg]');
+    var base = form.getAttribute('action').replace(/\/start$/, '');
+    function post(url, body, type) {
+      var h = { 'X-CSRF-Token': token, 'Accept': 'application/json' };
+      if (type) h['Content-Type'] = type;
+      return fetch(url, { method: 'POST', body: body, headers: h, credentials: 'same-origin' }).then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) throw new Error(j.error || ('Error ' + r.status)); return j; });
+      });
+    }
+    function fail(err) { msg.textContent = 'Upload stopped: ' + err.message + ' Try again.'; btn.disabled = false; }
+    btn.disabled = true; box.hidden = false; msg.textContent = 'Starting…';
+    var fd = new FormData(); fd.append('name', file.name);
+    post(form.getAttribute('action'), fd).then(function (j) {
+      var id = j.id, offset = 0;
+      function next() {
+        if (offset >= file.size) {
+          msg.textContent = 'Checking the backup…';
+          return post(base + '/' + id + '/finish', new FormData()).then(function (j2) { window.location = j2.next; });
+        }
+        var piece = file.slice(offset, offset + CHUNK);
+        return post(base + '/' + id + '/chunk?offset=' + offset, piece, 'application/octet-stream').then(function (j2) {
+          offset = j2.size;
+          var pct = Math.round(100 * offset / file.size);
+          bar.style.width = pct + '%';
+          msg.textContent = 'Uploading… ' + pct + '% of ' + (file.size / 1048576).toFixed(1) + ' MB';
+          return next();
+        });
+      }
+      return next();
+    }).catch(fail);
+  });
+})();

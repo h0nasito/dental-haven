@@ -5,9 +5,9 @@
 {% macro lab_item(r, show_due=True) -%}
 <div class="item {% if r.due_on and r.due_on < lq.today and r.status not in ('ready', 'try_in') %}overdue{% else %}due{% endif %}">
 {% if r.kind == 'work' %}<a href="{{ url_for('lab_works.work', work_id=r.id) }}"><strong>{{ r.number }}</strong></a> <span class="badge">Outside clinic</span>
-<div class="meta">{{ r.case_type }}{% if r.units and r.units > 1 and ' × ' not in r.case_type %} × {{ r.units }}{% endif %} · {{ r.clinic_name }}
+<div class="meta">{{ r.case_type }}{% if r.units and r.units > 1 and ' × ' not in r.case_type and ' + ' not in r.case_type %} × {{ r.units }}{% endif %} · {{ r.clinic_name }}
 {% else %}<a href="{{ url_for('labs.case', case_id=r.id) }}"><strong>{{ r.last_name }}, {{ r.first_name[:1] }}.</strong></a> <span class="badge badge-teal">{{ r.branch }}</span>
-<div class="meta">{% if r.units and r.units > 1 and ' × ' not in r.case_type %}{{ r.units }} × {% endif %}{{ r.case_type }}{% if r.teeth %} · #{{ r.teeth }}{% endif %}{% endif %}
+<div class="meta">{% if r.units and r.units > 1 and ' × ' not in r.case_type and ' + ' not in r.case_type %}{{ r.units }} × {% endif %}{{ r.case_type }}{% if r.teeth %} · #{{ r.teeth }}{% endif %}{% endif %}
 <br><span class="badge {{ 'badge-amber' if r.status in ('on_hold', 'try_in') else ('badge-red' if r.status == 'remake' else ('badge-green' if r.status == 'ready' else 'badge-blue')) }}">{{ r.status|lab_status }}</span>
 {% if show_due and r.due_on %} · due {{ r.due_on|date }}{% if r.due_on < lq.today and r.status not in ('ready', 'try_in') %} <strong style="color:var(--red-700)">overdue</strong>{% elif r.due_on == lq.today %} <strong>today</strong>{% endif %}{% endif %}</div></div>
 {%- endmacro %}

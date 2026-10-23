@@ -1,0 +1,49 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Edit case #{{ c.id }}{% endblock %}
+{% macro price_options(items) -%}
+{% set ns = namespace(cat=None) %}{% for it in items %}{% if it.category != ns.cat %}{% if ns.cat is not none %}</optgroup>{% endif %}{% set ns.cat = it.category %}<optgroup label="{{ it.category or 'Other' }}">{% endif %}<option data-name="{{ it.name }}" data-price="{{ '%.2f'|format(it.price_cents / 100) }}">{{ it.name }} · {{ it.price_cents|peso }}{% if it.unit %} {{ it.unit }}{% endif %}</option>{% if loop.last %}</optgroup>{% endif %}{% endfor %}
+{%- endmacro %}
+{% macro extra_row(x={}) -%}
+<div class="extra-row">
+{% if extras_prices %}<select data-price-pick data-desc="row" data-price="row" aria-label="From the price list"><option value="">From the price list…</option>{{ price_options(extras_prices) }}</select>{% endif %}
+<input name="x_desc" value="{{ x.desc or '' }}" maxlength="200" placeholder="Charge (e.g. Rush fee, model cast)" aria-label="Charge">
+<input name="x_qty" value="{{ x.qty or 1 }}" inputmode="numeric" aria-label="Qty" class="x-qty">
+<input name="x_price" value="{{ x.price or '' }}" inputmode="decimal" placeholder="₱ each" aria-label="Price each" class="x-price">
+<button type="button" class="btn btn-ghost btn-sm extra-remove" aria-label="Remove charge">✕</button></div>
+{%- endmacro %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('labs.case', case_id=c.id) }}">← Case #{{ c.id }}</a><h1>Edit case #{{ c.id }}</h1>
+<p>{{ c.last_name }}, {{ c.first_name }} · {{ c.branch }}{% if c.dentist %} · {{ c.dentist }}{% endif %}</p></div></div>
+<form method="post" class="card" style="max-width:960px">{{ csrf() }}
+{% if errors %}<div class="flash flash-error"><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
+{% if on_invoice %}<p class="notice">This case is on a lab invoice. A draft invoice is updated when you save; for an issued one, use <strong>Update invoice</strong> on the case afterwards.</p>{% endif %}
+<h2>Items</h2>
+<p class="hint mt-0">One row per kind of work, e.g. <em>2 units zirconia crown</em> and <em>1 unit E.max veneer</em>. Use “+ Add another item” for more, e.g. a different pontic.</p>
+<div id="case-blocks" data-label="Item">
+{% for it in items %}<fieldset class="case-block"><input type="hidden" name="item_id" value="{{ it.item_id }}">
+<div class="row between"><legend class="case-n">Item {{ loop.index }}</legend><button type="button" class="btn btn-ghost btn-sm case-remove" {% if items|length < 2 %}hidden{% endif %}>✕ Remove</button></div>
+<div class="form-grid">
+<div class="field"><label data-for="ct" for="ct{{ loop.index0 }}">Case type</label><select data-id="ct" id="ct{{ loop.index0 }}" name="case_type">{% for t in case_types %}<option {% if it.case_type == t %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></div>
+<div class="field"><label data-for="un" for="un{{ loop.index0 }}">Units</label><input data-id="un" id="un{{ loop.index0 }}" name="units" value="{{ it.units or 1 }}" inputmode="numeric"></div>
+<div class="field"><label data-for="tt" for="tt{{ loop.index0 }}">Teeth</label><input data-id="tt" id="tt{{ loop.index0 }}" name="teeth" value="{{ it.teeth }}" placeholder="e.g. 11, 12"></div>
+<div class="field"><label data-for="sh" for="sh{{ loop.index0 }}">Shade</label><input data-id="sh" id="sh{{ loop.index0 }}" name="shade" value="{{ it.shade }}" placeholder="e.g. A2"></div>
+<div class="field"><label data-for="mt" for="mt{{ loop.index0 }}">Material</label><select data-id="mt" id="mt{{ loop.index0 }}" name="material"><option value="">—</option>{% for m in materials %}<option {% if it.material == m %}selected{% endif %}>{{ m }}</option>{% endfor %}{% if it.material and it.material not in materials and it.material != "__new__" %}<option selected>{{ it.material }}</option>{% endif %}<option value="__new__" {% if it.material == "__new__" %}selected{% endif %}>+ New material…</option></select><input name="material_new" class="mat-new mt-1" value="{{ it.material_new or '' }}" maxlength="80" placeholder="Type the new material" aria-label="New material" {% if it.material != "__new__" %}hidden{% endif %}></div>
+<div class="field"><label data-for="lf" for="lf{{ loop.index0 }}">Lab price (₱) <span class="hint">for this item</span></label><input data-id="lf" id="lf{{ loop.index0 }}" name="lab_fee" value="{{ it.lab_fee }}" inputmode="decimal"></div>
+<div class="field span-2"><label data-for="ii" for="ii{{ loop.index0 }}">Notes for this item <span class="hint">Optional</span></label><input data-id="ii" id="ii{{ loop.index0 }}" name="instructions" value="{{ it.instructions }}" maxlength="500"></div>
+</div></fieldset>{% endfor %}
+</div>
+<button type="button" class="btn btn-secondary" id="add-case">+ Add another item</button>
+<div class="extras mt-1"><h2 class="mb-0">Additional charges</h2><p class="hint mt-0">Optional, e.g. rush fee, model cast, individual tray. Billed with this case.</p>
+<div class="extra-rows">{% for x in extras_in.get(0, []) %}{{ extra_row(x) }}{% endfor %}</div>
+<button type="button" class="btn btn-ghost btn-sm add-extra">+ Add a charge</button></div>
+<template id="extra-row-tpl">{{ extra_row() }}</template>
+<div class="field mt-1"><label for="ins">Instructions to the lab <span class="hint">For all items</span></label><textarea id="ins" name="instructions_all" rows="3">{{ instructions }}</textarea></div>
+<div class="row"><button class="btn">Save</button><a class="btn btn-ghost" href="{{ url_for('labs.case', case_id=c.id) }}">Cancel</a></div>
+</form>
+<style>.case-block{border:1px solid var(--line);border-radius:12px;padding:.8rem 1rem;margin:0 0 .8rem}.case-block legend.case-n{font-weight:700;padding:0;float:left}.case-block .row.between{margin-bottom:.4rem;align-items:center}
+.extras{border-top:1px dashed var(--line);padding-top:.6rem}
+.extra-row{display:grid;grid-template-columns:1fr;gap:.35rem;padding:.45rem 0;border-bottom:1px solid var(--line)}
+@media (min-width:700px){.extra-row{grid-template-columns:1.2fr 1.4fr 4.5rem 7rem auto;align-items:center}}
+.extra-row .x-qty{max-width:6rem}</style>
+{% endblock %}

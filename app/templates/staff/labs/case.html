@@ -3,10 +3,13 @@
 {% block page_title %}Lab case #{{ c.id }}{% endblock %}
 {% block content %}{% from "staff/labs/_item_text.html" import item_text %}
 <div class="page-head"><div><a href="{{ url_for('labs.index') }}">← Branch cases</a>
-<h1>Case #{{ c.id }} · {% if c.units and c.units > 1 and ' × ' not in c.case_type %}{{ c.units }} × {% endif %}{{ c.case_type }}</h1><p>{{ c.last_name }}, {{ c.first_name }} · {{ c.branch }}{% if c.dentist %} · {{ c.dentist }}{% endif %}</p></div>
+<h1>Case #{{ c.id }} · {% if c.units and c.units > 1 and ' × ' not in c.case_type and ' + ' not in c.case_type %}{{ c.units }} × {% endif %}{{ c.case_type }}</h1><p>{{ c.last_name }}, {{ c.first_name }} · {{ c.branch }}{% if c.dentist %} · {{ c.dentist }}{% endif %}</p></div>
 <div class="row"><span class="badge {{ lab_badge(c.status) }}">{{ c.status|lab_status }}</span>
+{% if can_update %}<a class="btn btn-secondary" href="{{ url_for('labs.edit', case_id=c.id) }}">Edit</a>{% endif %}
 {% if can_bill %}{% if c.invoice_id %}<a class="btn btn-secondary" href="{{ url_for('lab_works.invoice', invoice_id=c.invoice_id) }}">Invoice {{ lab_invoice.number if lab_invoice and lab_invoice.number else '(draft)' }}</a>{% elif c.status != 'cancelled' %}<form method="post" action="{{ url_for('lab_works.bill_case', case_id=c.id) }}">{{ csrf() }}<button class="btn">Bill this case</button></form>{% endif %}{% endif %}</div></div>
 {% set cur = c.status %}{% include "staff/labs/_stages.html" %}
+{% if out_of_date %}<div class="card notice-card"><strong>The invoice doesn't match this case any more.</strong> On lab invoice {{ lab_invoice.number or '(draft)' }} this case adds up to {{ billed|peso }}; it's now {{ now_total|peso }}.
+{% if can_bill %}<form method="post" action="{{ url_for('lab_works.refresh_case_invoice', case_id=c.id) }}" class="mt-1" data-confirm="Replace this case's lines on invoice {{ lab_invoice.number or '(draft)' }} with its current items and charges?">{{ csrf() }}<button class="btn">Update invoice</button></form>{% else %}<br><small class="muted">The laboratory can update the invoice.</small>{% endif %}</div>{% endif %}
 <div class="grid grid-2">
 <div class="card"><h2>Details</h2>
 <dl class="dl">
@@ -14,6 +17,7 @@
 <dt>Branch</dt><dd>{{ c.branch }}</dd>
 <dt>Dentist</dt><dd>{{ c.dentist or '—' }}</dd>
 <dt>Patient</dt><dd>{% if patient_link %}<a href="{{ url_for('patients.detail', patient_id=c.patient_id) }}">{{ c.last_name }}, {{ c.first_name }}</a>{% else %}{{ c.last_name }}, {{ c.first_name }}{% endif %} <small class="muted">{{ c.chart_no }}</small></dd>
+{% if extras %}<dt>Additional charges</dt><dd>{{ extras_total|peso }} <a href="#extras">({{ extras|length }})</a></dd>{% endif %}
 <dt>Total lab price</dt><dd><strong>{{ c.lab_fee_cents|peso if c.lab_fee_cents is not none else '—' }}</strong>{% if lab_invoice %}<br><small class="muted">On lab invoice {{ lab_invoice.number or '(draft)' }}{% if lab_invoice.status == 'issued' %} · {{ 'paid' if lab_invoice.paid_cents >= lab_invoice.total_cents else 'unpaid' }}{% endif %}</small>{% elif c.lab_fee_cents %}<br><small class="muted">Not invoiced yet</small>{% endif %}</dd>
 <dt>Date sent</dt><dd>{{ c.sent_on|date }}</dd>
 <dt>Due date</dt><dd>{{ c.due_on|date if c.due_on else '—' }}{% if c.due_on and c.due_on < today and c.status in LAB_LATE %} <span class="badge badge-red">Overdue</span>{% endif %}</dd>
@@ -27,9 +31,23 @@
 <div class="table-wrap"><table><thead><tr><th>Item</th><th>Teeth</th><th>Shade</th><th class="num">Units</th><th class="num">Price</th></tr></thead><tbody>
 {% for it in items %}<tr><td><strong>{{ it.case_type }}</strong>{% if it.material %}<br><small class="muted">{{ it.material }}</small>{% endif %}{% if it.instructions and items|length > 1 %}<br><small class="pre">{{ it.instructions }}</small>{% endif %}</td><td>{{ it.teeth or '—' }}</td><td>{{ it.shade or '—' }}</td><td class="num">{{ it.units }}</td><td class="num">{{ it.lab_fee_cents|peso if it.lab_fee_cents is not none else '—' }}</td></tr>
 {% else %}<tr><td><strong>{{ c.case_type }}</strong>{% if c.material %}<br><small class="muted">{{ c.material }}</small>{% endif %}</td><td>{{ c.teeth or '—' }}</td><td>{{ c.shade or '—' }}</td><td class="num">{{ c.units or 1 }}</td><td class="num">{{ c.lab_fee_cents|peso if c.lab_fee_cents is not none else '—' }}</td></tr>{% endfor %}
-{% if items|length > 1 %}<tr><td colspan="3"><strong>Total</strong></td><td class="num"><strong>{{ c.units }}</strong></td><td class="num"><strong>{{ c.lab_fee_cents|peso if c.lab_fee_cents is not none else '—' }}</strong></td></tr>{% endif %}
+{% if items|length > 1 %}{% set fees = items|selectattr('lab_fee_cents', 'ne', none)|map(attribute='lab_fee_cents')|list %}<tr><td colspan="3"><strong>Total</strong></td><td class="num"><strong>{{ c.units }}</strong></td><td class="num"><strong>{{ fees|sum|peso if fees else '—' }}</strong></td></tr>{% endif %}
 </tbody></table></div>
-{% if can_update %}<p class="hint mb-0 mt-1">Set the lab price in <strong>Update status</strong>.</p>{% endif %}</div>
+{% if can_update %}<p class="mb-0 mt-1"><a class="btn btn-secondary btn-sm" href="{{ url_for('labs.edit', case_id=c.id) }}">Edit items</a></p>{% endif %}</div>
+<div class="card" id="extras"><h2>Additional charges</h2>
+<p class="hint mt-0">Extra items billed with this case, e.g. rush fee, model cast, individual tray.</p>
+{% if extras %}<ul class="list-plain">{% for x in extras %}<li class="row between" style="border-top:1px solid var(--line);padding:.45rem 0;gap:.5rem"><span>{{ x.description }} <small class="muted">· {{ x.qty }} × {{ x.unit_price_cents|peso }}</small></span>
+<span class="row" style="gap:.4rem"><strong>{{ (x.qty * x.unit_price_cents)|peso }}</strong>{% if can_update %}<form method="post">{{ csrf() }}<input type="hidden" name="action" value="remove_extra"><input type="hidden" name="extra_id" value="{{ x.id }}"><button class="btn btn-ghost btn-sm" aria-label="Remove {{ x.description }}" data-confirm="Remove {{ x.description }}?">✕</button></form>{% endif %}</span></li>{% endfor %}</ul>
+{% else %}<p class="muted">None yet.</p>{% endif %}
+{% if can_update and c.status != 'cancelled' %}<form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="add_extra">
+<div class="form-grid">
+{% if extras_prices %}<div class="field"><label for="xpl">From the price list</label><select id="xpl" data-price-pick data-desc="#xd" data-price="#xp"><option value="">— Pick an item —</option>
+{% set ns = namespace(cat=None) %}{% for it in extras_prices %}{% if it.category != ns.cat %}{% if ns.cat is not none %}</optgroup>{% endif %}{% set ns.cat = it.category %}<optgroup label="{{ it.category or 'Other' }}">{% endif %}<option data-name="{{ it.name }}" data-price="{{ '%.2f'|format(it.price_cents / 100) }}">{{ it.name }} · {{ it.price_cents|peso }}{% if it.unit %} {{ it.unit }}{% endif %}</option>{% if loop.last %}</optgroup>{% endif %}{% endfor %}</select></div>{% endif %}
+<div class="field"><label for="xd">Charge</label><input id="xd" name="x_desc" maxlength="200" placeholder="e.g. Rush fee" required></div>
+<div class="field"><label for="xq">Qty</label><input id="xq" name="x_qty" value="1" inputmode="numeric"></div>
+<div class="field"><label for="xp">Price each (₱)</label><input id="xp" name="x_price" inputmode="decimal" required></div>
+</div><button class="btn btn-secondary">+ Add charge</button></form>{% endif %}
+</div>
 <div class="card">{% if can_update %}<h2>Update status</h2>
 <form method="post">{{ csrf() }}
 <div class="field"><label for="st">Status</label>{% set cur = c.status %}{% include "staff/labs/_status_select.html" %}</div>

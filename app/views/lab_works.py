@@ -115,7 +115,7 @@ def branch_clients(conn, lab_ids) -> None:
 def case_label(c) -> str:
     """How a branch lab case appears on a lab invoice (chart number, not the patient's name)."""
     units = c["units"] if "units" in c.keys() and c["units"] else 1
-    return (f"Case #{c['id']} · " + (f"{units} × " if units > 1 and " × " not in c["case_type"] else "") + f"{c['case_type']}" + (f" · {c['teeth']}" if c["teeth"] else "") + f" · {c['chart_no']}"
+    return (f"Case #{c['id']} · " + (f"{units} × " if units > 1 and " × " not in c["case_type"] and " + " not in c["case_type"] else "") + f"{c['case_type']}" + (f" · {c['teeth']}" if c["teeth"] else "") + f" · {c['chart_no']}"
             + (f" · {c['dentist']}" if c["dentist"] else ""))[:200]
 
 
@@ -137,20 +137,59 @@ def item_groups(conn, items) -> list[dict]:
     return [groups[k] for k in order]
 
 
+def case_extras(conn, case_id) -> list:
+    return conn.all("SELECT * FROM lab_case_extras WHERE case_id = ? ORDER BY id", (case_id,))
+
+
 def add_case_lines(conn, iid: int, c, desc: str) -> None:
-    """A branch case on a lab invoice: one line, or one line per item when the case has several items."""
+    """A branch case on a lab invoice: one line, or one line per item when the case has several items, then one line
+    per additional charge (rush fee, model cast…)."""
     items = conn.all("SELECT * FROM lab_case_items WHERE case_id = ? ORDER BY sort_order, id", (c["id"],))
+    extras = case_extras(conn, c["id"])
     if len(items) <= 1:
-        price = c["lab_fee_cents"] or 0
+        if items and items[0]["lab_fee_cents"] is not None:
+            price = items[0]["lab_fee_cents"]
+        else:
+            price = max(0, (c["lab_fee_cents"] or 0) - sum(x["qty"] * x["unit_price_cents"] for x in extras))
         conn.insert("lab_invoice_items", {"invoice_id": iid, "case_id": c["id"], "case_item_id": items[0]["id"] if items else None,
                                           "description": desc[:200], "qty": 1, "unit_price_cents": price, "discount_cents": 0, "amount_cents": price})
-        return
-    for it in items:
-        price = it["lab_fee_cents"] or 0
-        text = (f"{it['units']} × " if it["units"] > 1 else "") + it["case_type"] + (f" ({it['material']})" if it["material"] else "") \
-            + (f" · {it['teeth']}" if it["teeth"] else "") + (f" · shade {it['shade']}" if it["shade"] else "")
-        conn.insert("lab_invoice_items", {"invoice_id": iid, "case_id": c["id"], "case_item_id": it["id"], "description": f"Case #{c['id']} · {text}"[:200],
-                                          "qty": 1, "unit_price_cents": price, "discount_cents": 0, "amount_cents": price})
+    else:
+        for it in items:
+            price = it["lab_fee_cents"] or 0
+            text = (f"{it['units']} × " if it["units"] > 1 else "") + it["case_type"] + (f" ({it['material']})" if it["material"] else "") \
+                + (f" · {it['teeth']}" if it["teeth"] else "") + (f" · shade {it['shade']}" if it["shade"] else "")
+            conn.insert("lab_invoice_items", {"invoice_id": iid, "case_id": c["id"], "case_item_id": it["id"], "description": f"Case #{c['id']} · {text}"[:200],
+                                              "qty": 1, "unit_price_cents": price, "discount_cents": 0, "amount_cents": price})
+    for x in extras:
+        conn.insert("lab_invoice_items", {"invoice_id": iid, "case_id": c["id"], "description": f"Case #{c['id']} · {x['description']}"[:200],
+                                          "qty": x["qty"], "unit_price_cents": x["unit_price_cents"], "discount_cents": 0,
+                                          "amount_cents": x["qty"] * x["unit_price_cents"]})
+
+
+def case_line_text(c) -> str:
+    return c["case_type"] + (f" · {c['teeth']}" if c["teeth"] else "") + (f" · {c['material']}" if c["material"] else "")
+
+
+def refresh_case_lines(conn, c) -> int | None:
+    """Put the case's current items and charges on its lab invoice again (replacing its old lines there). Returns the
+    invoice id, or None when the case isn't on an invoice that can change."""
+    if not c["invoice_id"]:
+        return None
+    inv = conn.one("SELECT id, status FROM lab_invoices WHERE id = ?", (c["invoice_id"],))
+    if not inv or inv["status"] == "void":
+        return None
+    conn.execute("DELETE FROM lab_invoice_items WHERE invoice_id = ? AND case_id = ?", (inv["id"], c["id"]))
+    add_case_lines(conn, inv["id"], c, case_line_text(c))
+    _recalc(conn, inv["id"])
+    return inv["id"]
+
+
+def case_billed_total(conn, c) -> int | None:
+    """What the case's lines on its lab invoice add up to (None when not on an invoice)."""
+    if not c["invoice_id"]:
+        return None
+    return conn.scalar("SELECT COALESCE(SUM(amount_cents), 0) FROM lab_invoice_items WHERE invoice_id = ? AND case_id = ?",
+                       (c["invoice_id"], c["id"])) or 0
 
 
 def sync_case_prices(conn, invoice_id) -> None:
@@ -959,8 +998,7 @@ def bill_case(case_id):
                                            "doctor": c["dentist"] or "", "contact_number": client["contact_number"], "status": "draft",
                                            "due_on": (today() + timedelta(days=30)).isoformat(), "created_by": g.user.id,
                                            "created_at": now_str(), "updated_at": now_str()})
-        desc = c["case_type"] + (f" · {c['teeth']}" if c["teeth"] else "") + (f" · {c['material']}" if c["material"] else "")
-        add_case_lines(conn, iid, c, desc)
+        add_case_lines(conn, iid, c, case_line_text(c))
         conn.update("lab_cases", c["id"], {"invoice_id": iid, "updated_at": now_str()})
         _recalc(conn, iid)
         audit.record("lab_invoice_created", "lab_invoice", iid, f"Draft lab invoice for case #{c['id']} ({client['clinic_name']})")
@@ -1079,6 +1117,31 @@ def refresh_invoice(work_id):
         flash(f"Invoice {inv['number'] or '(draft)'} updated: total now ₱{inv['total_cents'] / 100:,.2f}."
               + (" It's now paid more than its total; record a refund or adjust." if inv["paid_cents"] > inv["total_cents"] else ""), "success")
     return redirect(url_for("lab_works.invoice", invoice_id=iid) if iid else url_for("lab_works.work", work_id=w["id"]))
+
+
+@bp.route("/cases/<int:case_id>/refresh-invoice", methods=["POST"])
+@login_required
+def refresh_case_invoice(case_id):
+    """Update a branch case's lines on its lab invoice after its items or charges were changed."""
+    _need("lab.billing")
+    conn = get_db()
+    ids = _lab_ids()
+    c = conn.one(f"SELECT * FROM lab_cases WHERE id = ? AND lab_id IN ({_in(ids)})", [case_id, *ids])
+    if not c:
+        abort(404)
+    before = case_billed_total(conn, c)
+    with conn.transaction():
+        iid = refresh_case_lines(conn, c)
+        if iid:
+            audit.record("lab_invoice_updated_from_case", "lab_invoice", iid,
+                         f"Lines of case #{c['id']} updated from the case: {before / 100:,.2f} -> {case_billed_total(conn, c) / 100:,.2f}")
+    if not iid:
+        flash("This case isn't on an invoice that can be changed (it may be void).", "error")
+        return redirect(url_for("labs.case", case_id=case_id))
+    inv = conn.one("SELECT number, total_cents, paid_cents FROM lab_invoices WHERE id = ?", (iid,))
+    flash(f"Invoice {inv['number'] or '(draft)'} updated: total now ₱{inv['total_cents'] / 100:,.2f}."
+          + (" It's now paid more than its total; record a refund or adjust." if inv["paid_cents"] > inv["total_cents"] else ""), "success")
+    return redirect(url_for("lab_works.invoice", invoice_id=iid))
 
 
 @bp.route("/works/<int:work_id>/bill", methods=["POST"])
