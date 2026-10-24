@@ -43,7 +43,7 @@ def evaluate_record(conn, rec: dict) -> tuple[str, str]:
         grace = int(settings.get("payroll.grace_minutes", conn) or 0)
         late = hm_to_min(rec["time_in"]) - hm_to_min(sch["start"]) - grace
         if late > 0:
-            issues.append(f"late {late} min vs {'branch opening' if sch['dentist'] else sch['start']}")
+            issues.append(f"late {late} min vs {sch['start']}")
         early = hm_to_min(sch["end"]) - hm_to_min(rec["time_out"])
         if early > 0:
             issues.append(f"left {early} min before {'closing' if sch['dentist'] else sch['end']}")

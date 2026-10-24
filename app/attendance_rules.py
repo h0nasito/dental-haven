@@ -4,8 +4,11 @@
   ₱1 per late minute (setting payroll.late_rate_cents; dentists only if payroll.late_applies_dentists).
 - 3rd late in a calendar month: the employee gets a warning email (when email is set up) and HR / super admins get an
   in-app notification. Once per employee per month.
+- An employee with their own work hours on the Employees page (e.g. an associate on 10:00-18:00) is measured against
+  those, for lates and overtime.
 - Staff hours (Oct 2026): 8:00 AM to 5:00 PM (settings payroll.staff_start_time / staff_end_time). Staff are late from
-  8:01 (no grace period); dentists are late from the branch opening time.
+  8:01 (no grace period); dentists are late from the start of their own hours in Dentist schedule setup (for that
+  branch and weekday, e.g. an associate on 10:00-18:00), or from the branch opening time if none are set.
 - Overtime: time after 5:00 PM in whole 30-minute blocks (under 30 min = none, 45 min = 30), plus 30 minutes when the staff member took only a 30-minute lunch (ticked at time-out).
   Only for employees marked "Eligible for overtime" (not commission-based staff or dentists). Late minutes and
   overtime are counted separately. Only overtime a supervisor approves is paid, at daily rate / 8 x 1.25 per hour.
@@ -31,10 +34,20 @@ def schedule(conn, rec) -> dict | None:
         if rec.get("branch_id") else None
     if hours and hours["closed"]:
         return None
-    emp = conn.one("SELECT e.ot_eligible, u.role FROM employees e LEFT JOIN users u ON u.id = e.user_id WHERE e.id = ?",
-                   (rec.get("employee_id"),)) if rec.get("employee_id") else None
+    emp = conn.one("SELECT e.ot_eligible, e.user_id, e.work_start, e.work_end, u.role FROM employees e LEFT JOIN users u ON u.id = e.user_id "
+                   "WHERE e.id = ?", (rec.get("employee_id"),)) if rec.get("employee_id") else None
     dentist = bool(emp and emp["role"] == "dentist")
+    if emp and emp["work_start"] and emp["work_end"]:
+        # the employee's own work hours (Employees page) come first
+        return {"start": emp["work_start"][:5], "end": emp["work_end"][:5], "dentist": dentist,
+                "ot_eligible": bool(emp["ot_eligible"] and not dentist)}
     if dentist:
+        # an associate's own hours (Dentist schedule setup) for that branch and weekday, e.g. 10:00-18:00;
+        # otherwise the branch's opening hours
+        own = conn.one("SELECT MIN(start_time) AS s, MAX(end_time) AS e FROM dentist_schedules WHERE dentist_id = ? AND branch_id = ? "
+                       "AND weekday = ?", (emp["user_id"], rec.get("branch_id"), day.weekday())) if emp["user_id"] else None
+        if own and own["s"]:
+            return {"start": own["s"][:5], "end": own["e"][:5], "dentist": True, "ot_eligible": False}
         if not hours:
             return None
         start, end = hours["open_time"], hours["close_time"]

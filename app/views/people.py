@@ -412,12 +412,17 @@ def employee(emp_id):
             pos = clean(request.form.get("position"), 80)
             if pos not in POSITIONS and pos != e["position"]:
                 pos = e["position"]
+            from ..payroll import parse_time
+            ws, we = parse_time(request.form.get("work_start")), parse_time(request.form.get("work_end"))
+            if bool(ws) != bool(we) or (ws and we and ws >= we):
+                flash("Enter both work hours (start before end), or leave both empty for the usual hours.", "error")
+                return redirect(url_for("people.employee", emp_id=emp_id))
             upd = {"position": pos, "employment_type": request.form.get("employment_type", "regular"),
                    "primary_branch_id": branch_id, "lab_id": lab_id, "active": 1 if request.form.get("active") else 0,
-                   "ot_eligible": 1 if request.form.get("ot_eligible") else 0}
+                   "ot_eligible": 1 if request.form.get("ot_eligible") else 0, "work_start": ws, "work_end": we}
             conn.update("employees", emp_id, upd)
-            if upd["ot_eligible"] != e["ot_eligible"]:
-                # Recount overtime on this employee's records from the last 31 days.
+            if upd["ot_eligible"] != e["ot_eligible"] or (ws, we) != (e["work_start"], e["work_end"]):
+                # Recount lates and overtime on this employee's records from the last 31 days.
                 from ..attendance_rules import refresh_record
                 since = (today() - timedelta(days=31)).isoformat()
                 for rec in conn.all("SELECT id FROM time_records WHERE employee_id = ? AND work_date >= ?", (emp_id, since)):

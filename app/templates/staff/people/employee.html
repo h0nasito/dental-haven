@@ -13,6 +13,10 @@
 <small class="muted">Laboratory staff get their own laboratory payroll.</small></div>
 {{ select('employment_type', 'Type', [('regular','Regular'),('probationary','Probationary'),('associate','Associate dentist'),('part_time','Part-time'),('contractual','Contractual')], e.employment_type) }}
 <label class="check"><input type="checkbox" name="active" value="1" {% if e.active %}checked{% endif %}> Active</label>
+<fieldset class="pay-box"><legend>Work hours <span class="hint">for lates and overtime</span></legend>
+<div class="form-grid"><div class="field mb-0"><label for="ws">Start</label><input id="ws" type="time" name="work_start" value="{{ (e.work_start or '')[:5] }}"></div>
+<div class="field mb-0"><label for="we">End</label><input id="we" type="time" name="work_end" value="{{ (e.work_end or '')[:5] }}"></div></div>
+<span class="hint">Only if this person has their own hours, e.g. an associate on 10:00 AM – 6:00 PM: late counts from the start, overtime after the end. Leave empty for the usual hours ({% if is_dentist %}their dentist schedule, or the branch opening hours{% else %}clinic staff hours{% endif %}).</span></fieldset>
 <label class="check"><input type="checkbox" name="ot_eligible" value="1" {% if e.ot_eligible %}checked{% endif %}> Eligible for overtime</label>
 <span class="hint">Untick for commission-based staff and dentists. Overtime is time after {{ ot_end }} plus a 30-minute short lunch, paid at daily rate ÷ 8 × 1.25 once a supervisor approves it.</span>
 <button class="btn btn-secondary mt-1">Save</button></form></div>
