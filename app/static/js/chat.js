@@ -526,7 +526,7 @@
                 "pain after", "swelling after", "bleeding after", "sumakit pagkatapos", "namaga pagkatapos", "masakit pa rin", "still hurts", "still painful",
                 "kailan tatawag", "kailan ako tatawag"])) return "contact";
     if (/how long\b.*\blast(s|ing)?\b/.test(q) || /\b(how durable|durability)\b/.test(q) || has(q, ["tatagal ba", "ilang taon tatagal", "gaano tatagal",
-        "gaano katagal tatagal", "last long", "permanent ba", "is it permanent", "lifespan", "how many years"])) return "lasts";
+        "gaano katagal tatagal", "katagal tumatagal", "gaano tumatagal", "tumatagal ba", "last long", "permanent ba", "is it permanent", "lifespan", "how many years"])) return "lasts";
     if (has(q, ["x-ray needed", "xray needed", "need an x-ray", "need x-ray", "need xray", "need a consultation", "consultation needed", "consultation first",
                 "x-ray first", "xray first", "consultation or x-ray", "kailangan ba ng x-ray", "kailangan ba ng xray", "kailangan ba ng konsulta", "need a check-up first",
                 "need a checkup first"])) return "before";
@@ -541,7 +541,7 @@
                 "bed rest", "back to work", "back to school", "work after", "school after", "swelling after", "can i eat", "puwede kumain", "pwede kumain",
                 "pwede na kumain", "puwede na kumain", " after "])) return "recovery";
     if (has(q, ["how long", "gaano katagal", "katagal", "ilang oras", "ilang minuto", "how many hours", "how many minutes", "how many visits", "appointments will",
-                "how many appointments", "ilang balik", "ilang beses", "duration", "how much time", "take long", "same day", "one day", "isang araw", "one visit",
+                "how many appointments", "ilang balik", "ilang visit", "ilang beses", "duration", "how much time", "take long", "same day", "one day", "isang araw", "one visit",
                 "isang balik", "single visit", "single session", "one sitting", "one session", "isang upuan", "gaano kabilis", "how fast", "how quick", "ilang araw", "how many days", "how many sessions", "session"])) return "duration";
     if (/\b(does|will|would|is|do)\b.*\b(hurt|painful)\b/.test(q) || has(q, ["masakit ba", "sasakit", "masakit po ba", "painful", "anesthesia",
                 "anaesthesia", "numb", "turok", "manhid", "pain free", "painless", "sedation for", "need sedation"])) return "pain";
@@ -724,8 +724,32 @@
     fn();
   }
 
+  // The front desk's most-asked questions (app/chat_clinic.py): a specific answer before the general routing.
+  function priMatch(q) {
+    var priceQ = has(q, ["magkano", "how much", "presyo", " price", " cost", "may bayad", "halaga"]);
+    var best = null, top = 0;
+    (info.pri || []).forEach(function (e) {
+      if (priceQ && !e.price) return;            // "how much" questions go to the price list unless this answer is about cost
+      var sc = bestKw(q, e.need);
+      if (sc > top) { top = sc; best = e; }
+    });
+    return best;
+  }
+  function priAnswer(e) {
+    var p = e.proc ? (info.procedures || []).filter(function (x) { return x.key === e.proc; })[0] : null;
+    if (p) { ctxProc = p; ctxService = svcBySlug(p.service) || ctxService; }
+    if (e.act === "avail") return availability();          // it says "let me check" itself
+    if (e.aspect && p) return procAnswer(p, e.aspect);
+    say(e[lang === "tl" ? "tl" : "en"]);
+    var chips = [[p ? t("c_book_this") : t("c_book"), book]];
+    if (p && (info.prices || []).length && !e.price) chips.push([t("a_price"), function () { procPrice(p); }]);
+    if (p) chips.push([p.name, function () { procAnswer(p, "what"); }]);
+    chips.push([t("c_team"), handoff]);
+    setChips(chips);
+  }
+
   function answer(text) {
-    var q = norm(text);
+    var q = norm(text).replace(/ po(?= )/g, "");   // "kailangan po ba" = "kailangan ba"
     // remember a treatment they mention (e.g. "how much are veneers?") so the booking form is pre-filled
     for (var k = 0; k < SERVICE_WORDS.length; k++) {
       if (has(q, SERVICE_WORDS[k][1])) { ctxService = svcBySlug(SERVICE_WORDS[k][0]) || ctxService; break; }
@@ -737,6 +761,8 @@
                 "serious injury", "serious dental injury"]) ||
         (has(q, ["accident", "naaksidente", "nabangga"]) && has(q, ["bleed", "dugo", "jaw", "panga", "head", "ulo", "unconscious", "nawalan ng malay", "breath", "hinga", "serious"])) ||
         (has(q, ["hirap", "nahihirapan"]) && has(q, ["huminga", "lumunok", "paghinga"]))) return reply("er", er, q);
+    var pri = priMatch(q);
+    if (pri) return reply("pri:" + pri.key, function () { priAnswer(pri); }, q);
     var urgent = has(q, ["emergency", "urgent", "namamaga", "swell", "swollen", " nana", "abscess", "sobrang sakit", "severe", "toothache", "sakit ng ngipin",
                          "masakit ang ngipin", "masakit ngipin", "masakit na ngipin", "hindi makatulog", "can't sleep", "fever", "lagnat"]);
     var proc = procMatch(q), aspect = aspectOf(q);
@@ -833,7 +859,7 @@
     }
     if (has(q, ["service", "offer", "treatment", "procedure", "ginagawa"])) return reply("services", servicesMenu, q);
     if (has(q, ["thank", "salamat", " ty "])) return reply("thanks", function () { say(t("thanks")); setChips(MAIN()); }, q);
-    if (has(q, [" hi ", "hello", " hey", "good morning", "good afternoon", "good evening", "magandang", "kumusta", " po "]) && q.length < 30) {
+    if (has(norm(text), [" hi ", "hello", " hey", "good morning", "good afternoon", "good evening", "magandang", "kumusta", " po "]) && q.length < 30) {
       return reply("hello", function () { say(t("hello")); setChips(MAIN()); }, q);
     }
     return reply("fallback", fallback, q);

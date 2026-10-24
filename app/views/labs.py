@@ -283,20 +283,32 @@ def index():
 def new():
     conn = get_db()
     labs = conn.all("SELECT * FROM laboratories WHERE active = 1 ORDER BY name")
+    # Lab staff (a laboratory, no branch) can add a case for any branch. They can't see patient records, so here they
+    # only find a patient by name or chart number and see just that.
+    my_labs = _my_labs()
+    lab_desk = bool(my_labs) and patient_scope(g.user, "p")[0] == "1 = 0"
+    if lab_desk:
+        labs = [l for l in labs if l["id"] in my_labs]
     patient_id = to_int(request.values.get("patient_id"))
     patient = None
     results = None
     if patient_id:
-        if not can_see_patient(conn, g.user, patient_id):
-            abort(403)
-        patient = conn.one("SELECT * FROM patients WHERE id = ?", (patient_id,))
+        if lab_desk:
+            patient = conn.one("SELECT id, chart_no, first_name, last_name, preferred_branch_id FROM patients "
+                               "WHERE id = ? AND active = 1 AND deleted_at IS NULL", (patient_id,))
+            if not patient:
+                abort(404)
+        else:
+            if not can_see_patient(conn, g.user, patient_id):
+                abort(403)
+            patient = conn.one("SELECT * FROM patients WHERE id = ?", (patient_id,))
     errors = []
     v = {"lab_id": labs[0]["id"] if labs else None, "branch_id": g.user.active_branch_id or (patient["preferred_branch_id"] if patient else None),
          "dentist_id": g.user.id if g.user.role == "dentist" else None, "case_type": case_types(get_db())[0], "teeth": "", "shade": "",
          "material": "", "instructions": "", "sent_on": today().isoformat(), "due_on": "", "lab_fee": "", "units": "1"}
     if request.method == "POST" and request.form.get("action") == "search":
         q = clean(request.form.get("q"), 80).lower()
-        frag, params = patient_scope(g.user, "p")
+        frag, params = ("p.deleted_at IS NULL", []) if lab_desk else patient_scope(g.user, "p")
         like = f"%{q}%"
         results = conn.all(f"SELECT p.id, p.chart_no, p.first_name, p.last_name FROM patients p WHERE {frag} AND p.active = 1 AND "
                            "(lower(p.first_name || ' ' || p.last_name) LIKE ? OR lower(p.chart_no) LIKE ?) ORDER BY p.last_name LIMIT 20",
@@ -307,8 +319,9 @@ def new():
         lab_id, branch_id, dentist_id = to_int(v["lab_id"]), to_int(v["branch_id"]), to_int(v["dentist_id"])
         if not any(l["id"] == lab_id for l in labs):
             errors.append("Choose a laboratory.")
-        if not branch_id or not g.user.in_branch(branch_id):
-            errors.append("Choose one of your branches.")
+        if not branch_id or not (g.user.in_branch(branch_id) or
+                                 (lab_desk and conn.one("SELECT id FROM branches WHERE id = ? AND active = 1", (branch_id,)))):
+            errors.append("Choose one of your branches." if not lab_desk else "Choose the branch the case is from.")
         sent, due = parse_date(v["sent_on"]), parse_date(v["due_on"]) if v["due_on"] else None
         if not sent:
             errors.append("Enter the date sent.")
@@ -362,6 +375,9 @@ def new():
                 for e_ in photo_errors:
                     flash(e_, "error")
                 what = f"{rows[0]['units']} × {rows[0]['case_type']}" if len(rows) == 1 else f"{len(rows)} items"
+                if lab_desk and dentist_id:
+                    notify(conn, [dentist_id], "lab_case_new", f"Lab case #{cid} added by the laboratory: {what}",
+                           f"For {patient['last_name']}, {patient['first_name']}", f"/staff/lab/{cid}", exclude=g.user.id)
                 notify(conn, lab_staff(conn, lab_id), "lab_case_new", f"New lab case #{cid}: {what}",
                        f"From {branch['name'] if branch else 'a branch'}" + (f", due {due.isoformat()}" if due else ""), f"/staff/lab/{cid}",
                        exclude=g.user.id)
@@ -371,7 +387,8 @@ def new():
         v["instructions_all"] = f.get("instructions_all", "")
     items = v.get("items") or [{k: v.get(k, "") for k in ITEM_FIELDS}]
     return render_template("staff/labs/new.html", labs=labs, patient=patient, results=results, v=v, errors=errors, case_types=case_types(get_db()), items=items, materials=materials(get_db()),
-                           branches=branches_for_user(g.user), dentists=dentists(g.user.branch_ids))
+                           branches=branches_for_user(g.user, include_all=lab_desk), dentists=dentists(g.user.branch_ids),
+                           lab_desk=lab_desk)
 
 
 @bp.route("/<int:case_id>", methods=["GET", "POST"])

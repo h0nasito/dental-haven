@@ -284,7 +284,7 @@ FAQ = [
      "en": "We don't have an automatic waitlist on the website yet. Book the best available time now, then ask your branch to let you know if an earlier slot opens up; they'll move you if they can.",
      "tl": "Wala pa po kaming automatic waitlist sa website. Mag-book po muna ng pinakamagandang bakanteng oras, tapos hilingin sa branch na sabihan kayo kung may mas maagang bakante; ililipat nila kayo kung kaya."},
     {"key": "book_ahead", "service": "general-dentistry",
-     "kw": ["how far in advance", "how early should i book", "how early should i schedule", "advance booking", "book in advance", "book ahead", "ilang araw bago", "gaano kaaga mag-book", "gaano kaaga magpa-book"],
+     "kw": ["how far in advance", "how early should i book", "how early should i schedule", "advance booking", "book in advance", "book ahead", "ilang araw bago mag-book", "ilang araw bago magpa-book", "gaano kaaga mag-book", "gaano kaaga magpa-book"],
      "en": "For a routine cleaning or check-up, booking a few days to a week ahead usually gives you the widest choice of times, and you can see the open times when you book online. For pain or an urgent problem, call your branch the same day.",
      "tl": "Para sa regular na cleaning o check-up, ang pag-book nang ilang araw hanggang isang linggo bago ang gusto ninyong araw ang kadalasang may pinakamaraming mapagpipiliang oras, at makikita ninyo ang bakanteng oras kapag nag-book online. Kung may sakit o urgent na problema, tumawag po sa branch sa mismong araw."},
     {"key": "intake_forms", "service": "",

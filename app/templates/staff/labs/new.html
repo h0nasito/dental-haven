@@ -2,7 +2,7 @@
 {% from "macros.html" import csrf %}
 {% block page_title %}New lab case{% endblock %}
 {% block content %}
-<div class="page-head"><div><a href="{{ url_for('labs.index') }}">← Lab cases</a><h1>New lab case</h1></div></div>
+<div class="page-head"><div><a href="{{ url_for('labs.index') }}">← Branch cases</a><h1>New lab case</h1>{% if lab_desk %}<p>For a case a branch sends to the laboratory. Find the patient by name or chart number, then choose the branch it's from.</p>{% endif %}</div></div>
 {% if not patient %}
 <div class="card" style="max-width:720px"><h2>Find the patient</h2>
 <form method="post" class="row">{{ csrf() }}<input type="hidden" name="action" value="search"><label class="sr-only" for="q">Search</label><input id="q" name="q" placeholder="Name or chart number" style="max-width:340px" autofocus><button class="btn btn-secondary">Search</button></form>
