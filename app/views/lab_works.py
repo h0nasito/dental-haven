@@ -581,6 +581,7 @@ def work(work_id):
                            items=items, items_total=sum(item_gross(i) - (i["discount_cents"] or 0) for i in items),
                            items_discount=sum(i["discount_cents"] or 0 for i in items), w=w, events=events, statuses=STATUSES, arches=ARCHES, lab=lab, lab_display=lab_display,
                            extras=extras, extras_total=sum(x["qty"] * x["unit_price_cents"] for x in extras),
+                           from_branch=bool(conn.scalar("SELECT branch_id FROM lab_clients WHERE id = ?", (w["client_id"],))),
                            price_list=price_items(conn, [w["lab_id"]]), extras_prices=extras_list(price_items(conn, [w["lab_id"]])),
                            comm_entries=entries(conn, work_id=w["id"]), comm_techs=technicians(conn),
                            can_bill=g.user.is_super_admin or g.user.can("lab.billing"), today=today().isoformat())
@@ -620,6 +621,110 @@ def remove_work(work_id):
                      {"lab_work": {k: w[k] for k in w.keys()}, "extras": extras, "reason": reason})
     flash(f"{w['number']} removed. A record of it is kept in the audit trail.", "success")
     return redirect(url_for("lab_works.works"))
+
+
+def _norm_name(n: str) -> str:
+    import re
+    n = re.sub(r"\b(dra?|doc|doctor)\.?\s+", " ", (n or "").lower())
+    return " ".join(re.sub(r"[^a-zñ ]", " ", n).split())
+
+
+@bp.route("/works/<int:work_id>/move-to-branch", methods=["GET", "POST"])
+@login_required
+def work_move(work_id):
+    """An outside work that is really from one of our branches becomes a branch lab case: choose the patient (found by
+    name or chart number only) and the dentist; items, charges, history, invoice lines and commission move with it."""
+    from .labs import after_case_change, case_items, case_summary, case_total  # noqa: F401
+    from .common import dentists
+    _need("lab.works")
+    conn = get_db()
+    w = _work(conn, work_id)
+    client = conn.one("SELECT * FROM lab_clients WHERE id = ?", (w["client_id"],))
+    if not client or not client["branch_id"]:
+        flash("Only works from one of our branches can be moved to Branch cases.", "error")
+        return redirect(url_for("lab_works.work", work_id=work_id))
+    branch = conn.one("SELECT * FROM branches WHERE id = ?", (client["branch_id"],))
+    docs = dentists([branch["id"]]) or dentists()
+    want = _norm_name(w["doctor"])
+    guess = next((d["id"] for d in docs if want and (_norm_name(d["name"]) == want or want in _norm_name(d["name"])
+                                                    or _norm_name(d["name"]) in want)), None)
+    q = clean(request.values.get("q"), 80) if request.values.get("q") is not None else (w["patient_ref"] or "")
+    results = []
+    if len(q.strip()) >= 2:
+        like = f"%{q.strip().lower()}%"
+        words = [x for x in q.lower().split() if len(x) > 1]
+        name_sql = " AND ".join("lower(p.first_name || ' ' || COALESCE(p.middle_name, '') || ' ' || p.last_name) LIKE ?" for _ in words) or "0"
+        results = conn.all(f"SELECT p.id, p.chart_no, p.first_name, p.last_name FROM patients p WHERE p.active = 1 AND p.deleted_at IS NULL "
+                           f"AND (({name_sql}) OR lower(p.chart_no) LIKE ?) ORDER BY p.last_name, p.first_name LIMIT 20",
+                           [*[f"%{x}%" for x in words], like])
+    if request.method == "POST" and request.form.get("action") == "move":
+        pid, did = to_int(request.form.get("patient_id")), to_int(request.form.get("dentist_id"))
+        patient = conn.one("SELECT id, first_name, last_name, chart_no FROM patients WHERE id = ? AND active = 1 AND deleted_at IS NULL", (pid,))
+        if not patient:
+            flash("Choose the patient.", "error")
+        elif did and not any(d["id"] == did for d in docs):
+            flash("Choose the dentist again.", "error")
+        else:
+            with conn.transaction():
+                cid = _move_work_to_case(conn, w, client, patient, did)
+            flash(f"{w['number']} moved to Branch cases as case #{cid} ({branch['name']}).", "success")
+            return redirect(url_for("labs.case", case_id=cid))
+    return render_template("staff/lab_works/move.html", w=w, branch=branch, docs=docs, guess=guess, q=q, results=results,
+                           items=work_items(conn, w["id"]), extras=work_extras(conn, w["id"]))
+
+
+def _move_work_to_case(conn, w, client, patient, dentist_id) -> int:
+    """Create the branch case from the work, move everything that belongs to it, then remove the work."""
+    from .labs import case_summary, case_total
+    ts = now_str()
+    items = work_items(conn, w["id"])
+    if not items:
+        items = [{"case_type": w["case_type"], "units": w["units"] or 1, "teeth": w["teeth"], "shade": w["shade"], "material": w["material"],
+                  "price_cents": w["price_cents"], "instructions": "", "discount_cents": 0, "arch": w["arch"]}]
+    rows = []
+    for it in items:
+        price = None if it["price_cents"] is None else item_gross(it) - ((it["discount_cents"] if "discount_cents" in it.keys() else 0) or 0)
+        note = it["instructions"] or ""
+        if it["arch"]:
+            note = (ARCHES.get(it["arch"], it["arch"]) + (" · " + note if note else ""))
+        rows.append({"case_type": it["case_type"], "units": it["units"] or 1, "teeth": (it["teeth"] or "")[:60], "shade": (it["shade"] or "")[:30],
+                     "material": (it["material"] or "")[:80], "lab_fee_cents": price, "instructions": note[:500]})
+    summary = case_summary(rows)
+    instr = "\n".join(x for x in ((w["instructions"] or ""), f"Moved from outside work {w['number']}"
+                                   + (f" (patient reference: {w['patient_ref']})" if w["patient_ref"] else "")) if x)
+    inv = conn.one("SELECT id, status FROM lab_invoices WHERE id = ?", (w["invoice_id"],)) if w["invoice_id"] else None
+    keep_inv = inv and inv["status"] != "void"
+    cid = conn.insert("lab_cases", {"lab_id": w["lab_id"], "branch_id": client["branch_id"], "patient_id": patient["id"], "dentist_id": dentist_id,
+                                    **summary, "instructions": instr[:1000], "status": w["status"], "sent_on": w["received_on"],
+                                    "due_on": w["due_on"], "completed_on": w["delivered_on"], "invoice_id": inv["id"] if keep_inv else None,
+                                    "created_by": w["created_by"] or g.user.id, "created_at": w["created_at"] or ts, "updated_at": ts})
+    for i, r in enumerate(rows):
+        conn.insert("lab_case_items", {"case_id": cid, **r, "sort_order": i})
+    for x in work_extras(conn, w["id"]):
+        conn.insert("lab_case_extras", {"case_id": cid, "description": x["description"], "qty": x["qty"], "unit_price_cents": x["unit_price_cents"],
+                                        "created_by": x["created_by"], "created_at": x["created_at"]})
+    conn.execute("INSERT INTO lab_case_events (case_id, user_id, status, note, created_at) "
+                 "SELECT ?, user_id, status, note, created_at FROM lab_work_events WHERE work_id = ? ORDER BY id", (cid, w["id"]))
+    conn.insert("lab_case_events", {"case_id": cid, "user_id": g.user.id, "status": w["status"],
+                                    "note": f"Moved from outside work {w['number']} to Branch cases", "created_at": ts})
+    conn.execute("UPDATE lab_commissions SET case_id = ?, work_id = NULL WHERE work_id = ?", (cid, w["id"]))
+    if keep_inv:
+        conn.execute("UPDATE lab_invoice_items SET case_id = ?, work_id = NULL WHERE work_id = ? AND invoice_id = ?", (cid, w["id"], inv["id"]))
+    conn.execute("UPDATE lab_invoice_items SET work_id = NULL WHERE work_id = ?", (w["id"],))     # lines on void invoices
+    conn.update("lab_cases", cid, {"lab_fee_cents": (conn.scalar("SELECT COALESCE(SUM(amount_cents), 0) FROM lab_invoice_items "
+                                                                 "WHERE invoice_id = ? AND case_id = ?", (inv["id"], cid)) if keep_inv
+                                                     else case_total(conn, cid))})
+    copy = {"lab_work": {k: w[k] for k in w.keys()}, "items": [dict(i) for i in work_items(conn, w["id"])],
+            "extras": [dict(x) for x in work_extras(conn, w["id"])]}
+    conn.execute("DELETE FROM lab_work_events WHERE work_id = ?", (w["id"],))
+    conn.execute("DELETE FROM lab_work_extras WHERE work_id = ?", (w["id"],))
+    conn.execute("DELETE FROM lab_work_items WHERE work_id = ?", (w["id"],))
+    conn.execute("DELETE FROM lab_works WHERE id = ?", (w["id"],))
+    audit.record("lab_work_moved_to_case", "patient", patient["id"], f"{w['number']} moved to Branch cases as case #{cid}", copy, client["branch_id"])
+    if dentist_id:
+        notify(conn, [dentist_id], "lab_case_new", f"Lab case #{cid} (was {w['number']})", f"For {patient['last_name']}, {patient['first_name']}",
+               f"/staff/lab/{cid}", exclude=g.user.id)
+    return cid
 
 
 @bp.route("/works/<int:work_id>/edit", methods=["GET", "POST"])

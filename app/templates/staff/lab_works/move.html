@@ -1,0 +1,25 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Move {{ w.number }} to Branch cases{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('lab_works.work', work_id=w.id) }}">← {{ w.number }}</a><h1>Move to Branch cases</h1>
+<p>{{ w.number }} is from <strong>{{ branch.name }}</strong>, one of our branches, so it belongs in Branch cases. Choose the patient and the dentist; everything else moves with it.</p></div></div>
+<div class="grid grid-2">
+<div class="card"><h2>The work</h2>
+<dl class="dl"><dt>Work</dt><dd>{{ w.number }}</dd><dt>Branch</dt><dd>{{ branch.name }}</dd><dt>Doctor</dt><dd>{{ w.doctor or '—' }}</dd>
+<dt>Patient reference</dt><dd>{{ w.patient_ref or '—' }}</dd><dt>Status</dt><dd><span class="badge {{ lab_badge(w.status) }}">{{ w.status|lab_status }}</span></dd>
+<dt>Received</dt><dd>{{ w.received_on|date }}</dd><dt>Due</dt><dd>{{ w.due_on|date if w.due_on else '—' }}</dd>{% if w.invoice_number %}<dt>Invoice</dt><dd>{{ w.invoice_number }}</dd>{% endif %}</dl>
+<ul class="list-plain mt-1">{% for it in items %}<li>{{ it.units }} × {{ it.case_type }}{% if it.material %} ({{ it.material }}){% endif %}{% if it.teeth %} · {{ it.teeth }}{% endif %}</li>{% endfor %}
+{% for x in extras %}<li class="muted">+ {{ x.description }} · {{ x.qty }} × {{ x.unit_price_cents|peso }}</li>{% endfor %}</ul>
+<p class="hint mb-0">Moves with it: items and prices (after discounts), additional charges, status and its history, dates, invoice lines{% if w.invoice_number %} (on {{ w.invoice_number }}){% endif %} and technician commission. The work number {{ w.number }} is noted on the case, and the outside work is removed.</p></div>
+<div class="card"><h2>Patient</h2>
+<form method="get" class="row" style="gap:.5rem;align-items:end"><div class="field mb-0 grow"><label for="mq">Find by name or chart number</label><input id="mq" name="q" value="{{ q }}"></div><button class="btn btn-secondary">Search</button></form>
+<form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="move"><input type="hidden" name="q" value="{{ q }}">
+{% if results %}<fieldset class="mv-pick"><legend class="sr-only">Patient</legend>{% for p in results %}<label class="check"><input type="radio" name="patient_id" value="{{ p.id }}" required {% if results|length == 1 %}checked{% endif %}> <strong>{{ p.last_name }}, {{ p.first_name }}</strong> <small class="muted">{{ p.chart_no }}</small></label>{% endfor %}</fieldset>
+{% elif q %}<p class="muted">No patient found for “{{ q }}”. Try the last name only or the chart number. If the patient isn't registered yet, the branch registers them first.</p>{% endif %}
+<div class="field mt-1"><label for="md">Dentist</label><select id="md" name="dentist_id"><option value="">—</option>{% for d in docs %}<option value="{{ d.id }}" {% if d.id == guess %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select>
+{% if w.doctor %}<span class="hint">On the work: {{ w.doctor }}</span>{% endif %}</div>
+<button class="btn" {% if not results %}disabled{% endif %} data-confirm="Move {{ w.number }} to Branch cases? The outside work will be removed.">Move to Branch cases</button></form></div>
+</div>
+<style>.mv-pick{border:0;padding:0;margin:0;display:grid;gap:.35rem}</style>
+{% endblock %}
