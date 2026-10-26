@@ -11,7 +11,7 @@
 <div class="card"><h2>Items</h2><div class="table-wrap"><table><thead><tr><th>Description</th><th class="num">Qty</th><th class="num">Unit price</th><th class="num">Discount</th><th class="num">Amount</th>{% if draft %}<th></th>{% endif %}</tr></thead><tbody>
 {% set case_ids = groups|map(attribute='case')|select|map(attribute='id')|list %}{% set works_on = groups|map(attribute='work')|select|list %}
 {% for gr in groups %}
-{% if gr.case %}<tr class="li-case"><td colspan="6"><strong>Case #{{ gr.case.id }} · {{ gr.case.case_type }}</strong>{% if gr.case.teeth %} · {{ gr.case.teeth }}{% endif %} · {{ gr.case.chart_no }}{% if gr.case.dentist %} · {{ gr.case.dentist }}{% endif %}
+{% if gr.case %}<tr class="li-case"><td colspan="6"><strong>Case #{{ gr.case.id }} · {{ gr.case.case_type }}</strong>{% if gr.case.teeth %} · {{ gr.case.teeth }}{% endif %}{% if gr.case.dentist %} · {{ gr.case.dentist }}{% endif %}<br><span class="li-patient">Patient: <strong>{{ gr.case.last_name }}, {{ gr.case.first_name }}</strong> <small class="muted">{{ gr.case.chart_no }}</small></span>
 <a href="{{ url_for('labs.case', case_id=gr.case.id) }}" class="muted" style="margin-left:.4rem">open case</a></td></tr>
 {% elif gr.work %}<tr class="li-case"><td colspan="6"><strong>{{ gr.work.number }} · {{ gr.work.case_type }}</strong>{% if gr.work.teeth %} · {{ gr.work.teeth }}{% endif %}{% if gr.work.doctor %} · {{ gr.work.doctor }}{% endif %}{% if gr.work.patient_ref %}<br><span class="li-patient">Patient: <strong>{{ gr.work.patient_ref }}</strong></span>{% endif %}
 <a href="{{ url_for('lab_works.work', work_id=gr.work.id) }}" class="muted" style="margin-left:.4rem">open work</a></td></tr>

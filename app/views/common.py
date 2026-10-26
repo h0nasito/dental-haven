@@ -65,7 +65,8 @@ def register_context(app):
         counts["chat"] = chat_unread(conn, user.id)
         from ..notices import unread_count
         return {"nav_branches": nav_branches, "nav_counts": counts, "nav_lab": nav_lab or nav_lab_works, "nav_lab_works": nav_lab_works,
-                "nav_lab_billing": nav_lab_billing, "nav_lab_queue": nav_lab_queue, "nav_unread": unread_count(conn, user.id)}
+                "nav_lab_billing": nav_lab_billing, "nav_lab_queue": nav_lab_queue,
+                "nav_lab_alert": bool(lab_ids), "nav_unread": unread_count(conn, user.id)}
 
 
 def followup_scope(user, alias="f"):

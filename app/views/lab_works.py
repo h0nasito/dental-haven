@@ -125,7 +125,8 @@ def item_groups(conn, items) -> list[dict]:
     for it in items:
         key = ("c", it["case_id"]) if it["case_id"] else (("w", it["work_id"]) if it["work_id"] else None)
         if key not in groups:
-            c = conn.one("SELECT c.id, c.case_type, c.teeth, p.chart_no, u.name AS dentist FROM lab_cases c JOIN patients p ON p.id = c.patient_id "
+            c = conn.one("SELECT c.id, c.case_type, c.teeth, p.chart_no, p.first_name, p.last_name, u.name AS dentist "
+                         "FROM lab_cases c JOIN patients p ON p.id = c.patient_id "
                          "LEFT JOIN users u ON u.id = c.dentist_id WHERE c.id = ?", (key[1],)) if key and key[0] == "c" else None
             w = conn.one("SELECT id, number, case_type, teeth, patient_ref, doctor FROM lab_works WHERE id = ?", (key[1],)) \
                 if key and key[0] == "w" else None
@@ -644,19 +645,24 @@ def work_move(work_id):
         flash("Only works from one of our branches can be moved to Branch cases.", "error")
         return redirect(url_for("lab_works.work", work_id=work_id))
     branch = conn.one("SELECT * FROM branches WHERE id = ?", (client["branch_id"],))
-    docs = dentists([branch["id"]]) or dentists()
-    want = _norm_name(w["doctor"])
-    guess = next((d["id"] for d in docs if want and (_norm_name(d["name"]) == want or want in _norm_name(d["name"])
-                                                    or _norm_name(d["name"]) in want)), None)
+    here = dentists([branch["id"]])
+    docs = list(here) + [d for d in dentists() if d["id"] not in {x["id"] for x in here}]     # this branch's dentists first
+    want = set(_norm_name(w["doctor"]).split())
+
+    def same_doctor(name):
+        have = set(_norm_name(name).split())
+        return bool(want) and (want <= have or have <= want)
+    guess = next((d["id"] for d in docs if same_doctor(d["name"])), None)
     q = clean(request.values.get("q"), 80) if request.values.get("q") is not None else (w["patient_ref"] or "")
-    results = []
+    results, close = [], False
     if len(q.strip()) >= 2:
-        like = f"%{q.strip().lower()}%"
-        words = [x for x in q.lower().split() if len(x) > 1]
-        name_sql = " AND ".join("lower(p.first_name || ' ' || COALESCE(p.middle_name, '') || ' ' || p.last_name) LIKE ?" for _ in words) or "0"
+        from ..patient_search import best_first, close_matches, name_match
+        cond, cp = name_match(q, "p")
+        order, op = best_first(q, "p")
         results = conn.all(f"SELECT p.id, p.chart_no, p.first_name, p.last_name FROM patients p WHERE p.active = 1 AND p.deleted_at IS NULL "
-                           f"AND (({name_sql}) OR lower(p.chart_no) LIKE ?) ORDER BY p.last_name, p.first_name LIMIT 20",
-                           [*[f"%{x}%" for x in words], like])
+                           f"AND {cond} ORDER BY {order} LIMIT 20", [*cp, *op])
+        if not results:
+            results, close = close_matches(conn, q), True
     if request.method == "POST" and request.form.get("action") == "move":
         pid, did = to_int(request.form.get("patient_id")), to_int(request.form.get("dentist_id"))
         patient = conn.one("SELECT id, first_name, last_name, chart_no FROM patients WHERE id = ? AND active = 1 AND deleted_at IS NULL", (pid,))
@@ -669,7 +675,8 @@ def work_move(work_id):
                 cid = _move_work_to_case(conn, w, client, patient, did)
             flash(f"{w['number']} moved to Branch cases as case #{cid} ({branch['name']}).", "success")
             return redirect(url_for("labs.case", case_id=cid))
-    return render_template("staff/lab_works/move.html", w=w, branch=branch, docs=docs, guess=guess, q=q, results=results,
+    return render_template("staff/lab_works/move.html", w=w, branch=branch, docs=docs, guess=guess, q=q, results=results, close=close,
+                           here_ids={d["id"] for d in here}, can_register=g.user.can("patients.manage") and bool(g.user.branch_ids),
                            items=work_items(conn, w["id"]), extras=work_extras(conn, w["id"]))
 
 

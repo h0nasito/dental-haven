@@ -45,3 +45,27 @@ def best_first(q: str, alias: str = "p") -> tuple[str, list]:
     w = f"{_esc(ws[0])}%"
     return (f"CASE WHEN lower({alias}.last_name) LIKE ? ESCAPE '\\' THEN 0 WHEN lower({alias}.first_name) LIKE ? ESCAPE '\\' THEN 1 ELSE 2 END, "
             f"{alias}.last_name, {alias}.first_name"), [w, w]
+
+
+def close_matches(conn, q: str, limit: int = 10) -> list:
+    """When nothing matches exactly: patients whose name is spelled similarly (e.g. "Jazper Estrada" finds "Jasper
+    Estrada"). Candidates share the first 3 letters of a word with the first or last name; the closest come first."""
+    from difflib import SequenceMatcher
+    ws = [w for w in words(q) if len(w) >= 3]
+    if not ws:
+        return []
+    conds, params = [], []
+    for w in ws:
+        conds.append("lower(p.last_name) LIKE ? OR lower(p.first_name) LIKE ?")
+        params += [f"{_esc(w[:3])}%"] * 2
+    rows = conn.all(f"SELECT p.id, p.chart_no, p.first_name, p.middle_name, p.last_name FROM patients p WHERE p.active = 1 AND p.deleted_at IS NULL "
+                    f"AND ({' OR '.join(conds)}) LIMIT 2000", params)
+    target = " ".join(sorted(ws))
+
+    def score(r):
+        full = words(f"{r['first_name']} {r['middle_name'] or ''} {r['last_name']}")
+        a = SequenceMatcher(None, target, " ".join(sorted(full))).ratio()
+        b = SequenceMatcher(None, target, " ".join(sorted(words(f"{r['first_name']} {r['last_name']}")))).ratio()
+        return max(a, b)
+    scored = sorted(((score(r), r) for r in rows), key=lambda x: -x[0])
+    return [r for s, r in scored if s >= 0.6][:limit]

@@ -229,6 +229,12 @@ def new():
     v.update({"preferred_branch_id": g.user.active_branch_id or (g.user.branch_ids[0] if g.user.branch_ids else None),
               "consent_privacy": 0, "contact_sms": 0, "contact_email": 0, "contact_messenger": 0, "opt_out_all": 0,
               "consent_marketing": 0, "news_opt_out": 0})
+    # pre-filled from another page (e.g. Move to Branch cases): name and branch
+    for k in ("first_name", "last_name"):
+        if request.args.get(k):
+            v[k] = clean(request.args.get(k), 80).title()
+    if to_int(request.args.get("branch")) in g.user.branch_ids:
+        v["preferred_branch_id"] = to_int(request.args.get("branch"))
     errors = {}
     if request.method == "POST":
         v = _profile_from_form(request.form)
@@ -252,6 +258,8 @@ def new():
                              (pid, now_str(), g.user.id))
                 audit.record("patient_created", "patient", pid, f"Registered {data['chart_no']}", branch_id=v["preferred_branch_id"])
             flash("Patient registered.", "success")
+            if request.args.get("then") == "labmove" and to_int(request.args.get("work")):
+                return redirect(url_for("lab_works.work_move", work_id=to_int(request.args.get("work")), q=data["chart_no"]))
             if request.args.get("then") == "book" and g.user.can("appointments.manage"):
                 return redirect(url_for("sched.appointment_new", patient_id=pid))
             return redirect(url_for("patients.detail", patient_id=pid))

@@ -81,6 +81,11 @@ class CurrentUser:
         return branch_id in self.branch_ids
 
 
+# Background checks made by the page itself (not by a person) must not count as
+# activity, or an open screen would never reach the idle sign-out.
+PASSIVE_ENDPOINTS = {"sched.requests_pulse", "labs.pulse"}
+
+
 def load_user():
     g.user = None
     sid = session.get(SESSION_KEY)
@@ -116,7 +121,8 @@ def load_user():
     perms = load_user_permissions(conn, row["id"], row["access_role"] or row["role"])
     g.user = CurrentUser(row, perms, branch_ids, s["active_branch_id"])
     g.session_hash = s["id_hash"]
-    conn.execute("UPDATE sessions SET last_seen_at = ? WHERE id_hash = ?", (now_str(), s["id_hash"]))
+    if request.endpoint not in PASSIVE_ENDPOINTS:
+        conn.execute("UPDATE sessions SET last_seen_at = ? WHERE id_hash = ?", (now_str(), s["id_hash"]))
 
 
 def start_session(user_id: int):

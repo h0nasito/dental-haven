@@ -73,6 +73,8 @@ class TestLabCaseBilling(Base):
         self.assertEqual(inv["total_cents"], 5500000 + 100000 - 550000)
         self.assertEqual(self.q("SELECT lab_fee_cents FROM lab_cases WHERE id = ?", (self.case,))["lab_fee_cents"], 5050000)
         page = self.t.get(f"/staff/lab/invoices/{iid}/print").data.decode()
+        pt = self.q("SELECT p.first_name, p.last_name FROM patients p JOIN lab_cases c ON c.patient_id = p.id WHERE c.id = ?", (self.case,))
+        self.assertIn(f"Patient: <strong>{pt['last_name']}, {pt['first_name']}</strong>", page)
         for part in (f"Case #{self.case} · Bridge", "Zirconia bridge (per tooth)", "Less: 1 free unit", "−₱5,500.00", "₱50,500.00"):
             self.assertIn(part, page)
         # the case page now opens that invoice

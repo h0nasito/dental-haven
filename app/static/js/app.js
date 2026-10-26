@@ -1198,3 +1198,190 @@ document.addEventListener('change', function (e) {
     }).catch(fail);
   });
 })();
+
+// Sound alerts: new online booking requests (front desk) and new lab cases
+// (people assigned to a lab). Polls small counts-only endpoints (no patient
+// details), plays a short generated chime, then says what arrived with the
+// computer's own built-in voice. On/off is remembered on this computer only.
+(function () {
+  var btn = document.getElementById('req-sound');
+  if (!btn || !window.fetch) return;
+  var uid = btn.getAttribute('data-user');
+  var KEY_ON = 'dh-req-sound-' + uid;
+  var EVERY = 30000;
+  var ctx = null, timer = null, baseTitle = document.title;
+
+  function get(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
+  function set(k, v) { try { window.localStorage.setItem(k, v); } catch (e) { /* private mode */ } }
+  function isOn() { return get(KEY_ON) === '1'; }
+
+  function where(b) {
+    if (!b || !b.length) return '';
+    return b.length === 1 ? b[0] + ' branch' : b.slice(0, -1).join(', ') + ' and ' + b[b.length - 1];
+  }
+  var feeds = [];
+  if (btn.getAttribute('data-pulse')) {
+    feeds.push({
+      url: btn.getAttribute('data-pulse'), seen: 'dh-req-seen-' + uid,
+      title: 'New online booking request', tag: 'dh-booking-request', notes: [880, 1318.5, 1760],
+      text: function (j) {
+        var n = j.new || 1, w = where(j.branches);
+        return (n === 1 ? 'New online booking request' : n + ' new online booking requests') + (w ? ' for ' + w : '') + '. Please check Online bookings.';
+      }
+    });
+  }
+  if (btn.getAttribute('data-lab-pulse')) {
+    feeds.push({
+      url: btn.getAttribute('data-lab-pulse'), seen: 'dh-lab-seen-' + uid,
+      title: 'New lab case', tag: 'dh-lab-case', notes: [659.25, 987.77, 1318.5],
+      text: function (j) {
+        var n = j.new || 1, w = where(j.branches);
+        return (n === 1 ? 'New lab case' : n + ' new lab cases') + (w ? ' from ' + w : '') + '. Please check Branch cases.';
+      }
+    });
+  }
+  if (!feeds.length) return;
+
+  function audio() {
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    if (!ctx) ctx = new AC();
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+
+  function chime(notes) {
+    var a = audio();
+    if (!a || a.state !== 'running') { showState(); return false; }
+    var t = a.currentTime;
+    (notes || [880, 1318.5, 1760]).forEach(function (f, i) {
+      var at = i * 0.18, o = a.createOscillator(), gn = a.createGain();
+      o.type = 'sine';
+      o.frequency.value = f;
+      gn.gain.setValueAtTime(0.0001, t + at);
+      gn.gain.exponentialRampToValueAtTime(0.35, t + at + 0.02);
+      gn.gain.exponentialRampToValueAtTime(0.0001, t + at + 0.6);
+      o.connect(gn); gn.connect(a.destination);
+      o.start(t + at); o.stop(t + at + 0.65);
+    });
+    return true;
+  }
+
+  // Only voices installed on this computer, so the text never goes to an
+  // outside speech service. It says branch names only, never patient names.
+  function pickVoice() {
+    if (!window.speechSynthesis) return null;
+    var vs = window.speechSynthesis.getVoices() || [];
+    var pref = [/en-PH/i, /fil/i, /en-US/i, /en-GB/i, /^en/i];
+    for (var i = 0; i < pref.length; i++) {
+      for (var k = 0; k < vs.length; k++) {
+        if (vs[k].localService && pref[i].test(vs[k].lang)) return vs[k];
+      }
+    }
+    for (var m = 0; m < vs.length; m++) { if (vs[m].localService) return vs[m]; }
+    return null;
+  }
+  function say(text) {
+    if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) return;
+    var voice = pickVoice();
+    if (!voice) return;
+    var u = new SpeechSynthesisUtterance(text);
+    u.voice = voice; u.lang = voice.lang; u.rate = 0.95; u.volume = 1;
+    window.speechSynthesis.speak(u);  // queued, so two alerts play one after the other
+  }
+  if (window.speechSynthesis) { window.speechSynthesis.getVoices(); }
+
+  function showState() {
+    var on = isOn();
+    var blocked = on && ctx && ctx.state !== 'running';
+    btn.hidden = false;
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    btn.classList.toggle('req-blocked', !!blocked);
+    btn.innerHTML = on
+      ? (blocked ? '🔇 <span class="req-text">Click to allow sound</span>' : '🔊 <span class="req-text">Sound alerts on</span>')
+      : '🔈 <span class="req-text">Sound alerts off</span>';
+    var what = feeds.map(function (f) { return f.title.toLowerCase(); }).join(' or ');
+    btn.title = on ? 'A sound plays for each ' + what + '. Click to turn it off.'
+                   : 'Play a sound for each ' + what;
+  }
+
+  function desktop(f, label, link) {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    try {
+      var n = new Notification(f.title, { body: label || 'Open the system to review it.', tag: f.tag });
+      n.onclick = function () { window.focus(); window.location = link; n.close(); };
+    } catch (e) { /* some browsers only allow this from a service worker */ }
+  }
+
+  var nextFree = 0;
+  function alertFor(f, j) {
+    var nowMs = Date.now(), wait = Math.max(0, nextFree - nowMs);
+    nextFree = nowMs + wait + 4500;  // keep two alerts from talking over each other
+    setTimeout(function () {
+      if (chime(f.notes)) setTimeout(function () { say(f.text(j)); }, 1100);
+      desktop(f, j.label, j.url);
+      btn.classList.remove('req-new'); void btn.offsetWidth; btn.classList.add('req-new');
+      document.title = '(' + (j.new || 1) + ') ' + f.title + ' · ' + baseTitle;
+    }, wait);
+  }
+
+  function check(f) {
+    var seenNow = get(f.seen) || '';
+    return fetch(f.url + (seenNow ? '?after=' + encodeURIComponent(seenNow) : ''), { credentials: 'same-origin', cache: 'no-store', headers: { 'Accept': 'application/json' } })
+      .then(function (r) {
+        var type = r.headers.get('Content-Type') || '';
+        if (!r.ok || type.indexOf('application/json') === -1) throw new Error('signed out');
+        return r.json();
+      })
+      .then(function (j) {
+        var seen = parseInt(get(f.seen) || '0', 10);
+        if (!get(f.seen)) { set(f.seen, String(j.latest)); return; }
+        if (j.latest > seen) {
+          set(f.seen, String(j.latest));
+          if (j.new > 0) alertFor(f, j);
+        }
+      });
+  }
+  function checkAll() {
+    feeds.forEach(function (f) {
+      check(f).catch(function () {
+        stop();
+        btn.title = 'Sound alerts paused: please sign in again.';
+      });
+    });
+  }
+
+  function start() {
+    if (timer) return;
+    checkAll();
+    timer = setInterval(checkAll, EVERY);
+  }
+  function stop() { if (timer) { clearInterval(timer); timer = null; } }
+
+  btn.addEventListener('click', function () {
+    if (isOn() && (!ctx || ctx.state === 'running')) {
+      set(KEY_ON, '0'); stop(); showState(); return;
+    }
+    set(KEY_ON, '1');
+    audio();
+    if ('Notification' in window && Notification.permission === 'default') {
+      try { Notification.requestPermission(); } catch (e) { /* ignore */ }
+    }
+    setTimeout(function () { chime(feeds[0].notes); showState(); }, 60);
+    setTimeout(function () { say('Sound alerts are on.'); }, 1150);
+    start();
+  });
+
+  // Browsers keep sound muted until someone clicks or types on the page.
+  function unlock(e) {
+    if (!isOn() || btn.contains(e.target)) return;
+    if (audio()) { setTimeout(showState, 60); }
+  }
+  document.addEventListener('pointerdown', unlock, true);
+  document.addEventListener('keydown', unlock, true);
+  window.addEventListener('focus', function () { document.title = baseTitle; });
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) document.title = baseTitle; });
+
+  if (isOn()) { audio(); start(); }
+  showState();
+})();

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
+from flask import Blueprint, abort, flash, g, jsonify, redirect, render_template, request, url_for
 
 from .. import audit, dentist_mail, patient_notify
 from ..auth import require
@@ -422,6 +422,41 @@ def requests():
         f"WHERE r.status = ? AND {rf} ORDER BY " + ("r.preferred_start" if status == "pending" else "r.created_at DESC") + " LIMIT 200",
         [status, *rp])
     return render_template("staff/sched/requests.html", rows=rows, status=status)
+
+
+@bp.route("/requests/pulse.json")
+@require("bookings.view", "bookings.manage", any_of=True)
+def requests_pulse():
+    """Tiny status check for the new-booking chime.
+
+    Returns counts and ids only: no patient name, phone or message, so nothing
+    personal ends up in browser notifications. It does not keep the session
+    alive (see auth.load_user), so an unattended screen still signs out.
+    """
+    conn = get_db()
+    rf, rp = branch_filter(g.user, "r.branch_id")
+    count = conn.scalar(f"SELECT COUNT(*) FROM booking_requests r WHERE r.status = 'pending' AND {rf}", rp) or 0
+    newest = conn.one(
+        "SELECT r.id, r.preferred_start, b.name AS branch, s.name AS service FROM booking_requests r "
+        "JOIN branches b ON b.id = r.branch_id LEFT JOIN services s ON s.id = r.service_id "
+        f"WHERE r.status = 'pending' AND {rf} ORDER BY r.id DESC LIMIT 1", rp)
+    label = ""
+    if newest:
+        when = parse_dt(newest["preferred_start"])
+        label = " · ".join(x for x in (newest["branch"], newest["service"] or "",
+                                        when.strftime("%a %b %d, %I:%M %p") if when else "") if x)
+    # What arrived since the last request this computer announced: how many,
+    # and for which branches (used for the spoken alert).
+    after = to_int(request.args.get("after")) or 0
+    fresh = conn.all(
+        "SELECT b.name AS branch, COUNT(*) AS n FROM booking_requests r JOIN branches b ON b.id = r.branch_id "
+        f"WHERE r.status = 'pending' AND r.id > ? AND {rf} GROUP BY b.id, b.name ORDER BY b.sort_order",
+        [after, *rp]) if "after" in request.args else []
+    resp = jsonify({"count": int(count), "latest": newest["id"] if newest else 0, "label": label,
+                    "new": sum(r["n"] for r in fresh), "branches": [r["branch"] for r in fresh],
+                    "url": url_for("sched.requests")})
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 def _load_request(req_id):

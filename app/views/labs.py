@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from flask import Blueprint, abort, flash, g, redirect, render_template, request, send_file, url_for
+from flask import Blueprint, abort, flash, g, jsonify, redirect, render_template, request, send_file, url_for
 
 from .. import audit, settings
 from ..auth import login_required, require
@@ -212,6 +212,45 @@ def _can_access():
     return g.user.is_super_admin or g.user.can("lab.view") or bool(_my_labs())
 
 
+@bp.route("/pulse.json")
+@login_required
+def pulse():
+    """Tiny status check for the new-lab-case sound, for people assigned to a lab.
+
+    Only counts, branch names and case types: no patient details. Cases the
+    person entered themselves don't count (no alert for your own entry). Like
+    the booking check, it does not keep the session alive.
+    """
+    labs = _my_labs()
+    if not labs:
+        abort(403)
+    conn = get_db()
+    marks = ",".join("?" for _ in labs)
+    base = f"FROM lab_cases c WHERE c.lab_id IN ({marks}) AND c.status NOT IN ('cancelled')"
+    latest = conn.scalar(f"SELECT MAX(c.id) {base}", labs) or 0
+    waiting = conn.scalar(f"SELECT COUNT(*) {base} AND c.status = 'sent'", labs) or 0
+    fresh, label = [], ""
+    if "after" in request.args:
+        after = to_int(request.args.get("after")) or 0
+        rows = conn.all(
+            "SELECT c.id, c.case_type, c.due_on, b.name AS branch FROM lab_cases c JOIN branches b ON b.id = c.branch_id "
+            f"WHERE c.lab_id IN ({marks}) AND c.id > ? AND c.status != 'cancelled' "
+            "AND (c.created_by IS NULL OR c.created_by != ?) ORDER BY c.id", [*labs, after, g.user.id])
+        fresh = rows
+        if rows:
+            last = rows[-1]
+            label = " · ".join(x for x in (last["branch"], last["case_type"],
+                                            f"due {last['due_on']}" if last["due_on"] else "") if x)
+    branches = []
+    for r in fresh:
+        if r["branch"] not in branches:
+            branches.append(r["branch"])
+    resp = jsonify({"count": int(waiting), "latest": int(latest), "new": len(fresh), "branches": branches,
+                    "label": label, "url": url_for("labs.index", status="sent")})
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 def _load(case_id):
     conn = get_db()
     frag, params = _scope("c")
@@ -309,10 +348,13 @@ def new():
     if request.method == "POST" and request.form.get("action") == "search":
         q = clean(request.form.get("q"), 80).lower()
         frag, params = ("p.deleted_at IS NULL", []) if lab_desk else patient_scope(g.user, "p")
-        like = f"%{q}%"
-        results = conn.all(f"SELECT p.id, p.chart_no, p.first_name, p.last_name FROM patients p WHERE {frag} AND p.active = 1 AND "
-                           "(lower(p.first_name || ' ' || p.last_name) LIKE ? OR lower(p.chart_no) LIKE ?) ORDER BY p.last_name LIMIT 20",
-                           [*params, like, like]) if len(q) >= 2 else []
+        from ..patient_search import best_first, close_matches, name_match
+        cond, cp = name_match(q, "p")
+        order, op = best_first(q, "p")
+        results = conn.all(f"SELECT p.id, p.chart_no, p.first_name, p.last_name FROM patients p WHERE {frag} AND p.active = 1 AND {cond} "
+                           f"ORDER BY {order} LIMIT 20", [*params, *cp, *op]) if len(q) >= 2 else []
+        if len(q) >= 3 and not results and frag != "1 = 0":
+            results = close_matches(conn, q)          # similar spellings, e.g. "Jazper" for "Jasper"
     elif request.method == "POST" and patient:
         f = request.form
         v = {k: clean(f.get(k), 1000) for k in v}

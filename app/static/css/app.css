@@ -978,3 +978,11 @@ section[id] { scroll-margin-top: 72px; }
 .nav-sub { font-size: .66rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: rgba(255, 255, 255, .45);
   padding: .55rem .6rem .2rem; }
 .nav-acc-body > .nav-sub:first-child { padding-top: .25rem; }
+
+/* New booking request chime toggle */
+.req-sound { white-space: nowrap; }
+.req-sound[aria-pressed="true"] { background: #e8f5ee; border-color: #8cc5a3; color: #1f5c3a; }
+.req-sound.req-blocked { background: #fff6e0; border-color: #e3c06b; color: #6b4e00; }
+.req-sound.req-new { animation: req-pulse 1s ease-in-out 6; }
+@keyframes req-pulse { 50% { box-shadow: 0 0 0 4px rgba(46, 140, 90, .35); } }
+@media (max-width: 640px) { .req-sound .req-text { display: none; } }

@@ -65,3 +65,31 @@ class TestLabWorkMove(Base):
         r = self.a.post(f"/staff/lab/works/{self.w['id']}/move-to-branch", data={"action": "move", "patient_id": self.p["id"]})
         self.assertEqual(r.status_code, 302)
         self.assertIsNotNone(self.q("SELECT id FROM lab_works WHERE id = ?", (self.w["id"],)))
+
+    def test_close_spelling_and_dentist_middle_name(self):
+        from app.util import now_str
+        pid = self.conn.insert("patients", {"chart_no": "T-MV-1", "first_name": "Jasper", "last_name": "Estrada", "preferred_branch_id": self.branch_id,
+                                            "created_at": now_str()})
+        self.conn.execute("UPDATE users SET name = 'Ezra Shaira Millano' WHERE id = ?", (self.doc["id"],))
+        self.conn.execute("UPDATE lab_works SET patient_ref = 'JAZPER ESTRADA', doctor = 'DR. EZRA MILLANO' WHERE id = ?", (self.w["id"],))
+        page = self.a.get(f"/staff/lab/works/{self.w['id']}/move-to-branch").data.decode()
+        self.assertIn("spelled similarly", page)
+        self.assertIn(f'value="{pid}"', page)
+        self.assertIn(f'value="{self.doc["id"]}" selected', page)
+        # the exact search still works in any order, with the middle name ignored
+        self.assertNotIn("spelled similarly", self.a.get(f"/staff/lab/works/{self.w['id']}/move-to-branch?q=estrada jasper").data.decode())
+
+    def test_register_missing_patient_then_back(self):
+        self.conn.execute("UPDATE lab_works SET patient_ref = 'ZYXWQ NOBODYHERE' WHERE id = ?", (self.w["id"],))
+        page = self.a.get(f"/staff/lab/works/{self.w['id']}/move-to-branch").data.decode()
+        self.assertIn("Register this patient", page)
+        url = re.search(r'href="(/staff/patients/new\?[^"]+)"', page).group(1).replace("&amp;", "&")
+        form = self.a.get(url).data.decode()
+        self.assertIn('value="Zyxwq"', form)
+        self.assertIn('value="Nobodyhere"', form)
+        r = self.a.post(url, data={"first_name": "Zyxwq", "last_name": "Nobodyhere", "preferred_branch_id": str(self.branch_id)})
+        self.assertEqual(r.status_code, 302, r.data[:1500])
+        self.assertIn(f"/staff/lab/works/{self.w['id']}/move-to-branch", r.headers["Location"])
+        back = self.a.get(r.headers["Location"]).data.decode()
+        pid = self.q("SELECT id FROM patients WHERE last_name = 'Nobodyhere'")["id"]
+        self.assertIn(f'value="{pid}" required checked', back)
