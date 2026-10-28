@@ -1,14 +1,24 @@
-{# Technician commission card. Needs: comm_entries, comm_techs, comm_field ('work_id' or 'case_id'), comm_id, comm_delivered #}
-{% if current_user.is_super_admin or current_user.can('lab.commission') %}
-<div class="card mt-1"><h2>Technician commission</h2>
-<p class="hint">Counts in the technician's payroll for the cutoff when this work leaves the lab (Delivered){% if comm_delivered %}: delivered {{ comm_delivered|date }}{% else %}. Not delivered yet{% endif %}.</p>
-{% if comm_entries %}<ul class="list-plain">{% for c in comm_entries %}<li><strong>{{ c.full_name }}</strong> · {{ c.amount_cents|peso }}{% if c.note %} · {{ c.note }}{% endif %}<br><small class="muted">added by {{ c.by_name }} {{ c.created_at|dt }}</small>
-<form method="post" action="{{ url_for('lab_works.commission') }}" style="display:inline" data-confirm="Remove this commission?">{{ csrf() }}<input type="hidden" name="{{ comm_field }}" value="{{ comm_id }}"><input type="hidden" name="action" value="remove"><input type="hidden" name="commission_id" value="{{ c.id }}"><button class="btn btn-ghost btn-sm">Remove</button></form></li>{% endfor %}</ul>{% endif %}
-{% if comm_techs %}<form method="post" action="{{ url_for('lab_works.commission') }}" class="form-grid">{{ csrf() }}<input type="hidden" name="{{ comm_field }}" value="{{ comm_id }}">
-<div class="field"><label for="ct">Technician</label><select id="ct" name="employee_id">{% for t in comm_techs %}<option value="{{ t.id }}">{{ t.full_name }}</option>{% endfor %}</select></div>
-<div class="field"><label for="ca">Commission (₱)</label><input id="ca" name="amount" inputmode="decimal" required></div>
-<div class="field span-2"><label for="cn">Note <span class="hint">Optional</span></label><input id="cn" name="note" maxlength="200" placeholder="e.g. Crown x2, design + milling"></div>
-<div class="form-actions"><button class="btn btn-secondary btn-sm">Add commission</button></div></form>
-{% else %}<p class="muted">No technicians yet. Set an employee's position to Technician (Employees) or create a Staff – Technician account.</p>{% endif %}
+{# Technician card on a work or branch case page. Needs the page_context() values (comm_*). #}
+{% if comm_lab_user %}
+<div class="card mt-1"><h2>Dental technician</h2>
+<form method="post" action="{{ url_for('lab_works.commission') }}" class="row" style="align-items:flex-end;gap:.6rem;flex-wrap:wrap">{{ csrf() }}
+<input type="hidden" name="{{ comm_field }}" value="{{ comm_id }}"><input type="hidden" name="action" value="assign">
+<div class="field mb-0"><label for="ctech">Technician</label><select id="ctech" name="technician_id"><option value="">Not assigned yet</option>
+{% for t in comm_techs %}<option value="{{ t.id }}" {% if comm_tech and comm_tech.id == t.id %}selected{% endif %}>{{ t.full_name }}</option>{% endfor %}
+{% if comm_tech and not comm_techs|selectattr('id', 'equalto', comm_tech.id)|list %}<option value="{{ comm_tech.id }}" selected>{{ comm_tech.full_name }}</option>{% endif %}</select></div>
+<button class="btn btn-secondary btn-sm">Save</button></form>
+{% if not comm_techs %}<p class="hint">No technicians yet: set an employee's position to Dental Technician on the Employees page.</p>{% endif %}
+{% if comm_entries %}
+  <p class="hint mt-1">This work has an older manual commission, so the technician's % isn't added on top. It counts when the work is delivered.</p>
+  <ul class="list-plain">{% for c in comm_entries %}<li><strong>{{ c.full_name }}</strong>{% if comm_show_money %} · {{ c.amount_cents|peso }}{% endif %}{% if c.note %} · {{ c.note }}{% endif %}
+  {% if current_user.is_super_admin or current_user.can('lab.commission') %}<form method="post" action="{{ url_for('lab_works.commission') }}" style="display:inline" data-confirm="Remove this manual commission? The technician's % will apply instead.">{{ csrf() }}<input type="hidden" name="{{ comm_field }}" value="{{ comm_id }}"><input type="hidden" name="action" value="remove"><input type="hidden" name="commission_id" value="{{ c.id }}"><button class="btn btn-ghost btn-sm">Remove</button></form>{% endif %}</li>{% endfor %}</ul>
+{% else %}
+  <p class="hint mt-1">Commission: the technician's % of what the clinic pays for this {{ 'work' if comm_field == 'work_id' else 'case' }}, counted in the payroll cutoff when each payment is received.
+  {% if comm_show_money and comm_tech %}{% if comm_tech.lab_commission_bp %}{{ comm_tech.full_name }}: {{ '%g' % (comm_tech.lab_commission_bp / 100) }}%.{% else %}<span class="text-danger">No % set for {{ comm_tech.full_name }} yet (Employees page).</span>{% endif %}{% endif %}</p>
+  {% if comm_show_money and comm_tech and comm_earned %}<div class="table-wrap"><table><thead><tr><th>Paid on</th><th>Receipt</th><th class="num">Paid for this {{ 'work' if comm_field == 'work_id' else 'case' }}</th><th class="num">Commission</th></tr></thead><tbody>
+  {% for x in comm_earned %}<tr><td>{{ x.received_on|date }}</td><td>{{ x.receipt_no }}</td><td class="num">{{ x.paid_cents|peso }}</td><td class="num">{{ x.amount_cents|peso }}</td></tr>{% endfor %}</tbody>
+  <tfoot><tr><td colspan="2"><strong>Total</strong></td><td class="num">{{ comm_earned|sum(attribute='paid_cents')|peso }}</td><td class="num"><strong>{{ comm_earned|sum(attribute='amount_cents')|peso }}</strong></td></tr></tfoot></table></div>
+  {% elif comm_show_money and comm_tech %}<p class="muted mb-0">No payments yet.</p>{% endif %}
+{% endif %}
 </div>
 {% endif %}

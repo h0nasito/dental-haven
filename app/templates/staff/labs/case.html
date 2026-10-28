@@ -111,7 +111,7 @@
 {% endif %}
 </div>
 
-{% if comm_entries is defined %}{% set comm_field, comm_id, comm_delivered = 'case_id', c.id, (c.completed_on if c.status == 'delivered' else None) %}{% include "staff/lab_works/_commission.html" %}{% endif %}
+{% if comm_entries is defined %}{% include "staff/lab_works/_commission.html" %}{% endif %}
 {% if current_user.is_super_admin %}<details class="card" style="border-color:var(--red-100)"><summary><strong>Remove this lab case</strong> <small class="muted">super admin · wrong input, duplicate…</small></summary>
 <form method="post" action="{{ url_for('labs.remove_case', case_id=c.id) }}" class="mt-1" data-confirm="Remove this lab case for good? It can't be undone (a copy is kept in the audit trail).">{{ csrf() }}
 <div class="field"><label for="rm-reason">Reason</label><input id="rm-reason" name="reason" maxlength="300" required placeholder="e.g. Duplicate entry, wrong patient"></div>

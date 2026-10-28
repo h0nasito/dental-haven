@@ -50,7 +50,7 @@ def build(conn, lab_ids: list[int], start: str, end: str, basis: str = "started"
                          "status": w["status"], "start": w["received_on"], "due": w["due_on"],
                          "delivered": (w["delivered_on"] or _delivered_event(conn, "lab_work_events", "work_id", w["id"]))
                          if w["status"] == "delivered" else None,
-                         "price": w["price_cents"], "invoice_id": w["invoice_id"]})
+                         "price": w["price_cents"], "invoice_id": w["invoice_id"], "technician_id": w["technician_id"]})
     if kind in ("", "branch") and not (client and not client["branch_id"]):
         q = (f"SELECT c.*, b.name AS branch, u.name AS dentist FROM lab_cases c JOIN branches b ON b.id = c.branch_id "
              f"LEFT JOIN users u ON u.id = c.dentist_id WHERE c.lab_id IN ({marks}) AND {c_date} BETWEEN ? AND ?")
@@ -66,7 +66,7 @@ def build(conn, lab_ids: list[int], start: str, end: str, basis: str = "started"
                          "status": c["status"], "start": c["sent_on"], "due": c["due_on"] or c["install_on"],
                          "delivered": (c["completed_on"] or _delivered_event(conn, "lab_case_events", "case_id", c["id"]))
                          if c["status"] == "delivered" else None,
-                         "price": c["lab_fee_cents"], "invoice_id": c["invoice_id"]})
+                         "price": c["lab_fee_cents"], "invoice_id": c["invoice_id"], "technician_id": c["technician_id"]})
 
     # Technicians (from commissions on the work or case)
     techs: dict[tuple, list] = {}
@@ -80,7 +80,14 @@ def build(conn, lab_ids: list[int], start: str, end: str, basis: str = "started"
     out = []
     for r in rows:
         r["status_label"] = status_label(r["status"])
-        r["techs"] = techs.get((r["src"], r["id"]), [])
+        r["techs"] = [dict(t) for t in techs.get((r["src"], r["id"]), [])]   # older manual commission entries
+        r["auto_tech"] = None
+        if r.get("technician_id") and not r["techs"]:
+            emp = conn.one("SELECT full_name, lab_commission_bp FROM employees WHERE id = ?", (r["technician_id"],))
+            if emp:
+                r["auto_tech"] = {"employee_id": r["technician_id"], "full_name": emp["full_name"], "amount_cents": 0,
+                                  "bp": emp["lab_commission_bp"] or 0}
+                r["techs"] = [r["auto_tech"]]
         r["tech_names"] = ", ".join(dict.fromkeys(t["full_name"] for t in r["techs"]))
         r["commission"] = sum(t["amount_cents"] or 0 for t in r["techs"])
         r["what"] = ", ".join(f"{ct}{' ×' + str(u) if u and u != 1 else ''}" for ct, u in r["items"])
@@ -106,6 +113,9 @@ def build(conn, lab_ids: list[int], start: str, end: str, basis: str = "started"
         else:
             r["amount"], r["paid"], r["payment"], r["invoice"] = r["price"] or 0, 0, "unbilled", ""
         r["balance"] = (r["amount"] or 0) - (r["paid"] or 0) if r["payment"] != "unbilled" else 0
+        if r["auto_tech"]:   # the technician's % of what's been paid for this work so far
+            r["auto_tech"]["amount_cents"] = round((r["paid"] or 0) * r["auto_tech"]["bp"] / 10000)
+        r["commission"] = sum(t["amount_cents"] or 0 for t in r["techs"])
         r["days"] = _days(r["start"], r["delivered"])
         r["on_time"] = None if not (r["delivered"] and r["due"]) else r["delivered"][:10] <= r["due"][:10]
         r["late_now"] = r["status"] not in CLOSED and r["status"] != "ready" and bool(r["due"]) and r["due"][:10] < today_s

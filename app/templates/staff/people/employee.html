@@ -23,6 +23,13 @@
 <span class="hint">Ticked: a regular holiday worked is double pay, a special non-working holiday worked is +30%{% if pay_unworked %}, and an unworked regular holiday is paid 1 day{% endif %}. Untick for commission-based staff: holidays are then paid like any working day. Dentists on daily rate + commission don't get holiday pay. Applies to payrolls you create or recalculate from now on.</span>
 <button class="btn btn-secondary mt-1">Save</button></form></div>
 {% endif %}
+{% if current_user.can('compensation.manage') and is_tech %}
+<div class="card"><h2>Technician commission</h2>
+<p class="hint">Restricted. The technician earns this % of what the clinic pays for each lab work or branch case assigned to them. It counts in the payroll cutoff when the payment is received (shared across an invoice's works by their amounts).</p>
+<form method="post" class="row" style="align-items:flex-end;gap:.6rem">{{ csrf() }}<input type="hidden" name="action" value="lab_commission_rate">
+<div class="field mb-0"><label for="lcr">Commission (%)</label><input id="lcr" name="lab_commission" inputmode="decimal" style="max-width:8rem" value="{{ '%g' % (e.lab_commission_bp / 100) if e.lab_commission_bp is not none else '' }}" placeholder="e.g. 10"></div>
+<button class="btn btn-secondary btn-sm">Save</button></form></div>
+{% endif %}
 {% if current_user.can('compensation.manage') and is_dentist %}
 <div class="card"><h2>Dentist pay: daily rate + commission</h2>
 <p class="notice">Restricted. Commission is counted on each procedure once it's done: (amount billed − its share of the invoice discount − lab fee) × commission %. The daily rate is paid per day present (time record).</p>

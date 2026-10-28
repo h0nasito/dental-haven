@@ -22,6 +22,7 @@
 {% if w.patient_ref %}<dt>Patient reference</dt><dd>{{ w.patient_ref }}</dd>{% endif %}
 {% if extras %}<dt>Additional charges</dt><dd>{{ extras_total|peso }} <a href="#extras">({{ extras|length }})</a></dd>{% endif %}
 <dt>Total to bill</dt><dd><strong>{{ (items_total + extras_total)|peso }}</strong>{% if items_discount %}<br><small class="muted">after {{ items_discount|peso }} discount</small>{% endif %}</dd>
+<dt>Dental technician</dt><dd>{{ w.technician or '—' }} <a href="#ctech"><small>{{ 'Change' if w.technician else 'Assign' }}</small></a></dd>
 <dt>Date received</dt><dd>{{ w.received_on|date }}</dd>
 <dt>Due date</dt><dd>{{ w.due_on|date if w.due_on else '—' }}{% if w.due_on and w.due_on < today and w.status in LAB_LATE %} <span class="badge badge-red">Overdue</span>{% endif %}</dd>
 <dt>Date delivered</dt><dd>{{ w.delivered_on|date if w.delivered_on else '—' }}</dd>
@@ -58,7 +59,7 @@
 <h2 class="mt-1">History</h2>
 <ul class="list-plain">{% for e in events %}<li><strong>{{ e.status|lab_status }}</strong> · {{ e.created_at|dt }} · {{ e.by_name or '—' }}{% if e.note %}<br><small class="muted">{{ e.note }}</small>{% endif %}</li>{% endfor %}</ul>
 </div></div>
-{% set comm_field, comm_id, comm_delivered = 'work_id', w.id, (w.delivered_on if w.status == 'delivered' else None) %}{% include "staff/lab_works/_commission.html" %}
+{% include "staff/lab_works/_commission.html" %}
 {% if current_user.is_super_admin %}<details class="card" style="border-color:var(--red-100)"><summary><strong>Remove this work</strong> <small class="muted">super admin · wrong input, duplicate…</small></summary>
 <form method="post" action="{{ url_for('lab_works.remove_work', work_id=w.id) }}" class="mt-1" data-confirm="Remove this work for good? It can't be undone (a copy is kept in the audit trail).">{{ csrf() }}
 <div class="field"><label for="rm-reason">Reason</label><input id="rm-reason" name="reason" maxlength="300" required placeholder="e.g. Duplicate entry, wrong patient"></div>

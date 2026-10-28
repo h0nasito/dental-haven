@@ -304,6 +304,23 @@ def employee(emp_id):
         abort(404)
     if request.method == "POST":
         action = request.form.get("action")
+        if action == "lab_commission_rate":
+            if not g.user.can("compensation.manage"):
+                abort(403)
+            raw = (request.form.get("lab_commission") or "").strip().rstrip("%")
+            try:
+                pct = float(raw) if raw else None
+            except ValueError:
+                pct = -1
+            if pct is not None and not 0 <= pct <= 100:
+                flash("Enter the commission % like 10 or 12.5 (0 to 100), or leave it empty.", "error")
+            else:
+                bp = None if pct is None else int(round(pct * 100))
+                conn.execute("UPDATE employees SET lab_commission_bp = ? WHERE id = ?", (bp, emp_id))
+                audit.record("lab_commission_rate_set", "employee", emp_id, "Technician commission " + (f"{pct:g}%" if bp is not None else "cleared"),
+                             {"before_bp": e["lab_commission_bp"], "after_bp": bp}, e["primary_branch_id"])
+                flash("Technician commission saved. It applies to payments counted in payrolls you create or recalculate from now on.", "success")
+            return redirect(url_for("people.employee", emp_id=emp_id))
         if action in ("deduction_add", "deduction_remove"):
             from ..payroll import DEDUCTION_SCHEDULES
             if not g.user.can("compensation.manage"):
@@ -435,6 +452,8 @@ def employee(emp_id):
                      "ORDER BY effective_from DESC, id DESC", (emp_id,)) if g.user.can("compensation.manage") else []
     user = conn.one("SELECT role FROM users WHERE id = ?", (e["user_id"],)) if e["user_id"] else None
     is_dentist = bool(user and user["role"] == "dentist")
+    from ..lab_commission import technicians as _techs
+    is_tech = any(t["id"] == emp_id for t in _techs(conn))
     dpay = svc_rates = []
     if is_dentist and g.user.can("compensation.manage"):
         dpay = conn.all("SELECT r.*, u.name AS by_name FROM dentist_pay_rates r LEFT JOIN users u ON u.id = r.created_by WHERE employee_id = ? "
@@ -443,7 +462,7 @@ def employee(emp_id):
                              "ORDER BY s.sort_order", (emp_id,))
     from .. import settings as _settings
     from ..workplace import labs_for
-    return render_template("staff/people/employee.html", ot_end=_fmt12(_settings.get("payroll.staff_end_time", conn) or "17:00"), pay_unworked=_settings.get("payroll.pay_unworked_regular_holiday", conn), e=e, comps=comps, branches=branches_for_user(g.user), labs=labs_for(conn, g.user), is_dentist=is_dentist,
+    return render_template("staff/people/employee.html", ot_end=_fmt12(_settings.get("payroll.staff_end_time", conn) or "17:00"), pay_unworked=_settings.get("payroll.pay_unworked_regular_holiday", conn), e=e, comps=comps, branches=branches_for_user(g.user), labs=labs_for(conn, g.user), is_dentist=is_dentist, is_tech=is_tech,
                            dpay=dpay, svc_rates=svc_rates, all_services=conn.all("SELECT id, name FROM services WHERE active = 1 ORDER BY sort_order"),
                            today=today().isoformat(),
                            allowances=conn.all("SELECT * FROM employee_allowances WHERE employee_id = ? AND active = 1 ORDER BY id", (emp_id,)),

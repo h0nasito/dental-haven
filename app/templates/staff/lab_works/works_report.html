@@ -43,14 +43,15 @@
 {% if r.invoice and r.invoice != 'Draft' %}<br><small class="muted">{{ r.invoice }}</small>{% endif %}</td></tr>
 {% else %}<tr><td colspan="10">{{ empty('No lab works in this period') }}</td></tr>{% endfor %}</tbody>
 {% if rep.rows %}<tfoot><tr><td colspan="8"><strong>Total</strong> <small class="muted">(cancelled left out)</small></td><td class="num"><strong>{{ rep.amount|peso }}</strong></td><td>{{ rep.paid|peso }} paid</td></tr></tfoot>{% endif %}</table></div>
-<p class="hint">Amount is the work's lines on its lab invoice after the invoice discount; not billed yet = its price. When one invoice covers several works, its payments are shared in proportion to each work's amount. Technicians come from the commissions entered on each work.</p></div>
+<p class="hint">Amount is the work's lines on its lab invoice after the invoice discount; not billed yet = its price. When one invoice covers several works, its payments are shared in proportion to each work's amount. Technician: the one chosen on the work, plus anyone with a commission on it.</p></div>
 
 <div class="grid grid-3 mt-1">
 <div class="card"><h2>By case</h2>{% if rep.by_type %}<table><thead><tr><th>Case</th><th class="num">Works</th><th class="num">Units</th></tr></thead><tbody>
 {% for t, v in rep.by_type %}<tr><td><a href="{{ url_for('lab_works.lab_report', **dict(args, type=t)) }}">{{ t }}</a></td><td class="num">{{ v.works }}</td><td class="num">{{ v.units }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="muted">Nothing in this period.</p>{% endif %}</div>
 <div class="card"><h2>By technician</h2>{% if rep.by_tech %}<table><thead><tr><th>Technician</th><th class="num">Works</th><th class="num">Delivered</th><th class="num">Commission</th></tr></thead><tbody>
-{% for t, v in rep.by_tech %}<tr><td>{{ t }}</td><td class="num">{{ v.works }}</td><td class="num">{{ v.delivered }}</td><td class="num">{{ v.commission|peso if v.commission else '—' }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="muted">No technician commissions on these works.</p>{% endif %}
-{% if rep.untagged %}<p class="hint">{{ rep.untagged }} work{{ 's' if rep.untagged != 1 }} without a technician. Add the technician's commission on the work to show it here.</p>{% endif %}</div>
+{% for t, v in rep.by_tech %}<tr><td>{{ t }}</td><td class="num">{{ v.works }}</td><td class="num">{{ v.delivered }}</td><td class="num">{{ v.commission|peso if v.commission else '—' }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="muted">No technicians on these works yet.</p>{% endif %}
+<p class="hint">Commission: the technician's % of what's been paid so far for these works. Payroll counts it in the cutoff of each payment.</p>
+{% if rep.untagged %}<p class="hint">{{ rep.untagged }} work{{ "s" if rep.untagged != 1 }} without a technician yet.</p>{% endif %}</div>
 <div class="card"><h2>By dental clinic / branch</h2>{% if rep.by_who %}<table><thead><tr><th>Clinic</th><th class="num">Works</th><th class="num">Amount</th><th class="num">Unpaid</th></tr></thead><tbody>
 {% for k, v in rep.by_who %}<tr><td>{{ k[1] }}{% if k[0] == 'branch' %} <span class="badge">Branch</span>{% endif %}</td><td class="num">{{ v.works }}</td><td class="num">{{ v.amount|peso }}</td><td class="num">{{ v.balance|peso if v.balance else '—' }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="muted">Nothing in this period.</p>{% endif %}</div>
 </div>

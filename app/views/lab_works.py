@@ -205,9 +205,38 @@ def sync_case_prices(conn, invoice_id) -> None:
         conn.execute("UPDATE lab_case_items SET lab_fee_cents = ? WHERE id = ?", (max(0, r["total"]), r["case_item_id"]))
 
 
+def _technician_from(conn, form, current=None):
+    """The technician chosen on the work form: (employee id or None, error)."""
+    from ..lab_commission import technicians
+    tid = to_int(form.get("technician_id"))
+    if not tid:
+        return None, ""
+    if tid == current or any(t["id"] == tid for t in technicians(conn)):
+        return tid, ""
+    return None, "Choose a technician from the list."
+
+
+def _tech_choices(conn, current=None):
+    from ..lab_commission import technicians
+    techs = list(technicians(conn))
+    if current and not any(t["id"] == current for t in techs):
+        cur = conn.one("SELECT id, full_name FROM employees WHERE id = ?", (current,))
+        if cur:
+            techs.append(cur)
+    return techs
+
+
+def _notify_technician(conn, tech_id, w_id, number, summary, link=None):
+    emp = conn.one("SELECT user_id FROM employees WHERE id = ?", (tech_id,)) if tech_id else None
+    if emp and emp["user_id"]:
+        notify(conn, [emp["user_id"]], "lab_assigned", f"{'Work' if not number.startswith('#') else 'Lab case'} {number} is assigned to you",
+               summary[:200], link or f"/staff/lab/works/{w_id}", exclude=g.user.id)
+
+
 def _work(conn, work_id):
     ids = _lab_ids()
-    w = conn.one(f"SELECT w.*, i.number AS invoice_number, i.status AS invoice_status FROM lab_works w LEFT JOIN lab_invoices i ON i.id = w.invoice_id "
+    w = conn.one(f"SELECT w.*, i.number AS invoice_number, i.status AS invoice_status, te.full_name AS technician FROM lab_works w "
+                 f"LEFT JOIN lab_invoices i ON i.id = w.invoice_id LEFT JOIN employees te ON te.id = w.technician_id "
                  f"WHERE w.id = ? AND w.lab_id IN ({_in(ids)})", [work_id, *ids])
     if not w:
         abort(404)
@@ -345,7 +374,8 @@ def works():
     if q:
         where.append("(LOWER(w.number) LIKE ? OR LOWER(w.clinic_name) LIKE ? OR LOWER(w.doctor) LIKE ? OR LOWER(w.patient_ref) LIKE ?)")
         args += [f"%{q}%"] * 4
-    rows = conn.all("SELECT w.*, i.number AS invoice_number FROM lab_works w LEFT JOIN lab_invoices i ON i.id = w.invoice_id "
+    rows = conn.all("SELECT w.*, i.number AS invoice_number, te.full_name AS technician FROM lab_works w "
+                    "LEFT JOIN lab_invoices i ON i.id = w.invoice_id LEFT JOIN employees te ON te.id = w.technician_id "
                     f"WHERE {' AND '.join(where)} ORDER BY CASE WHEN w.status IN {OPEN} THEN 0 ELSE 1 END, "
                     "CASE WHEN w.due_on IS NULL THEN 1 ELSE 0 END, w.due_on, w.id DESC LIMIT 400", args)
     counts = {r["status"]: r["n"] for r in conn.all(f"SELECT status, COUNT(*) AS n FROM lab_works WHERE lab_id IN ({_in(ids)}) GROUP BY status", ids)}
@@ -487,8 +517,13 @@ def work_new():
         extras, xerr = _extras_from(request.form)
         if xerr:
             errors["extras"] = xerr
+        tech_id, terr = _technician_from(conn, request.form)
+        v["technician_id"] = tech_id
+        if terr:
+            errors["technician_id"] = terr
         if not errors and not any(case_errors):
             data = {k: items[0]["_head"][k] for k in ("lab_id", "clinic_name", "doctor", "contact_number", "patient_ref", "received_on", "due_on")}
+            data["technician_id"] = tech_id
             summary = work_summary(items)
             with conn.transaction():
                 cid = _client_for(conn, data["lab_id"], data["clinic_name"], data["doctor"], data["contact_number"])
@@ -504,6 +539,7 @@ def work_new():
                 notify(conn, lab_staff(conn, data["lab_id"]), "lab_new", f"New work {number}: {summary['case_type'][:80]}",
                        f"From {data['clinic_name']}" + (f", due {data['due_on']}" if data["due_on"] else ""), f"/staff/lab/works/{wid}",
                        exclude=g.user.id)
+                _notify_technician(conn, tech_id, wid, number, f"{summary['case_type']} from {data['clinic_name']}")
                 audit.record("lab_work_created", "lab_work", wid, f"Outside work {number} from {data['clinic_name']} ({len(items)} item{'s' if len(items) > 1 else ''})")
             flash(f"Saved as {number}" + (f" with {len(items)} items." if len(items) > 1 else "."), "success")
             return redirect(url_for("lab_works.work", work_id=wid))
@@ -514,7 +550,7 @@ def work_new():
                            price_list=price_items(conn, [l["id"] for l in labs]), cases=list(zip(cases, case_errors)),
                            extras_prices=extras_list(price_items(conn, [l["id"] for l in labs])),
                            extras_in=_extras_rows(request.form) if request.method == "POST" else {},
-                           work=None, lab_display=lab_display)
+                           work=None, lab_display=lab_display, techs=_tech_choices(conn))
 
 
 @bp.route("/works/<int:work_id>", methods=["GET", "POST"])
@@ -571,7 +607,7 @@ def work(work_id):
     events = conn.all("SELECT e.*, u.name AS by_name FROM lab_work_events e LEFT JOIN users u ON u.id = e.user_id WHERE e.work_id = ? ORDER BY e.id DESC",
                       (w["id"],))
     lab = conn.one("SELECT * FROM laboratories WHERE id = ?", (w["lab_id"],))
-    from ..lab_commission import entries, technicians
+    from ..lab_commission import page_context
     extras = work_extras(conn, w["id"])
     items = work_items(conn, w["id"])
     now_total = sum(item_gross(i) - (i["discount_cents"] or 0) for i in items) + sum(x["qty"] * x["unit_price_cents"] for x in extras)
@@ -584,7 +620,7 @@ def work(work_id):
                            extras=extras, extras_total=sum(x["qty"] * x["unit_price_cents"] for x in extras),
                            from_branch=bool(conn.scalar("SELECT branch_id FROM lab_clients WHERE id = ?", (w["client_id"],))),
                            price_list=price_items(conn, [w["lab_id"]]), extras_prices=extras_list(price_items(conn, [w["lab_id"]])),
-                           comm_entries=entries(conn, work_id=w["id"]), comm_techs=technicians(conn),
+                           **page_context(conn, g.user, work=w),
                            can_bill=g.user.is_super_admin or g.user.can("lab.billing"), today=today().isoformat())
 
 
@@ -742,6 +778,7 @@ def work_edit(work_id):
     w = _work(conn, work_id)
     labs = my_labs(conn)
     v = {k: (w[k] if w[k] is not None else "") for k in HEAD_FIELDS}
+    v["technician_id"] = w["technician_id"]
     cases = [{"case_type": it["case_type"], "units": it["units"], "arch": it["arch"], "teeth": it["teeth"], "shade": it["shade"],
               "material": it["material"], "material_new": "", "instructions": it["instructions"], "discount": discount_text(it),
               "price": "" if it["price_cents"] is None else f"{it['price_cents'] / 100:.2f}"} for it in work_items(conn, w["id"])]
@@ -755,8 +792,13 @@ def work_edit(work_id):
         extras_in = _extras_rows(request.form)
         if xerr:
             errors["extras"] = xerr
+        tech_id, terr = _technician_from(conn, request.form, w["technician_id"])
+        v["technician_id"] = tech_id
+        if terr:
+            errors["technician_id"] = terr
         if not errors and not any(case_errors):
             data = {k: items[0]["_head"][k] for k in ("lab_id", "clinic_name", "doctor", "contact_number", "patient_ref", "received_on", "due_on")}
+            data["technician_id"] = tech_id
             with conn.transaction():
                 cid = _client_for(conn, data["lab_id"], data["clinic_name"], data["doctor"], data["contact_number"])
                 reset = {"due_soon_notified": 0, "overdue_notified": 0} if data["due_on"] != w["due_on"] else {}
@@ -768,6 +810,8 @@ def work_edit(work_id):
                     for desc, q, pc in rows:
                         conn.insert("lab_work_extras", {"work_id": w["id"], "description": desc, "qty": q, "unit_price_cents": pc,
                                                         "created_by": g.user.id, "created_at": now_str()})
+                if tech_id and tech_id != w["technician_id"]:
+                    _notify_technician(conn, tech_id, w["id"], w["number"], f"{w['case_type']} from {data['clinic_name']}")
                 audit.record("lab_work_edited", "lab_work", w["id"], f"Edited {w['number']}")
             msg = "Saved."
             if w["invoice_id"]:
@@ -785,7 +829,8 @@ def work_edit(work_id):
                        _lab_ids())
     return render_template("staff/lab_works/form.html", v=v, errors=errors, labs=labs, case_types=case_types(conn), materials=materials(conn),
                            arches=ARCHES, clinics=clinics, price_list=price_items(conn, [l["id"] for l in labs]), cases=list(zip(cases, case_errors)),
-                           extras_prices=extras_list(price_items(conn, [l["id"] for l in labs])), extras_in=extras_in, work=w, lab_display=lab_display)
+                           extras_prices=extras_list(price_items(conn, [l["id"] for l in labs])), extras_in=extras_in, work=w, lab_display=lab_display,
+                           techs=_tech_choices(conn, w["technician_id"]))
 
 
 @bp.route("/works/export.csv")
@@ -796,18 +841,19 @@ def works_export():
     ids = _lab_ids()
     start = parse_date(request.args.get("from")) or (today() - timedelta(days=30))
     end = parse_date(request.args.get("to")) or today()
-    rows = conn.all(f"SELECT w.*, {WORK_TOTAL_SQL} AS total_cents, i.number AS invoice_number FROM lab_works w LEFT JOIN lab_invoices i ON i.id = w.invoice_id "
+    rows = conn.all(f"SELECT w.*, {WORK_TOTAL_SQL} AS total_cents, i.number AS invoice_number, te.full_name AS technician FROM lab_works w "
+                    "LEFT JOIN lab_invoices i ON i.id = w.invoice_id LEFT JOIN employees te ON te.id = w.technician_id "
                     f"WHERE w.lab_id IN ({_in(ids)}) AND w.received_on BETWEEN ? AND ? ORDER BY w.received_on, w.id", [*ids, start.isoformat(), end.isoformat()])
     buf = io.StringIO()
     wr = csv.writer(buf)
     wr.writerow(["Work no.", "Dental clinic", "Doctor", "Contact number", "Type of case", "Units", "Arch", "Teeth", "Shade", "Date received",
-                 "Due date", "Date delivered", "Status", "Price per unit (PHP)", "Total (PHP)", "Invoice"])
+                 "Due date", "Date delivered", "Status", "Price per unit (PHP)", "Total (PHP)", "Invoice", "Technician"])
     safe = lambda x: ("'" + x) if isinstance(x, str) and x[:1] in ("=", "+", "-", "@") else x  # noqa: E731
     for r in rows:
         wr.writerow([safe(x) for x in (r["number"], r["clinic_name"], r["doctor"], r["contact_number"], r["case_type"], r["units"], ARCHES[r["arch"]],
                                         r["teeth"], r["shade"], r["received_on"], r["due_on"] or "", r["delivered_on"] or "", status_label(r["status"]),
                                         "" if r["price_cents"] is None else r["price_cents"] / 100,
-                                        "" if r["total_cents"] is None else r["total_cents"] / 100, r["invoice_number"] or "")])
+                                        "" if r["total_cents"] is None else r["total_cents"] / 100, r["invoice_number"] or "", r["technician"] or "")])
     audit.record("lab_works_exported", "lab_work", None, f"Exported outside works {start} to {end}")
     return Response("﻿" + buf.getvalue(), mimetype="text/csv",
                     headers={"Content-Disposition": f'attachment; filename="lab-works-{start}-to-{end}.csv"', "Cache-Control": "no-store"})
@@ -1546,43 +1592,49 @@ def receipt_print(payment_id):
 @bp.route("/commission", methods=["POST"])
 @login_required
 def commission():
+    """Assign the technician of a work or branch case (their commission % is counted automatically when the clinic pays),
+    or remove an older manual commission entry."""
     from ..lab_commission import technicians
     conn = get_db()
-    if not (g.user.is_super_admin or g.user.can("lab.commission")):
-        abort(403)
     work_id, case_id = to_int(request.form.get("work_id")), to_int(request.form.get("case_id"))
     if work_id:
-        item = conn.one("SELECT id, lab_id, number AS ref FROM lab_works WHERE id = ?", (work_id,))
+        item = conn.one("SELECT id, lab_id, number AS ref, technician_id, case_type, clinic_name AS who FROM lab_works WHERE id = ?", (work_id,))
         back = url_for("lab_works.work", work_id=work_id)
     elif case_id:
-        item = conn.one("SELECT id, lab_id, '#' || id AS ref FROM lab_cases WHERE id = ?", (case_id,))
+        item = conn.one("SELECT c.id, c.lab_id, '#' || c.id AS ref, c.technician_id, c.case_type, b.name AS who FROM lab_cases c "
+                        "JOIN branches b ON b.id = c.branch_id WHERE c.id = ?", (case_id,))
         back = url_for("labs.case", case_id=case_id)
     else:
         abort(400)
     if not item or (not g.user.is_super_admin and item["lab_id"] not in _lab_ids()):
         abort(404)
-    if request.form.get("action") == "remove":
+    action = request.form.get("action")
+    if action == "remove":
+        if not (g.user.is_super_admin or g.user.can("lab.commission")):
+            abort(403)
         c = conn.one("SELECT * FROM lab_commissions WHERE id = ? AND (work_id = ? OR case_id = ?)",
                      (to_int(request.form.get("commission_id")), work_id or 0, case_id or 0))
         if c:
             conn.execute("DELETE FROM lab_commissions WHERE id = ?", (c["id"],))
             audit.record("lab_commission_removed", "lab_commission", c["id"], f"Removed technician commission on {item['ref']}",
                          {"amount_cents": c["amount_cents"], "employee_id": c["employee_id"]})
-            flash("Commission removed.", "success")
+            flash("Manual commission removed. The assigned technician's % now applies to this work.", "success")
         return redirect(back)
-    emp_id = to_int(request.form.get("employee_id"))
-    amt = parse_money(request.form.get("amount"))
-    if not any(t["id"] == emp_id for t in technicians(conn)):
-        flash("Choose the technician.", "error")
-    elif amt is None or amt <= 0:
-        flash("Enter the commission amount, like 150 or 1,200.", "error")
-    else:
-        cid = conn.insert("lab_commissions", {"employee_id": emp_id, "work_id": work_id, "case_id": case_id, "amount_cents": amt,
-                                              "note": clean(request.form.get("note"), 200), "created_by": g.user.id, "created_at": now_str()})
-        audit.record("lab_commission_added", "lab_commission", cid, f"Technician commission ₱{amt / 100:,.2f} on {item['ref']}",
-                     {"employee_id": emp_id})
-        flash("Commission added. It counts in payroll when the work is delivered.", "success")
-    return redirect(back)
+    if action == "assign":
+        tid = to_int(request.form.get("technician_id"))
+        if tid and not any(t["id"] == tid for t in technicians(conn)):
+            flash("Choose a technician from the list.", "error")
+            return redirect(back)
+        if tid != item["technician_id"]:
+            conn.execute(f"UPDATE {'lab_works' if work_id else 'lab_cases'} SET technician_id = ? WHERE id = ?", (tid, item["id"]))
+            audit.record("lab_technician_assigned", "lab_work" if work_id else "lab_case", item["id"],
+                         f"Technician for {item['ref']}: " + (next(t["full_name"] for t in technicians(conn) if t["id"] == tid) if tid else "none"))
+            if tid:
+                _notify_technician(conn, tid, item["id"], item["ref"], f"{item['case_type']} for {item['who']}",
+                                   link=back)
+        flash("Technician saved.", "success")
+        return redirect(back)
+    abort(400)
 
 
 # ---------------------------------------------------------------------------

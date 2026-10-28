@@ -18,7 +18,7 @@
 <tr><td>{% if w.due_on %}<span class="{{ 'text-danger' if late else '' }}"><strong>{{ w.due_on|date }}</strong></span>{% if late %}<br><span class="badge badge-red">Overdue</span>{% elif w.due_on == soon and w.status in LAB_LATE %}<br><span class="badge badge-amber">Due tomorrow</span>{% endif %}{% else %}—{% endif %}</td>
 <td><a href="{{ url_for('lab_works.work', work_id=w.id) }}"><strong>{{ w.number }}</strong></a>{% if w.patient_ref %}<br><small class="muted">Ref: {{ w.patient_ref }}</small>{% endif %}</td>
 <td>{{ w.clinic_name }}<br><small class="muted">{{ w.doctor or '—' }}{% if w.contact_number %} · {{ w.contact_number }}{% endif %}</small></td>
-<td>{{ w.case_type }}{% if w.teeth or w.shade %}<br><small class="muted">{{ w.teeth }}{% if w.shade %} · Shade {{ w.shade }}{% endif %}</small>{% endif %}</td>
+<td>{{ w.case_type }}{% if w.teeth or w.shade %}<br><small class="muted">{{ w.teeth }}{% if w.shade %} · Shade {{ w.shade }}{% endif %}</small>{% endif %}{% if w.technician %}<br><small class="muted">Tech: {{ w.technician }}</small>{% endif %}</td>
 <td class="num">{{ w.units }}</td><td>{{ arches[w.arch] }}</td><td>{{ w.received_on|date }}</td><td>{{ w.delivered_on|date if w.delivered_on else '—' }}</td>
 <td><span class="badge {{ lab_badge(w.status) }}">{{ w.status|lab_status }}</span>{% if w.invoice_number %}<br><small class="muted">{{ w.invoice_number }}</small>{% endif %}</td></tr>
 {% else %}<tr><td colspan="9" class="empty">No works here yet. Use <strong>+ New work</strong> when a clinic sends you a case.</td></tr>{% endfor %}

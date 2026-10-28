@@ -26,9 +26,17 @@ def test_report(self):
     # a technician (employee) for the commission
     emp = self.conn.insert("employees", {"full_name": "Report Tech (demo)", "position": "Dental Technician", "active": 1, "created_at": now_str()})
     paid_w = self.new_work(c, clinic_name="Report Clinic A", case_type="Complete denture", units="1", price="4000")
-    open_w = self.new_work(c, clinic_name="Report Clinic B", case_type="Retainer", units="2", price="1500")
+    open_w = self.new_work(c, clinic_name="Report Clinic B", case_type="Retainer", units="2", price="1500", technician_id=str(emp))
+    self.assertEqual(open_w["technician_id"], emp)
+    self.assertIn("Report Tech (demo)", c.get(f"/staff/lab/works/{open_w['id']}").data.decode())
+    self.assertIn("Tech: Report Tech (demo)", c.get("/staff/lab/works").data.decode())
+    r = c.post("/staff/lab/works/new", data={"lab_id": self.lab, "clinic_name": "Report Clinic C", "case_type": "Retainer", "units": "1",
+                                              "received_on": t, "technician_id": "999999"})   # not a technician: refused
+    self.assertEqual(r.status_code, 200)
+    self.assertIsNone(self.q("SELECT id FROM lab_works WHERE clinic_name = 'Report Clinic C'"))
     admin = self.login("admin")
-    admin.post("/staff/lab/commission", data={"work_id": paid_w["id"], "employee_id": emp, "amount": "300"})
+    self.conn.execute("UPDATE employees SET lab_commission_bp = 750 WHERE id = ?", (emp,))   # 7.5%
+    admin.post("/staff/lab/commission", data={"work_id": paid_w["id"], "action": "assign", "technician_id": emp})
     iid = int(c.post(f"/staff/lab/works/{paid_w['id']}/bill").headers["Location"].rstrip("/").split("/")[-1])
     c.post(f"/staff/lab/invoices/{iid}", data={"action": "issue"})
     c.post(f"/staff/lab/invoices/{iid}", data={"action": "pay", "amount": "4000", "method": "cash", "received_on": ""})
@@ -41,13 +49,14 @@ def test_report(self):
     self.assertEqual(a["delivered"], t)
     self.assertEqual(a["days"], 0)
     self.assertEqual(b["payment"], "unbilled")
+    self.assertEqual(b["tech_names"], "Report Tech (demo)")   # from the work's technician field
     self.assertIn("Retainer", b["what"])
     techs = dict(rep["by_tech"])
-    self.assertEqual(techs["Report Tech (demo)"]["commission"], 30000)
+    self.assertEqual(techs["Report Tech (demo)"]["commission"], 30000)   # 7.5% of 4,000 paid
 
     # filters
     only = wr.build(self.conn, [self.lab], t, t, technician=emp)
-    self.assertEqual([r["ref"] for r in only["rows"]], [paid_w["number"]])
+    self.assertEqual(sorted(r["ref"] for r in only["rows"]), sorted([paid_w["number"], open_w["number"]]))
     self.assertEqual([r["ref"] for r in wr.build(self.conn, [self.lab], t, t, payment="unbilled")["rows"] if r["ref"] == paid_w["number"]], [])
     self.assertEqual([r["ref"] for r in wr.build(self.conn, [self.lab], t, t, basis="delivered")["rows"] if r["ref"] == open_w["number"]], [])
 

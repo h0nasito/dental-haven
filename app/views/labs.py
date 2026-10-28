@@ -530,7 +530,7 @@ def case(case_id):
                       (case_id,))
     fittings = conn.all("SELECT f.*, d.name AS dentist_name, u.name AS by_name FROM lab_case_fittings f LEFT JOIN users d ON d.id = f.dentist_id "
                         "LEFT JOIN users u ON u.id = f.created_by WHERE f.case_id = ? ORDER BY f.id DESC", (case_id,))
-    from ..lab_commission import entries, technicians
+    from ..lab_commission import page_context
     lab_invoice = conn.one("SELECT number, status, total_cents, paid_cents FROM lab_invoices WHERE id = ?", (c["invoice_id"],)) if c["invoice_id"] else None
     photos = conn.all("SELECT ph.*, u.name AS by_name FROM lab_case_photos ph LEFT JOIN users u ON u.id = ph.uploaded_by WHERE ph.case_id = ? ORDER BY ph.id",
                       (case_id,))
@@ -543,7 +543,7 @@ def case(case_id):
                            extras_prices=extras_list(price_items(conn, [c["lab_id"]])) if can_update else [],
                            out_of_date=billed is not None and billed != now_total, billed=billed, now_total=now_total, events=events, statuses=STATUSES, can_update=can_update, lab_invoice=lab_invoice, photos=photos, max_photos=MAX_CASE_PHOTOS,
                            can_bill=g.user.is_super_admin or (lab_user and g.user.can("lab.billing")),
-                           comm_entries=entries(conn, case_id=c["id"]), comm_techs=technicians(conn),
+                           **page_context(conn, g.user, case=c),
                            patient_link=can_see_patient(conn, g.user, c["patient_id"]), fittings=fittings,
                            can_fit=_can_record_fitting(conn, c), fit_results=FIT_RESULTS, fit_checks=FIT_CHECKS,
                            agreement=agreement_text(conn, c), today=today().isoformat(),
