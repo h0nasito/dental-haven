@@ -1602,6 +1602,16 @@ def financial():
     if start > end:
         start, end = end, start
     rep = finance_report.lab_build(conn, ids, start.isoformat(), end.isoformat())
+    from .lab_expenses import summary as expense_summary
+    ex = expense_summary(conn, ids, start.isoformat(), end.isoformat())
+    # Money in and out of each place the lab keeps money (Cash, GCash, each bank, then anything else used)
+    received = {r["label"]: r["total"] for r in rep["rows"]}
+    names = [("Cash", "Cash"), ("GCash", "GCash")] + [(a["name"], f"{METHODS['bank']} – {a['name']}") for a in rep["accounts"] if a["name"] != "GCash"]
+    known = {key for _, key in names}
+    names += [(k, k) for k in list(received) + list(ex["by_source"]) if k not in known and not known.add(k)]
+    flows = [{"name": n, "in": received.get(k, 0), "out": ex["by_source"].get(k, 0)} for n, k in names]
+    flows = [f for f in flows if f["in"] or f["out"] or f["name"] in ("Cash", "GCash")]
+    net = rep["total"] - ex["total"]
     if request.args.get("format") == "csv":
         buf = io.StringIO()
         w = csv.writer(buf)
@@ -1614,10 +1624,23 @@ def financial():
         for a in rep["accounts"]:
             w.writerow([a["name"], a["total"] / 100])
         w.writerow(["Cash received", rep["cash"] / 100])
+        w.writerow([])
+        w.writerow(["Lab expenses by category", "Total (PHP)"])
+        for c, amt in ex["by_category"]:
+            w.writerow([c, amt / 100])
+        w.writerow(["Total expenses", ex["total"] / 100])
+        w.writerow([])
+        w.writerow(["Account", "Received (PHP)", "Paid out (PHP)", "Net (PHP)"])
+        for f in flows:
+            w.writerow([f["name"], f["in"] / 100, f["out"] / 100, (f["in"] - f["out"]) / 100])
+        w.writerow([])
+        w.writerow(["Received", rep["total"] / 100])
+        w.writerow(["Less lab expenses", ex["total"] / 100])
+        w.writerow(["Net", net / 100])
         audit.record("lab_financial_exported", "lab_invoice", None, f"Lab financial report {start} to {end}")
         return Response("\ufeff" + buf.getvalue(), mimetype="text/csv",
                         headers={"Content-Disposition": f'attachment; filename="lab-financial-report-{start}-to-{end}.csv"', "Cache-Control": "no-store"})
-    return render_template("staff/lab_works/financial.html", rep=rep, start=start, end=end,
+    return render_template("staff/lab_works/financial.html", rep=rep, ex=ex, flows=flows, net=net, start=start, end=end,
                            lab_names=", ".join(lab_display(l["name"]) for l in conn.all(f"SELECT name FROM laboratories WHERE id IN ({_in(ids)})", ids)))
 
 
