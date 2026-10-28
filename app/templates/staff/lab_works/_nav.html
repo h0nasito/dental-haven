@@ -5,6 +5,7 @@
   <a href="{{ url_for('lab_works.services') }}" class="{{ 'active' if active == 'services' else '' }}">Services</a>
   <a href="{{ url_for('lab_works.prices') }}" class="{{ 'active' if active == 'prices' else '' }}">Price list</a>
   {% if nav_lab_billing %}<a href="{{ url_for('lab_works.invoices') }}" class="{{ 'active' if active == 'invoices' else '' }}">Invoices &amp; receipts</a>
+  <a href="{{ url_for('lab_works.lab_report') }}" class="{{ 'active' if active == 'report' else '' }}">Works report</a>
   <a href="{{ url_for('lab_works.collections') }}" class="{{ 'active' if active == 'collections' else '' }}">Collections</a>
   <a href="{{ url_for('lab_expenses.index') }}" class="{{ 'active' if active == 'expenses' else '' }}">Expenses</a>
   <a href="{{ url_for('lab_works.financial') }}" class="{{ 'active' if active == 'financial' else '' }}">Financial</a>{% endif %}

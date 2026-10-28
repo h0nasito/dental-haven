@@ -1,0 +1,58 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import empty %}
+{% block page_title %}Lab works report{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Lab works report</h1><p>Outside clinic works and branch cases {{ 'delivered' if basis == 'delivered' else 'started' }} {{ start|date }} – {{ end|date }}: technician, dates and payment. Patient names are left out.</p></div>
+<a class="btn btn-secondary btn-sm" href="{{ url_for('lab_works.lab_report', format='csv', **args) }}">CSV export</a></div>
+{% set active = 'report' %}{% include "staff/lab_works/_nav.html" %}
+<form class="toolbar" method="get">
+<div class="field"><label for="wf">From</label><input id="wf" type="date" name="from" value="{{ start.isoformat() }}"></div>
+<div class="field"><label for="wt">To</label><input id="wt" type="date" name="to" value="{{ end.isoformat() }}"></div>
+<div class="field"><label for="wb">Dates are</label><select id="wb" name="basis">{% for k, l in bases.items() %}<option value="{{ k }}" {% if basis == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+<div class="field"><label for="wk">Type</label><select id="wk" name="kind"><option value="">All</option>{% for k, l in kinds.items() %}<option value="{{ k }}" {% if kind == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+<div class="field"><label for="wc">Dental clinic / branch</label><select id="wc" name="client"><option value="">All</option>{% for c in clients %}<option value="{{ c.id }}" {% if client == c.id %}selected{% endif %}>{{ c.clinic_name }}{% if c.branch_id %} (branch){% endif %}</option>{% endfor %}</select></div>
+<div class="field"><label for="wy">Case</label><select id="wy" name="type"><option value="">All</option>{% for t in types %}<option {% if ctype == t %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></div>
+<div class="field"><label for="wh">Technician</label><select id="wh" name="tech"><option value="">All</option>{% for t in techs %}<option value="{{ t.id }}" {% if tech == t.id %}selected{% endif %}>{{ t.full_name }}</option>{% endfor %}</select></div>
+<div class="field"><label for="ws">Status</label><select id="ws" name="status"><option value="">All</option><option value="open" {% if status == 'open' %}selected{% endif %}>Still at the lab</option><option value="delivered" {% if status == 'delivered' %}selected{% endif %}>Delivered</option><option value="cancelled" {% if status == 'cancelled' %}selected{% endif %}>Cancelled</option></select></div>
+<div class="field"><label for="wp">Payment</label><select id="wp" name="payment"><option value="">All</option>{% for k, l in payments.items() %}<option value="{{ k }}" {% if payment == k %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+<button class="btn btn-secondary">Show</button></form>
+
+<div class="grid grid-4" style="margin-bottom:1rem">
+<div class="stat"><div class="label">Works</div><div class="value">{{ rep.count }}</div><div class="sub">{{ rep.delivered }} delivered · {{ rep.open }} still at the lab{% if rep.cancelled %} · {{ rep.cancelled }} cancelled{% endif %}</div></div>
+<div class="stat {{ 'warn' if rep.late_now else '' }}"><div class="label">On time</div><div class="value">{{ rep.on_time ~ '%' if rep.on_time is not none else '—' }}</div><div class="sub">{% if rep.avg_days is not none %}{{ rep.avg_days }} days on average{% else %}No delivered works with due dates{% endif %}{% if rep.late_now %} · {{ rep.late_now }} past due now{% endif %}</div></div>
+<div class="stat"><div class="label">Amount</div><div class="value">{{ rep.amount|peso }}</div><div class="sub">{% if rep.unbilled_count %}{{ rep.unbilled_count }} work{{ 's' if rep.unbilled_count != 1 }} not billed yet{% if rep.unbilled %} ({{ rep.unbilled|peso }}){% endif %}{% elif rep.count %}All billed{% else %}—{% endif %}</div></div>
+<div class="stat {{ 'warn' if rep.balance else '' }}"><div class="label">Paid</div><div class="value">{{ rep.paid|peso }}</div><div class="sub">{{ rep.balance|peso }} unpaid on invoices</div></div>
+</div>
+
+<div class="card"><div class="table-wrap"><table class="wr"><thead><tr><th>Ref</th><th>Dental clinic / branch</th><th>Case</th><th>Technician</th><th>Started</th><th>Due</th><th>Delivered</th><th>Status</th><th class="num">Amount</th><th>Payment</th></tr></thead><tbody>
+{% for r in rep.rows %}<tr {% if r.status == 'cancelled' %}style="opacity:.55"{% endif %}>
+<td><a href="{{ url_for('lab_works.work', work_id=r.id) if r.src == 'work' else url_for('labs.case', case_id=r.id) }}">{{ r.ref }}</a></td>
+<td><strong>{{ r.who }}</strong>{% if r.kind == 'branch' %} <span class="badge">Branch</span>{% endif %}{% if r.who_sub %}<br><small class="muted">{{ r.who_sub }}</small>{% endif %}</td>
+<td>{{ r.what }}</td>
+<td>{% if r.tech_names %}{{ r.tech_names }}{% else %}<span class="muted">—</span>{% endif %}</td>
+<td>{{ r.start|date if r.start else '—' }}</td>
+<td>{% if r.due %}<span class="{{ 'text-danger' if r.late_now }}">{{ r.due|date }}</span>{% else %}—{% endif %}</td>
+<td>{% if r.delivered %}{{ r.delivered|date }}<br><small class="muted">{{ r.days }} day{{ 's' if r.days != 1 }}{% if r.on_time is sameas false %} · late{% endif %}</small>{% else %}—{% endif %}</td>
+<td><span class="badge {{ lab_badge(r.status) }}">{{ r.status_label }}</span></td>
+<td class="num">{{ r.amount|peso if r.amount else '—' }}</td>
+<td>{% if r.payment == 'paid' %}<span class="badge badge-green">Paid</span>
+{% elif r.payment == 'partial' %}<span class="badge badge-amber">Partly paid</span><br><small class="muted">{{ r.balance|peso }} left</small>
+{% elif r.payment == 'unpaid' %}<span class="badge {{ 'badge-red' if r.past_due else '' }}">{{ 'Past due' if r.past_due else 'Unpaid' }}</span>
+{% elif r.payment == 'draft' %}<span class="badge">Draft invoice</span>
+{% else %}<span class="muted">Not billed</span>{% endif %}
+{% if r.invoice and r.invoice != 'Draft' %}<br><small class="muted">{{ r.invoice }}</small>{% endif %}</td></tr>
+{% else %}<tr><td colspan="10">{{ empty('No lab works in this period') }}</td></tr>{% endfor %}</tbody>
+{% if rep.rows %}<tfoot><tr><td colspan="8"><strong>Total</strong> <small class="muted">(cancelled left out)</small></td><td class="num"><strong>{{ rep.amount|peso }}</strong></td><td>{{ rep.paid|peso }} paid</td></tr></tfoot>{% endif %}</table></div>
+<p class="hint">Amount is the work's lines on its lab invoice after the invoice discount; not billed yet = its price. When one invoice covers several works, its payments are shared in proportion to each work's amount. Technicians come from the commissions entered on each work.</p></div>
+
+<div class="grid grid-3 mt-1">
+<div class="card"><h2>By case</h2>{% if rep.by_type %}<table><thead><tr><th>Case</th><th class="num">Works</th><th class="num">Units</th></tr></thead><tbody>
+{% for t, v in rep.by_type %}<tr><td><a href="{{ url_for('lab_works.lab_report', **dict(args, type=t)) }}">{{ t }}</a></td><td class="num">{{ v.works }}</td><td class="num">{{ v.units }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="muted">Nothing in this period.</p>{% endif %}</div>
+<div class="card"><h2>By technician</h2>{% if rep.by_tech %}<table><thead><tr><th>Technician</th><th class="num">Works</th><th class="num">Delivered</th><th class="num">Commission</th></tr></thead><tbody>
+{% for t, v in rep.by_tech %}<tr><td>{{ t }}</td><td class="num">{{ v.works }}</td><td class="num">{{ v.delivered }}</td><td class="num">{{ v.commission|peso if v.commission else '—' }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="muted">No technician commissions on these works.</p>{% endif %}
+{% if rep.untagged %}<p class="hint">{{ rep.untagged }} work{{ 's' if rep.untagged != 1 }} without a technician. Add the technician's commission on the work to show it here.</p>{% endif %}</div>
+<div class="card"><h2>By dental clinic / branch</h2>{% if rep.by_who %}<table><thead><tr><th>Clinic</th><th class="num">Works</th><th class="num">Amount</th><th class="num">Unpaid</th></tr></thead><tbody>
+{% for k, v in rep.by_who %}<tr><td>{{ k[1] }}{% if k[0] == 'branch' %} <span class="badge">Branch</span>{% endif %}</td><td class="num">{{ v.works }}</td><td class="num">{{ v.amount|peso }}</td><td class="num">{{ v.balance|peso if v.balance else '—' }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="muted">Nothing in this period.</p>{% endif %}</div>
+</div>
+<style>.wr td { vertical-align: top; } .wr td:nth-child(5), .wr td:nth-child(6), .wr td:nth-child(7) { white-space: nowrap; }</style>
+{% endblock %}

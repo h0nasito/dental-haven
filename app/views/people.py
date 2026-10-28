@@ -419,7 +419,8 @@ def employee(emp_id):
                 return redirect(url_for("people.employee", emp_id=emp_id))
             upd = {"position": pos, "employment_type": request.form.get("employment_type", "regular"),
                    "primary_branch_id": branch_id, "lab_id": lab_id, "active": 1 if request.form.get("active") else 0,
-                   "ot_eligible": 1 if request.form.get("ot_eligible") else 0, "work_start": ws, "work_end": we}
+                   "ot_eligible": 1 if request.form.get("ot_eligible") else 0, "work_start": ws, "work_end": we,
+                   "holiday_pay": 1 if request.form.get("holiday_pay") else 0}
             conn.update("employees", emp_id, upd)
             if upd["ot_eligible"] != e["ot_eligible"] or (ws, we) != (e["work_start"], e["work_end"]):
                 # Recount lates and overtime on this employee's records from the last 31 days.
@@ -442,7 +443,7 @@ def employee(emp_id):
                              "ORDER BY s.sort_order", (emp_id,))
     from .. import settings as _settings
     from ..workplace import labs_for
-    return render_template("staff/people/employee.html", ot_end=_fmt12(_settings.get("payroll.staff_end_time", conn) or "17:00"), e=e, comps=comps, branches=branches_for_user(g.user), labs=labs_for(conn, g.user), is_dentist=is_dentist,
+    return render_template("staff/people/employee.html", ot_end=_fmt12(_settings.get("payroll.staff_end_time", conn) or "17:00"), pay_unworked=_settings.get("payroll.pay_unworked_regular_holiday", conn), e=e, comps=comps, branches=branches_for_user(g.user), labs=labs_for(conn, g.user), is_dentist=is_dentist,
                            dpay=dpay, svc_rates=svc_rates, all_services=conn.all("SELECT id, name FROM services WHERE active = 1 ORDER BY sort_order"),
                            today=today().isoformat(),
                            allowances=conn.all("SELECT * FROM employee_allowances WHERE employee_id = ? AND active = 1 ORDER BY id", (emp_id,)),
@@ -822,6 +823,10 @@ def payroll_period(period_id):
         elif action == "submit" and p["status"] == "draft":
             conn.execute("UPDATE payroll_periods SET status='submitted', submitted_by=?, submitted_at=? WHERE id=?", (g.user.id, now_str(), period_id))
             audit.record("payroll_submitted", "payroll_period", period_id, "Submitted for approval")
+            from ..approvals import approvers
+            from ..notices import notify
+            notify(conn, approvers(conn, "payroll.approve", p["branch_id"]), "payroll", f"Payroll summary to approve: {p['name']}",
+                   f"Submitted by {g.user.name}", url_for("people.payroll_period", period_id=period_id), exclude=g.user.id)
             flash("Submitted for approval.", "success")
         elif action == "return" and p["status"] == "submitted" and (g.user.can("payroll.approve") or p["submitted_by"] == g.user.id):
             conn.execute("UPDATE payroll_periods SET status='draft' WHERE id=?", (period_id,))

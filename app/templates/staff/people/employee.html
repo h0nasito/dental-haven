@@ -19,6 +19,8 @@
 <span class="hint">Only if this person has their own hours, e.g. an associate on 10:00 AM – 6:00 PM: late counts from the start, overtime after the end. Leave empty for the usual hours ({% if is_dentist %}their dentist schedule, or the branch opening hours{% else %}clinic staff hours{% endif %}).</span></fieldset>
 <label class="check"><input type="checkbox" name="ot_eligible" value="1" {% if e.ot_eligible %}checked{% endif %}> Eligible for overtime</label>
 <span class="hint">Untick for commission-based staff and dentists. Overtime is time after {{ ot_end }} plus a 30-minute short lunch, paid at daily rate ÷ 8 × 1.25 once a supervisor approves it.</span>
+<label class="check"><input type="checkbox" name="holiday_pay" value="1" {% if e.holiday_pay %}checked{% endif %}> Holiday pay</label>
+<span class="hint">Ticked: a regular holiday worked is double pay, a special non-working holiday worked is +30%{% if pay_unworked %}, and an unworked regular holiday is paid 1 day{% endif %}. Untick for commission-based staff: holidays are then paid like any working day. Dentists on daily rate + commission don't get holiday pay. Applies to payrolls you create or recalculate from now on.</span>
 <button class="btn btn-secondary mt-1">Save</button></form></div>
 {% endif %}
 {% if current_user.can('compensation.manage') and is_dentist %}

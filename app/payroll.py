@@ -117,8 +117,9 @@ OT_MULTIPLIER = 1.25          # clinic rule: hourly OT rate = daily rate / 8 x 1
 HOLIDAY_WORKED = {"regular": 2.0, "special": 1.3}   # regular holiday worked = double pay; special non-working = +30%
 
 
-def staff_daily_pay(conn, recs, rate_cents: int, start: str, end: str) -> dict:
-    """Daily-rate staff: basic pay, holiday pay, approved overtime and late deduction for the period."""
+def staff_daily_pay(conn, recs, rate_cents: int, start: str, end: str, holiday_pay: bool = True) -> dict:
+    """Daily-rate staff: basic pay, holiday pay, approved overtime and late deduction for the period.
+    Without holiday pay (commission-based staff), a holiday worked is paid like any day and an unworked one isn't paid."""
     holidays = {h["day"]: h["kind"] for h in conn.all("SELECT day, kind FROM holidays WHERE day BETWEEN ? AND ?", (start, end))}
     basic = holiday = 0
     worked_days = set()
@@ -126,10 +127,10 @@ def staff_daily_pay(conn, recs, rate_cents: int, start: str, end: str) -> dict:
         if r["time_in"] and r["time_out"] and r["status"] in ("ok", "corrected", "exception"):
             worked_days.add(r["work_date"])
             basic += rate_cents
-            kind = holidays.get(r["work_date"])
+            kind = holidays.get(r["work_date"]) if holiday_pay else None
             if kind:
                 holiday += round(rate_cents * (HOLIDAY_WORKED[kind] - 1))
-    if settings.get("payroll.pay_unworked_regular_holiday", conn):
+    if holiday_pay and settings.get("payroll.pay_unworked_regular_holiday", conn):
         holiday += sum(rate_cents for d, k in holidays.items() if k == "regular" and d not in worked_days)
     ot_minutes = sum(r["ot_approved_minutes"] or 0 for r in recs if r["status"] != "excused")
     ot_pay = round(ot_minutes / 60 * rate_cents / 8 * OT_MULTIPLIER)
@@ -192,7 +193,8 @@ def build_lines(conn, period) -> list[dict]:
         estimate = None
         extra = {}
         if rate is not None and basis == "daily":
-            extra = staff_daily_pay(conn, recs, rate, period["start_date"], period["end_date"])
+            extra = staff_daily_pay(conn, recs, rate, period["start_date"], period["end_date"],
+                                    holiday_pay=bool(e["holiday_pay"]) if "holiday_pay" in e.keys() else True)
             estimate = extra.pop("estimate_cents")
             late = extra.pop("late_minutes")
         elif rate is not None and basis == "hourly":

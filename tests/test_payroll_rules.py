@@ -59,6 +59,31 @@ class TestPayrollRules(Base):
         for part in ("₱1,610.00", "₱109.38", "-₱5.00", "Night differential and statutory deductions"):
             self.assertIn(part, html)
 
+    def test_no_holiday_pay_when_unticked(self):
+        admin = self.login("admin")
+        eid, bid = self._employee("No Holiday Pay (demo)")
+        admin.post("/staff/holidays", data={"action": "add", "day": "2025-07-08", "name": "Test regular 2", "kind": "regular"})
+        admin.post("/staff/holidays", data={"action": "add", "day": "2025-07-09", "name": "Test special 2", "kind": "special"})
+        admin.post("/staff/holidays", data={"action": "add", "day": "2025-07-10", "name": "Test regular 3", "kind": "regular"})
+        self._record(admin, eid, bid, "2025-07-08", "08:00", "17:00")
+        self._record(admin, eid, bid, "2025-07-09", "08:00", "17:00")
+        # untick on the employee page (the form posts the employee's details)
+        e = self.q("SELECT * FROM employees WHERE id = ?", (eid,))
+        r = admin.post(f"/staff/employees/{eid}", data={"action": "details", "position": e["position"], "employment_type": "regular",
+                                                         "primary_branch_id": str(bid), "active": "1"})
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(self.q("SELECT holiday_pay FROM employees WHERE id = ?", (eid,))["holiday_pay"], 0)
+        r = admin.post("/staff/payroll", data={"start_date": "2025-07-01", "end_date": "2025-07-15", "branch_id": bid, "name": "Jul 1-15 HP"})
+        pid = int(r.headers["Location"].rsplit("/", 1)[1])
+        line = self.q("SELECT * FROM payroll_lines WHERE period_id = ? AND employee_id = ?", (pid, eid))
+        self.assertEqual((line["basic_pay_cents"], line["holiday_pay_cents"]), (140000, 0))   # 2 days, no holiday extra or unworked day
+        # ticked again: double pay on the regular holiday, +30% on the special one, 1 day for the unworked regular holiday
+        self.conn.execute("UPDATE employees SET holiday_pay = 1 WHERE id = ?", (eid,))
+        from app.payroll import staff_daily_pay
+        recs = self.conn.all("SELECT * FROM time_records WHERE employee_id = ?", (eid,))
+        self.assertEqual(staff_daily_pay(self.conn, recs, 70000, "2025-07-01", "2025-07-15")["holiday_pay_cents"], 70000 + 21000 + 70000)
+        self.assertIn("Holiday pay", admin.get(f"/staff/employees/{eid}").data.decode())
+
     def test_third_late_in_a_month_warns(self):
         admin = self.login("admin")
         eid, bid = self._employee("Often Late (demo)")

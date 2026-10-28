@@ -15,7 +15,7 @@
 <p class="hint">{% if mail.brevo %}<strong>Sending through Brevo</strong> (web API), so no Gmail passwords are needed: each sender address above must be a verified sender in your Brevo account.{% else %}Set these on the server (<code>/etc/dental-haven/env</code>), then restart. The password is a Gmail app password, not the normal Gmail password. <strong>On DigitalOcean</strong> the normal email ports are blocked, so Gmail passwords alone won't work there: add <code>BREVO_API_KEY</code> instead.{% endif %} See docs/INTEGRATIONS.md.</p>{% endif %}
 </div>
 <form method="post">{{ csrf() }}
-{% set groups = [('Online booking','booking.'),('Invoicing','invoice.'),('Messaging','messaging.'),('Payroll','payroll.'),('Daily collection report','report.'),('Laboratory','lab.'),('Inventory','inventory.'),('Privacy','privacy.')] %}
+{% set groups = [('Online booking','booking.'),('Invoicing','invoice.'),('Messaging','messaging.'),('Payroll','payroll.'),('Daily collection report','report.'),('Approval reminder emails','approvals.'),('Laboratory','lab.'),('Inventory','inventory.'),('Privacy','privacy.')] %}
 <div class="grid grid-2">
 {% for title, prefix in groups %}
 <div class="card" id="{{ prefix.rstrip('.') }}"><h2>{{ title }}</h2>
@@ -48,6 +48,7 @@
   {% for sq in seqs %}<div class="field"><label for="prefix_{{ sq.id }}">{{ sq.name }}</label><input id="prefix_{{ sq.id }}" name="prefix_{{ sq.id }}" value="{{ sq.prefix or '' }}" maxlength="10"><span class="hint">Next number: {{ sq.next_no or 1 }}</span></div>{% endfor %}
   <p class="notice">Tax is off by default. Confirm VAT/non-VAT registration and official receipt requirements with the clinic's accountant before turning it on.</p>
 {% endif %}
+{% if prefix == 'approvals.' %}<p class="hint">One email per approver, only on days when something waits for them. It lists the type of request and the staff names, with links (no reasons, amounts or dates). Each person can turn it off in Profile settings. Uses the same email setup as dentist emails.</p>{% endif %}
 {% if prefix == 'payroll.' %}<p class="notice">Until pay rules are confirmed, payroll figures are labelled "unconfirmed estimate" and can't be approved.</p>{% endif %}
 {% if prefix == 'booking.' %}<p class="hint">With auto-confirm off, every online request waits for staff confirmation, and patients are told the time is only a request.</p>{% endif %}
 </div>

@@ -1644,6 +1644,57 @@ def financial():
                            lab_names=", ".join(lab_display(l["name"]) for l in conn.all(f"SELECT name FROM laboratories WHERE id IN ({_in(ids)})", ids)))
 
 
+@bp.route("/works-report")
+@login_required
+def lab_report():
+    """Lab works report: outside clinic works and branch cases in a period, with technician, dates and payment."""
+    _need("lab.billing")
+    from .. import lab_works_report as wr
+    from ..lab_commission import technicians
+    conn = get_db()
+    ids = _lab_ids()
+    end = parse_date(request.args.get("to")) or today()
+    start = parse_date(request.args.get("from")) or end.replace(day=1)
+    if start > end:
+        start, end = end, start
+    basis = request.args.get("basis") if request.args.get("basis") in wr.BASES else "started"
+    kind = request.args.get("kind") if request.args.get("kind") in KINDS else ""
+    client = to_int(request.args.get("client"))
+    tech = to_int(request.args.get("tech"))
+    ctype = clean(request.args.get("type"), 120)
+    status = request.args.get("status") if request.args.get("status") in ("open", "delivered", "cancelled") else ""
+    payment = request.args.get("payment") if request.args.get("payment") in wr.PAYMENT_STATES else ""
+    rep = wr.build(conn, ids, start.isoformat(), end.isoformat(), basis=basis, kind=kind, client_id=client, technician=tech,
+                   case_type=ctype, status=status, payment=payment)
+    if request.args.get("format") == "csv":
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        safe = lambda x: ("'" + x) if isinstance(x, str) and x[:1] in ("=", "+", "-", "@") else x  # noqa: E731
+        w.writerow(["Ref", "Type", "Dental clinic / branch", "Doctor / dentist", "Case", "Technician", "Status", "Date started", "Due",
+                    "Date delivered", "Days", "On time", "Invoice", "Amount (PHP)", "Paid (PHP)", "Balance (PHP)", "Payment"])
+        for r in rep["rows"]:
+            w.writerow([safe(x) for x in (r["ref"], KINDS[r["kind"]], r["who"], r["who_sub"], r["what"], r["tech_names"], r["status_label"],
+                                           r["start"] or "", r["due"] or "", r["delivered"] or "", "" if r["days"] is None else r["days"],
+                                           "" if r["on_time"] is None else ("Yes" if r["on_time"] else "No"), r["invoice"],
+                                           (r["amount"] or 0) / 100, (r["paid"] or 0) / 100, (r["balance"] or 0) / 100,
+                                           wr.PAYMENT_STATES[r["payment"]])])
+        w.writerow([])
+        w.writerow(["", "", "", "", "", "", "", "", "", "", "", "", "Total", rep["amount"] / 100, rep["paid"] / 100, rep["balance"] / 100])
+        audit.record("lab_works_report_exported", "lab_work", None, f"Exported lab works report {start} to {end}")
+        return Response("\ufeff" + buf.getvalue(), mimetype="text/csv",
+                        headers={"Content-Disposition": f'attachment; filename="lab-works-report-{start}-to-{end}.csv"', "Cache-Control": "no-store"})
+    clients = conn.all(f"SELECT id, clinic_name, branch_id FROM lab_clients WHERE lab_id IN ({_in(ids)}) ORDER BY branch_id IS NOT NULL, clinic_name", ids)
+    types = sorted({r["case_type"] for r in conn.all(f"SELECT DISTINCT case_type FROM lab_works WHERE lab_id IN ({_in(ids)}) "
+                                                       f"UNION SELECT DISTINCT case_type FROM lab_cases WHERE lab_id IN ({_in(ids)}) "
+                                                       f"UNION SELECT DISTINCT i.case_type FROM lab_work_items i JOIN lab_works w ON w.id = i.work_id WHERE w.lab_id IN ({_in(ids)}) "
+                                                       f"UNION SELECT DISTINCT i.case_type FROM lab_case_items i JOIN lab_cases c ON c.id = i.case_id WHERE c.lab_id IN ({_in(ids)})",
+                                                       ids * 4) if r["case_type"]})
+    args = {k: v for k, v in request.args.items() if k != "format"}
+    return render_template("staff/lab_works/works_report.html", rep=rep, start=start, end=end, basis=basis, bases=wr.BASES, kind=kind, kinds=KINDS,
+                           client=client, clients=clients, tech=tech, techs=technicians(conn), ctype=ctype, types=types, status=status,
+                           payment=payment, payments=wr.PAYMENT_STATES, args=args)
+
+
 @bp.route("/collections")
 @login_required
 def collections():

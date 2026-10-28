@@ -37,6 +37,8 @@ DEFAULTS: dict[str, object] = {
     # 'procedure': commission is counted from bill lines on the date the procedure was done.
     "payroll.dentist_commission_basis": "payment",
     "inventory.order_reminder_days": 5,       # remind branches this many days before month end to submit next month's order list
+    "approvals.email_enabled": True,          # morning email to approvers listing requests still waiting for them
+    "approvals.email_time": "08:00",
     "report.daily_enabled": False,            # email the daily collection report automatically
     "report.daily_time": "23:00",
     "report.daily_recipients": "",
@@ -78,6 +80,8 @@ LABELS = {
     "payroll.pay_unworked_regular_holiday": "Pay 1 day for a regular holiday not worked (staff on daily rate)",
     "payroll.dentist_commission_basis": "Dentist commission is counted",
     "inventory.order_reminder_days": "Remind branches to submit next month's order list (days before month end; 0 = off)",
+    "approvals.email_enabled": "Email approvers each morning when leave, reimbursements, field work, overtime or payroll are waiting for them",
+    "approvals.email_time": "Send at (HH:MM, 24-hour)",
     "report.daily_enabled": "Email the daily collection report automatically",
     "report.daily_time": "Send at (HH:MM, 24-hour)",
     "report.daily_recipients": "Send to (email addresses, one per line)",

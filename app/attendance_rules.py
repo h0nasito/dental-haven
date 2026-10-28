@@ -87,6 +87,8 @@ def refresh_record(conn, rec_id: int):
         late = 0
     conn.execute("UPDATE time_records SET late_minutes = ?, ot_minutes = ?, ot_approved_minutes = MIN(ot_approved_minutes, ?) WHERE id = ?",
                  (late, ot, ot, rec_id))
+    from .approvals import overtime_detected
+    overtime_detected(conn, rec, rec["ot_minutes"] or 0, ot)
     if late:
         check_late_warning(conn, rec["employee_id"], rec["work_date"][:7])
 

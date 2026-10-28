@@ -15,7 +15,25 @@ bp = Blueprint("profile", __name__)
 def account():
     conn = get_db()
     me = conn.one("SELECT u.*, e.position FROM users u LEFT JOIN employees e ON e.user_id = u.id WHERE u.id = ?", (g.user.id,))
-    return render_template("staff/profile/account.html", me=me)
+    approver = any(g.user.can(p) for p in APPROVAL_PERMS)
+    return render_template("staff/profile/account.html", me=me, approver=approver)
+
+
+APPROVAL_PERMS = ("leave.approve", "reimburse.approve", "attendance.manage", "overtime.approve", "payroll.approve")
+
+
+@bp.route("/staff/account/emails", methods=["POST"])
+@login_required
+def set_emails():
+    """Turn the morning approval reminder email on or off for yourself."""
+    on = 1 if request.form.get("notify_approvals") == "1" else 0
+    conn = get_db()
+    with conn.transaction():
+        conn.execute("UPDATE users SET notify_approvals = ? WHERE id = ?", (on, g.user.id))
+        audit.record("approval_emails_" + ("on" if on else "off"), "user", g.user.id,
+                     "Turned " + ("on" if on else "off") + " approval reminder emails")
+    flash("Approval reminder emails turned " + ("on." if on else "off."), "success")
+    return redirect(url_for("profile.account"))
 
 
 @bp.route("/staff/account/avatar", methods=["POST"])
