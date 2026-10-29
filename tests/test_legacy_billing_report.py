@@ -150,6 +150,7 @@ class TestBillingReport(Base):
         self.assertEqual(got, {"CBCT SCAN": other["id"], "Denture Impression": self.dentist["id"]})
         # a dentist not found here: only the other dentist's procedure gets a dentist, not the whole day
         self.conn.execute("UPDATE invoice_items SET dentist_id = NULL, legacy_dentist = 0 WHERE invoice_id = ?", (inv["id"],))
+        self.conn.execute("DELETE FROM legacy_billing_report_rows")
         rows[0][2] = "Unknown Person Here"
         with self.app.app_context():
             br.apply(self.conn, br.read_reports([("doc.xlsx", workbook(rows))]), None)
@@ -176,6 +177,21 @@ class TestBillingReport(Base):
         c.post(f"/staff/patients/{self.pid}/procedures/{pr}", data={"action": "edit", "description": "Extraction\r\nVisit text one\r\nLine 2",
                                                                     "tooth": "", "performed_at": "2026-10-13"})
         self.assertEqual(self.q("SELECT description FROM procedures WHERE id = ?", (pr,))["description"], "Extraction\nVisit text one\nLine 2")
+
+    def test_reports_uploaded_one_dentist_at_a_time(self):
+        """A day two dentists billed: their reports uploaded separately end with the right dentist per line and the
+        day's full paid amount (not the last report's)."""
+        from app import legacy_billing_report as br
+        other = self.q("SELECT id, name FROM users WHERE role = 'dentist' AND id != ? ORDER BY id LIMIT 1", (self.dentist["id"],))
+        inv = self.q("SELECT id FROM invoices WHERE patient_id = ? AND substr(issued_at, 1, 10) = '2026-10-01'", (self.pid,))
+        first = [["Oct 01, 2026", self.name, other["name"], "Dental Haven Malolos ", "", "CBCT SCAN", 8500.0, 0.0, 8500.0, 8500.0, ""]]
+        second = [["Oct 01, 2026", self.name, self.dentist["name"], "Dental Haven Malolos ", "", "Denture Impression", 35000.0, 0.0, 35000.0, 20000.0, 15000.0]]
+        for rows in (first, second, first):
+            with self.app.app_context():
+                br.apply(self.conn, br.read_reports([("doc.xlsx", workbook(rows))]), None)
+        got = {r["description"]: r["dentist_id"] for r in self.conn.all("SELECT description, dentist_id FROM invoice_items WHERE invoice_id = ?", (inv["id"],))}
+        self.assertEqual(got, {"CBCT SCAN": other["id"], "Denture Impression": self.dentist["id"]})
+        self.assertEqual(self.paid("2026-10-01"), 850000 + 2000000)
 
     def test_not_a_billing_report(self):
         r = self.login("admin").post("/staff/admin/import/billing-report", data={"files": [(io.BytesIO(b"not excel"), "x.xlsx")]},

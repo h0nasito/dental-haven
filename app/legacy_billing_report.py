@@ -135,8 +135,31 @@ def _is_synthetic(p) -> bool:
     return p["method"] == LEGACY_METHOD and not p["legacy_key"]
 
 
+ROW_FIELDS = ("key", "date", "patient", "dentist", "clinic", "procedures", "gross", "discount", "net", "paid", "balance")
+
+
+def with_earlier(conn, data: dict) -> dict:
+    """The uploaded rows plus the rows of reports uploaded before (other dentists, other dates), so a bill day that two
+    dentists shared is seen whole even when their reports are uploaded separately. A row uploaded again replaces its
+    earlier copy (MyMedsPH paid may have changed)."""
+    if data.get("_merged"):
+        return data
+    new = {r["key"] for r in data["rows"]}
+    earlier = [dict(r) for r in conn.all(f"SELECT {', '.join(ROW_FIELDS)} FROM legacy_billing_report_rows") if r["key"] not in new]
+    # only the patient days this upload touches matter for matching; the rest are kept as they are
+    days = {(norm(r["patient"]), r["date"]) for r in data["rows"]}
+    earlier = [r for r in earlier if (norm(r["patient"]), r["date"]) in days]
+    return {**data, "rows": earlier + data["rows"], "earlier_rows": len(earlier), "upload_rows": len(data["rows"]), "_merged": True}
+
+
+def _remember(conn, rows) -> None:
+    conn.executemany(f"INSERT OR REPLACE INTO legacy_billing_report_rows ({', '.join(ROW_FIELDS)}) VALUES ({', '.join('?' * len(ROW_FIELDS))})",
+                     [tuple(r.get(f) or (0 if f in ("gross", "discount", "net", "paid", "balance") else "") for f in ROW_FIELDS) for r in rows])
+
+
 def plan(conn, data: dict) -> dict:
     """Work out what confirming would do, without changing anything."""
+    data = with_earlier(conn, data)
     idx = patient_index(conn)
     find_dentist = dentist_finder(conn)
     # MyMedsPH bills here, by patient and day (converted ones, and lines not converted yet)
@@ -207,7 +230,8 @@ def plan(conn, data: dict) -> dict:
             # dentist on lines with none (or set by an earlier upload of a report): when every row of the day has one and
             # the same dentist -> every line; otherwise only by procedure name, so a day with two dentists isn't all one's
             names = {did for did in dent.values()}
-            one = len(names) == 1 and all(r["key"] in dent for r in g["rows"])
+            # (and the report's rows add up to the whole bill here: else another dentist's bill that day isn't uploaded yet)
+            one = len(names) == 1 and all(r["key"] in dent for r in g["rows"]) and g["net"] == bill["ours_total"]
             wanted = [(norm(d), dent.get(r["key"])) for r in g["rows"] for d, _t in split_procedures(r["procedures"])]
             for b in invs:
                 for ln in lines.get(b["id"], []):
@@ -227,6 +251,7 @@ def plan(conn, data: dict) -> dict:
 
 
 def preview(conn, data: dict) -> dict:
+    data = with_earlier(conn, data)
     p = plan(conn, data)
     bills = p["bills"]
     rows = data["rows"]
@@ -246,6 +271,7 @@ def preview(conn, data: dict) -> dict:
          "billed_here": sum(1 for b in bills if b["action"] == "billed_here"),
          "unmatched_names": sorted(((k[0], k[1], v[0], v[1]) for k, v in p["unmatched"].items()), key=lambda x: -x[3]),
          "dentists_unmatched": sorted(p["dentists_unmatched"])}
+    s["earlier_rows"] = data.get("earlier_rows", 0)
     s["unmatched_bills"] = sum(x[2] for x in s["unmatched_names"])
     s["unmatched_net"] = sum(x[3] for x in s["unmatched_names"])
     return s
@@ -274,6 +300,7 @@ def problems(conn, data: dict) -> list[list]:
 
 def apply(conn, data: dict, user_id: int) -> dict:
     """Do it. Call inside a transaction."""
+    data = with_earlier(conn, data)
     st = {"converted": 0, "dentist_lines": 0, "payments": 0, "paid_total": 0, "replaced": 0, "created": 0, "created_net": 0,
           "skipped": 0}
     # MyMedsPH lines not turned into bills yet become bills first (unpaid; the report says what's paid)
@@ -312,9 +339,7 @@ def apply(conn, data: dict, user_id: int) -> dict:
                 amt = min(left, due) if due > 0 else 0
                 if amt <= 0:
                     continue
-                k = key if key not in have else f"{key}.{inv['id']}"
-                if k in have:
-                    continue
+                k = next((x for x in b["keys"] if x not in have), None) or f"{key}.{inv['id']}.{len(have)}"
                 conn.insert("payments", {"invoice_id": inv["id"], "branch_id": inv["branch_id"], "kind": "payment", "amount_cents": amt,
                                          "method": LEGACY_METHOD, "account": "", "reference": "", "received_at": f"{b['date']} 12:00:00",
                                          "received_by": user_id, "status": "valid", "notes": "Paid in MyMedsPH (billing report)",
@@ -351,6 +376,7 @@ def apply(conn, data: dict, user_id: int) -> dict:
                 st["paid_total"] += min(b["paid"], b["net"])
             st["created"] += 1
             st["created_net"] += b["net"]
+    _remember(conn, data["rows"])
     st["visits_dentist"] = link_procedure_dentists(conn)
     settings.put("legacy.billing_report_imported", True, user_id, conn)
     return st
@@ -403,6 +429,7 @@ def undo(conn) -> dict:
         conn.execute("DELETE FROM invoices WHERE id = ?", (iid,))
     conn.execute("UPDATE invoice_items SET dentist_id = NULL, legacy_dentist = 0 WHERE legacy_dentist = 2")
     conn.execute("UPDATE procedures SET performed_by = NULL, legacy_dentist = 0 WHERE legacy_dentist = 1")
+    conn.execute("DELETE FROM legacy_billing_report_rows")
     restored = conn.scalar("SELECT COUNT(*) FROM payments WHERE legacy_key LIKE 'mmbv:%'") or 0
     conn.execute("UPDATE payments SET status = 'valid', legacy_key = NULL, notes = 'Paid in MyMedsPH (imported)' WHERE legacy_key LIKE 'mmbv:%'")
     settings.put("legacy.billing_report_imported", False, None, conn)

@@ -5,7 +5,7 @@
 <div class="page-head"><div><a href="{{ url_for('admin.import_bills') }}">← MyMedsPH bills</a><h1>Check the billing report before importing</h1>
 <p>Compared with the bills here. Nothing has been saved yet.</p></div></div>
 <div class="grid grid-4" style="margin-bottom:1rem">
-<div class="stat"><div class="label">Bills in the files</div><div class="value">{{ '{:,}'.format(s.bills) }}</div><div class="sub">net {{ s.net|peso }} · paid {{ s.paid|peso }} · balance {{ s.balance|peso }}</div></div>
+<div class="stat"><div class="label">Bills in the files</div><div class="value">{{ '{:,}'.format(s.bills) }}</div><div class="sub">net {{ s.net|peso }} · paid {{ s.paid|peso }} · balance {{ s.balance|peso }}{% if s.earlier_rows %}<br>includes {{ '{:,}'.format(s.earlier_rows) }} rows of the same patient days from reports uploaded before{% endif %}</div></div>
 <div class="stat"><div class="label">Found here</div><div class="value">{{ '{:,}'.format(s.matched) }}</div><div class="sub">{{ '{:,}'.format(s.same_amount) }} with the same amount{% if s.amount_differs %} · {{ '{:,}'.format(s.amount_differs) }} different{% endif %}</div></div>
 <div class="stat"><div class="label">Not here: will be created</div><div class="value">{{ '{:,}'.format(s.create) }}</div><div class="sub">net {{ s.create_net|peso }} · paid {{ s.create_paid|peso }}</div></div>
 <div class="stat {% if s.unmatched_names %}warn{% endif %}"><div class="label">Name not matched</div><div class="value">{{ '{:,}'.format(s.unmatched_bills) }}</div><div class="sub">{{ s.unmatched_net|peso }} · skipped</div></div>
