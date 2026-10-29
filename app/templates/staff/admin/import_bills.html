@@ -6,7 +6,20 @@
 <p>Old bills come in from MyMedsPH as history only. Convert them, and they show in each patient's Bills &amp; Payment like any bill, and count in sales, collections and dentist commission.</p></div></div>
 {% if done.n %}<div class="card notice-card"><strong>{{ done.n }} bill{{ 's' if done.n != 1 }} already converted</strong> ({{ done.total|peso }}; {{ done.paid or 0 }} marked paid). They're numbered MM-…, dated on the MyMedsPH bill date.
 <form method="post" class="mt-1" data-confirm="Remove the converted bills again? Their lines go back to history. Bills staff have worked on (new payment, dentist set, voided) are kept.">{{ csrf() }}<input type="hidden" name="action" value="undo"><button class="btn btn-danger">↩ Undo conversion (remove the MM- bills)</button></form></div>{% endif %}
-<div class="card"><h2>Recommended: add the payments from MyMedsPH collection reports</h2>
+<div class="card"><h2>Best: MyMedsPH billing reports (dentist, paid and balance)</h2>
+<p class="mt-0">MyMedsPH <strong>Reports &gt; Billing</strong>, exported to Excel (one file per dentist, any dates): one row per bill with the dentist, net amount, paid and balance. Upload all the dentists' files at once. The preview compares them with the bills here before anything is saved.</p>
+<ul class="list-plain"><li>Sets the <strong>dentist</strong> on bill lines that have none (for My cases and commission).</li>
+<li>Makes each bill's <strong>paid and balance match MyMedsPH</strong>: payments here with a real date (collection reports, cashier) are kept and only the missing amount is added on the bill date; "Paid in MyMedsPH" payments made from a status number are replaced.</li>
+<li>Creates the bills that are in the report but not here (MB-…).</li></ul>
+{% if brs.payments or brs.created or brs.lines %}<p class="notice">Already imported: dentist on <strong>{{ '{:,}'.format(brs.lines) }}</strong> lines, <strong>{{ '{:,}'.format(brs.payments) }}</strong> payments ({{ brs.paid_total|peso }}), <strong>{{ '{:,}'.format(brs.created) }}</strong> bills created. Uploading again changes only what's still different.</p>{% endif %}
+{% if demo %}<div class="flash flash-warning">Switched off on the demo site.</div>{% else %}
+<form method="post" action="{{ url_for('admin.import_billing_report') }}" enctype="multipart/form-data">{{ csrf() }}
+<div class="field"><label for="brf">Billing report files (.xlsx)</label><input id="brf" type="file" name="files" accept=".xlsx" multiple required>
+<span class="hint">Select every dentist's file at once (hold Ctrl and click each). The files aren't kept on the server.</span></div>
+<button class="btn">Check files &amp; preview</button></form>{% endif %}
+{% if brs.payments or brs.created or brs.lines %}<form method="post" action="{{ url_for('admin.import_billing_report_undo') }}" class="mt-1" data-confirm="Remove what the billing report import added (its payments, created bills and dentists), and bring back the status-based payments it replaced?">{{ csrf() }}<button class="btn btn-ghost btn-sm">Undo the billing report import</button></form>{% endif %}
+</div>
+<div class="card"><h2>Also possible: payments from MyMedsPH collection reports</h2>
 <p class="mt-0">The MyMedsPH data export has bills but no payments. The <strong>collection report</strong> (MyMedsPH Reports &gt; Collections, exported to Excel, one file per year) has every payment, including partial payments. Upload all the years at once: the bills are created and each payment is put on them, so balances match MyMedsPH.</p>
 {% if coll.n %}<p class="notice"><strong>{{ '{:,}'.format(coll.n) }} payments</strong> ({{ coll.total|peso }}) already brought in from collection reports. Uploading newer reports adds only payments not here yet.</p>{% endif %}
 {% if demo %}<div class="flash flash-warning">Switched off on the demo site.</div>{% else %}

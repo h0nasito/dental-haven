@@ -1,0 +1,37 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}MyMedsPH billing report{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('admin.import_bills') }}">← MyMedsPH bills</a><h1>Check the billing report before importing</h1>
+<p>Compared with the bills here. Nothing has been saved yet.</p></div></div>
+<div class="grid grid-4" style="margin-bottom:1rem">
+<div class="stat"><div class="label">Bills in the files</div><div class="value">{{ '{:,}'.format(s.bills) }}</div><div class="sub">net {{ s.net|peso }} · paid {{ s.paid|peso }} · balance {{ s.balance|peso }}</div></div>
+<div class="stat"><div class="label">Found here</div><div class="value">{{ '{:,}'.format(s.matched) }}</div><div class="sub">{{ '{:,}'.format(s.same_amount) }} with the same amount{% if s.amount_differs %} · {{ '{:,}'.format(s.amount_differs) }} different{% endif %}</div></div>
+<div class="stat"><div class="label">Not here: will be created</div><div class="value">{{ '{:,}'.format(s.create) }}</div><div class="sub">net {{ s.create_net|peso }} · paid {{ s.create_paid|peso }}</div></div>
+<div class="stat {% if s.unmatched_names %}warn{% endif %}"><div class="label">Name not matched</div><div class="value">{{ '{:,}'.format(s.unmatched_bills) }}</div><div class="sub">{{ s.unmatched_net|peso }} · skipped</div></div>
+</div>
+<div class="grid grid-2">
+<div class="card"><h2>What happens when you confirm</h2><ul class="list-plain">
+<li><strong>Dentist:</strong> set on {{ '{:,}'.format(s.dentist_lines) }} bill line{{ 's' if s.dentist_lines != 1 }} that have none.{% if s.dentist_conflicts %} {{ '{:,}'.format(s.dentist_conflicts) }} line{{ 's' if s.dentist_conflicts != 1 }} already name another dentist: left as they are (in the list to check).{% endif %}</li>
+<li><strong>Payments:</strong> {{ '{:,}'.format(s.add) }} bill{{ 's' if s.add != 1 }} get the missing paid amount ({{ s.add_total|peso }}), dated on the bill date.{% if s.synthetic %} {{ '{:,}'.format(s.synthetic) }} "Paid in MyMedsPH" payment{{ 's' if s.synthetic != 1 }} made from a status number ({{ s.synthetic_total|peso }}) are replaced by the report's figures.{% endif %} Payments with a real date (collection reports, cashier) stay.</li>
+{% if s.more_here %}<li><strong>Paid more here:</strong> {{ '{:,}'.format(s.more_here) }} bill{{ 's' if s.more_here != 1 }} ({{ s.more_here_total|peso }} more than MyMedsPH says): not changed, in the list to check.</li>{% endif %}
+<li><strong>Missing bills:</strong> {{ '{:,}'.format(s.create) }} created (MB-…) with the procedures, net amount, dentist and paid amount from the report. The report has one amount per bill, so it's shared evenly over the bill's procedures.</li>
+{% if s.billed_here %}<li><strong>{{ '{:,}'.format(s.billed_here) }}</strong> bill{{ 's' if s.billed_here != 1 }} not created: that patient already has a bill made in this system that day (in the list to check).</li>{% endif %}
+<li>Uploading the same reports again changes nothing twice. You can undo the import from the MyMedsPH bills page.</li></ul>
+<h3 class="mt-1">Files</h3><ul class="list-plain">{% for f in s.files %}<li class="row between"><span>{{ f.file }}</span><span>{{ '{:,}'.format(f.rows) }} rows · net {{ f.net|peso }}</span></li>{% endfor %}</ul>
+{% if s.errors %}<p class="hint">{{ s.errors|length }} row{{ 's' if s.errors|length != 1 }} skipped: {{ s.errors[:3]|join('; ') }}{% if s.errors|length > 3 %}…{% endif %}</p>{% endif %}
+{% if s.dentists_unmatched %}<p class="hint mt-1"><strong>Dentists without an account here:</strong> {{ s.dentists_unmatched|join(', ') }}. Their bills are still matched and paid; the dentist stays empty. Give them an account with the same name, then upload again to set it.</p>{% endif %}
+</div>
+<div class="card"><h2>Names not matched ({{ s.unmatched_names|length }})</h2>
+{% if s.unmatched_names %}<p class="hint mt-0">The report has names but no patient ID. A name must match one patient here, or several where only one has a MyMedsPH bill that day. Fix the name on the patient (or merge duplicates), then upload again.</p>
+<div class="table-wrap" style="max-height:22rem;overflow:auto"><table><thead><tr><th>Name in report</th><th>Why</th><th class="num">Bills</th><th class="num">Net</th></tr></thead><tbody>
+{% for name, why, n, amt in s.unmatched_names[:200] %}<tr><td>{{ name }}</td><td><small>{{ why }}</small></td><td class="num">{{ n }}</td><td class="num">{{ amt|peso }}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}<p class="muted">Every name matched a patient.</p>{% endif %}
+<form method="post" action="{{ url_for('admin.import_billing_report_confirm') }}" class="mt-1">{{ csrf() }}<input type="hidden" name="token" value="{{ token }}"><button class="btn btn-secondary btn-sm" name="action" value="problems">Download what to check (CSV)</button></form>
+<p class="hint">Bills whose amount differs, bills paid more here, lines with another dentist, and names not matched.</p></div>
+</div>
+<form method="post" action="{{ url_for('admin.import_billing_report_confirm') }}" class="row mt-1" data-confirm="Import now?">{{ csrf() }}<input type="hidden" name="token" value="{{ token }}">
+<button class="btn btn-lg" name="action" value="confirm">Import</button>
+<button class="btn btn-secondary btn-lg" name="action" value="cancel" formnovalidate>Cancel</button></form>
+<p class="hint mt-1">This can take a minute for many years of bills. Keep this page open until it finishes.</p>
+{% endblock %}

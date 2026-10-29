@@ -73,6 +73,7 @@ def build_cases(conn, dentist_id: int) -> list[dict]:
     # bill lines that are theirs, by type of case; each bill's payments are shared over its lines in proportion
     lines: dict[tuple, dict] = {}
     for r in conn.all(f"SELECT i.patient_id, i.id AS inv, i.total_cents, ii.amount_cents, ii.description, ii.dentist_id, s.category AS scat, "
+                      "ii.done_on AS d, "
                       "(SELECT COALESCE(SUM(CASE WHEN kind = 'payment' THEN amount_cents ELSE -amount_cents END), 0) FROM payments "
                       " WHERE invoice_id = i.id AND status = 'valid') AS paid "
                       f"FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id LEFT JOIN services s ON s.id = ii.service_id "
@@ -81,7 +82,10 @@ def build_cases(conn, dentist_id: int) -> list[dict]:
             continue
         k = (r["inv"], kind(r["description"], r["scat"]))
         x = lines.setdefault(k, {"patient_id": r["patient_id"], "billed": 0, "paid": r["paid"], "total": r["total_cents"]})
-        case(r["patient_id"], k[1])["has_bill"] = True
+        c_ = case(r["patient_id"], k[1])
+        c_["has_bill"] = True
+        if r["d"]:
+            c_["visits"].append(r["d"][:10])   # the day the billed work was done is a visit (imported records often have no procedure)
         x["billed"] += r["amount_cents"]
     for (inv, cat_), x in lines.items():
         c = case(x["patient_id"], cat_)
@@ -178,6 +182,15 @@ def detail(patient_id):
             "AND v.status = 'saved' AND v.cancelled_at IS NULL AND NOT EXISTS (SELECT 1 FROM procedures p WHERE p.visit_note_id = v.id "
             "AND p.status = 'completed')", (patient_id,)) if mine(x["owner"])]
         visits.sort(key=lambda r: r["at"] or "", reverse=True)
+    # the dentist's billed lines of this type count as visits too (imported MyMeds records often have only the bill)
+    proc_days = {(v["at"] or "")[:10] for v in visits}
+    for r in conn.all("SELECT ii.done_on AS at, ii.dentist_id AS owner, "
+                      "ii.description, ii.tooth, NULL AS service, s.category AS scat, u.name AS dentist, b.name AS branch FROM invoice_items ii "
+                      "JOIN invoices i ON i.id = ii.invoice_id LEFT JOIN services s ON s.id = ii.service_id LEFT JOIN users u ON u.id = ii.dentist_id "
+                      "LEFT JOIN branches b ON b.id = i.branch_id WHERE i.patient_id = ? AND i.status = 'issued' AND ii.done_on IS NOT NULL", (patient_id,)):
+        if mine(r["owner"]) and kind(r["description"], r["scat"]) == cat and (r["at"] or "")[:10] not in proc_days:
+            visits = list(visits) + [r]
+    visits = sorted(visits, key=lambda r: r["at"] or "", reverse=True)
     # one visit per day, with what was done that day
     days: dict[str, dict] = {}
     for v in visits:

@@ -1627,12 +1627,101 @@ def import_bills():
                     "SUM(CASE WHEN EXISTS (SELECT 1 FROM payments p WHERE p.invoice_id = invoices.id AND p.method = 'mymeds') THEN 1 ELSE 0 END) AS paid "
                     "FROM invoices WHERE legacy = 1")
     coll = conn.one("SELECT COUNT(*) AS n, COALESCE(SUM(amount_cents), 0) AS total FROM payments WHERE legacy_key LIKE 'mmc:%'")
+    from .. import legacy_billing_report as _br
+    brs = _br.status(conn)
     from flask import current_app
-    return render_template("staff/admin/import_bills.html", summary=lb.status_summary(conn), choices=lb.CHOICES, saved=saved, coll=coll,
+    return render_template("staff/admin/import_bills.html", summary=lb.status_summary(conn), choices=lb.CHOICES, saved=saved, coll=coll, brs=brs,
                            demo=current_app.config["APP_ENV"] == "demo",
                            branches=branches, default_branch=settings.get(lb.BRANCH_KEY, conn), done=done,
                            shared=conn.scalar("SELECT COUNT(DISTINCT lb.patient_id) FROM legacy_bills lb JOIN patients p ON p.id = lb.patient_id "
                                               "WHERE lb.invoice_id IS NULL AND p.preferred_branch_id IS NULL"))
+
+
+# ---- MyMedsPH billing reports -> dentist, paid and balance ----------------------------------------------
+
+def _billing_report_file(token: str):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{20,60}", token or ""):
+        abort(400)
+    return _import_dir() / f"{token}.billingreport.json"
+
+
+@bp.route("/import/billing-report", methods=["POST"])
+@require("system.settings")
+def import_billing_report():
+    """Upload MyMedsPH billing reports (Excel, one per dentist) -> preview."""
+    from flask import current_app
+    from .. import legacy_billing_report as br
+    from ..legacy_collections import CollectionFileError
+    if current_app.config["APP_ENV"] == "demo":
+        abort(403)
+    uploads = [f for f in request.files.getlist("files") if f and f.filename]
+    if not uploads:
+        flash("Choose the MyMedsPH billing report files (.xlsx).", "error")
+        return redirect(url_for("admin.import_bills"))
+    try:
+        data = br.read_reports([(f.filename, f.read()) for f in uploads])
+    except CollectionFileError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("admin.import_bills"))
+    conn = get_db()
+    s = br.preview(conn, data)
+    token = secrets.token_urlsafe(24)
+    _billing_report_file(token).write_text(json.dumps(data))
+    return render_template("staff/admin/import_billing_report.html", s=s, token=token)
+
+
+@bp.route("/import/billing-report/confirm", methods=["POST"])
+@require("system.settings")
+def import_billing_report_confirm():
+    from .. import legacy_billing_report as br
+    path = _billing_report_file(request.form.get("token"))
+    if not path.exists():
+        flash("That upload has expired. Please upload the billing reports again.", "error")
+        return redirect(url_for("admin.import_bills"))
+    data = json.loads(path.read_text())
+    conn = get_db()
+    if request.form.get("action") == "problems":
+        import csv
+        import io
+        from flask import Response
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["Patient name in MyMedsPH report", "Bill date", "What to check", "MyMedsPH net (PHP)", "Here (PHP)", "MyMedsPH paid (PHP)",
+                    "Paid here (PHP)"])
+        rows = br.problems(conn, data)
+        for r in rows:
+            w.writerow([(("'" + x) if isinstance(x, str) and x[:1] in "=+-@" else x) for x in r])
+        audit.record("legacy_billing_report_checklist", "invoice", None, f"Downloaded {len(rows)} billing report items to check")
+        return Response("\ufeff" + buf.getvalue(), mimetype="text/csv",
+                        headers={"Content-Disposition": "attachment; filename=mymedsph-billing-to-check.csv", "Cache-Control": "no-store"})
+    if request.form.get("action") == "cancel":
+        path.unlink(missing_ok=True)
+        flash("Nothing was imported.", "success")
+        return redirect(url_for("admin.import_bills"))
+    with conn.transaction():
+        st = br.apply(conn, data, g.user.id)
+        audit.record("legacy_billing_report_imported", "invoice", None,
+                     f"MyMedsPH billing report: {st['payments']} payments, {st['created']} bills created, dentist on {st['dentist_lines']} lines", st)
+    path.unlink(missing_ok=True)
+    flash(f"Done. Dentist set on {st['dentist_lines']:,} bill lines; {st['payments']:,} payments added (₱{st['paid_total'] / 100:,.2f})"
+          + (f"; {st['replaced']:,} status-based payments replaced" if st["replaced"] else "")
+          + (f"; {st['created']:,} missing bills created (₱{st['created_net'] / 100:,.2f})" if st["created"] else "")
+          + (f"; {st['skipped']:,} skipped (patient has no branch)" if st["skipped"] else "") + ".", "success")
+    return redirect(url_for("admin.import_bills"))
+
+
+@bp.route("/import/billing-report/undo", methods=["POST"])
+@require("system.settings")
+def import_billing_report_undo():
+    from .. import legacy_billing_report as br
+    conn = get_db()
+    with conn.transaction():
+        r = br.undo(conn)
+        audit.record("legacy_billing_report_removed", "invoice", None, "Removed what the MyMedsPH billing report import added", r)
+    flash(f"Removed {r['payments']:,} payments and {r['removed_bills']:,} created bills"
+          + (f" ({r['kept_bills']} kept because staff added payments)" if r["kept_bills"] else "")
+          + f", cleared the dentist on {r['lines']:,} lines and brought back {r['restored']:,} status-based payments.", "success")
+    return redirect(url_for("admin.import_bills"))
 
 
 # ---- MyMedsPH collection reports -> payments ------------------------------------------------------------

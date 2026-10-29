@@ -81,6 +81,29 @@ class TestCases(Base):
             mine = [(c["patient_id"], c["category"], c["billed"]) for c in build_cases(gdb(), doc) if c["patient_id"] in (pid, nobill)]
         self.assertEqual(mine, [(pid, "Braces, Aligners & Orthodontics", 200000)])   # not the other dentist's cleaning, not the unbilled patient
 
+    def test_billed_days_count_as_visits(self):
+        """Imported records: a bill line naming the dentist, with no procedure by them, still counts as a visit that day."""
+        from app.util import now_str
+        doc = self.q("SELECT id FROM users WHERE email LIKE 'dentist.malolos@%'")["id"]
+        bid = self.branch("malolos")
+        pid = self.conn.insert("patients", {"first_name": "Importvisit", "last_name": "Billdayqt", "chart_no": "DH-QBDV", "preferred_branch_id": bid,
+                                            "created_at": now_str(), "updated_at": now_str()})
+        self.conn.execute("INSERT INTO patient_assignments (patient_id, dentist_id, created_at) VALUES (?, ?, ?)", (pid, doc, now_str()))
+        self.conn.insert("procedures", {"patient_id": pid, "branch_id": bid, "description": "Extraction- Anterior/Posterior", "status": "completed",
+                                        "performed_at": "2023-07-15", "created_at": now_str()})      # imported: no dentist
+        for day, n in (("2023-07-15", 1), ("2023-07-22", 2)):
+            inv = self.conn.insert("invoices", {"branch_id": bid, "patient_id": pid, "status": "issued", "issued_at": f"{day} 12:00:00",
+                                                "number": f"TQBDV-{n}", "subtotal_cents": 50000, "total_cents": 50000, "created_at": now_str()})
+            self.conn.insert("invoice_items", {"invoice_id": inv, "description": "Extraction- Anterior/Posterior · 14", "qty": 1,
+                                               "unit_price_cents": 50000, "amount_cents": 50000, "dentist_id": doc, "done_on": day})
+        from app.views.cases import build_cases
+        with self.app.app_context():
+            from app.db import get_db as gdb
+            c = [x for x in build_cases(gdb(), doc) if x["patient_id"] == pid][0]
+        self.assertEqual((c["category"], c["n"], c["first"], c["last"]), ("Extraction & Oral Surgery", 2, "2023-07-15", "2023-07-22"))
+        page = self.login("dentist.malolos").get(f"/staff/my-cases/{pid}?type=Extraction %26 Oral Surgery").data.decode()
+        self.assertIn("Jul 22, 2023", page)
+
     def test_visits_count_days_and_name_matched_type(self):
         """Several procedures on one day = one visit; a procedure without a service but named like one gets its type."""
         from app.util import now_str, today
