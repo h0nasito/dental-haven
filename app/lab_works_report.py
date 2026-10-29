@@ -43,10 +43,11 @@ def build(conn, lab_ids: list[int], start: str, end: str, basis: str = "started"
             q += " AND w.client_id = ?"
             args.append(client["id"])
         for w in conn.all(q, args):
-            items = conn.all("SELECT case_type, units FROM lab_work_items WHERE work_id = ? ORDER BY sort_order, id", (w["id"],))
+            items = conn.all("SELECT case_type, units, arch FROM lab_work_items WHERE work_id = ? ORDER BY sort_order, id", (w["id"],))
             rows.append({"src": "work", "id": w["id"], "ref": w["number"], "kind": "outside", "who": w["clinic_name"],
                          "who_sub": w["doctor"], "case_type": w["case_type"], "units": w["units"] or 1,
                          "items": [(i["case_type"], i["units"] or 1) for i in items] or [(w["case_type"], w["units"] or 1)],
+                         "arches": [i["arch"] for i in items] or [w["arch"]],
                          "status": w["status"], "start": w["received_on"], "due": w["due_on"],
                          "delivered": (w["delivered_on"] or _delivered_event(conn, "lab_work_events", "work_id", w["id"]))
                          if w["status"] == "delivered" else None,
@@ -59,10 +60,11 @@ def build(conn, lab_ids: list[int], start: str, end: str, basis: str = "started"
             q += " AND c.branch_id = ?"
             args.append(client["branch_id"])
         for c in conn.all(q, args):
-            items = conn.all("SELECT case_type, units FROM lab_case_items WHERE case_id = ? ORDER BY sort_order, id", (c["id"],))
+            items = conn.all("SELECT case_type, units, arch FROM lab_case_items WHERE case_id = ? ORDER BY sort_order, id", (c["id"],))
             rows.append({"src": "case", "id": c["id"], "ref": f"#{c['id']}", "kind": "branch", "who": c["branch"],
                          "who_sub": c["dentist"] or "", "case_type": c["case_type"], "units": c["units"] or 1,
                          "items": [(i["case_type"], i["units"] or 1) for i in items] or [(c["case_type"], c["units"] or 1)],
+                         "arches": [i["arch"] for i in items] or [""],
                          "status": c["status"], "start": c["sent_on"], "due": c["due_on"] or c["install_on"],
                          "delivered": (c["completed_on"] or _delivered_event(conn, "lab_case_events", "case_id", c["id"]))
                          if c["status"] == "delivered" else None,
@@ -90,7 +92,9 @@ def build(conn, lab_ids: list[int], start: str, end: str, basis: str = "started"
                 r["techs"] = [r["auto_tech"]]
         r["tech_names"] = ", ".join(dict.fromkeys(t["full_name"] for t in r["techs"]))
         r["commission"] = sum(t["amount_cents"] or 0 for t in r["techs"])
-        r["what"] = ", ".join(f"{ct}{' ×' + str(u) if u and u != 1 else ''}" for ct, u in r["items"])
+        arch_label = {"upper": "upper", "lower": "lower", "both": "upper & lower"}
+        r["what"] = ", ".join(f"{ct}{' ×' + str(u) if u and u != 1 else ''}" + (f" ({arch_label[a]})" if a in arch_label else "")
+                              for (ct, u), a in zip(r["items"], r.get("arches") or [""] * len(r["items"])))
         r["all_types"] = [ct for ct, _ in r["items"]]
         inv = None
         if r["invoice_id"]:

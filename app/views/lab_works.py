@@ -152,12 +152,15 @@ def add_case_lines(conn, iid: int, c, desc: str) -> None:
             price = items[0]["lab_fee_cents"]
         else:
             price = max(0, (c["lab_fee_cents"] or 0) - sum(x["qty"] * x["unit_price_cents"] for x in extras))
+        if items and items[0]["arch"] in ("upper", "lower", "both"):
+            desc = f"{desc} · {ARCHES[items[0]['arch']]}"
         conn.insert("lab_invoice_items", {"invoice_id": iid, "case_id": c["id"], "case_item_id": items[0]["id"] if items else None,
                                           "description": desc[:200], "qty": 1, "unit_price_cents": price, "discount_cents": 0, "amount_cents": price})
     else:
         for it in items:
             price = it["lab_fee_cents"] or 0
             text = (f"{it['units']} × " if it["units"] > 1 else "") + it["case_type"] + (f" ({it['material']})" if it["material"] else "") \
+                + (f" · {ARCHES[it['arch']]}" if it["arch"] in ("upper", "lower", "both") else "") \
                 + (f" · {it['teeth']}" if it["teeth"] else "") + (f" · shade {it['shade']}" if it["shade"] else "")
             conn.insert("lab_invoice_items", {"invoice_id": iid, "case_id": c["id"], "case_item_id": it["id"], "description": f"Case #{c['id']} · {text}"[:200],
                                               "qty": 1, "unit_price_cents": price, "discount_cents": 0, "amount_cents": price})
@@ -728,9 +731,8 @@ def _move_work_to_case(conn, w, client, patient, dentist_id) -> int:
     for it in items:
         price = None if it["price_cents"] is None else item_gross(it) - ((it["discount_cents"] if "discount_cents" in it.keys() else 0) or 0)
         note = it["instructions"] or ""
-        if it["arch"]:
-            note = (ARCHES.get(it["arch"], it["arch"]) + (" · " + note if note else ""))
-        rows.append({"case_type": it["case_type"], "units": it["units"] or 1, "teeth": (it["teeth"] or "")[:60], "shade": (it["shade"] or "")[:30],
+        rows.append({"case_type": it["case_type"], "units": it["units"] or 1, "arch": it["arch"] if it["arch"] in ARCHES else "",
+                     "teeth": (it["teeth"] or "")[:60], "shade": (it["shade"] or "")[:30],
                      "material": (it["material"] or "")[:80], "lab_fee_cents": price, "instructions": note[:500]})
     summary = case_summary(rows)
     instr = "\n".join(x for x in ((w["instructions"] or ""), f"Moved from outside work {w['number']}"

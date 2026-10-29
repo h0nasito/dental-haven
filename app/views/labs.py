@@ -30,7 +30,15 @@ from ..lab_status import LATE, OPEN, STATUSES, sql_list  # noqa: E402
 
 PLAIN_TYPES = ["Crown", "Partial denture"]
 MATERIAL_TYPES = ["Crown (PFM)", "Crown (zirconia / all-ceramic)", "Crown (metal)", "Partial denture (acrylic)", "Partial denture (flexible)"]
-ITEM_FIELDS = ("case_type", "units", "teeth", "shade", "material", "material_new", "lab_fee", "instructions")
+ITEM_FIELDS = ("case_type", "units", "arch", "teeth", "shade", "material", "material_new", "lab_fee", "instructions")
+ARCHES = {"": "—", "upper": "Upper", "lower": "Lower", "both": "Upper & lower"}
+
+
+def arch_teeth(it) -> str:
+    """'Upper · 11, 12' for lists and invoices."""
+    a = ARCHES.get(it["arch"] if "arch" in it.keys() else "", "") if it else ""
+    parts = [a if a and a != "—" else "", (it["teeth"] or "") if it else ""]
+    return " · ".join(p for p in parts if p)
 
 
 def case_items(conn, case_id: int) -> list:
@@ -390,13 +398,15 @@ def new():
                 it["material"] = mat
             if units is None or units < 1 or units > 99:
                 errors.append(f"{label}: enter the number of units (1 to 99).")
+            if it["arch"] not in ARCHES:
+                it["arch"] = ""
             if it["lab_fee"] and (fee is None or fee < 0):
                 errors.append(f"{label}: enter the lab price like 3500 or 3500.00.")
             parsed.append({**it, "units": units or 1, "fee": fee})
         if not items:
             errors.append("Add at least one item.")
         if not errors:
-            rows = [{"case_type": it["case_type"], "units": it["units"], "teeth": it["teeth"][:60], "shade": it["shade"][:30],
+            rows = [{"case_type": it["case_type"], "units": it["units"], "arch": it["arch"], "teeth": it["teeth"][:60], "shade": it["shade"][:30],
                      "material": it["material"][:80], "lab_fee_cents": it["fee"], "instructions": it["instructions"]} for it in parsed]
             summary = case_summary(rows)
             with conn.transaction():
@@ -428,7 +438,7 @@ def new():
         v["items"] = items
         v["instructions_all"] = f.get("instructions_all", "")
     items = v.get("items") or [{k: v.get(k, "") for k in ITEM_FIELDS}]
-    return render_template("staff/labs/new.html", labs=labs, patient=patient, results=results, v=v, errors=errors, case_types=case_types(get_db()), items=items, materials=materials(get_db()),
+    return render_template("staff/labs/new.html", arches=ARCHES, labs=labs, patient=patient, results=results, v=v, errors=errors, case_types=case_types(get_db()), items=items, materials=materials(get_db()),
                            branches=branches_for_user(g.user, include_all=lab_desk), dentists=dentists(g.user.branch_ids),
                            lab_desk=lab_desk)
 
@@ -539,7 +549,7 @@ def case(case_id):
     extras = case_extras(conn, case_id)
     billed = case_billed_total(conn, c) if lab_invoice and lab_invoice["status"] not in ("draft", "void") else None
     now_total = case_total(conn, case_id) or 0
-    return render_template("staff/labs/case.html", c=c, items=items, extras=extras, extras_total=sum(x["qty"] * x["unit_price_cents"] for x in extras),
+    return render_template("staff/labs/case.html", arch_teeth=arch_teeth, c=c, items=items, extras=extras, extras_total=sum(x["qty"] * x["unit_price_cents"] for x in extras),
                            extras_prices=extras_list(price_items(conn, [c["lab_id"]])) if can_update else [],
                            out_of_date=billed is not None and billed != now_total, billed=billed, now_total=now_total, events=events, statuses=STATUSES, can_update=can_update, lab_invoice=lab_invoice, photos=photos, max_photos=MAX_CASE_PHOTOS,
                            can_bill=g.user.is_super_admin or (lab_user and g.user.can("lab.billing")),
@@ -563,9 +573,9 @@ def edit(case_id):
     from .lab_works import _extras_from, _extras_rows, case_extras, extras_list, price_items
     current = case_items(conn, case_id)
     if not current:          # a case from before items: show it as one item
-        current = [{"id": "", "case_type": c["case_type"], "units": c["units"] or 1, "teeth": c["teeth"], "shade": c["shade"],
+        current = [{"id": "", "case_type": c["case_type"], "units": c["units"] or 1, "arch": "", "teeth": c["teeth"], "shade": c["shade"],
                     "material": c["material"], "lab_fee_cents": c["lab_fee_cents"], "instructions": ""}]
-    items = [{"item_id": it["id"], "case_type": it["case_type"], "units": it["units"], "teeth": it["teeth"], "shade": it["shade"],
+    items = [{"item_id": it["id"], "case_type": it["case_type"], "units": it["units"], "arch": it["arch"], "teeth": it["teeth"], "shade": it["shade"],
               "material": it["material"], "material_new": "", "instructions": it["instructions"],
               "lab_fee": f"{it['lab_fee_cents'] / 100:.2f}" if it["lab_fee_cents"] is not None else ""} for it in current]
     extras_in = {0: [{"desc": x["description"], "qty": x["qty"], "price": f"{x['unit_price_cents'] / 100:.2f}"} for x in case_extras(conn, case_id)]}
@@ -591,6 +601,8 @@ def edit(case_id):
                 it["material"] = mat
             if units is None or units < 1 or units > 99:
                 errors.append(f"{label}: enter the number of units (1 to 99).")
+            if it["arch"] not in ARCHES:
+                it["arch"] = ""
             if it["lab_fee"] and (fee is None or fee < 0):
                 errors.append(f"{label}: enter the lab price like 3500 or 3500.00.")
             parsed.append({**it, "units": units or 1, "fee": fee})
@@ -605,7 +617,7 @@ def edit(case_id):
             with conn.transaction():
                 keep = set()
                 for i, it in enumerate(parsed):
-                    row = {"case_type": it["case_type"], "units": it["units"], "teeth": it["teeth"][:60], "shade": it["shade"][:30],
+                    row = {"case_type": it["case_type"], "units": it["units"], "arch": it["arch"], "teeth": it["teeth"][:60], "shade": it["shade"][:30],
                            "material": it["material"][:80], "lab_fee_cents": it["fee"], "instructions": it["instructions"][:500], "sort_order": i}
                     iid = to_int(it["item_id"])
                     if iid in mine:
@@ -635,7 +647,7 @@ def edit(case_id):
     used = [it["case_type"] for it in items]
     types = case_types(conn)
     types += [t for t in dict.fromkeys(used) if t and t not in types]
-    return render_template("staff/labs/edit.html", c=c, items=items, case_types=types, materials=materials(conn), errors=errors,
+    return render_template("staff/labs/edit.html", arches=ARCHES, c=c, items=items, case_types=types, materials=materials(conn), errors=errors,
                            instructions=instructions, extras_in=extras_in, extras_prices=extras_list(price_items(conn, [c["lab_id"]])),
                            on_invoice=bool(c["invoice_id"]))
 

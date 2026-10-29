@@ -769,20 +769,46 @@ def upload(patient_id):
     is_clinical = DOC_CATEGORIES[category][1]
     if is_clinical and not can_see_clinical(conn, g.user, patient_id):
         abort(403)
-    file = request.files.get("file")
-    if not file or not file.filename:
+    wants_json = request.headers.get("X-Requested-With") == "fetch"
+    back = url_for("patients.detail", patient_id=patient_id, tab="documents")
+    files = [f for f in request.files.getlist("files") + request.files.getlist("file") if f and f.filename]
+    if not files:
+        if wants_json:
+            return jsonify(ok=False, error="Choose a file to upload."), 400
         flash("Choose a file to upload.", "error")
-        return redirect(url_for("patients.detail", patient_id=patient_id, tab="documents"))
-    stored, mime, size, original, err = save_document(file)
-    if err:
-        flash(err, "error")
-    else:
+        return redirect(back)
+    if len(files) > MAX_UPLOADS:
+        msg = f"Upload up to {MAX_UPLOADS} files at a time."
+        if wants_json:
+            return jsonify(ok=False, error=msg), 400
+        flash(msg, "error")
+        return redirect(back)
+    title = _doc_title(request.form.get("title"))
+    number = to_int(request.form.get("n"))   # set by the page when it sends several files one by one
+    done, errors = 0, []
+    for i, f in enumerate(files, 1):
+        stored, mime, size, original, err = save_document(f)
+        if err:
+            errors.append(f"{f.filename}: {err}")
+            continue
+        t = title
+        if title and (len(files) > 1 or number):
+            t = f"{title} ({number or i})"
         did = conn.insert("patient_documents", {"patient_id": patient_id, "category": category, "clinical": 1 if is_clinical else 0,
-                                                "title": _doc_title(request.form.get("title")), "original_name": original, "stored_name": stored, "mime": mime,
+                                                "title": t, "original_name": original, "stored_name": stored, "mime": mime,
                                                 "size_bytes": size, "uploaded_by": g.user.id, "uploaded_at": now_str()})
         audit.record("document_uploaded", "patient", patient_id, f"Uploaded {DOC_CATEGORIES[category][0]}", {"document_id": did})
-        flash("Document uploaded.", "success")
-    return redirect(url_for("patients.detail", patient_id=patient_id, tab="documents"))
+        done += 1
+    if wants_json:
+        return jsonify(ok=not errors, saved=done, error="; ".join(errors)), (200 if not errors else 400)
+    if done:
+        flash(f"{done} file{'s' if done != 1 else ''} uploaded." if done > 1 else "Document uploaded.", "success")
+    for e in errors[:5]:
+        flash(e, "error")
+    return redirect(back)
+
+
+MAX_UPLOADS = 20   # files per upload on the Uploads tab (the page sends them one by one, so each request stays small)
 
 
 def _doc_title(raw) -> str:

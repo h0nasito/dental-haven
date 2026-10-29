@@ -28,8 +28,8 @@
 {% if c.instructions %}<p class="pre"><strong>Instructions:</strong> {{ c.instructions }}</p>{% endif %}
 </div>
 <div class="card" id="items"><h2>Items</h2>
-<div class="table-wrap"><table><thead><tr><th>Item</th><th>Teeth</th><th>Shade</th><th class="num">Units</th><th class="num">Price</th></tr></thead><tbody>
-{% for it in items %}<tr><td><strong>{{ it.case_type }}</strong>{% if it.material %}<br><small class="muted">{{ it.material }}</small>{% endif %}{% if it.instructions and items|length > 1 %}<br><small class="pre">{{ it.instructions }}</small>{% endif %}</td><td>{{ it.teeth or '—' }}</td><td>{{ it.shade or '—' }}</td><td class="num">{{ it.units }}</td><td class="num">{{ it.lab_fee_cents|peso if it.lab_fee_cents is not none else '—' }}</td></tr>
+<div class="table-wrap"><table><thead><tr><th>Item</th><th>Arch / teeth</th><th>Shade</th><th class="num">Units</th><th class="num">Price</th></tr></thead><tbody>
+{% for it in items %}<tr><td><strong>{{ it.case_type }}</strong>{% if it.material %}<br><small class="muted">{{ it.material }}</small>{% endif %}{% if it.instructions and items|length > 1 %}<br><small class="pre">{{ it.instructions }}</small>{% endif %}</td><td>{{ arch_teeth(it) or '—' }}</td><td>{{ it.shade or '—' }}</td><td class="num">{{ it.units }}</td><td class="num">{{ it.lab_fee_cents|peso if it.lab_fee_cents is not none else '—' }}</td></tr>
 {% else %}<tr><td><strong>{{ c.case_type }}</strong>{% if c.material %}<br><small class="muted">{{ c.material }}</small>{% endif %}</td><td>{{ c.teeth or '—' }}</td><td>{{ c.shade or '—' }}</td><td class="num">{{ c.units or 1 }}</td><td class="num">{{ c.lab_fee_cents|peso if c.lab_fee_cents is not none else '—' }}</td></tr>{% endfor %}
 {% if items|length > 1 %}{% set fees = items|selectattr('lab_fee_cents', 'ne', none)|map(attribute='lab_fee_cents')|list %}<tr><td colspan="3"><strong>Total</strong></td><td class="num"><strong>{{ c.units }}</strong></td><td class="num"><strong>{{ fees|sum|peso if fees else '—' }}</strong></td></tr>{% endif %}
 </tbody></table></div>

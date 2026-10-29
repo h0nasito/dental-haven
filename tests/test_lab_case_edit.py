@@ -71,3 +71,27 @@ class TestLabCaseEdit(base.TestLabCaseBilling):
 
     def test_other_branch_cannot_edit(self):
         self.assertEqual(self.login("dentist.guiguinto").get(f"/staff/lab/{self.case}/edit").status_code, 403)
+
+
+class TestCaseArch(__import__("test_app").Base):
+    def test_upper_lower_on_branch_case(self):
+        from app.util import now_str, today
+        c = self.login("admin")
+        lab = self.q("SELECT id FROM laboratories WHERE name = 'DSDL'")["id"]
+        p = self.q("SELECT id FROM patients LIMIT 1")["id"]
+        cid = self.conn.insert("lab_cases", {"lab_id": lab, "branch_id": self.branch("malolos"), "patient_id": p, "case_type": "Partial denture",
+                                             "status": "sent", "sent_on": today().isoformat(), "created_at": now_str()})
+        self.conn.insert("lab_case_items", {"case_id": cid, "case_type": "Partial denture", "units": 1, "sort_order": 0})
+        it = self.q("SELECT id FROM lab_case_items WHERE case_id = ?", (cid,))
+        page = c.get(f"/staff/lab/{cid}/edit").data.decode()
+        self.assertIn("Upper / lower", page)
+        self.assertIn('name="arch"', c.get(f"/staff/lab/new?patient_id={p}").data.decode())
+        r = c.post(f"/staff/lab/{cid}/edit", data={"item_id": str(it["id"]), "case_type": "Partial denture", "units": "1", "arch": "lower",
+                                                   "teeth": "", "shade": "A2", "material": "", "material_new": "", "lab_fee": "", "instructions": ""})
+        self.assertEqual(r.status_code, 302, r.data[:500])
+        self.assertEqual(self.q("SELECT arch FROM lab_case_items WHERE case_id = ?", (cid,))["arch"], "lower")
+        self.assertIn("Lower", c.get(f"/staff/lab/{cid}").data.decode())
+        # a value that isn't upper/lower/both is ignored
+        c.post(f"/staff/lab/{cid}/edit", data={"item_id": str(it["id"]), "case_type": "Partial denture", "units": "1", "arch": "sideways",
+                                               "teeth": "", "shade": "", "material": "", "material_new": "", "lab_fee": "", "instructions": ""})
+        self.assertEqual(self.q("SELECT arch FROM lab_case_items WHERE case_id = ?", (cid,))["arch"], "")

@@ -1385,3 +1385,102 @@ document.addEventListener('change', function (e) {
   if (isOn()) { audio(); start(); }
   showState();
 })();
+
+
+// Login: show/hide the password, and remember the email on this computer (the email only; the password is
+// never stored by the system: the browser's own password manager offers to save it).
+(function () {
+  var form = document.querySelector('form[data-login]');
+  if (!form) return;
+  var KEY = 'dh-login-email';
+  var email = form.querySelector('input[name=email]');
+  var pw = form.querySelector('input[name=password]');
+  var remember = form.querySelector('[data-remember-email]');
+  var toggle = form.querySelector('[data-pw-toggle]');
+  var saved = null;
+  try { saved = window.localStorage.getItem(KEY); } catch (e) { /* storage blocked */ }
+  if (saved && email && !email.value) {
+    email.value = saved;
+    if (pw) pw.focus();
+  }
+  if (remember) remember.checked = !!saved;
+  form.addEventListener('submit', function () {
+    try {
+      if (remember && remember.checked && email && email.value) window.localStorage.setItem(KEY, email.value.trim());
+      else window.localStorage.removeItem(KEY);
+    } catch (e) { /* storage blocked */ }
+  });
+  if (toggle && pw) {
+    toggle.addEventListener('click', function () {
+      var show = pw.type === 'password';
+      pw.type = show ? 'text' : 'password';
+      toggle.textContent = show ? 'Hide' : 'Show';
+      toggle.setAttribute('aria-pressed', show ? 'true' : 'false');
+      pw.focus();
+    });
+    // never leave the password visible when the form is sent
+    form.addEventListener('submit', function () { pw.type = 'password'; });
+  }
+})();
+
+
+// Patient Uploads tab: send up to 20 files, one request per file (keeps each upload small and shows progress).
+(function () {
+  var form = document.querySelector('form[data-doc-upload]');
+  if (!form || !window.fetch || !window.FormData) return;
+  var input = form.querySelector('input[type=file]');
+  var list = document.querySelector('[data-doc-progress]');
+  var max = parseInt(form.getAttribute('data-max') || '20', 10);
+  form.addEventListener('submit', function (ev) {
+    var files = Array.prototype.slice.call(input.files || []);
+    if (!files.length) return;
+    ev.preventDefault();
+    if (files.length > max) {
+      list.hidden = false;
+      list.innerHTML = '';
+      var li = document.createElement('li');
+      li.className = 'text-danger';
+      li.textContent = 'You chose ' + files.length + ' files. Upload up to ' + max + ' at a time.';
+      list.appendChild(li);
+      return;
+    }
+    var btn = form.querySelector('button');
+    btn.disabled = true;
+    list.hidden = false;
+    list.innerHTML = '';
+    var rows = files.map(function (f) {
+      var li = document.createElement('li');
+      li.textContent = '⏳ ' + f.name;
+      list.appendChild(li);
+      return li;
+    });
+    var failed = 0, i = 0;
+    function next() {
+      if (i >= files.length) {
+        if (!failed) { window.location = form.getAttribute('action').replace(/\/documents$/, '') + '?tab=documents'; return; }
+        btn.disabled = false;
+        var li = document.createElement('li');
+        li.innerHTML = '<a href="?tab=documents">Refresh the list</a> to see the files that were uploaded.';
+        list.appendChild(li);
+        return;
+      }
+      var f = files[i], row = rows[i];
+      var fd = new FormData();
+      fd.append('csrf_token', form.querySelector('input[name=csrf_token]').value);
+      fd.append('category', form.querySelector('[name=category]').value);
+      fd.append('title', form.querySelector('[name=title]').value);
+      if (files.length > 1) fd.append('n', String(i + 1));
+      fd.append('files', f, f.name);
+      row.textContent = '⬆️ ' + f.name + ' (' + (i + 1) + ' of ' + files.length + ')';
+      fetch(form.getAttribute('action'), { method: 'POST', body: fd, credentials: 'same-origin', headers: { 'X-Requested-With': 'fetch', 'Accept': 'application/json' } })
+        .then(function (r) { return r.json().catch(function () { return { ok: false, error: r.status === 413 ? 'File too big' : 'Upload failed' }; }); })
+        .then(function (j) {
+          if (j.ok) { row.textContent = '✅ ' + f.name; }
+          else { failed++; row.className = 'text-danger'; row.textContent = '❌ ' + (j.error || ('Could not upload ' + f.name)); }
+        })
+        .catch(function () { failed++; row.className = 'text-danger'; row.textContent = '❌ ' + f.name + ': connection problem'; })
+        .then(function () { i++; next(); });
+    }
+    next();
+  });
+})();

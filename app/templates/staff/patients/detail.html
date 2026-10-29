@@ -428,11 +428,12 @@
 {% if current_user.can('documents.delete') %}<form method="post" action="{{ url_for('patients.document_delete', patient_id=p.id, doc_id=d.id) }}" data-confirm="Delete this attachment permanently?">{{ csrf() }}<button class="btn btn-danger btn-sm">Delete</button></form>{% endif %}</td></tr>
 {% else %}<tr><td colspan="5">{{ empty('No documents') }}</td></tr>{% endfor %}</tbody></table></div>
 {% if current_user.can('documents.upload') %}
-<form method="post" action="{{ url_for('patients.upload', patient_id=p.id) }}" enctype="multipart/form-data" class="toolbar mt-1">{{ csrf() }}
+<form method="post" action="{{ url_for('patients.upload', patient_id=p.id) }}" enctype="multipart/form-data" class="toolbar mt-1" data-doc-upload data-max="20">{{ csrf() }}
 <div class="field"><label for="dc">Type</label><select id="dc" name="category">{% for k, (lab, is_cl) in doc_categories.items() if clinical or not is_cl %}<option value="{{ k }}">{{ lab }}</option>{% endfor %}</select></div>
-<div class="field"><label for="dn">File name <span class="hint">Optional, e.g. Panoramic x-ray before extraction</span></label><input id="dn" name="title" maxlength="120"></div>
-<div class="field grow"><label for="df">File (PDF, JPG, PNG or WebP, up to 10 MB)</label><input id="df" type="file" name="file" accept="application/pdf,image/jpeg,image/png,image/webp" required></div>
+<div class="field"><label for="dn">File name <span class="hint">Optional, e.g. Panoramic x-ray before extraction (numbered when several)</span></label><input id="dn" name="title" maxlength="120"></div>
+<div class="field grow"><label for="df">Files (PDF, JPG, PNG or WebP, up to 20 at a time, 10 MB each)</label><input id="df" type="file" name="files" multiple accept="application/pdf,image/jpeg,image/png,image/webp" required></div>
 <button class="btn btn-secondary">Upload</button></form>
+<ul class="list-plain doc-progress" data-doc-progress hidden></ul>
 <p class="hint">Files are stored privately under random names, and only authorised staff can open them. Each time someone opens a file, it's logged.</p>{% endif %}
 </div>
 {% endif %}

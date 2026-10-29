@@ -10,12 +10,16 @@
       <p class="muted">For Dental Haven staff only. Accounts are created by a super admin.</p>
       {{ flashes() }}
       {% if error %}<div class="flash flash-error" role="alert">{{ error }}</div>{% endif %}
-      <form method="post" novalidate>
+      <form method="post" id="login-form" data-login novalidate>
         {{ csrf() }}
-        <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="username" value="{{ email }}" required autofocus></div>
-        <div class="field"><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required></div>
-        <button class="btn" type="submit" style="width:100%">Sign in</button>
+        <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="username" inputmode="email" value="{{ email }}" required autofocus></div>
+        <div class="field"><label for="password">Password</label>
+          <div class="pw-wrap"><input id="password" name="password" type="password" autocomplete="current-password" required>
+          <button type="button" class="pw-toggle" data-pw-toggle aria-controls="password" aria-pressed="false">Show</button></div></div>
+        <label class="check"><input type="checkbox" id="remember-email" data-remember-email> Remember my email on this computer</label>
+        <button class="btn" type="submit" style="width:100%;margin-top:.6rem">Sign in</button>
       </form>
+      <p class="hint" style="margin:.8rem 0 0">To save your password, choose <strong>Save</strong> when your browser asks after you sign in (Chrome, Edge, Safari and phones all offer this). Next time, tap the email box and pick your saved login. Only save it on your own device, not on a shared clinic computer.</p>
     </div>
     <p class="muted" style="font-size:.85rem">Forgot your password? Ask a super admin to reset it. Access is logged.</p>
   </div>

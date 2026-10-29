@@ -986,3 +986,10 @@ section[id] { scroll-margin-top: 72px; }
 .req-sound.req-new { animation: req-pulse 1s ease-in-out 6; }
 @keyframes req-pulse { 50% { box-shadow: 0 0 0 4px rgba(46, 140, 90, .35); } }
 @media (max-width: 640px) { .req-sound .req-text { display: none; } }
+
+/* Login: show/hide password */
+.pw-wrap { position: relative; }
+.pw-wrap input { padding-right: 4.2rem; }
+.pw-toggle { position: absolute; right: .35rem; top: 50%; transform: translateY(-50%); border: 0; background: transparent; color: var(--ink-2);
+  font: inherit; font-size: .85rem; font-weight: 600; padding: .35rem .5rem; border-radius: 6px; cursor: pointer; }
+.pw-toggle:hover, .pw-toggle:focus-visible { background: var(--brand-50); color: var(--brand-900); }
