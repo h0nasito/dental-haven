@@ -318,7 +318,7 @@ def progress_groups(conn, patient_id, procedures, notes):
     def grp(day, dentist, branch=""):
         key = (day or "", dentist or "")
         gr = groups.setdefault(key, {"date": day, "dentist": dentist, "branches": set(), "lines": [], "notes": [], "invoices": {}, "procs": [],
-                                     "billed": []})
+                                     "billed": [], "made_by": []})
         if branch:
             gr["branches"].add(branch)
         return gr
@@ -365,7 +365,10 @@ def progress_groups(conn, patient_id, procedures, notes):
             day, who = from_visit[n["id"]]
         else:
             day, who = (n["appt_at"] or n["created_at"])[:10], n["author"]
-        grp(day, who)["notes"].append(n)
+        gr_ = grp(day, who)
+        gr_["notes"].append(n)
+        if n["author"] and n["author"] not in gr_["made_by"]:
+            gr_["made_by"].append(n["author"])
     docs, by_visit = {}, {}
     for d in conn.all("SELECT substr(uploaded_at, 1, 10) AS day, visit_note_id, COUNT(*) AS n FROM patient_documents WHERE patient_id = ? "
                       "GROUP BY day, visit_note_id", (patient_id,)):
@@ -374,10 +377,13 @@ def progress_groups(conn, patient_id, procedures, notes):
         else:
             docs[d["day"]] = docs.get(d["day"], 0) + d["n"]
     for vn in conn.all("SELECT v.id, v.visit_date, v.recall_date, v.recall_reason, v.signature_name, v.invoice_id, u.name AS dentist, "
-                       "b.name AS branch FROM visit_notes v LEFT JOIN users u ON u.id = v.dentist_id LEFT JOIN branches b ON b.id = v.branch_id "
+                       "b.name AS branch, cu.name AS made_by FROM visit_notes v LEFT JOIN users u ON u.id = v.dentist_id "
+                       "LEFT JOIN branches b ON b.id = v.branch_id LEFT JOIN users cu ON cu.id = v.created_by "
                        "WHERE v.patient_id = ? AND v.status = 'saved' AND v.cancelled_at IS NULL", (patient_id,)):
         gr = grp(vn["visit_date"], vn["dentist"], vn["branch"] or "")
         gr.setdefault("visits", []).append(vn)
+        if vn["made_by"] and vn["made_by"] not in gr["made_by"]:
+            gr["made_by"].insert(0, vn["made_by"])
     out = sorted(groups.values(), key=lambda x: (x["date"] or "", x["dentist"] or ""), reverse=True)
     for gr in out:
         gr["attachments"] = docs.get(gr["date"], 0) + sum(by_visit.get(v["id"], 0) for v in gr.get("visits", []))
@@ -673,8 +679,23 @@ def add_procedure(patient_id):
             "performed_by": g.user.id if status == "completed" else None,
             "performed_at": (performed or today()).isoformat() if status == "completed" else None, "created_at": now_str()})
         audit.record("procedure_added", "patient", patient_id, f"Recorded procedure: {desc[:60]}", {"procedure_id": prid})
-        flash("Procedure recorded.", "success")
+        if status == "completed":
+            _tell_cashier(conn, patient_id, appt["branch_id"] if appt else p["preferred_branch_id"], 1)
+        flash("Procedure recorded." + (" The cashier was notified to bill it." if status == "completed" and not g.user.can("billing.manage") else ""),
+              "success")
     return redirect(url_for("patients.detail", patient_id=patient_id, tab="clinical"))
+
+
+def _tell_cashier(conn, patient_id, branch_id, n_svc):
+    """Someone who can't make bills recorded work: notify the branch's billing staff (no patient name in it)."""
+    if g.user.can("billing.manage") or not branch_id:
+        return
+    from ..approvals import approvers
+    from ..notices import notify
+    notify(conn, approvers(conn, "billing.manage", branch_id), "to_bill",
+           f"Procedure to bill: {n_svc} service{'s' if n_svc != 1 else ''} by {g.user.name}",
+           "Open the patient's Bills & Payment and press Create bill.",
+           url_for("patients.detail", patient_id=patient_id, tab="billing"), exclude=g.user.id)
 
 
 PLAN_ACTION_PERMS = {"create": "plans.add", "add_item": "plans.edit", "item_status": "plans.edit", "plan_status": "plans.edit",
@@ -745,12 +766,14 @@ def plans(patient_id):
                 with conn.transaction():
                     pat = conn.one("SELECT preferred_branch_id FROM patients WHERE id = ?", (patient_id,))
                     prid = conn.insert("procedures", {"patient_id": patient_id, "service_id": item["service_id"],
+                                                      "price_cents": item["estimate_cents"],
                                                       "branch_id": pat["preferred_branch_id"], "tooth": item["tooth"],
                                                       "description": item["description"], "status": "completed",
                                                       "performed_by": g.user.id, "performed_at": today().isoformat(), "created_at": now_str()})
                     conn.execute("UPDATE treatment_plan_items SET status = 'done' WHERE id = ?", (item_id,))
                     audit.record("progress_generated", "patient", patient_id, f"Progress note from plan item: {item['description'][:60]}",
                                  {"procedure_id": prid, "plan_item_id": item_id})
+                    _tell_cashier(conn, patient_id, pat["preferred_branch_id"], 1)
                 flash("Progress note added and the plan item marked done.", "success")
     return redirect(url_for("patients.detail", patient_id=patient_id, tab="plans"))
 
@@ -1094,8 +1117,10 @@ def visit_lines(conn, raw_lines) -> tuple[list[dict], str]:
     return lines, ""
 
 
-def create_visit_bill(conn, vid: int, patient_id: int, branch_id: int, dentist_id: int, visit_date: str, lines: list[dict], bill_bp: int) -> int:
-    """The bill for a progress note's services (issued, numbered), linked to the note. Returns the invoice id."""
+def create_visit_bill(conn, vid: int | None, patient_id: int, branch_id: int, dentist_id: int, visit_date: str, lines: list[dict], bill_bp: int,
+                      proc_ids: list[int] | None = None) -> int:
+    """The bill for a progress note's services, linked to the note (or to the recorded procedures). Issued and numbered,
+    unless a service has no price yet: then it stays a draft for the cashier to set the price and issue it."""
     from ..billing import compute_totals, line_amount, next_invoice_number
     inv = conn.insert("invoices", {"branch_id": branch_id, "patient_id": patient_id, "status": "draft", "created_by": g.user.id,
                                    "created_at": now_str(), "notes": "Progress note"})
@@ -1107,45 +1132,129 @@ def create_visit_bill(conn, vid: int, patient_id: int, branch_id: int, dentist_i
     items = conn.all("SELECT * FROM invoice_items WHERE invoice_id = ?", (inv,))
     sub = sum(i["amount_cents"] for i in items)
     conn.update("invoices", inv, compute_totals(items, round(sub * bill_bp / 10000), conn))
+    if vid:
+        conn.execute("UPDATE visit_notes SET invoice_id = ? WHERE id = ?", (inv, vid))
+    for pid_ in proc_ids or []:
+        conn.execute("UPDATE procedures SET invoice_id = ? WHERE id = ?", (inv, pid_))
+    if any(ln["unit"] <= 0 for ln in lines):
+        audit.record("invoice_created", "invoice", inv, "Draft bill from a progress note (prices to set)", branch_id=branch_id)
+        return inv
     number = next_invoice_number(conn, branch_id)
     conn.execute("UPDATE invoices SET status = 'issued', number = ?, issued_at = ? WHERE id = ?", (number, today().isoformat(), inv))
-    conn.execute("UPDATE visit_notes SET invoice_id = ? WHERE id = ?", (inv, vid))
     audit.record("invoice_issued", "invoice", inv, f"Issued {number} from a progress note", branch_id=branch_id)
     return inv
 
 
-BILL_WAIT_DAYS = 45   # progress notes older than this aren't listed as waiting for a bill
+BILL_WAIT_DAYS = 60   # work older than this isn't listed as waiting for a bill
+
+
+def _cannot_bill(conn) -> set[int]:
+    """Users who can't make bills (dentists, assistants...): what they record is left for the cashier."""
+    from ..permissions import load_user_permissions
+    return {u["id"] for u in conn.all("SELECT id, role, access_role FROM users")
+            if u["role"] != "super_admin" and "billing.manage" not in load_user_permissions(conn, u["id"], u["access_role"] or u["role"])}
+
+
+def fee_price(conn, desc: str, service_id=None) -> int:
+    """A service's usual price: the fee schedule by name, else the website service's default price, else 0."""
+    from ..fee_schedule import picker_options
+    name = (desc or "").strip().upper()
+    for o in picker_options(conn):
+        if o["name"].upper() == name and o["price"]:
+            return o["price"]
+    if service_id:
+        return conn.scalar("SELECT default_price_cents FROM services WHERE id = ?", (service_id,)) or 0
+    return 0
 
 
 def notes_to_bill(conn, branch_ids: list[int], patient_id: int | None = None) -> list[dict]:
-    """Saved progress notes with priced services and no bill yet (not marked 'no bill needed'), newest first."""
+    """Work waiting for a bill, newest first: saved progress notes with services, and procedures recorded without a
+    progress note (Generate progress note from a plan, Record procedure). Not listed once billed or marked 'no bill
+    needed'. Services without a price are listed too (the bill is then a draft for the cashier to price)."""
     import json
     from datetime import timedelta
     if not branch_ids:
         return []
     marks = ",".join("?" * len(branch_ids))
-    args = [*branch_ids, (today() - timedelta(days=BILL_WAIT_DAYS)).isoformat()]
-    extra = ""
-    if patient_id:
-        extra, args = " AND v.patient_id = ?", [*args, patient_id]
+    since = (today() - timedelta(days=BILL_WAIT_DAYS)).isoformat()
+    extra, pargs = ("", []) if not patient_id else (" AND x.patient_id = ?", [patient_id])
+    no_bill = _cannot_bill(conn)
     out = []
-    for v in conn.all("SELECT v.*, p.first_name, p.last_name, b.name AS branch, u.name AS dentist FROM visit_notes v "
-                      "JOIN patients p ON p.id = v.patient_id LEFT JOIN branches b ON b.id = v.branch_id LEFT JOIN users u ON u.id = v.dentist_id "
-                      f"WHERE v.status = 'saved' AND v.cancelled_at IS NULL AND v.invoice_id IS NULL AND v.bill_skipped_at IS NULL "
-                      # left for the cashier (new notes), or saved by a dentist before this list existed
-                      "AND (v.create_bill = 1 OR v.created_by IN (SELECT id FROM users WHERE role = 'dentist')) "
-                      f"AND v.branch_id IN ({marks}) AND v.visit_date >= ?{extra} ORDER BY v.visit_date DESC, v.id DESC", args):
+    for v in conn.all("SELECT x.*, p.first_name, p.last_name, b.name AS branch, u.name AS dentist, cu.name AS made_by FROM visit_notes x "
+                      "JOIN patients p ON p.id = x.patient_id LEFT JOIN branches b ON b.id = x.branch_id LEFT JOIN users u ON u.id = x.dentist_id "
+                      "LEFT JOIN users cu ON cu.id = x.created_by "
+                      "WHERE x.status = 'saved' AND x.cancelled_at IS NULL AND x.invoice_id IS NULL AND x.bill_skipped_at IS NULL "
+                      f"AND x.branch_id IN ({marks}) AND x.visit_date >= ?{extra} ORDER BY x.visit_date DESC, x.id DESC",
+                      [*branch_ids, since, *pargs]):
+        # left for the cashier: new notes are flagged; older ones count when saved by someone who couldn't bill
+        if not (v["create_bill"] or v["created_by"] in no_bill):
+            continue
         try:
             raw = json.loads(v["lines_json"] or "[]")
         except ValueError:
             continue
         lines, err = visit_lines(conn, raw)
-        if err or not any(l["unit"] > 0 for l in lines):
+        if err or not lines:
             continue
+        for ln in lines:
+            if ln["unit"] <= 0:
+                ln["unit"] = fee_price(conn, ln["desc"], ln.get("service_id"))
+                ln["sub"] = ln["qty"] * ln["unit"]
         total = sum(l["sub"] - l["disc_cents"] for l in lines)
-        out.append({**dict(v), "lines": lines, "estimate": total - round(total * (v["bill_discount_bp"] or 0) / 10000),
+        out.append({**dict(v), "kind": "note", "lines": lines, "unpriced": any(l["unit"] <= 0 for l in lines),
+                    "estimate": total - round(total * (v["bill_discount_bp"] or 0) / 10000), "bill_discount_bp": v["bill_discount_bp"] or 0,
                     "services": ", ".join(l["desc"] for l in lines)})
+    groups: dict[tuple, dict] = {}
+    for r in conn.all("SELECT x.*, p.first_name, p.last_name, b.name AS branch, u.name AS dentist FROM procedures x "
+                      "JOIN patients p ON p.id = x.patient_id LEFT JOIN branches b ON b.id = x.branch_id LEFT JOIN users u ON u.id = x.performed_by "
+                      "WHERE x.status = 'completed' AND x.visit_note_id IS NULL AND x.invoice_id IS NULL AND x.bill_skipped_at IS NULL "
+                      "AND x.legacy_key IS NULL "
+                      f"AND x.branch_id IN ({marks}) AND substr(COALESCE(x.performed_at, x.created_at), 1, 10) >= ?{extra} "
+                      "ORDER BY x.performed_at DESC, x.id", [*branch_ids, since, *pargs]):
+        day = (r["performed_at"] or r["created_at"])[:10]
+        g_ = groups.setdefault((r["patient_id"], day, r["performed_by"], r["branch_id"]), {
+            "kind": "proc", "id": r["id"], "patient_id": r["patient_id"], "first_name": r["first_name"], "last_name": r["last_name"],
+            "branch": r["branch"], "branch_id": r["branch_id"], "dentist": r["dentist"], "dentist_id": r["performed_by"], "visit_date": day,
+            "bill_discount_bp": 0, "lines": [], "proc_ids": [], "made_by": r["dentist"]})
+        unit = r["price_cents"] if r["price_cents"] is not None else fee_price(conn, r["description"], r["service_id"])
+        g_["lines"].append({"service_id": r["service_id"], "desc": r["description"], "tooth": r["tooth"] or "", "qty": 1, "unit": unit,
+                            "sub": unit, "disc_cents": 0})
+        g_["proc_ids"].append(r["id"])
+    for g_ in groups.values():
+        g_["estimate"] = sum(l["sub"] for l in g_["lines"])
+        g_["unpriced"] = any(l["unit"] <= 0 for l in g_["lines"])
+        g_["services"] = ", ".join(l["desc"] for l in g_["lines"])
+        out.append(g_)
+    out.sort(key=lambda x: (x["visit_date"] or "", x["id"]), reverse=True)
     return out
+
+
+@bp.route("/<int:patient_id>/procedures/bill", methods=["POST"])
+@require("billing.manage")
+def procedures_bill(patient_id):
+    """Cashier: bill procedures that were recorded without a progress note, or mark them as not needing a bill."""
+    conn = get_db()
+    _load(patient_id)
+    back = request.form.get("next") or url_for("patients.detail", patient_id=patient_id, tab="billing")
+    if not back.startswith("/") or back.startswith("//"):
+        back = url_for("patients.detail", patient_id=patient_id, tab="billing")
+    ids = [i for i in (to_int(x) for x in request.form.get("ids", "").split(",")) if i][:50]
+    entry = next((e for e in notes_to_bill(conn, g.user.branch_ids, patient_id) if e["kind"] == "proc" and set(ids) == set(e["proc_ids"])), None)
+    if not entry:
+        flash("These procedures were already billed or aren't waiting for a bill.", "info")
+        return redirect(back)
+    if request.form.get("action") == "skip":
+        conn.execute(f"UPDATE procedures SET bill_skipped_at = ?, bill_skipped_by = ? WHERE id IN ({','.join('?' * len(ids))})",
+                     [now_str(), g.user.id, *ids])
+        audit.record("procedures_bill_skipped", "patient", patient_id, f"Procedures of {entry['visit_date']}: no bill needed",
+                     {"procedure_ids": ids}, entry["branch_id"])
+        flash("Marked as not needing a bill.", "success")
+        return redirect(back)
+    with conn.transaction(immediate=True):
+        inv = create_visit_bill(conn, None, patient_id, entry["branch_id"], entry["dentist_id"], entry["visit_date"], entry["lines"], 0, ids)
+    flash("Bill created." + (" Set the price of the services that have none, then issue it." if entry["unpriced"] else " Add the payment now."),
+          "success")
+    return redirect(url_for("billing.invoice", invoice_id=inv))
 
 
 @bp.route("/<int:patient_id>/visit-note/<int:vid>/bill", methods=["POST"])
@@ -1171,15 +1280,21 @@ def visit_note_bill(patient_id, vid):
         flash("Marked as not needing a bill.", "success")
         return redirect(back)
     lines, err = visit_lines(conn, json.loads(v["lines_json"] or "[]"))
-    if err or not any(l["unit"] > 0 for l in lines):
-        flash(err or "This progress note has no priced services to bill.", "error")
+    if err or not lines:
+        flash(err or "This progress note has no services to bill.", "error")
         return redirect(back)
+    for ln in lines:
+        if ln["unit"] <= 0:
+            ln["unit"] = fee_price(conn, ln["desc"], ln.get("service_id"))
+            ln["sub"] = ln["qty"] * ln["unit"]
     with conn.transaction(immediate=True):
         if conn.scalar("SELECT invoice_id FROM visit_notes WHERE id = ?", (vid,)):
             flash("This progress note already has a bill.", "info")
             return redirect(back)
         inv = create_visit_bill(conn, vid, patient_id, v["branch_id"], v["dentist_id"], v["visit_date"], lines, v["bill_discount_bp"] or 0)
-    flash("Bill created from the progress note. Add the payment now.", "success")
+    unpriced = any(ln["unit"] <= 0 for ln in lines)
+    flash("Bill created from the progress note." + (" Set the price of the services that have none, then issue it." if unpriced
+                                                    else " Add the payment now."), "success")
     return redirect(url_for("billing.invoice", invoice_id=inv))
 
 
@@ -1244,7 +1359,7 @@ def visit_note(patient_id):
     priced = any(l["unit"] > 0 for l in lines)
     make_bill = bool(v["create_bill"]) and g.user.can("billing.manage") and priced
     # Someone without billing rights (a dentist): the bill is left for the cashier, who is notified.
-    needs_bill = priced and not g.user.can("billing.manage")
+    needs_bill = bool(lines) and not g.user.can("billing.manage")
     files = [f for f in request.files.getlist("files") if f and f.filename]
     if files and not g.user.can("documents.upload"):
         abort(403)
@@ -1295,7 +1410,7 @@ def visit_note(patient_id):
             from ..approvals import approvers
             from ..notices import notify
             dname = conn.scalar("SELECT name FROM users WHERE id = ?", (dentist_id,)) or "the dentist"
-            n_svc = sum(1 for l in lines if l["unit"] > 0)
+            n_svc = len(lines)
             notify(conn, approvers(conn, "billing.manage", branch_id), "to_bill",
                    f"Progress note to bill: {n_svc} service{'s' if n_svc != 1 else ''} by {dname}",
                    "Open the patient's Bills & Payment and press Create bill.",

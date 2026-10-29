@@ -49,9 +49,10 @@ class TestCaseTypes(Base):
                                            "discount_cents": 0, "amount_cents": 100000})
         c = self.login("dentist.malolos")
         self.assertNotIn("Linked, Billline", c.get("/staff/my-cases/?q=billline").data.decode())
-        # once assigned, the patient and all their cases show
+        # once assigned, the cases billed to them show
         self.conn.execute("INSERT INTO patient_assignments (patient_id, dentist_id, created_at) VALUES (?, ?, '2026-03-02 00:00:00')", (pid, doc))
         page = c.get("/staff/my-cases/?q=billline").data.decode()
         self.assertIn("Linked, Billline", page)
         self.assertIn("Braces, Aligners &amp; Orthodontics", page)
-        self.assertEqual(c.get(f"/staff/my-cases/{pid}?type=Cleaning %26 Prevention").status_code, 200)
+        self.assertNotIn("Cleaning &amp; Prevention</span>", page)          # that line isn't billed to this dentist
+        self.assertEqual(c.get(f"/staff/my-cases/{pid}?type=Cleaning %26 Prevention").status_code, 404)

@@ -1,5 +1,5 @@
-"""My cases (dentists): only the patients assigned to the dentist, grouped by type of case (Orthodontics,
-Prosthodontics, ...). A patient with no assigned dentist isn't in anyone's My cases.
+"""My cases (dentists): the cases that are assigned AND billed to the dentist: patients assigned to them, and only the
+types of case (Orthodontics, Prosthodontics, ...) where they are the dentist on the bill. Nothing else is listed.
 
 Read-only. For each case: visits in that category, what was billed and paid (each bill's payments are shared over its
 lines in proportion), and for orthodontic cases whether the patient comes every month for the adjustment.
@@ -41,12 +41,13 @@ def _months_between(a: date, b: date) -> list[str]:
 
 
 def build_cases(conn, dentist_id: int) -> list[dict]:
-    """One case per (patient, type of case), only for the patients assigned to the dentist (patient profile → assigned
-    dentist). Patients without an assigned dentist, or assigned to someone else, aren't included."""
+    """One case per (patient, type of case), only where both are true: the patient is assigned to the dentist (patient
+    profile → assigned dentist) AND the dentist is on the bill for that type of case (bill line → dentist). Visits,
+    amounts and appointments count only the dentist's own work."""
     assigned = {r["patient_id"] for r in conn.all("SELECT patient_id FROM patient_assignments WHERE dentist_id = ?", (dentist_id,))}
 
     def mine(pid, owner) -> bool:
-        return pid in assigned
+        return pid in assigned and owner == dentist_id
 
     pats = set(assigned)
     if not pats:
@@ -69,10 +70,6 @@ def build_cases(conn, dentist_id: int) -> list[dict]:
                       f"AND v.patient_id IN ({marks}) AND NOT EXISTS (SELECT 1 FROM procedures p WHERE p.visit_note_id = v.id AND p.status = 'completed')", P):
         if mine(r["patient_id"], r["dentist_id"]):
             case(r["patient_id"], GENERAL)["visits"].append(r["d"][:10])
-    # assigned patients with nothing recorded yet are still the dentist's cases
-    for pid in assigned:
-        if not any(k[0] == pid for k in cases):
-            case(pid, GENERAL)
     # bill lines that are theirs, by type of case; each bill's payments are shared over its lines in proportion
     lines: dict[tuple, dict] = {}
     for r in conn.all(f"SELECT i.patient_id, i.id AS inv, i.total_cents, ii.amount_cents, ii.description, ii.dentist_id, s.category AS scat, "
@@ -84,6 +81,7 @@ def build_cases(conn, dentist_id: int) -> list[dict]:
             continue
         k = (r["inv"], kind(r["description"], r["scat"]))
         x = lines.setdefault(k, {"patient_id": r["patient_id"], "billed": 0, "paid": r["paid"], "total": r["total_cents"]})
+        case(r["patient_id"], k[1])["has_bill"] = True
         x["billed"] += r["amount_cents"]
     for (inv, cat_), x in lines.items():
         c = case(x["patient_id"], cat_)
@@ -104,8 +102,8 @@ def build_cases(conn, dentist_id: int) -> list[dict]:
     t = today()
     for c in cases.values():
         p = info.get(c["patient_id"])
-        if not p or not (c["visits"] or c["billed"] or (c["patient_id"] in assigned and c["category"] == GENERAL)):
-            continue
+        if not p or not c.get("has_bill"):
+            continue            # only cases billed to this dentist
         v = sorted(set(c["visits"]))          # a visit = a day the patient came, however many procedures were done
         c.update(patient=p, first=v[0] if v else None, last=v[-1] if v else None, n=len(v), balance=max(0, c["billed"] - c["paid"]))
         c["days_since"] = (t - date.fromisoformat(c["last"])).days if c["last"] else None
@@ -165,8 +163,8 @@ def detail(patient_id):
     kind = Classifier(conn)
     is_assigned = bool(conn.one("SELECT 1 AS x FROM patient_assignments WHERE patient_id = ? AND dentist_id = ?", (patient_id, did)))
 
-    def mine(owner) -> bool:   # every case of an assigned patient is shown
-        return is_assigned
+    def mine(owner) -> bool:   # the dentist's own work on a patient assigned to them
+        return is_assigned and owner == did
 
     visits = [v for v in conn.all("SELECT COALESCE(p.performed_at, p.created_at) AS at, p.performed_by AS owner, p.description, p.tooth, s.name AS service, s.category AS scat, "
                                   "u.name AS dentist, b.name AS branch FROM procedures p LEFT JOIN services s ON s.id = p.service_id "

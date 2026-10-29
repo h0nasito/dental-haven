@@ -27,7 +27,7 @@ class TestCases(Base):
         inv = self.conn.insert("invoices", {"branch_id": bid, "patient_id": pid, "status": "issued", "issued_at": now_str(), "number": "TCASE-1",
                                             "subtotal_cents": 4500000, "total_cents": 4500000, "created_at": now_str()})
         self.conn.insert("invoice_items", {"invoice_id": inv, "service_id": svc, "description": "Braces", "qty": 1, "unit_price_cents": 4500000,
-                                           "amount_cents": 4500000})
+                                           "amount_cents": 4500000, "dentist_id": doc})
         self.conn.insert("payments", {"invoice_id": inv, "branch_id": bid, "kind": "payment", "amount_cents": 1000000, "method": "cash",
                                       "received_at": now_str(), "status": "valid", "created_at": now_str()})
         d = self.login("dentist.malolos")
@@ -53,36 +53,33 @@ class TestCases(Base):
         # super admin can choose the dentist
         self.assertIn("Orthocase", self.login("admin").get(f"/staff/my-cases/?dentist={doc}").data.decode())
 
-    def test_assigned_patients_always_show(self):
-        """A patient assigned to the dentist shows even with nothing coded yet: no procedures at all, a procedure
-        without a service (e.g. imported), or only a saved progress note."""
+    def test_only_assigned_and_billed(self):
+        """A patient assigned to the dentist shows only for the types of case billed to that dentist."""
         from app.util import now_str, today
         doc = self.q("SELECT id FROM users WHERE email LIKE 'dentist.malolos@%'")["id"]
+        other = self.q("SELECT id FROM users WHERE email LIKE 'dentist.sjdm@%'")["id"]
         bid = self.branch("malolos")
-        ids = []
-        for n in ("Nothingyet", "Noservice", "Onlynote"):
-            pid = self.conn.insert("patients", {"first_name": n, "last_name": "Assignedqt", "chart_no": f"DH-QA{n[:3]}", "preferred_branch_id": bid,
-                                                "created_at": now_str(), "updated_at": now_str()})
-            self.conn.execute("INSERT INTO patient_assignments (patient_id, dentist_id, created_at) VALUES (?, ?, ?)", (pid, doc, now_str()))
-            ids.append(pid)
+        pid = self.conn.insert("patients", {"first_name": "Billedqt", "last_name": "Assignedqt", "chart_no": "DH-QABQ", "preferred_branch_id": bid,
+                                            "created_at": now_str(), "updated_at": now_str()})
+        nobill = self.conn.insert("patients", {"first_name": "Nobillqt", "last_name": "Assignedqt", "chart_no": "DH-QANB", "preferred_branch_id": bid,
+                                               "created_at": now_str(), "updated_at": now_str()})
+        for p_ in (pid, nobill):
+            self.conn.execute("INSERT INTO patient_assignments (patient_id, dentist_id, created_at) VALUES (?, ?, ?)", (p_, doc, now_str()))
         d = today().isoformat()
-        self.conn.insert("procedures", {"patient_id": ids[1], "service_id": None, "branch_id": bid, "description": "Imported: cleaning",
-                                        "status": "completed", "performed_by": doc, "performed_at": d + " 09:00:00", "created_at": d + " 09:00:00"})
-        self.conn.insert("visit_notes", {"patient_id": ids[2], "branch_id": bid, "dentist_id": doc, "visit_date": d, "status": "saved",
+        self.conn.insert("visit_notes", {"patient_id": nobill, "branch_id": bid, "dentist_id": doc, "visit_date": d, "status": "saved",
                                          "body": "Check-up", "created_at": now_str()})
-        c = self.login("dentist.malolos")
-        page = c.get("/staff/my-cases/").data.decode()
-        for n in ("Nothingyet", "Noservice", "Onlynote"):
-            self.assertIn(n, page)
-        self.assertIn("General / other", page)
-        # with a visit-date filter, only the ones seen in that range
-        page = c.get(f"/staff/my-cases/?from={d}&to={d}").data.decode()
-        self.assertIn("Noservice", page)
-        self.assertIn("Onlynote", page)
-        self.assertNotIn("Nothingyet", page)
-        r = c.get(f"/staff/my-cases/{ids[2]}?type=General / other")
-        self.assertEqual(r.status_code, 200)
-        self.assertIn("Progress note", r.data.decode())
+        ortho = self.q("SELECT id FROM services WHERE category = 'Orthodontics & TMJ' LIMIT 1")["id"]
+        inv = self.conn.insert("invoices", {"branch_id": bid, "patient_id": pid, "status": "issued", "issued_at": now_str(), "number": "TQAB-1",
+                                            "subtotal_cents": 300000, "total_cents": 300000, "created_at": now_str()})
+        self.conn.insert("invoice_items", {"invoice_id": inv, "service_id": ortho, "description": "Braces", "qty": 1, "unit_price_cents": 200000,
+                                           "amount_cents": 200000, "dentist_id": doc})
+        self.conn.insert("invoice_items", {"invoice_id": inv, "description": "ORAL PROPHYLAXIS (MILD)", "qty": 1, "unit_price_cents": 100000,
+                                           "amount_cents": 100000, "dentist_id": other})
+        from app.views.cases import build_cases
+        with self.app.app_context():
+            from app.db import get_db as gdb
+            mine = [(c["patient_id"], c["category"], c["billed"]) for c in build_cases(gdb(), doc) if c["patient_id"] in (pid, nobill)]
+        self.assertEqual(mine, [(pid, "Braces, Aligners & Orthodontics", 200000)])   # not the other dentist's cleaning, not the unbilled patient
 
     def test_visits_count_days_and_name_matched_type(self):
         """Several procedures on one day = one visit; a procedure without a service but named like one gets its type."""
@@ -97,6 +94,10 @@ class TestCases(Base):
         for i, (sid, desc) in enumerate(((svc["id"], "Braces"), (None, svc["name"].upper()), (svc["id"], "Adjustment"))):
             self.conn.insert("procedures", {"patient_id": pid, "service_id": sid, "branch_id": bid, "description": desc, "status": "completed",
                                             "performed_by": doc, "performed_at": f"{d} 1{i}:00:00", "created_at": now_str()})
+        inv = self.conn.insert("invoices", {"branch_id": bid, "patient_id": pid, "status": "issued", "issued_at": now_str(), "number": "TQDAY-1",
+                                            "subtotal_cents": 100000, "total_cents": 100000, "created_at": now_str()})
+        self.conn.insert("invoice_items", {"invoice_id": inv, "service_id": svc["id"], "description": "Braces", "qty": 1, "unit_price_cents": 100000,
+                                           "amount_cents": 100000, "dentist_id": doc})
         from app.db import get_db  # noqa: F401
         from app.views.cases import build_cases
         with self.app.app_context():
@@ -106,29 +107,3 @@ class TestCases(Base):
         page = self.login("dentist.malolos").get(f"/staff/my-cases/{pid}?type=Braces%2C Aligners %26 Orthodontics").data.decode()
         self.assertIn("3 procedures", page)
         self.assertNotIn("None", page)
-
-    def test_only_assigned_patients(self):
-        """Only patients assigned to the dentist; treating or billing a patient doesn't add them."""
-        from app.util import now_str, today
-        a = self.q("SELECT id FROM users WHERE email LIKE 'dentist.malolos@%'")["id"]
-        b = self.q("SELECT id FROM users WHERE email LIKE 'dentist.sjdm@%'")["id"]
-        bid = self.branch("malolos")
-        pid = self.conn.insert("patients", {"first_name": "Shared", "last_name": "Mineqt", "chart_no": "DH-QMINE", "preferred_branch_id": bid,
-                                            "created_at": now_str(), "updated_at": now_str()})
-        self.conn.execute("INSERT INTO patient_assignments (patient_id, dentist_id, created_at) VALUES (?, ?, ?)", (pid, a, now_str()))
-        loose = self.conn.insert("patients", {"first_name": "Unassigned", "last_name": "Nobodyqt", "chart_no": "DH-QNONE", "preferred_branch_id": bid,
-                                              "created_at": now_str(), "updated_at": now_str()})
-        ortho = self.q("SELECT id FROM services WHERE category = 'Orthodontics & TMJ' LIMIT 1")["id"]
-        d = today().isoformat()
-        for p_, who in ((pid, b), (loose, a)):
-            self.conn.insert("procedures", {"patient_id": p_, "service_id": ortho, "branch_id": bid, "description": "Braces", "status": "completed",
-                                            "performed_by": who, "performed_at": d + " 10:00:00", "created_at": now_str()})
-        from app.views.cases import build_cases
-        with self.app.app_context():
-            from app.db import get_db as gdb
-            pa = {c["patient_id"] for c in build_cases(gdb(), a)}
-            pb = {c["patient_id"] for c in build_cases(gdb(), b)}
-        self.assertIn(pid, pa)            # assigned to A: shown to A, with all of the patient's cases
-        self.assertNotIn(loose, pa)       # A treated them, but they aren't assigned to A
-        self.assertNotIn(pid, pb)         # B treated them, but they're assigned to A
-        self.assertEqual(self.login("dentist.sjdm").get(f"/staff/my-cases/{pid}?type=Braces%2C Aligners %26 Orthodontics").status_code, 404)

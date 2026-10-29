@@ -151,12 +151,43 @@ class TestNoteToBill(TestVisitNote):
         self.assertEqual((inv["status"], inv["subtotal_cents"], inv["discount_cents"], inv["total_cents"]), ("issued", 181000, 9050, 171950))
         items = self.conn.all("SELECT qty, tooth, dentist_id, done_on FROM invoice_items WHERE invoice_id = ? ORDER BY id", (inv["id"],))
         self.assertEqual([(i["qty"], i["tooth"], i["dentist_id"], i["done_on"]) for i in items], [(2, "35, 46", self.doc, t), (1, "", self.doc, t)])
-        self.assertNotIn("Progress notes waiting for a bill", admin.get(f"/staff/patients/{self.pid}?tab=billing").data.decode())
+        from app.views.patients import notes_to_bill
+        with self.app.test_request_context():
+            from flask import g
+            from app.db import get_db
+            waiting = notes_to_bill(get_db(), [self.sjdm], self.pid)
+        self.assertFalse([w for w in waiting if w["kind"] == "note" and w["id"] == v["id"]])
         # twice: no second bill
         admin.post(f"/staff/patients/{self.pid}/visit-note/{v['id']}/bill", data={})
         self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM visit_notes WHERE invoice_id = ?", (inv["id"],)), 1)
         # a dentist can't create bills
         self.assertEqual(doc.post(f"/staff/patients/{self.pid}/visit-note/{v['id']}/bill", data={}).status_code, 403)
+
+    def test_plan_and_recorded_procedures_wait_too(self):
+        """Generate progress note (treatment plan) and Record procedure by a dentist also reach the cashier."""
+        from app.util import now_str, today
+        doc = self.login("dentist.sjdm")
+        self.conn.execute("UPDATE patients SET preferred_branch_id = ? WHERE id = ?", (self.sjdm, self.pid))
+        plan = self.conn.insert("treatment_plans", {"patient_id": self.pid, "title": "Plan T2B", "status": "accepted", "created_at": now_str(),
+                                                    "updated_at": now_str()})
+        item = self.conn.insert("treatment_plan_items", {"plan_id": plan, "description": "Composite filling T2B", "tooth": "16",
+                                                         "estimate_cents": 150000, "status": "pending", "seq": 1})
+        doc.post(f"/staff/patients/{self.pid}/plans", data={"action": "generate", "plan_id": plan, "item_id": item})
+        pr = self.q("SELECT * FROM procedures WHERE description = 'Composite filling T2B'")
+        self.assertIsNotNone(pr, "plan item was not generated")
+        self.assertEqual(pr["price_cents"], 150000)
+        from app.views.patients import notes_to_bill
+        with self.app.test_request_context():
+            from app.db import get_db
+            waiting = [w for w in notes_to_bill(get_db(), [self.sjdm], self.pid) if w["kind"] == "proc" and pr["id"] in w["proc_ids"]]
+        self.assertEqual(len(waiting), 1)
+        admin = self.login("admin")
+        r = admin.post(f"/staff/patients/{self.pid}/procedures/bill", data={"ids": ",".join(str(i) for i in waiting[0]["proc_ids"])})
+        self.assertEqual(r.status_code, 302)
+        inv_id = self.q("SELECT invoice_id FROM procedures WHERE id = ?", (pr["id"],))["invoice_id"]
+        self.assertTrue(inv_id)
+        lines = self.conn.all("SELECT description, amount_cents FROM invoice_items WHERE invoice_id = ?", (inv_id,))
+        self.assertIn(("Composite filling T2B", 150000), [(l["description"], l["amount_cents"]) for l in lines])
 
     def test_no_bill_needed(self):
         from app.util import today
@@ -171,3 +202,21 @@ class TestNoteToBill(TestVisitNote):
 
 for _n in [n for n in dir(TestVisitNote) if n.startswith("test_")]:
     setattr(TestNoteToBill, _n, None)
+
+
+class TestEnteredBy(TestVisitNote):
+    def test_shows_who_entered_the_note(self):
+        admin = self.login("admin")
+        self._post(admin, signature="")
+        notes = admin.get(f"/staff/patients/{self.pid}?tab=notes").data.decode()
+        row = notes.split("Jun 3, 2025")[1].split("</td>")[0]
+        self.assertIn("Entered by Demo Super Admin", row)
+        # the dentist's own note doesn't repeat their name
+        doc = self.login("dentist.sjdm")
+        self._post(doc, visit_date="2025-06-04", recall_date="", signature="")
+        notes = doc.get(f"/staff/patients/{self.pid}?tab=notes").data.decode()
+        self.assertNotIn("Entered by", notes.split("Jun 4, 2025")[1].split("</td>")[0])
+
+
+for _n in [n for n in dir(TestVisitNote) if n.startswith("test_")]:
+    setattr(TestEnteredBy, _n, None)

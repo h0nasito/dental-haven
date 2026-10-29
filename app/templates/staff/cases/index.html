@@ -1,7 +1,7 @@
 {% extends "staff/layout.html" %}
 {% block page_title %}My cases{% endblock %}
 {% block content %}
-<div class="page-head"><div><h1>My cases</h1><p>Patients assigned to {{ 'you' if not current_user.is_super_admin else 'the dentist' }}, by procedure. View only: payments, visits and, for braces, the monthly adjustments.</p></div></div>
+<div class="page-head"><div><h1>My cases</h1><p>Cases assigned and billed to {{ 'you' if not current_user.is_super_admin else 'the dentist' }}: your patients, and only the procedures where you are the dentist on the bill. View only: payments, visits and, for braces, the monthly adjustments.</p></div></div>
 <form class="toolbar" method="get">
 {% if current_user.is_super_admin %}<div class="field"><label for="cd">Dentist</label><select id="cd" name="dentist">{% for d in dentists %}<option value="{{ d.id }}" {% if d.id == did %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select></div>{% endif %}
 <div class="field"><label for="ct">Procedure</label><select id="ct" name="type"><option value="">All procedures</option>{% for k in cats %}<option value="{{ k }}" {% if k == cat %}selected{% endif %}>{{ k }} ({{ counts[k] }})</option>{% endfor %}</select></div>
