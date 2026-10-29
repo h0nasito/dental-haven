@@ -427,6 +427,7 @@ def detail(patient_id):
             "WHERE i.patient_id = ? ORDER BY COALESCE(i.issued_at, substr(i.created_at, 1, 10)) DESC, i.id DESC", (patient_id,))
         if tab == "billing":
             from ..billing import commission_dentists, invoice_commission_info
+            ctx["to_bill"] = notes_to_bill(conn, g.user.branch_ids, patient_id)
             ctx["comm_dentists"] = commission_dentists(conn)
             for inv in ctx["invoices"]:
                 inv["comm_info"] = invoice_commission_info(conn, inv)
@@ -1075,6 +1076,113 @@ def _visit_form():
             "bill_disc": clean(f.get("bill_disc"), 8), "create_bill": 1 if f.get("create_bill") else 0, "lines": lines}
 
 
+def visit_lines(conn, raw_lines) -> tuple[list[dict], str]:
+    """A progress note's service lines with price, quantity and discount worked out. Returns (lines, error)."""
+    from ..fee_schedule import picker_options
+    per_count = {o["name"].upper(): o["per_count"] for o in picker_options(conn)}
+    lines = []
+    for ln in raw_lines:
+        if not ln.get("desc"):
+            return [], "Each service line needs a service or procedure."
+        unit = parse_money(ln["price"]) if ln.get("price") else 0
+        qty = to_int(ln.get("qty")) or (max(1, len(_teeth(ln.get("tooth") or ""))) if per_count.get(ln["desc"].upper(), True) else 1)
+        disc_bp = _pct_bp(ln.get("disc"))
+        if unit is None or not 1 <= qty <= 32 or disc_bp is None:
+            return [], f"Check the price, quantity and discount % on “{ln['desc']}”."
+        sub = qty * unit
+        lines.append({**ln, "unit": unit, "qty": qty, "sub": sub, "disc_cents": round(sub * disc_bp / 10000)})
+    return lines, ""
+
+
+def create_visit_bill(conn, vid: int, patient_id: int, branch_id: int, dentist_id: int, visit_date: str, lines: list[dict], bill_bp: int) -> int:
+    """The bill for a progress note's services (issued, numbered), linked to the note. Returns the invoice id."""
+    from ..billing import compute_totals, line_amount, next_invoice_number
+    inv = conn.insert("invoices", {"branch_id": branch_id, "patient_id": patient_id, "status": "draft", "created_by": g.user.id,
+                                   "created_at": now_str(), "notes": "Progress note"})
+    for ln in lines:
+        conn.insert("invoice_items", {"invoice_id": inv, "service_id": ln.get("service_id"), "description": ln["desc"], "qty": ln["qty"],
+                                      "unit_price_cents": ln["unit"], "discount_cents": ln["disc_cents"],
+                                      "amount_cents": line_amount(ln["qty"], ln["unit"], ln["disc_cents"]), "tooth": ln.get("tooth") or "",
+                                      "dentist_id": dentist_id, "done_on": visit_date})
+    items = conn.all("SELECT * FROM invoice_items WHERE invoice_id = ?", (inv,))
+    sub = sum(i["amount_cents"] for i in items)
+    conn.update("invoices", inv, compute_totals(items, round(sub * bill_bp / 10000), conn))
+    number = next_invoice_number(conn, branch_id)
+    conn.execute("UPDATE invoices SET status = 'issued', number = ?, issued_at = ? WHERE id = ?", (number, today().isoformat(), inv))
+    conn.execute("UPDATE visit_notes SET invoice_id = ? WHERE id = ?", (inv, vid))
+    audit.record("invoice_issued", "invoice", inv, f"Issued {number} from a progress note", branch_id=branch_id)
+    return inv
+
+
+BILL_WAIT_DAYS = 45   # progress notes older than this aren't listed as waiting for a bill
+
+
+def notes_to_bill(conn, branch_ids: list[int], patient_id: int | None = None) -> list[dict]:
+    """Saved progress notes with priced services and no bill yet (not marked 'no bill needed'), newest first."""
+    import json
+    from datetime import timedelta
+    if not branch_ids:
+        return []
+    marks = ",".join("?" * len(branch_ids))
+    args = [*branch_ids, (today() - timedelta(days=BILL_WAIT_DAYS)).isoformat()]
+    extra = ""
+    if patient_id:
+        extra, args = " AND v.patient_id = ?", [*args, patient_id]
+    out = []
+    for v in conn.all("SELECT v.*, p.first_name, p.last_name, b.name AS branch, u.name AS dentist FROM visit_notes v "
+                      "JOIN patients p ON p.id = v.patient_id LEFT JOIN branches b ON b.id = v.branch_id LEFT JOIN users u ON u.id = v.dentist_id "
+                      f"WHERE v.status = 'saved' AND v.cancelled_at IS NULL AND v.invoice_id IS NULL AND v.bill_skipped_at IS NULL "
+                      # left for the cashier (new notes), or saved by a dentist before this list existed
+                      "AND (v.create_bill = 1 OR v.created_by IN (SELECT id FROM users WHERE role = 'dentist')) "
+                      f"AND v.branch_id IN ({marks}) AND v.visit_date >= ?{extra} ORDER BY v.visit_date DESC, v.id DESC", args):
+        try:
+            raw = json.loads(v["lines_json"] or "[]")
+        except ValueError:
+            continue
+        lines, err = visit_lines(conn, raw)
+        if err or not any(l["unit"] > 0 for l in lines):
+            continue
+        total = sum(l["sub"] - l["disc_cents"] for l in lines)
+        out.append({**dict(v), "lines": lines, "estimate": total - round(total * (v["bill_discount_bp"] or 0) / 10000),
+                    "services": ", ".join(l["desc"] for l in lines)})
+    return out
+
+
+@bp.route("/<int:patient_id>/visit-note/<int:vid>/bill", methods=["POST"])
+@require("billing.manage")
+def visit_note_bill(patient_id, vid):
+    """Cashier: create the bill from a progress note, or mark that it doesn't need one."""
+    import json
+    conn = get_db()
+    _load(patient_id)
+    v = conn.one("SELECT * FROM visit_notes WHERE id = ? AND patient_id = ? AND status = 'saved' AND cancelled_at IS NULL", (vid, patient_id))
+    back = request.form.get("next") or url_for("patients.detail", patient_id=patient_id, tab="billing")
+    if not back.startswith("/") or back.startswith("//"):
+        back = url_for("patients.detail", patient_id=patient_id, tab="billing")
+    if not v or not v["branch_id"] or not g.user.in_branch(v["branch_id"]):
+        abort(404)
+    if v["invoice_id"]:
+        flash("This progress note already has a bill.", "info")
+        return redirect(back)
+    if request.form.get("action") == "skip":
+        conn.execute("UPDATE visit_notes SET bill_skipped_at = ?, bill_skipped_by = ? WHERE id = ?", (now_str(), g.user.id, vid))
+        audit.record("visit_note_bill_skipped", "patient", patient_id, f"Progress note of {v['visit_date']}: no bill needed",
+                     {"visit_note_id": vid}, v["branch_id"])
+        flash("Marked as not needing a bill.", "success")
+        return redirect(back)
+    lines, err = visit_lines(conn, json.loads(v["lines_json"] or "[]"))
+    if err or not any(l["unit"] > 0 for l in lines):
+        flash(err or "This progress note has no priced services to bill.", "error")
+        return redirect(back)
+    with conn.transaction(immediate=True):
+        if conn.scalar("SELECT invoice_id FROM visit_notes WHERE id = ?", (vid,)):
+            flash("This progress note already has a bill.", "info")
+            return redirect(back)
+        inv = create_visit_bill(conn, vid, patient_id, v["branch_id"], v["dentist_id"], v["visit_date"], lines, v["bill_discount_bp"] or 0)
+    flash("Bill created from the progress note. Add the payment now.", "success")
+    return redirect(url_for("billing.invoice", invoice_id=inv))
+
+
 def _store_draft(conn, patient_id, v, draft_id=None):
     import json
     row = {"patient_id": patient_id, "branch_id": v["branch_id"], "dentist_id": v["dentist_id"],
@@ -1125,25 +1233,18 @@ def visit_note(patient_id):
     branch_id = v["branch_id"]
     if not branch_id or not g.user.in_branch(branch_id):
         return back_to_draft("Choose one of your branches.")
-    from ..fee_schedule import picker_options
-    per_count = {o["name"].upper(): o["per_count"] for o in picker_options(conn)}
-    lines = []
-    for ln in v["lines"]:
-        if not ln["desc"]:
-            return back_to_draft("Each service line needs a service or procedure.")
-        unit = parse_money(ln["price"]) if ln["price"] else 0
-        qty = to_int(ln["qty"]) or (max(1, len(_teeth(ln["tooth"]))) if per_count.get(ln["desc"].upper(), True) else 1)
-        disc_bp = _pct_bp(ln["disc"])
-        if unit is None or not 1 <= qty <= 32 or disc_bp is None:
-            return back_to_draft(f"Check the price, quantity and discount % on “{ln['desc']}”.")
-        sub = qty * unit
-        lines.append({**ln, "unit": unit, "qty": qty, "sub": sub, "disc_cents": round(sub * disc_bp / 10000)})
+    lines, lerr = visit_lines(conn, v["lines"])
+    if lerr:
+        return back_to_draft(lerr)
     if not lines and not v["body"]:
         return back_to_draft("Add at least one service, or write the notes.")
     bill_bp = _pct_bp(v["bill_disc"])
     if bill_bp is None:
         return back_to_draft("Enter the bill discount as a percent, e.g. 10.")
-    make_bill = bool(v["create_bill"]) and g.user.can("billing.manage") and any(l["unit"] > 0 for l in lines)
+    priced = any(l["unit"] > 0 for l in lines)
+    make_bill = bool(v["create_bill"]) and g.user.can("billing.manage") and priced
+    # Someone without billing rights (a dentist): the bill is left for the cashier, who is notified.
+    needs_bill = priced and not g.user.can("billing.manage")
     files = [f for f in request.files.getlist("files") if f and f.filename]
     if files and not g.user.can("documents.upload"):
         abort(403)
@@ -1164,7 +1265,7 @@ def visit_note(patient_id):
     with conn.transaction(immediate=True):
         row = {"patient_id": patient_id, "branch_id": branch_id, "dentist_id": dentist_id, "visit_date": visit.isoformat(),
                "recall_date": recall.isoformat() if recall else None, "recall_reason": v["recall_reason"], "body": v["body"],
-               "lines_json": json.dumps(v["lines"]), "bill_discount_bp": bill_bp, "create_bill": 1 if make_bill else 0,
+               "lines_json": json.dumps(v["lines"]), "bill_discount_bp": bill_bp, "create_bill": 1 if (make_bill or needs_bill) else 0,
                "status": "saved", "signature_name": sig_name, "updated_at": now_str()}
         if draft_id:
             conn.update("visit_notes", draft_id, row)
@@ -1189,26 +1290,23 @@ def visit_note(patient_id):
                                               "stored_name": stored, "mime": mime, "size_bytes": size, "uploaded_by": g.user.id,
                                               "uploaded_at": now_str(), "visit_note_id": vid})
         if make_bill:
-            inv = conn.insert("invoices", {"branch_id": branch_id, "patient_id": patient_id, "status": "draft", "created_by": g.user.id,
-                                           "created_at": now_str(), "notes": "Progress note"})
-            for ln in lines:
-                conn.insert("invoice_items", {"invoice_id": inv, "service_id": ln["service_id"], "description": ln["desc"], "qty": ln["qty"],
-                                              "unit_price_cents": ln["unit"], "discount_cents": ln["disc_cents"],
-                                              "amount_cents": line_amount(ln["qty"], ln["unit"], ln["disc_cents"]), "tooth": ln["tooth"],
-                                              "dentist_id": dentist_id, "done_on": visit.isoformat()})
-            items = conn.all("SELECT * FROM invoice_items WHERE invoice_id = ?", (inv,))
-            sub = sum(i["amount_cents"] for i in items)
-            conn.update("invoices", inv, compute_totals(items, round(sub * bill_bp / 10000), conn))
-            number = next_invoice_number(conn, branch_id)
-            conn.execute("UPDATE invoices SET status = 'issued', number = ?, issued_at = ? WHERE id = ?", (number, today().isoformat(), inv))
-            upd["invoice_id"] = inv
-            audit.record("invoice_issued", "invoice", inv, f"Issued {number} from a progress note", branch_id=branch_id)
+            upd["invoice_id"] = create_visit_bill(conn, vid, patient_id, branch_id, dentist_id, visit.isoformat(), lines, bill_bp)
+        elif needs_bill:
+            from ..approvals import approvers
+            from ..notices import notify
+            dname = conn.scalar("SELECT name FROM users WHERE id = ?", (dentist_id,)) or "the dentist"
+            n_svc = sum(1 for l in lines if l["unit"] > 0)
+            notify(conn, approvers(conn, "billing.manage", branch_id), "to_bill",
+                   f"Progress note to bill: {n_svc} service{'s' if n_svc != 1 else ''} by {dname}",
+                   "Open the patient's Bills & Payment and press Create bill.",
+                   url_for("patients.detail", patient_id=patient_id, tab="billing"), exclude=g.user.id)
         if upd:
             conn.update("visit_notes", vid, upd)
         audit.record("visit_note_saved", "patient", patient_id,
                      f"Progress note for {visit.isoformat()}: {len(lines)} service(s)" + (", bill created" if make_bill else "")
                      + (", signed by patient" if sig_name else ""), {"visit_note_id": vid}, branch_id)
-    flash("Progress note saved" + (" and the bill was created. Add the payment from Bills & Payment." if make_bill else "."), "success")
+    flash("Progress note saved" + (" and the bill was created. Add the payment from Bills & Payment." if make_bill
+                                   else ". The cashier was notified to create the bill." if needs_bill else "."), "success")
     return redirect(url_for("patients.detail", patient_id=patient_id, tab="notes"))
 
 

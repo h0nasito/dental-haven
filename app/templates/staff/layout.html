@@ -68,7 +68,7 @@
     {% call group('Finance', 'billing') %}
       {% call section('Billing') %}
         {% if current_user.can('quotes.view') %}{{ nav('quotes.index', 'Quotations', 'quotes.') }}{% endif %}
-        {% if current_user.can('billing.view') %}{{ nav('billing.invoices', 'Bills & invoices', 'billing.invoice') }}{% endif %}
+        {% if current_user.can('billing.view') %}{{ nav('billing.invoices', 'Bills & invoices', 'billing.invoice', nav_counts.to_bill) }}{% endif %}
         {% if current_user.can('deposits.view') or current_user.can('deposits.manage') %}{{ nav('deposits.index', 'Bank deposits', 'deposits.') }}{% endif %}
       {% endcall %}
       {% call section('Expenses') %}

@@ -121,3 +121,53 @@ class TestVisitNote(Base):
         self.assertIn(front.post(f"/staff/patients/{self.pid}/visit-note", data={"action": "save"}).status_code, (403, 404))
         admin.post(f"/staff/patients/{self.pid}/visit-notes/{d}/delete")
         self.assertIsNone(self.q("SELECT id FROM visit_notes WHERE id = ?", (d,)))
+
+
+class TestNoteToBill(TestVisitNote):
+    """A dentist saves services; the cashier creates the bill from the note."""
+
+    def test_dentist_note_waits_for_cashier(self):
+        from app.util import today
+        t = today().isoformat()
+        doc = self.login("dentist.sjdm")
+        r = self._post(doc, visit_date=t, recall_date="", signature="", create_bill="1")
+        self.assertEqual(r.status_code, 302)
+        v = self.q("SELECT * FROM visit_notes WHERE patient_id = ? AND status = 'saved' ORDER BY id DESC", (self.pid,))
+        self.assertIsNone(v["invoice_id"])
+        self.assertEqual(v["create_bill"], 1)
+        # billing staff of the branch are notified (no patient name in the notification)
+        n = self.q("SELECT * FROM notifications WHERE kind = 'to_bill' ORDER BY id DESC LIMIT 1")
+        self.assertIn("Progress note to bill", n["title"])
+        self.assertNotIn(self.q("SELECT last_name FROM patients WHERE id = ?", (self.pid,))["last_name"], n["title"] + n["body"])
+        admin = self.login("admin")
+        page = admin.get(f"/staff/patients/{self.pid}?tab=billing").data.decode()
+        self.assertIn("Progress notes waiting for a bill", page)
+        self.assertIn("₱1,719.50", page)
+        self.assertIn("Progress notes waiting for a bill", admin.get("/staff/invoices").data.decode())
+        r = admin.post(f"/staff/patients/{self.pid}/visit-note/{v['id']}/bill", data={})
+        self.assertEqual(r.status_code, 302)
+        v = self.q("SELECT * FROM visit_notes WHERE id = ?", (v["id"],))
+        inv = self.q("SELECT * FROM invoices WHERE id = ?", (v["invoice_id"],))
+        self.assertEqual((inv["status"], inv["subtotal_cents"], inv["discount_cents"], inv["total_cents"]), ("issued", 181000, 9050, 171950))
+        items = self.conn.all("SELECT qty, tooth, dentist_id, done_on FROM invoice_items WHERE invoice_id = ? ORDER BY id", (inv["id"],))
+        self.assertEqual([(i["qty"], i["tooth"], i["dentist_id"], i["done_on"]) for i in items], [(2, "35, 46", self.doc, t), (1, "", self.doc, t)])
+        self.assertNotIn("Progress notes waiting for a bill", admin.get(f"/staff/patients/{self.pid}?tab=billing").data.decode())
+        # twice: no second bill
+        admin.post(f"/staff/patients/{self.pid}/visit-note/{v['id']}/bill", data={})
+        self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM visit_notes WHERE invoice_id = ?", (inv["id"],)), 1)
+        # a dentist can't create bills
+        self.assertEqual(doc.post(f"/staff/patients/{self.pid}/visit-note/{v['id']}/bill", data={}).status_code, 403)
+
+    def test_no_bill_needed(self):
+        from app.util import today
+        doc = self.login("dentist.sjdm")
+        self._post(doc, visit_date=today().isoformat(), recall_date="", signature="")
+        v = self.q("SELECT * FROM visit_notes WHERE patient_id = ? AND status = 'saved' ORDER BY id DESC", (self.pid,))
+        admin = self.login("admin")
+        admin.post(f"/staff/patients/{self.pid}/visit-note/{v['id']}/bill", data={"action": "skip"})
+        self.assertTrue(self.q("SELECT bill_skipped_at FROM visit_notes WHERE id = ?", (v["id"],))["bill_skipped_at"])
+        self.assertIsNone(self.q("SELECT invoice_id FROM visit_notes WHERE id = ?", (v["id"],))["invoice_id"])
+
+
+for _n in [n for n in dir(TestVisitNote) if n.startswith("test_")]:
+    setattr(TestNoteToBill, _n, None)

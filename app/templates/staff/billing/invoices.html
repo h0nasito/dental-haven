@@ -1,8 +1,13 @@
 {% extends "staff/layout.html" %}
-{% from "macros.html" import status_badge, empty %}
+{% from "macros.html" import status_badge, empty, csrf %}
 {% block page_title %}Invoices{% endblock %}
 {% block content %}
 <div class="page-head"><div><h1>Invoices</h1><p>To create an invoice, open the patient or appointment first.</p></div></div>
+{% if to_bill %}<div class="card" id="to-bill"><h2>Progress notes waiting for a bill ({{ to_bill|length }})</h2>
+<div class="table-wrap"><table><thead><tr><th>Visit</th><th>Patient</th><th>Branch</th><th>Dentist</th><th>Services</th><th class="num">Amount</th><th></th></tr></thead><tbody>
+{% for v in to_bill %}<tr><td>{{ v.visit_date|date }}</td><td>{{ v.last_name }}, {{ v.first_name }}</td><td>{{ v.branch }}</td><td>{{ v.dentist or '—' }}</td><td>{{ v.services }}</td><td class="num">{{ v.estimate|peso }}</td>
+<td>{% if current_user.can('billing.manage') %}<form method="post" action="{{ url_for('patients.visit_note_bill', patient_id=v.patient_id, vid=v.id) }}">{{ csrf() }}<input type="hidden" name="next" value="{{ request.full_path }}"><button class="btn btn-sm">Create bill</button></form>{% endif %}
+<a class="btn btn-ghost btn-sm" href="{{ url_for('patients.detail', patient_id=v.patient_id, tab='billing') }}">Open</a></td></tr>{% endfor %}</tbody></table></div></div>{% endif %}
 <form class="toolbar" method="get">
 <div class="field"><label for="from">Issued from</label><input id="from" type="date" name="from" value="{{ start.isoformat() }}"></div>
 <div class="field"><label for="to">To</label><input id="to" type="date" name="to" value="{{ end.isoformat() }}"></div>

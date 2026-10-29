@@ -70,7 +70,9 @@ def invoices():
         "ORDER BY COALESCE(i.issued_at, i.created_at) DESC, i.id DESC LIMIT ? OFFSET ?", [*args, pg["limit"], pg["offset"]])
     for r in rows:
         r["state"] = payment_state(r["total_cents"], r["paid"], r["status"])
-    return render_template("staff/billing/invoices.html", rows=rows, pg=pg, start=start, end=end, status=status)
+    from .patients import notes_to_bill
+    to_bill = notes_to_bill(conn, g.user.scope_branch_ids)
+    return render_template("staff/billing/invoices.html", rows=rows, pg=pg, start=start, end=end, status=status, to_bill=to_bill)
 
 
 @bp.route("/invoices/new", methods=["GET", "POST"])

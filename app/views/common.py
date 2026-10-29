@@ -17,7 +17,7 @@ def register_context(app):
         conn = get_db()
         branches = conn.all("SELECT id, name FROM branches WHERE active = 1 ORDER BY sort_order")
         nav_branches = [b for b in branches if b["id"] in user.branch_ids]
-        counts = {"requests": 0, "overdue": 0, "queue": 0, "reviews": 0}
+        counts = {"requests": 0, "overdue": 0, "queue": 0, "reviews": 0, "to_bill": 0}
         bf, bp = branch_filter(user, "branch_id")
         if user.can("bookings.manage") or user.can("bookings.view"):
             counts["requests"] = conn.scalar(f"SELECT COUNT(*) FROM booking_requests WHERE status='pending' AND {bf}", bp)
@@ -30,6 +30,9 @@ def register_context(app):
             lf, lp = branch_filter(user, "branch_id")
             new_leads = conn.scalar(f"SELECT COUNT(*) FROM leads WHERE status='new' AND spam = 0 AND ({lf} OR branch_id IS NULL)", lp)
         counts["queue"] = (counts["requests"] or 0) + (counts["overdue"] or 0) + (new_leads or 0)
+        if user.can("billing.manage"):
+            from .patients import notes_to_bill
+            counts["to_bill"] = len(notes_to_bill(conn, user.scope_branch_ids))
         if user.can("reportcards.review"):
             if user.role == "dentist":
                 counts["reviews"] = conn.scalar(
