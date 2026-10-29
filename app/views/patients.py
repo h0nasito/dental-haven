@@ -337,8 +337,13 @@ def progress_groups(conn, patient_id, procedures, notes):
         day = (pr["performed_at"] or pr["created_at"])[:10]
         gr = grp(day, pr["dentist"], branch_names.get(pr["branch_id"], ""))
         price, inv = None, None
+        # imported visits: "service\nnote" (MyMedsPH repeats the visit's note on every procedure: show it once)
+        first, _, extra = (pr["description"] or "").partition("\n")
+        extra = extra.strip()
         for it in pool.get((day, pr["dentist"] or ""), []):
-            same = (pr["service_id"] and it["service_id"] == pr["service_id"]) or it["description"].strip().lower() == pr["description"].strip().lower()
+            idesc = it["description"].split(" · ")[0].strip().lower()
+            same = (pr["service_id"] and it["service_id"] == pr["service_id"]) or it["description"].strip().lower() == first.strip().lower() \
+                or idesc == first.strip().lower()
             if same and not it.get("_used"):
                 it["_used"] = True
                 price, inv = it["amount_cents"], it
@@ -346,7 +351,9 @@ def progress_groups(conn, patient_id, procedures, notes):
         if inv:
             gr["invoices"][inv["inv_id"]] = inv["number"] or "Draft invoice"
             gr["branches"].add(inv["branch"])
-        gr["lines"].append({"text": pr["description"], "tooth": pr["tooth"], "price": price, "proc": pr})
+        gr["lines"].append({"text": first, "tooth": pr["tooth"], "price": price, "proc": pr})
+        if extra and extra not in gr.setdefault("visit_notes_text", []):
+            gr["visit_notes_text"].append(extra)
         gr["procs"].append(pr)
     for (day, dentist), its in pool.items():
         for it in its:

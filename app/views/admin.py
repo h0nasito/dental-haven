@@ -1703,7 +1703,8 @@ def import_billing_report_confirm():
         audit.record("legacy_billing_report_imported", "invoice", None,
                      f"MyMedsPH billing report: {st['payments']} payments, {st['created']} bills created, dentist on {st['dentist_lines']} lines", st)
     path.unlink(missing_ok=True)
-    flash(f"Done. Dentist set on {st['dentist_lines']:,} bill lines; {st['payments']:,} payments added (₱{st['paid_total'] / 100:,.2f})"
+    flash(f"Done. Dentist set on {st['dentist_lines']:,} bill lines and {st.get('visits_dentist', 0):,} progress note lines; "
+          f"{st['payments']:,} payments added (₱{st['paid_total'] / 100:,.2f})"
           + (f"; {st['replaced']:,} status-based payments replaced" if st["replaced"] else "")
           + (f"; {st['created']:,} missing bills created (₱{st['created_net'] / 100:,.2f})" if st["created"] else "")
           + (f"; {st['skipped']:,} skipped (patient has no branch)" if st["skipped"] else "") + ".", "success")

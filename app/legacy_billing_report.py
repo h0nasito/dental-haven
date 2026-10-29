@@ -320,8 +320,34 @@ def apply(conn, data: dict, user_id: int) -> dict:
                 st["paid_total"] += min(b["paid"], b["net"])
             st["created"] += 1
             st["created_net"] += b["net"]
+    st["visits_dentist"] = link_procedure_dentists(conn)
     settings.put("legacy.billing_report_imported", True, user_id, conn)
     return st
+
+
+def link_procedure_dentists(conn) -> int:
+    """Imported MyMedsPH visits (progress notes) have no dentist: take it from that day's bill lines. One dentist on the
+    day's lines -> every visit line that day; several -> by procedure name. Returns how many visit lines were set."""
+    by_day: dict[tuple, list] = defaultdict(list)
+    for r in conn.all("SELECT i.patient_id, COALESCE(ii.done_on, substr(i.issued_at, 1, 10)) AS day, ii.description, ii.dentist_id "
+                      "FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id WHERE i.status = 'issued' AND ii.dentist_id IS NOT NULL"):
+        by_day[(r["patient_id"], r["day"])].append((norm((r["description"] or "").split(" · ")[0]), r["dentist_id"]))
+    n = 0
+    for p in conn.all("SELECT id, patient_id, substr(performed_at, 1, 10) AS day, description FROM procedures "
+                      "WHERE legacy_key IS NOT NULL AND performed_by IS NULL AND status = 'completed'"):
+        lines = by_day.get((p["patient_id"], p["day"]))
+        if not lines:
+            continue
+        dentists = {d for _, d in lines}
+        if len(dentists) == 1:
+            target = next(iter(dentists))
+        else:
+            name = norm((p["description"] or "").split("\n", 1)[0])
+            target = next((d for w, d in lines if w and name and (w.startswith(name) or name.startswith(w))), None)
+        if target:
+            conn.execute("UPDATE procedures SET performed_by = ?, legacy_dentist = 1 WHERE id = ?", (target, p["id"]))
+            n += 1
+    return n
 
 
 def status(conn) -> dict:
@@ -343,6 +369,7 @@ def undo(conn) -> dict:
         conn.execute("DELETE FROM invoice_items WHERE invoice_id = ?", (iid,))
         conn.execute("DELETE FROM invoices WHERE id = ?", (iid,))
     conn.execute("UPDATE invoice_items SET dentist_id = NULL, legacy_dentist = 0 WHERE legacy_dentist = 2")
+    conn.execute("UPDATE procedures SET performed_by = NULL, legacy_dentist = 0 WHERE legacy_dentist = 1")
     restored = conn.scalar("SELECT COUNT(*) FROM payments WHERE legacy_key LIKE 'mmbv:%'") or 0
     conn.execute("UPDATE payments SET status = 'valid', legacy_key = NULL, notes = 'Paid in MyMedsPH (imported)' WHERE legacy_key LIKE 'mmbv:%'")
     settings.put("legacy.billing_report_imported", False, None, conn)

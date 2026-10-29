@@ -89,6 +89,19 @@ class TestBillingReport(Base):
         # dentist on the converted bills' lines
         self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id WHERE i.patient_id = ? "
                                           "AND i.number LIKE 'MM-%' AND ii.dentist_id = ?", (self.pid, self.dentist["id"])), 4)
+        # imported visits (progress notes) of that day get the dentist too, and show the note once
+        from app.util import now_str
+        pr1 = self.conn.insert("procedures", {"patient_id": self.pid, "description": "Extraction\nNote of the visit", "status": "completed",
+                                              "performed_at": "2026-10-13", "created_at": now_str(), "legacy_key": "pn-br-1"})
+        pr2 = self.conn.insert("procedures", {"patient_id": self.pid, "description": "Asepsis Fee\nNote of the visit", "status": "completed",
+                                              "performed_at": "2026-10-13", "created_at": now_str(), "legacy_key": "pn-br-2"})
+        from app import legacy_billing_report as br
+        with self.app.app_context():
+            self.assertEqual(br.link_procedure_dentists(self.conn), 2)
+        self.assertEqual(self.q("SELECT performed_by FROM procedures WHERE id = ?", (pr1,))["performed_by"], self.dentist["id"])
+        notes = c.get(f"/staff/patients/{self.pid}?tab=notes").data.decode()
+        self.assertEqual(notes.count('<p class="pre pn-note">Note of the visit</p>'), 1)
+        self.assertIn(self.dentist["name"], notes)
         # uploading again changes nothing
         before = self.conn.scalar("SELECT COUNT(*) FROM payments")
         r = c.post("/staff/admin/import/billing-report", data={"files": [(io.BytesIO(workbook(self.rows)), "doc.xlsx")]},
@@ -102,6 +115,7 @@ class TestBillingReport(Base):
         self.assertEqual([self.paid(d) for d in ("2026-10-01", "2026-10-09", "2026-10-13")], [4350000, 55500000, 300000])
         self.assertIsNone(self.q("SELECT id FROM invoices WHERE patient_id = ? AND number LIKE 'MB-%'", (self.pid,)))
         self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM invoice_items WHERE legacy_dentist = 2"), 0)
+        self.assertIsNone(self.q("SELECT performed_by FROM procedures WHERE id = ?", (pr1,))["performed_by"])
 
     def test_keeps_dated_payments(self):
         """A real payment (e.g. from a collection report) stays; only the missing amount is added."""

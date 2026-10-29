@@ -130,6 +130,7 @@
 <td><strong class="pn-date">{{ gr.date|date if gr.date else '—' }}</strong><br><small>{{ gr.dentist or '—' }}</small>
 {% set others = gr.made_by|reject('equalto', gr.dentist)|list %}{% if others %}<br><small class="muted">Entered by {{ others|join(', ') }}</small>{% endif %}</td>
 <td>{% if gr.lines %}<ul class="pn-lines">{% for ln in gr.lines %}<li><span>{{ ln.text }}{% if ln.tooth %} <span class="muted">(#{{ ln.tooth }})</span>{% endif %}</span>{% if ln.price is not none and current_user.can('billing.view') %}<span class="pn-price">{{ ln.price|peso }}</span>{% endif %}</li>{% endfor %}</ul>{% endif %}
+{% for t in gr.visit_notes_text or [] %}<p class="pre pn-note">{{ t }}</p>{% endfor %}
 {% for n in gr.notes %}<p class="pre pn-note">{% if n.amended %}<span class="badge badge-blue">Amendment</span> {% endif %}{{ n.body }}</p>{% endfor %}
 {% for vn in gr.visits or [] %}{% if vn.recall_date %}<small class="pn-recall">Recall {{ vn.recall_date|date }}{% if vn.recall_reason %} · {{ vn.recall_reason }}{% endif %}</small><br>{% endif %}{% if vn.signature_name %}<a href="{{ url_for('patients.visit_note_signature', patient_id=p.id, vid=vn.id) }}" target="_blank" rel="noopener"><small>✓ Signed by patient</small></a><br>{% endif %}{% endfor %}
 {% if gr.branch %}<small class="muted">{{ gr.branch }}</small>{% endif %}</td>
@@ -137,11 +138,11 @@
 <td><details class="kebab"><summary aria-label="Actions">⋯</summary><div class="kebab-menu">
 {% if gr.invoices and current_user.can('billing.view') %}<p class="kebab-h">Billing</p>{% for iid, num in gr.invoices.items() %}<a href="{{ url_for('billing.invoice', invoice_id=iid) }}">Open {{ num }}</a>{% endfor %}{% endif %}
 {% if current_user.can('progress.actions') and gr.procs %}<p class="kebab-h">Record</p>{% for pr in gr.procs %}
-<details><summary>Edit “{{ pr.description|truncate(28) }}”</summary><form method="post" action="{{ url_for('patients.procedure_action', patient_id=p.id, proc_id=pr.id) }}" class="mt-1">{{ csrf() }}
+<details><summary>Edit “{{ (pr.description or "").split("\n")[0]|truncate(28) }}”</summary><form method="post" action="{{ url_for('patients.procedure_action', patient_id=p.id, proc_id=pr.id) }}" class="mt-1">{{ csrf() }}
 <label class="sr-only" for="ed{{ pr.id }}">Description</label><input id="ed{{ pr.id }}" name="description" value="{{ pr.description }}">
 <label class="sr-only" for="et{{ pr.id }}">Tooth</label><input id="et{{ pr.id }}" name="tooth" value="{{ pr.tooth }}" placeholder="Tooth" class="mt-1">
 <label class="sr-only" for="edt{{ pr.id }}">Date</label><input id="edt{{ pr.id }}" type="date" name="performed_at" value="{{ (pr.performed_at or '')[:10] }}" class="mt-1">
-<div class="row mt-1"><button class="btn btn-secondary btn-sm" name="action" value="edit">Save</button><button class="btn btn-danger btn-sm" name="action" value="delete" formnovalidate data-confirm="Delete “{{ pr.description|truncate(40) }}” from the progress notes?">Delete</button></div></form></details>{% endfor %}{% endif %}
+<div class="row mt-1"><button class="btn btn-secondary btn-sm" name="action" value="edit">Save</button><button class="btn btn-danger btn-sm" name="action" value="delete" formnovalidate data-confirm="Delete “{{ (pr.description or "").split("\n")[0]|truncate(40) }}” from the progress notes?">Delete</button></div></form></details>{% endfor %}{% endif %}
 {% if gr.billed and current_user.can('billing.view') %}<p class="kebab-h">Billed items</p>{% for b in gr.billed %}
 {% if b.status == 'draft' and current_user.can('bills.edit') %}<form method="post" action="{{ url_for('billing.invoice_edit', invoice_id=b.inv_id) }}">{{ csrf() }}
 <input type="hidden" name="action" value="remove_item"><input type="hidden" name="item_id" value="{{ b.item_id }}"><input type="hidden" name="next" value="{{ url_for('patients.detail', patient_id=p.id, tab='notes') }}">
