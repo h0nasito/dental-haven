@@ -101,6 +101,35 @@ def _bill_groups(rows) -> dict[tuple, dict]:
     return groups
 
 
+TITLES = {"dr", "dra", "doc", "doctor", "dmd", "dds", "dentist"}
+
+
+def _name_tokens(name: str) -> frozenset:
+    return frozenset(t for t in re.findall(r"[a-z0-9]+", (name or "").lower()) if t not in TITLES and len(t) > 1)
+
+
+def dentist_finder(conn):
+    """Report dentist name -> user id. Ignores titles (Dr., Doc, DMD) and accepts a name that is all within the
+    account's name (or the employee record's full name), when exactly one dentist fits."""
+    people = []
+    for u in conn.all("SELECT u.id, u.name, e.full_name FROM users u LEFT JOIN employees e ON e.user_id = u.id WHERE u.role = 'dentist'"):
+        people.append((u["id"], [_name_tokens(u["name"]), _name_tokens(u["full_name"] or "")]))
+    cache: dict[str, int | None] = {}
+
+    def find(name: str):
+        key = norm(name)
+        if key not in cache:
+            want = _name_tokens(name)
+            hit = None
+            if want:
+                exact = {uid for uid, ts in people if any(t and t == want for t in ts)}
+                part = exact or {uid for uid, ts in people if any(t and len(want & t) >= 2 and (want <= t or t <= want) for t in ts)}
+                hit = next(iter(part)) if len(part) == 1 else None
+            cache[key] = hit
+        return cache[key]
+    return find
+
+
 def _is_synthetic(p) -> bool:
     """A 'Paid in MyMedsPH' payment made from a status number (no real date or amount behind it)."""
     return p["method"] == LEGACY_METHOD and not p["legacy_key"]
@@ -109,7 +138,7 @@ def _is_synthetic(p) -> bool:
 def plan(conn, data: dict) -> dict:
     """Work out what confirming would do, without changing anything."""
     idx = patient_index(conn)
-    users = {norm(u["name"]): u["id"] for u in conn.all("SELECT id, name FROM users WHERE role = 'dentist'")}
+    find_dentist = dentist_finder(conn)
     # MyMedsPH bills here, by patient and day (converted ones, and lines not converted yet)
     legacy: dict[tuple, list] = defaultdict(list)
     for b in conn.all("SELECT id, patient_id, branch_id, substr(issued_at, 1, 10) AS day, total_cents FROM invoices "
@@ -125,7 +154,7 @@ def plan(conn, data: dict) -> dict:
                       "(SELECT id FROM invoices WHERE legacy = 1)"):
         pays[p["invoice_id"]].append(dict(p))
     lines: dict[int, list] = defaultdict(list)
-    for ln in conn.all("SELECT id, invoice_id, description, dentist_id FROM invoice_items WHERE invoice_id IN (SELECT id FROM invoices WHERE legacy = 1)"):
+    for ln in conn.all("SELECT id, invoice_id, description, dentist_id, legacy_dentist FROM invoice_items WHERE invoice_id IN (SELECT id FROM invoices WHERE legacy = 1)"):
         lines[ln["invoice_id"]].append(dict(ln))
 
     out = {"bills": [], "unmatched": defaultdict(lambda: [0, 0, ""]), "dentists_unmatched": set()}
@@ -152,7 +181,7 @@ def plan(conn, data: dict) -> dict:
         dent = {}
         for r in g["rows"]:
             if r["dentist"]:
-                did = users.get(norm(r["dentist"]))
+                did = find_dentist(r["dentist"])
                 if did:
                     dent[r["key"]] = did
                 else:
@@ -175,19 +204,21 @@ def plan(conn, data: dict) -> dict:
             diff = g["paid"] - bill["real_paid"]
             bill["add"] = max(0, diff)
             bill["more_here"] = max(0, -diff)
-            # dentist on lines with none: one dentist for the bill -> every empty line; else by procedure name
+            # dentist on lines with none (or set by an earlier upload of a report): when every row of the day has one and
+            # the same dentist -> every line; otherwise only by procedure name, so a day with two dentists isn't all one's
             names = {did for did in dent.values()}
+            one = len(names) == 1 and all(r["key"] in dent for r in g["rows"])
             wanted = [(norm(d), dent.get(r["key"])) for r in g["rows"] for d, _t in split_procedures(r["procedures"])]
             for b in invs:
                 for ln in lines.get(b["id"], []):
-                    if len(names) == 1:
+                    if one:
                         target = next(iter(names))
                     else:
-                        dn = norm(ln["description"])
-                        target = next((did for w, did in wanted if did and w and (dn.startswith(w) or w.startswith(dn))), None)
+                        dn = norm((ln["description"] or "").split(" · ")[0])
+                        target = next((did for w, did in wanted if did and w and dn and (dn.startswith(w) or w.startswith(dn))), None)
                     if not target:
                         continue
-                    if ln["dentist_id"] is None:
+                    if ln["dentist_id"] is None or (ln["legacy_dentist"] == 2 and ln["dentist_id"] != target):
                         bill["dentist_lines"].append((ln["id"], target))
                     elif ln["dentist_id"] != target:
                         bill["dentist_conflicts"] += 1
@@ -260,7 +291,7 @@ def apply(conn, data: dict, user_id: int) -> dict:
     for b in p["bills"]:
         if b["action"] == "match":
             for line_id, did in b["dentist_lines"]:
-                conn.execute("UPDATE invoice_items SET dentist_id = ?, legacy_dentist = 2 WHERE id = ? AND dentist_id IS NULL", (did, line_id))
+                conn.execute("UPDATE invoice_items SET dentist_id = ?, legacy_dentist = 2 WHERE id = ? AND (dentist_id IS NULL OR legacy_dentist = 2)", (did, line_id))
                 st["dentist_lines"] += 1
             # status-made "Paid in MyMedsPH" payments give way to the report (kept as void, so Undo can bring them back)
             for x in b["synthetic"]:
@@ -333,8 +364,8 @@ def link_procedure_dentists(conn) -> int:
                       "FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id WHERE i.status = 'issued' AND ii.dentist_id IS NOT NULL"):
         by_day[(r["patient_id"], r["day"])].append((norm((r["description"] or "").split(" · ")[0]), r["dentist_id"]))
     n = 0
-    for p in conn.all("SELECT id, patient_id, substr(performed_at, 1, 10) AS day, description FROM procedures "
-                      "WHERE legacy_key IS NOT NULL AND performed_by IS NULL AND status = 'completed'"):
+    for p in conn.all("SELECT id, patient_id, substr(performed_at, 1, 10) AS day, description, performed_by, legacy_dentist FROM procedures "
+                      "WHERE legacy_key IS NOT NULL AND (performed_by IS NULL OR legacy_dentist = 1) AND status = 'completed'"):
         lines = by_day.get((p["patient_id"], p["day"]))
         if not lines:
             continue
@@ -344,9 +375,11 @@ def link_procedure_dentists(conn) -> int:
         else:
             name = norm((p["description"] or "").split("\n", 1)[0])
             target = next((d for w, d in lines if w and name and (w.startswith(name) or name.startswith(w))), None)
-        if target:
+        if target and target != p["performed_by"]:
             conn.execute("UPDATE procedures SET performed_by = ?, legacy_dentist = 1 WHERE id = ?", (target, p["id"]))
             n += 1
+        elif not target and p["legacy_dentist"] == 1:      # set from bills that were since corrected
+            conn.execute("UPDATE procedures SET performed_by = NULL, legacy_dentist = 0 WHERE id = ?", (p["id"],))
     return n
 
 
