@@ -35,7 +35,8 @@ class TestCaseTypes(Base):
             self.assertEqual(k(text), want, text)
         self.assertEqual(k("Visit", "Orthodontics & TMJ"), ORTHO)     # only the website service is known
 
-    def test_dentist_on_bill_lines_links_the_patient(self):
+    def test_bill_lines_alone_dont_add_the_patient(self):
+        """A dentist named on a bill line doesn't get the patient in My cases unless the patient is assigned to them."""
         doc = self.q("SELECT id FROM users WHERE email = ?", ("dentist.malolos" + DOMAIN,))["id"]
         pid = self.conn.insert("patients", {"chart_no": "T-CT-1", "first_name": "Billline", "last_name": "Linked", "created_at": "2026-01-01 00:00:00"})
         branch = self.branch("malolos")
@@ -45,10 +46,12 @@ class TestCaseTypes(Base):
         self.conn.insert("invoice_items", {"invoice_id": inv, "description": "BRACES INSTALL", "qty": 1, "unit_price_cents": 200000,
                                            "discount_cents": 0, "amount_cents": 200000, "dentist_id": doc})
         self.conn.insert("invoice_items", {"invoice_id": inv, "description": "ORAL PROPHYLAXIS (MILD)", "qty": 1, "unit_price_cents": 100000,
-                                           "discount_cents": 0, "amount_cents": 100000})        # done by someone else
-        page = self.login("dentist.malolos").get("/staff/my-cases/?q=billline").data.decode()
+                                           "discount_cents": 0, "amount_cents": 100000})
+        c = self.login("dentist.malolos")
+        self.assertNotIn("Linked, Billline", c.get("/staff/my-cases/?q=billline").data.decode())
+        # once assigned, the patient and all their cases show
+        self.conn.execute("INSERT INTO patient_assignments (patient_id, dentist_id, created_at) VALUES (?, ?, '2026-03-02 00:00:00')", (pid, doc))
+        page = c.get("/staff/my-cases/?q=billline").data.decode()
         self.assertIn("Linked, Billline", page)
         self.assertIn("Braces, Aligners &amp; Orthodontics", page)
-        self.assertNotIn("Cleaning &amp; Prevention</span>", page)
-        self.assertEqual(self.login("dentist.malolos").get(f"/staff/my-cases/{pid}?type=Cleaning %26 Prevention").status_code, 404)
-        self.assertEqual(self.login("dentist.malolos").get(f"/staff/my-cases/{pid}?type=Braces%2C Aligners %26 Orthodontics").status_code, 200)
+        self.assertEqual(c.get(f"/staff/my-cases/{pid}?type=Cleaning %26 Prevention").status_code, 200)

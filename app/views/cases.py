@@ -1,5 +1,5 @@
-"""My cases (dentists): the patients assigned to a dentist and the work they did, grouped by type of case
-(Orthodontics, Prosthodontics, ...). Another dentist's work on the same patient isn't shown.
+"""My cases (dentists): only the patients assigned to the dentist, grouped by type of case (Orthodontics,
+Prosthodontics, ...). A patient with no assigned dentist isn't in anyone's My cases.
 
 Read-only. For each case: visits in that category, what was billed and paid (each bill's payments are shared over its
 lines in proportion), and for orthodontic cases whether the patient comes every month for the adjustment.
@@ -41,21 +41,14 @@ def _months_between(a: date, b: date) -> list[str]:
 
 
 def build_cases(conn, dentist_id: int) -> list[dict]:
-    """One case per (patient, type of case). A dentist sees:
-    - the patients assigned to them (Patients → assigned dentist), with the work that is theirs or has no dentist recorded;
-    - for any other patient, only the types of case where they are the dentist (progress note, procedure or bill line).
-    Another dentist's work on the same patient is left out."""
+    """One case per (patient, type of case), only for the patients assigned to the dentist (patient profile → assigned
+    dentist). Patients without an assigned dentist, or assigned to someone else, aren't included."""
     assigned = {r["patient_id"] for r in conn.all("SELECT patient_id FROM patient_assignments WHERE dentist_id = ?", (dentist_id,))}
 
     def mine(pid, owner) -> bool:
-        return owner == dentist_id or (owner is None and pid in assigned)
+        return pid in assigned
 
     pats = set(assigned)
-    pats |= {r["patient_id"] for r in conn.all("SELECT DISTINCT patient_id FROM procedures WHERE performed_by = ?", (dentist_id,))}
-    pats |= {r["patient_id"] for r in conn.all("SELECT DISTINCT patient_id FROM visit_notes WHERE dentist_id = ? AND status = 'saved' "
-                                               "AND cancelled_at IS NULL", (dentist_id,))}
-    pats |= {r["patient_id"] for r in conn.all("SELECT DISTINCT i.patient_id FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id "
-                                               "WHERE ii.dentist_id = ? AND i.status = 'issued'", (dentist_id,))}
     if not pats:
         return []
     kind = Classifier(conn)
@@ -172,8 +165,8 @@ def detail(patient_id):
     kind = Classifier(conn)
     is_assigned = bool(conn.one("SELECT 1 AS x FROM patient_assignments WHERE patient_id = ? AND dentist_id = ?", (patient_id, did)))
 
-    def mine(owner) -> bool:   # the dentist's own work, or work with no dentist recorded on their assigned patient
-        return owner == did or (owner is None and is_assigned)
+    def mine(owner) -> bool:   # every case of an assigned patient is shown
+        return is_assigned
 
     visits = [v for v in conn.all("SELECT COALESCE(p.performed_at, p.created_at) AS at, p.performed_by AS owner, p.description, p.tooth, s.name AS service, s.category AS scat, "
                                   "u.name AS dentist, b.name AS branch FROM procedures p LEFT JOIN services s ON s.id = p.service_id "
