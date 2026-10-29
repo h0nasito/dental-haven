@@ -198,3 +198,21 @@ class TestStaffHours(TestPayrollRules):
         late, ot = day_metrics(self.conn, {"employee_id": d["id"], "branch_id": d["primary_branch_id"], "work_date": "2025-07-01",
                                            "time_in": "09:10", "time_out": "19:00"})
         self.assertEqual((late, ot), (10, 0))
+
+
+class TestEmployeeSearch(Base):
+    def test_search_box(self):
+        from app.util import now_str
+        self.conn.insert("employees", {"full_name": "Searchable Zyxwv (demo)", "position": "Dental assistant", "primary_branch_id": self.branch("malolos"),
+                                       "active": 1, "created_at": now_str()})
+        c = self.login("admin")
+        page = c.get("/staff/employees").data.decode()
+        self.assertIn("Search employees", page)
+        self.assertIn("Searchable Zyxwv", page)
+        hit = c.get("/staff/employees?q=zyxwv").data.decode()
+        self.assertIn("Searchable Zyxwv", hit)
+        self.assertIn("1 employee found", hit)
+        miss = c.get("/staff/employees?q=nobody-qqq").data.decode()
+        self.assertNotIn("Searchable Zyxwv", miss)
+        self.assertIn("No employees match", miss)
+        self.assertIn("Searchable Zyxwv", c.get("/staff/employees?q=assistant malolos").data.decode())

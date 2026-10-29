@@ -66,14 +66,22 @@ def employees():
             flash("Employee added. This does not create a login; only a super admin can create users.", "success")
         return redirect(url_for("people.employees"))
     scope, params = _employee_scope()
+    no_login = conn.scalar(f"SELECT COUNT(*) FROM employees e WHERE {scope} AND e.active = 1 AND e.user_id IS NULL", params) or 0
+    q = clean(request.args.get("q"), 80)
+    where, args = [scope], list(params)
+    for word in q.lower().split():
+        where.append("(LOWER(e.full_name) LIKE ? OR LOWER(e.position) LIKE ? OR LOWER(COALESCE(b.name, lab.name, '')) LIKE ? "
+                     "OR LOWER(COALESCE(u.email, '')) LIKE ?)")
+        args += [f"%{word}%"] * 4
     rows = conn.all(f"SELECT e.*, COALESCE(b.name, lab.name || ' (laboratory)') AS branch, u.email AS login_email, u.role, u.access_role "
                     f"FROM employees e LEFT JOIN branches b ON b.id = e.primary_branch_id LEFT JOIN laboratories lab ON lab.id = e.lab_id "
-                    f"LEFT JOIN users u ON u.id = e.user_id WHERE {scope} ORDER BY e.active DESC, e.full_name", params)
+                    f"LEFT JOIN users u ON u.id = e.user_id WHERE {' AND '.join(where)} ORDER BY e.active DESC, e.full_name", args)
     if g.user.can("compensation.manage"):
         for r in rows:
             r["comp"] = current_compensation(conn, r["id"], today().isoformat())
     from ..workplace import labs_for
-    return render_template("staff/people/employees.html", rows=rows, branches=branches_for_user(g.user), labs=labs_for(conn, g.user))
+    return render_template("staff/people/employees.html", rows=rows, branches=branches_for_user(g.user), labs=labs_for(conn, g.user),
+                           q=q, no_login=no_login)
 
 
 EMPLOYMENT_TYPES = {"regular": "regular", "probationary": "probationary", "probation": "probationary", "associate": "associate",
