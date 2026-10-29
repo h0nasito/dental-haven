@@ -115,6 +115,16 @@ CATALOG: list[Perm] = [
     Perm("lab.billing", "Lab invoices, discounts and payment receipts for outside clinics", "Laboratory", True),
     Perm("lab.prices", "Laboratory services & prices: add, rename and change prices on the lab's price list (for users assigned to the lab)", "Laboratory", True),
     Perm("lab.commission", "Add technician commissions on lab works and cases", "Laboratory", True),
+    # X-ray
+    Perm("xray.view", "View X-ray records, receipts and images", "X-ray"),
+    Perm("xray.manage", "Record X-rays (clinic patients and walk-ins), take X-ray payments and upload images", "X-ray"),
+    Perm("xray.void", "Void X-ray records and X-ray payments", "X-ray", True),
+    Perm("xray.rebates", "Referring dentists and their rebates: rates and payouts", "X-ray", True),
+    # Merchandise
+    Perm("merch.view", "View merchandise sales, receipts and stock", "Merchandise"),
+    Perm("merch.sell", "Sell merchandise (own receipt) and take payments", "Merchandise"),
+    Perm("merch.stock", "Merchandise products, prices and stock: add products, stock in, stock counts", "Merchandise"),
+    Perm("merch.void", "Void merchandise sales and payments (stock goes back)", "Merchandise", True),
     # Inventory
     Perm("evaluations.answer", "Answer staff evaluation forms (through the form link, while the form is open)", "Staff evaluations"),
     Perm("evaluations.manage", "Manage evaluation forms: open/close, edit questions, see all answers and results", "Staff evaluations"),
@@ -175,7 +185,7 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
         "dashboard.view", "appointments.view", "appointments.complete", "calendar.birthdays", "calendar.events",
         "followups.view", "followups.manage", "patients.view", "clinical.view", "clinical.edit", *_CLINICAL_WRITE,
         "documents.upload", "lab.view", "lab.all_branches", "lab.manage", "reportcards.generate", "reportcards.review",
-        "quotes.view", "quotes.manage", "attendance.clock", "leave.request", "reimburse.request", "evaluations.answer",
+        "quotes.view", "quotes.manage", "attendance.clock", "leave.request", "reimburse.request", "evaluations.answer", "xray.view",
     },
     "staff": {
         "dashboard.view", "dashboard.balances", "appointments.view", "calendar.associates", "calendar.birthdays",
@@ -185,6 +195,7 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
         "billing.view", "billing.manage", "bills.edit", "payments.add", "credit.apply", "commission.record",
         "expenses.view", "expenses.add", "lab.view", "reports.operations", "attendance.view",
         "quotes.view", "quotes.manage", "inventory.view", "inventory.order", "attendance.clock", "leave.request", "reimburse.request",
+        "xray.view", "xray.manage", "merch.view", "merch.sell",
     },
     "hr": {
         "dashboard.view", "attendance.view", "attendance.manage", "attendance.clock", "overtime.approve", "compensation.manage", "leave.request", "leave.approve", "reimburse.request", "reimburse.approve", "announcements.manage",
@@ -196,6 +207,7 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
         "patients.manage", "documents.upload", "leads.view", "leads.manage", "followups.view", "followups.manage", "reminders.view",
         "reminders.send", "billing.view", "quotes.view", "lab.view", "lab.all_branches", "reports.operations", "attendance.view", "attendance.manage",
         "attendance.clock", "overtime.approve", "inventory.view", "inventory.order", "inventory.order_approve", "deposits.view", "leave.request", "leave.approve", "reimburse.request", "reimburse.approve", "announcements.manage",
+        "xray.view", "merch.view", "merch.stock",
     },
     # The laboratory's front desk: works from other clinics, branch cases sent to their lab, lab invoices and receipts.
     # Lab access comes from being assigned to the lab (user_labs); no clinic patients, bookings or billing.
@@ -210,6 +222,7 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
         "dashboard.view", "dashboard.balances", "appointments.view", "calendar.associates", "patients.view", "patients.contact",
         "billing.view", "billing.manage", "bills.edit", "payments.add", "credit.apply", "commission.record", "quotes.view", "reports.sales",
         "expenses.view", "expenses.add", "attendance.clock", "leave.request", "reimburse.request", "deposits.view", "deposits.manage",
+        "xray.view", "xray.manage", "merch.view", "merch.sell",
     },
     "receptionist": {
         "dashboard.view", "appointments.view", "calendar.associates", "calendar.birthdays", "calendar.events",
@@ -217,6 +230,7 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
         "patients.view", "patients.contact", "patients.manage", "documents.upload",
         "leads.view", "leads.manage", "followups.view", "followups.manage", "reminders.view", "reminders.send",
         "quotes.view", "quotes.manage", "attendance.clock", "leave.request", "reimburse.request", "lab.view", "lab.all_branches",
+        "xray.view", "xray.manage", "merch.view", "merch.sell",
     },
 }
 

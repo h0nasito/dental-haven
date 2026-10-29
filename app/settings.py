@@ -42,6 +42,9 @@ DEFAULTS: dict[str, object] = {
     "report.daily_enabled": False,            # email the daily collection report automatically
     "report.daily_time": "23:00",
     "report.daily_recipients": "",
+    "report.tithe_enabled": False,            # monthly email: tithe = a share of last month's net profit (Monthly business report)
+    "report.tithe_percent": 10,
+    "report.tithe_day": 5,                    # sent on this day of the next month, at the daily report time
     # Laboratory: trial fitting agreement signed by the patient and the dentist ({case_type}, {teeth}, {shade} are filled in).
     # The clinic should review this wording.
     "lab.fitting_agreement": ("Case: {case_type} · Teeth: {teeth} · Shade: {shade}\n\n"
@@ -85,6 +88,9 @@ LABELS = {
     "report.daily_enabled": "Email the daily collection report automatically",
     "report.daily_time": "Send at (HH:MM, 24-hour)",
     "report.daily_recipients": "Send to (email addresses, one per line)",
+    "report.tithe_enabled": "Also email the monthly tithe (a share of last month's net profit) to the same people",
+    "report.tithe_percent": "Tithe (% of the month's net profit)",
+    "report.tithe_day": "Send the tithe email on this day of the next month (1–28)",
     "lab.fitting_agreement": "Trial fitting agreement (patient and dentist sign it on the lab case)",
     "privacy.retention_note": "Record retention note",
 }

@@ -1,0 +1,13 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}X-ray prices{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>X-ray prices</h1><p>The usual price of each X-ray type. It fills in on a new X-ray and can be changed there. A type without a price needs it typed in each time. Periapical X-rays are procedures (progress notes and the patient’s bill), so they are not on this list.</p></div></div>
+{% set active = 'prices' %}{% include "staff/xray/_nav.html" %}
+<form method="post" class="card" style="max-width:640px">{{ csrf() }}
+<div class="table-wrap"><table><thead><tr><th>X-ray type</th><th class="num">Price (₱)</th><th>In use</th></tr></thead><tbody>
+{% for t in types %}<tr><td>{{ t.name }}</td><td class="num"><label class="sr-only" for="p{{ t.id }}">Price of {{ t.name }}</label><input id="p{{ t.id }}" name="price_{{ t.id }}" value="{{ '%.2f'|format(t.price_cents / 100) if t.price_cents is not none else '' }}" inputmode="decimal" style="max-width:9rem;text-align:right" placeholder="not set"></td>
+<td><label class="check"><input type="checkbox" name="active_{{ t.id }}" value="1" {{ 'checked' if t.active }}> In use</label></td></tr>{% endfor %}
+<tr><td><label class="sr-only" for="nn">New type</label><input id="nn" name="new_name" placeholder="Add a type, e.g. Bitewing" maxlength="80"></td><td class="num"><label class="sr-only" for="np">Price</label><input id="np" name="new_price" inputmode="decimal" style="max-width:9rem;text-align:right"></td><td></td></tr>
+</tbody></table></div><button class="btn mt-1">Save prices</button></form>
+{% endblock %}

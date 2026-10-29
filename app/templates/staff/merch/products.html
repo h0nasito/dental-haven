@@ -1,0 +1,26 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Merchandise products{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Products &amp; prices</h1><p>What the clinic sells. Set each price before selling; the cost is used for the profit in the report (it's also updated when you stock in with a cost).</p></div></div>
+{% set active = 'products' %}{% include "staff/merch/_nav.html" %}
+{% macro pform(p=None) %}<form method="post" class="ms-pform">{{ csrf() }}{% if p %}<input type="hidden" name="product_id" value="{{ p.id }}">{% endif %}{% set k = p.id if p else 'new' %}
+<div class="form-grid">
+<div class="field"><label for="n{{ k }}">Name</label><input id="n{{ k }}" name="name" value="{{ p.name if p else '' }}" required maxlength="120"></div>
+<div class="field"><label for="c{{ k }}">Category</label><select id="c{{ k }}" name="category">{% for c in categories %}<option {{ 'selected' if p and p.category == c }}>{{ c }}</option>{% endfor %}</select></div>
+<div class="field"><label for="u{{ k }}">Sold per</label><select id="u{{ k }}" name="unit">{% for u in units %}<option {{ 'selected' if p and p.unit == u }}>{{ u }}</option>{% endfor %}</select></div>
+<div class="field"><label for="p{{ k }}">Price (₱)</label><input id="p{{ k }}" name="price" value="{{ '%.2f'|format(p.price_cents / 100) if p and p.price_cents is not none else '' }}" inputmode="decimal"></div>
+<div class="field"><label for="o{{ k }}">Cost (₱)</label><input id="o{{ k }}" name="cost" value="{{ '%.2f'|format(p.cost_cents / 100) if p and p.cost_cents is not none else '' }}" inputmode="decimal"></div>
+<div class="field"><label for="r{{ k }}">Reorder at</label><input id="r{{ k }}" name="reorder_level" value="{{ p.reorder_level if p else '' }}" inputmode="numeric" placeholder="0 = no alert"></div>
+</div>
+<label class="check"><input type="checkbox" name="rx_required" value="1" {{ 'checked' if p and p.rx_required }}> Needs a prescription (Rx)</label>
+<label class="check"><input type="checkbox" name="active" value="1" {{ 'checked' if not p or p.active }}> Sold (shown on new sales)</label>
+<button class="btn btn-sm mt-1">{{ 'Save' if p else 'Add product' }}</button></form>{% endmacro %}
+<div class="card"><h2>Add a product</h2>{{ pform() }}</div>
+<div class="card"><div class="table-wrap"><table><thead><tr><th>Product</th><th>Sold per</th><th class="num">Price</th><th class="num">Cost</th><th>Reorder at</th><th></th></tr></thead><tbody>
+{% for cat, group in prods|groupby('category') %}<tr class="li-case"><td colspan="6"><strong>{{ cat }}</strong></td></tr>
+{% for p in group %}<tr id="p{{ p.id }}" {% if not p.active %}style="opacity:.6"{% endif %}><td>{{ p.name }}{% if p.rx_required %} <span class="badge badge-amber">Rx</span>{% endif %}{% if not p.active %} <span class="badge">Not sold</span>{% endif %}</td>
+<td>{{ p.unit }}</td><td class="num">{{ p.price_cents|peso if p.price_cents is not none else 'not set' }}</td><td class="num">{{ p.cost_cents|peso if p.cost_cents is not none else '—' }}</td><td>{{ p.reorder_level or '—' }}</td>
+<td><details {{ 'open' if edit == p.id }}><summary>Edit</summary>{{ pform(p) }}</details></td></tr>{% endfor %}{% endfor %}
+</tbody></table></div></div>
+{% endblock %}

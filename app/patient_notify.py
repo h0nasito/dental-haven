@@ -287,6 +287,9 @@ def start_worker(app, every_seconds: int = 300) -> None:
                     from . import daily_report
                     if daily_report.run(get_db()):
                         app.logger.info("Sent the daily collection report")
+                    from . import tithe
+                    if tithe.run(get_db()):
+                        app.logger.info("Sent the monthly tithe email")
                     from . import google_places
                     if google_places.run(get_db()):
                         app.logger.info("Refreshed Google reviews")

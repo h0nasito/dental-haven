@@ -1,0 +1,34 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Merchandise stock{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Merchandise stock</h1><p>What's on hand at the branch. Sales take stock out; stock in what arrives, and fix it after a count.</p></div>
+{% if branches|length > 1 %}<form method="get" class="row"><label class="sr-only" for="bs">Branch</label><select id="bs" name="branch_id">{% for b in branches %}<option value="{{ b.id }}" {{ 'selected' if b.id == branch_id }}>{{ b.name }}</option>{% endfor %}</select><button class="btn btn-secondary btn-sm">Show</button></form>{% endif %}</div>
+{% set active = 'stock' %}{% include "staff/merch/_nav.html" %}
+<p class="muted">Stock value at cost: <strong>{{ value|peso }}</strong> <small>(products with a cost)</small></p>
+{% if current_user.can('merch.stock') %}<div class="grid grid-2">
+<form method="post" class="card">{{ csrf() }}<input type="hidden" name="action" value="in"><input type="hidden" name="branch_id" value="{{ branch_id }}"><h2>Stock in</h2>
+<div class="field"><label for="ip">Product</label><select id="ip" name="product_id" required><option value="">Choose…</option>{% for cat, group in rows|groupby('category') %}<optgroup label="{{ cat }}">{% for r in group if r.active %}<option value="{{ r.id }}">{{ r.name }}</option>{% endfor %}</optgroup>{% endfor %}</select></div>
+<div class="form-grid"><div class="field"><label for="iq">Quantity</label><input id="iq" name="qty" inputmode="numeric" required></div>
+<div class="field"><label for="ic">Cost each (₱)</label><input id="ic" name="unit_cost" inputmode="decimal" placeholder="optional"></div>
+<div class="field"><label for="ie">Expiry date</label><input id="ie" type="date" name="expiry_date"></div></div>
+<div class="field"><label for="in">Notes</label><input id="in" name="notes" maxlength="200" placeholder="supplier, delivery receipt no."></div>
+<button class="btn">Add to stock</button></form>
+<form method="post" class="card">{{ csrf() }}<input type="hidden" name="action" value="count"><input type="hidden" name="branch_id" value="{{ branch_id }}"><h2>Stock count / correction</h2>
+<div class="field"><label for="cp">Product</label><select id="cp" name="product_id" required><option value="">Choose…</option>{% for cat, group in rows|groupby('category') %}<optgroup label="{{ cat }}">{% for r in group %}<option value="{{ r.id }}">{{ r.name }} ({{ r.qty }} now)</option>{% endfor %}</optgroup>{% endfor %}</select></div>
+<div class="field"><label for="cc">Actual count</label><input id="cc" name="counted" inputmode="numeric" required></div>
+<div class="field"><label for="cn">Reason</label><input id="cn" name="notes" maxlength="200" required placeholder="monthly count, damaged, expired…"></div>
+<button class="btn btn-secondary">Save count</button></form>
+</div>{% endif %}
+<div class="card"><div class="table-wrap"><table><thead><tr><th>Product</th><th class="num">Price</th><th class="num">On hand</th><th>Reorder at</th><th>Earliest expiry</th></tr></thead><tbody>
+{% for cat, group in rows|groupby('category') %}<tr class="li-case"><td colspan="5"><strong>{{ cat }}</strong></td></tr>
+{% for r in group %}<tr><td>{{ r.name }}{% if r.rx_required %} <span class="badge badge-amber">Rx</span>{% endif %}{% if not r.active %} <span class="badge">Not sold</span>{% endif %}</td>
+<td class="num">{{ r.price_cents|peso if r.price_cents is not none else '—' }}</td>
+<td class="num">{% if r.low %}<span class="badge badge-red">{{ r.qty }} {{ r.unit }}</span>{% else %}{{ r.qty }} {{ r.unit }}{% endif %}</td>
+<td>{{ r.reorder_level or '—' }}</td>
+<td>{% if r.expiry %}{% if r.expired %}<span class="badge badge-red">Expired {{ r.expiry|date }}</span>{% elif r.expiring %}<span class="badge badge-amber">{{ r.expiry|date }}</span>{% else %}{{ r.expiry|date }}{% endif %}{% else %}—{% endif %}</td></tr>{% endfor %}{% endfor %}
+</tbody></table></div><p class="hint">Red: at or below the reorder level, or expired. Amber: expires within {{ warn_days }} days.</p></div>
+{% if moves %}<div class="card"><h2>Recent stock in &amp; counts</h2><div class="table-wrap"><table><thead><tr><th>When</th><th>Product</th><th>Change</th><th class="num">Qty</th><th>By</th></tr></thead><tbody>
+{% for m in moves %}<tr><td>{{ m.created_at|date }}</td><td>{{ m.name }}</td><td>{{ {'in': 'Stock in', 'adjust': 'Count', 'void': 'Voided sale (back to stock)'}.get(m.kind, m.kind) }}{% if m.notes %}<br><small class="muted">{{ m.notes }}</small>{% endif %}{% if m.expiry_date %}<br><small class="muted">expires {{ m.expiry_date|date }}</small>{% endif %}</td>
+<td class="num">{{ '+' if m.qty > 0 }}{{ m.qty }}</td><td>{{ m.by_name or '—' }}</td></tr>{% endfor %}</tbody></table></div></div>{% endif %}
+{% endblock %}

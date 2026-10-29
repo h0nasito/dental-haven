@@ -1,0 +1,27 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import empty %}
+{% block page_title %}Merchandise{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Merchandise</h1><p>Products sold in the clinic, {{ start|date }} – {{ end|date }}. Each sale has its own receipt, apart from patient bills.</p></div>
+{% if current_user.can('merch.sell') %}<a class="btn" href="{{ url_for('merch.new') }}">+ New sale</a>{% endif %}</div>
+{% set active = 'sales' %}{% include "staff/merch/_nav.html" %}
+{% if low.low or low.expiring %}<p class="notice"><a href="{{ url_for('merch.stock') }}">{% if low.low %}{{ low.low }} product{{ 's' if low.low != 1 }} low on stock{% endif %}{% if low.low and low.expiring %} · {% endif %}{% if low.expiring %}{{ low.expiring }} expiring within 60 days{% endif %}</a></p>{% endif %}
+<div class="grid grid-3" style="margin-bottom:1rem">
+<div class="stat"><div class="label">Sales</div><div class="value">{{ totals.n }}</div><div class="sub">amount {{ totals.total|peso }}</div></div>
+<div class="stat"><div class="label">Paid</div><div class="value">{{ totals.paid|peso }}</div></div>
+<div class="stat"><div class="label">Balance</div><div class="value">{{ totals.balance|peso }}</div></div>
+</div>
+<form class="toolbar" method="get">
+<div class="field"><label for="xf">From</label><input id="xf" type="date" name="from" value="{{ start.isoformat() }}"></div>
+<div class="field"><label for="xt">To</label><input id="xt" type="date" name="to" value="{{ end.isoformat() }}"></div>
+<div class="field"><label for="xq">Search</label><input id="xq" name="q" value="{{ q }}" placeholder="Name, product, MS no."></div>
+<div class="field"><label for="xs">Show</label><select id="xs" name="show"><option value="">All</option><option value="balance" {{ 'selected' if show == 'balance' }}>With balance</option><option value="void" {{ 'selected' if show == 'void' }}>Including voided</option></select></div>
+<button class="btn btn-secondary">Show</button></form>
+<div class="card">{% if items %}<div class="table-wrap"><table><thead><tr><th>Date</th><th>Sale</th><th>Buyer</th><th class="num">Amount</th><th class="num">Paid</th><th class="num">Balance</th></tr></thead><tbody>
+{% for s in items %}<tr {% if s.status == 'void' %}style="opacity:.6"{% endif %}><td>{{ s.sold_on|date }}<br><small class="muted">{{ s.branch }}</small></td>
+<td><a href="{{ url_for('merch.detail', sale_id=s.id) }}"><strong>{{ s.number }}</strong></a>{% if s.status == 'void' %} <span class="badge badge-red">Voided</span>{% endif %}<br>{{ s.what or '' }}</td>
+<td>{% if s.patient_id %}<a href="{{ url_for('patients.detail', patient_id=s.patient_id) }}">{{ s.who }}</a>{% else %}{{ s.who }}{% endif %}</td>
+<td class="num">{{ s.total_cents|peso }}</td><td class="num">{{ s.paid|peso }}</td>
+<td class="num">{% if s.balance > 0 %}<strong>{{ s.balance|peso }}</strong>{% elif s.status == 'ok' %}<span class="badge badge-green">Paid</span>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div>{% else %}{{ empty('No sales in this period.', ' Record one with “New sale”.') }}{% endif %}</div>
+{% endblock %}

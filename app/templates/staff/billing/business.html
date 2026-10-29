@@ -22,6 +22,7 @@
 <div class="br-card"><div class="br-l">Total expenses</div><div class="br-v">{{ cur.expenses|peso }}</div><div class="br-s">{{ chg(cur.expenses, prev.expenses, false) }} vs {{ plabel }} <small class="muted">· excl. payroll</small></div></div>
 <div class="br-card"><div class="br-l">Total payroll</div><div class="br-v">{{ cur.payroll|peso }}</div><div class="br-s">{{ chg(cur.payroll, prev.payroll, false) }} vs {{ plabel }}</div></div>
 <div class="br-card {{ 'neg' if cur.net < 0 else 'pos' }}"><div class="br-l">Net profit</div><div class="br-v">{{ cur.net|peso }}</div><div class="br-s">{{ chg(cur.net, prev.net) }} vs {{ plabel }}</div></div>
+<div class="br-card"><div class="br-l">Tithe ({{ tithe_pct }}% of net profit)</div><div class="br-v">{{ ((cur.net * tithe_pct / 100)|round|int if cur.net > 0 else 0)|peso }}</div><div class="br-s">{% if partial %}month not finished yet{% else %}emailed monthly if turned on in System settings{% endif %}</div></div>
 </div>
 
 <h2 class="br-h">2. Key ratios <small class="muted">(of gross collections)</small></h2>

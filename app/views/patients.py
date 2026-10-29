@@ -331,6 +331,7 @@ def progress_groups(conn, patient_id, procedures, notes):
         it = dict(it)
         pool.setdefault((it["day"] or "", it["dentist"] or ""), []).append(it)
     branch_names = {b["id"]: b["name"] for b in conn.all("SELECT id, name FROM branches")}
+    xray_nums = {r["id"]: dict(r) for r in conn.all("SELECT id, number, status FROM xrays WHERE patient_id = ?", (patient_id,))}
     # MyMedsPH visits come without a dentist: show the one on that day's bill (one dentist that day, or the same procedure)
     billed_by: dict[str, list] = {}
     for it in items:
@@ -357,7 +358,7 @@ def progress_groups(conn, patient_id, procedures, notes):
         gr = grp(day, who, branch_names.get(pr["branch_id"], ""))
         price, inv = None, None
         # imported visits: "service\nnote" (MyMedsPH repeats the visit's note on every procedure: show it once)
-        for it in pool.get((day, who or ""), []):
+        for it in ([] if pr["xray_id"] else pool.get((day, who or ""), [])):
             idesc = it["description"].split(" · ")[0].strip().lower()
             same = (pr["service_id"] and it["service_id"] == pr["service_id"]) or it["description"].strip().lower() == first.strip().lower() \
                 or idesc == first.strip().lower()
@@ -368,7 +369,8 @@ def progress_groups(conn, patient_id, procedures, notes):
         if inv:
             gr["invoices"][inv["inv_id"]] = inv["number"] or "Draft invoice"
             gr["branches"].add(inv["branch"])
-        gr["lines"].append({"text": first, "tooth": pr["tooth"], "price": price, "proc": pr})
+        gr["lines"].append({"text": first, "tooth": pr["tooth"], "price": price, "proc": pr,
+                            "xray": xray_nums.get(pr["xray_id"]) if pr["xray_id"] else None})
         if extra and extra not in gr.setdefault("visit_notes_text", []):
             gr["visit_notes_text"].append(extra)
         gr["procs"].append(pr)
@@ -425,7 +427,7 @@ def detail(patient_id):
     p = _load(patient_id)
     tab = request.args.get("tab", "profile")
     tab = {"overview": "profile", "clinical": "notes"}.get(tab, tab)
-    if tab not in ("profile", "notes", "plans", "chart", "billing", "rx", "certs", "documents", "remarks", "diagnosis", "lab", "changes"):
+    if tab not in ("profile", "notes", "plans", "chart", "billing", "rx", "certs", "xray", "documents", "remarks", "diagnosis", "lab", "changes"):
         tab = "profile"
     clinical = can_see_clinical(conn, g.user, patient_id)
     if tab in ("notes", "plans", "chart", "rx", "certs", "diagnosis") and not clinical:
@@ -557,6 +559,19 @@ def detail(patient_id):
     if clinical and tab == "diagnosis":
         ctx["diagnoses"] = conn.all("SELECT d.*, u.name AS dentist FROM patient_diagnoses d LEFT JOIN users u ON u.id = d.dentist_id "
                                     "WHERE d.patient_id = ? ORDER BY d.status, d.diagnosed_on DESC, d.id DESC", (patient_id,))
+    if tab == "xray":
+        if not g.user.can("xray.view"):
+            abort(403)
+        from .xray import paid_of, requested_label
+        rows = conn.all("SELECT x.*, b.name AS branch, rq.name AS requested_name, r.name AS referrer_name, r.clinic AS referrer_clinic, "
+                        "(SELECT group_concat(description || CASE WHEN tooth != '' THEN ' #' || tooth ELSE '' END, ', ') FROM xray_items WHERE xray_id = x.id) AS what, "
+                        "(SELECT COUNT(*) FROM xray_files f WHERE f.xray_id = x.id) AS files FROM xrays x JOIN branches b ON b.id = x.branch_id "
+                        "LEFT JOIN users rq ON rq.id = x.requested_by LEFT JOIN xray_referrers r ON r.id = x.referrer_id "
+                        "WHERE x.patient_id = ? ORDER BY x.taken_on DESC, x.id DESC", (patient_id,))
+        rows = [r for r in rows if g.user.in_branch(r["branch_id"])]
+        paid = paid_of(conn, [r["id"] for r in rows])
+        ctx["xrays"] = [{**dict(r), "requested": requested_label(r),
+                         "balance": r["total_cents"] - paid.get(r["id"], 0) if r["status"] == "ok" else 0} for r in rows]
     if tab == "changes":
         if not (clinical or g.user.is_super_admin):
             abort(403)
@@ -1252,7 +1267,7 @@ def notes_to_bill(conn, branch_ids: list[int], patient_id: int | None = None) ->
         if not (v["create_bill"] or v["created_by"] in no_bill):
             continue
         try:
-            raw = json.loads(v["lines_json"] or "[]")
+            raw = [r for r in json.loads(v["lines_json"] or "[]") if not r.get("xray_id")]   # X-rays are paid in the X-ray section
         except ValueError:
             continue
         lines, err = visit_lines(conn, raw)
@@ -1270,7 +1285,7 @@ def notes_to_bill(conn, branch_ids: list[int], patient_id: int | None = None) ->
     for r in conn.all("SELECT x.*, p.first_name, p.last_name, b.name AS branch, u.name AS dentist FROM procedures x "
                       "JOIN patients p ON p.id = x.patient_id LEFT JOIN branches b ON b.id = x.branch_id LEFT JOIN users u ON u.id = x.performed_by "
                       "WHERE x.status = 'completed' AND x.visit_note_id IS NULL AND x.invoice_id IS NULL AND x.bill_skipped_at IS NULL "
-                      "AND x.legacy_key IS NULL "
+                      "AND x.legacy_key IS NULL AND x.xray_id IS NULL "
                       f"AND x.branch_id IN ({marks}) AND substr(COALESCE(x.performed_at, x.created_at), 1, 10) >= ?{extra} "
                       "ORDER BY x.performed_at DESC, x.id", [*branch_ids, since, *pargs]):
         day = (r["performed_at"] or r["created_at"])[:10]
@@ -1341,9 +1356,9 @@ def visit_note_bill(patient_id, vid):
                      {"visit_note_id": vid}, v["branch_id"])
         flash("Marked as not needing a bill.", "success")
         return redirect(back)
-    lines, err = visit_lines(conn, json.loads(v["lines_json"] or "[]"))
+    lines, err = visit_lines(conn, [r for r in json.loads(v["lines_json"] or "[]") if not r.get("xray_id")])
     if err or not lines:
-        flash(err or "This progress note has no services to bill.", "error")
+        flash(err or "This progress note has no services to bill (X-rays are paid in the X-ray section).", "error")
         return redirect(back)
     for ln in lines:
         if ln["unit"] <= 0:
@@ -1418,6 +1433,11 @@ def visit_note(patient_id):
     bill_bp = _pct_bp(v["bill_disc"])
     if bill_bp is None:
         return back_to_draft("Enter the bill discount as a percent, e.g. 10.")
+    # X-rays (panoramic, cephalometric, CBCT...) stay in the progress note, but are paid in the X-ray section
+    from .xray import type_for
+    xtypes = [type_for(conn, ln["desc"]) for ln in lines]
+    xray_lines = [(ln, t) for ln, t in zip(lines, xtypes) if t]
+    all_lines, lines = lines, [ln for ln, t in zip(lines, xtypes) if not t]
     priced = any(l["unit"] > 0 for l in lines)
     make_bill = bool(v["create_bill"]) and g.user.can("billing.manage") and priced
     # Someone without billing rights (a dentist): the bill is left for the cashier, who is notified.
@@ -1440,6 +1460,13 @@ def visit_note(patient_id):
     # ---- save everything together
     import json
     with conn.transaction(immediate=True):
+        xray = None
+        if xray_lines:
+            from .xray import create_from_visit
+            xray = create_from_visit(conn, patient_id, branch_id, dentist_id, visit.isoformat(), xray_lines)
+            for raw, t in zip(v["lines"], xtypes):
+                if t:
+                    raw["xray_id"] = xray[0]
         row = {"patient_id": patient_id, "branch_id": branch_id, "dentist_id": dentist_id, "visit_date": visit.isoformat(),
                "recall_date": recall.isoformat() if recall else None, "recall_reason": v["recall_reason"], "body": v["body"],
                "lines_json": json.dumps(v["lines"]), "bill_discount_bp": bill_bp, "create_bill": 1 if (make_bill or needs_bill) else 0,
@@ -1449,10 +1476,19 @@ def visit_note(patient_id):
             vid = draft_id
         else:
             vid = conn.insert("visit_notes", {**row, "created_by": g.user.id, "created_at": now_str()})
-        for ln in lines:
+        for ln, t in zip(all_lines, xtypes):
             conn.insert("procedures", {"patient_id": patient_id, "service_id": ln["service_id"], "branch_id": branch_id,
                                        "tooth": ln["tooth"], "description": ln["desc"], "status": "completed", "performed_by": dentist_id,
-                                       "performed_at": visit.isoformat(), "created_at": now_str(), "visit_note_id": vid})
+                                       "performed_at": visit.isoformat(), "created_at": now_str(), "visit_note_id": vid,
+                                       "xray_id": xray[0] if t else None})
+        if xray:
+            conn.execute("UPDATE xrays SET visit_note_id = ? WHERE id = ?", (vid, xray[0]))
+            from ..approvals import approvers as _appr
+            from ..notices import notify as _notify
+            _notify(conn, _appr(conn, "xray.manage", branch_id), "to_bill",
+                    f"X-ray to collect: {', '.join(t['name'] for _, t in xray_lines)} ({xray[1]})",
+                    "Added in a progress note. Collect the payment in the X-ray section.",
+                    url_for("xray.detail", xray_id=xray[0]), exclude=g.user.id)
         upd = {}
         if v["body"]:
             upd["note_id"] = conn.insert("clinical_notes", {"patient_id": patient_id, "author_id": g.user.id, "body": v["body"],
@@ -1483,7 +1519,8 @@ def visit_note(patient_id):
                      f"Progress note for {visit.isoformat()}: {len(lines)} service(s)" + (", bill created" if make_bill else "")
                      + (", signed by patient" if sig_name else ""), {"visit_note_id": vid}, branch_id)
     flash("Progress note saved" + (" and the bill was created. Add the payment from Bills & Payment." if make_bill
-                                   else ". The cashier was notified to create the bill." if needs_bill else "."), "success")
+                                   else ". The cashier was notified to create the bill." if needs_bill else ".")
+          + (f" X-ray {xray[1]} was added to the X-ray section for payment." if xray else ""), "success")
     return redirect(url_for("patients.detail", patient_id=patient_id, tab="notes"))
 
 
@@ -1521,12 +1558,21 @@ def visit_note_cancel(patient_id, vid):
         return redirect(url_for("patients.detail", patient_id=patient_id, tab="notes"))
     with conn.transaction():
         conn.execute("UPDATE visit_notes SET cancelled_at = ?, cancelled_by = ?, cancel_reason = ? WHERE id = ?", (now_str(), g.user.id, reason, vid))
+        xr = conn.one("SELECT id, number FROM xrays WHERE visit_note_id = ? AND status = 'ok'", (vid,))
+        xr_kept = None
+        if xr:
+            if conn.scalar("SELECT COUNT(*) FROM xray_payments WHERE xray_id = ? AND status = 'valid'", (xr["id"],)):
+                xr_kept = xr["number"]
+            else:
+                conn.execute("UPDATE xrays SET status = 'void', void_reason = ?, voided_by = ?, voided_at = ? WHERE id = ?",
+                             (f"Progress note cancelled: {reason}"[:300], g.user.id, now_str(), xr["id"]))
         n = 0
         if v["followup_id"]:
             n = conn.execute("UPDATE follow_ups SET status = 'cancelled' WHERE id = ? AND status = 'open'", (v["followup_id"],)).rowcount
         audit.record("visit_note_cancelled", "patient", patient_id, "Cancelled a progress note visit" + (" and its recall" if n else ""),
                      {"visit_note_id": vid, "reason": reason, "recall_cancelled": bool(n)}, branch_id=v["branch_id"])
-    flash("Visit cancelled." + (" Its recall reminder was cancelled too." if n else ""), "success")
+    flash("Visit cancelled." + (" Its recall reminder was cancelled too." if n else "")
+          + (f" X-ray {xr_kept} has payments, so it was kept: void it in the X-ray section if needed." if xr_kept else ""), "success")
     return redirect(url_for("patients.detail", patient_id=patient_id, tab="notes"))
 
 

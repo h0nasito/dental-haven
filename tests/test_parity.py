@@ -80,6 +80,18 @@ class TestParity(Base):
                                                                     "issued_on": date.today().isoformat(), "body": "Rest for 2 days."})
         self.assertEqual(r.status_code, 302)
         self.assertIn(b"Rest for 2 days", c.get(r.headers["Location"]).data)
+        # referral for medical clearance: prefilled letter, printed with the physician's reply slip
+        page = c.get(f"/staff/patients/{pid}/certificates/new?kind=referral").data.decode()
+        self.assertIn("Referral for medical clearance", page)
+        self.assertIn("Planned dental procedure: ____", page)
+        r = c.post(f"/staff/patients/{pid}/certificates/new", data={"kind": "referral", "title": "Referral for medical clearance", "issued_by": did,
+                                                                    "issued_on": date.today().isoformat(), "body": "Planned dental procedure: extraction #36"})
+        self.assertEqual(r.status_code, 302)
+        out = c.get(r.headers["Location"]).data.decode()
+        self.assertIn("Physician's reply", out)
+        self.assertIn("Dear Doctor", out)
+        self.assertNotIn("Physician's reply", c.get(f"/staff/patients/{pid}?tab=certs").data.decode())
+        self.assertIn("+ Referral for clearance", c.get(f"/staff/patients/{pid}?tab=certs").data.decode())
 
     # --- expenses -----------------------------------------------------------
     def test_expenses_flow(self):

@@ -1,0 +1,26 @@
+{% extends "staff/layout.html" %}
+{% block page_title %}Merchandise report{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Merchandise report</h1><p>{{ start|date }} – {{ end|date }}. Sales by sale date; payments by the date received.</p></div></div>
+{% set active = 'report' %}{% include "staff/merch/_nav.html" %}
+<form class="toolbar" method="get">
+<div class="field"><label for="xf">From</label><input id="xf" type="date" name="from" value="{{ start.isoformat() }}"></div>
+<div class="field"><label for="xt">To</label><input id="xt" type="date" name="to" value="{{ end.isoformat() }}"></div>
+<button class="btn btn-secondary">Show</button></form>
+<div class="grid grid-3" style="margin-bottom:1rem">
+<div class="stat"><div class="label">Net sales</div><div class="value">{{ sums.net|peso }}</div><div class="sub">{{ sums.n }} sale{{ 's' if sums.n != 1 }} · discount {{ sums.discount|peso }}</div></div>
+<div class="stat"><div class="label">Collected</div><div class="value">{{ collected|peso }}</div></div>
+<div class="stat"><div class="label">Gross profit (est.)</div><div class="value">{{ (sums.net - cost)|peso }}</div><div class="sub">cost of goods {{ cost|peso }}{% if missing_cost %} · {{ missing_cost }} product{{ 's' if missing_cost != 1 }} without a cost{% endif %}</div></div>
+</div>
+<div class="grid grid-2">
+<div class="card"><h2>By product</h2><div class="table-wrap"><table><thead><tr><th>Product</th><th class="num">Sold</th><th class="num">Amount</th></tr></thead><tbody>
+{% for r in by_product %}<tr><td>{{ r.name }}<br><small class="muted">{{ r.category }}</small></td><td class="num">{{ r.qty }}</td><td class="num">{{ r.amt|peso }}</td></tr>{% else %}<tr><td colspan="3" class="muted">None</td></tr>{% endfor %}</tbody></table></div></div>
+<div>
+<div class="card"><h2>By category</h2><div class="table-wrap"><table><tbody>
+{% for c, amt in by_cat %}<tr><td>{{ c }}</td><td class="num">{{ amt|peso }}</td></tr>{% else %}<tr><td class="muted">None</td></tr>{% endfor %}</tbody></table></div></div>
+<div class="card"><h2>Collections by payment type</h2><div class="table-wrap"><table><tbody>
+{% for p in pays %}<tr><td>{{ p.label }}</td><td class="num">{{ p.n }}</td><td class="num">{{ p.amt|peso }}</td></tr>{% else %}<tr><td class="muted">None</td></tr>{% endfor %}</tbody></table></div></div>
+<div class="card"><h2>By branch</h2><div class="table-wrap"><table><tbody>
+{% for r in by_branch %}<tr><td>{{ r.name }}</td><td class="num">{{ r.n }}</td><td class="num">{{ r.net|peso }}</td></tr>{% else %}<tr><td class="muted">None</td></tr>{% endfor %}</tbody></table></div></div>
+</div></div>
+{% endblock %}

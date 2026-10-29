@@ -1194,6 +1194,12 @@ def system():
         bad = [x for x in re.split(r"[\s,;]+", new.get("report.daily_recipients") or "") if x and not EMAIL_RE.match(x)]
         if bad:
             errors["report.daily_recipients"] = "Check these addresses: " + ", ".join(bad[:5])
+        if not errors.get("report.tithe_percent") and not 1 <= (new.get("report.tithe_percent") or 0) <= 100:
+            errors["report.tithe_percent"] = "Enter a percentage from 1 to 100."
+        if not errors.get("report.tithe_day") and not 1 <= (new.get("report.tithe_day") or 0) <= 28:
+            errors["report.tithe_day"] = "Enter a day from 1 to 28."
+        if new.get("report.tithe_enabled") and not (new.get("report.daily_recipients") or "").strip():
+            errors["report.daily_recipients"] = "Add at least one email address."
         if new.get("report.daily_enabled") and not (new.get("report.daily_recipients") or "").strip():
             errors["report.daily_recipients"] = "Add at least one email address."
         if new.get("payroll.dentist_commission_basis") not in ("payment", "procedure"):

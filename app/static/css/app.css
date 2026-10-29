@@ -364,6 +364,15 @@ section[id] { scroll-margin-top: 72px; }
 .rx-patient { border-bottom: 1px solid var(--line); padding-bottom: .6rem; }
 .signature { margin-top: 3rem; margin-left: auto; width: 280px; text-align: center; }
 .sig-line { border-top: 1px solid var(--ink); margin-bottom: .3rem; }
+.reply-slip { margin-top: 2.2rem; break-inside: avoid; page-break-inside: avoid; }
+.reply-slip .cut-line { color: var(--muted); white-space: nowrap; overflow: hidden; margin-bottom: 1rem; }
+.reply-slip h2 { font-size: 1.05rem; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 .6rem; }
+.reply-slip p { margin: .45rem 0; }
+.reply-slip .blank { display: inline-block; min-width: 14rem; border-bottom: 1px solid var(--ink); vertical-align: bottom; height: 1.1em; }
+.reply-slip .blank.full { width: 100%; min-width: 0; }
+.reply-slip .blank.short { min-width: 8rem; }
+.reply-slip .reply-sign { margin-top: 2.2rem; align-items: flex-end; gap: 1.5rem; flex-wrap: wrap; }
+.reply-slip .sig-block { width: 280px; text-align: center; }
 @media print { .rx-sheet { font-size: 12pt; } }
 
 /* Dental chart */
@@ -993,3 +1002,7 @@ section[id] { scroll-margin-top: 72px; }
 .pw-toggle { position: absolute; right: .35rem; top: 50%; transform: translateY(-50%); border: 0; background: transparent; color: var(--ink-2);
   font: inherit; font-size: .85rem; font-weight: 600; padding: .35rem .5rem; border-radius: 6px; cursor: pointer; }
 .pw-toggle:hover, .pw-toggle:focus-visible { background: var(--brand-50); color: var(--brand-900); }
+.xr-files { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: .8rem; }
+.xr-files figure { margin: 0; }
+.xr-files img { width: 100%; height: 130px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); background: #000; }
+.xr-files figcaption { word-break: break-word; }

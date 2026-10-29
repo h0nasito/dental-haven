@@ -1,0 +1,35 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}{{ r.name }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('xray.rebates', year=year) }}">← Referring dentists &amp; rebates</a><h1>{{ r.name }}</h1><p>{{ r.clinic }}{% if r.phone %} · {{ r.phone }}{% endif %}</p></div>
+<form method="get" class="row"><label class="sr-only" for="yr">Year</label><select id="yr" name="year">{% for y in years %}<option {{ 'selected' if y == year }}>{{ y }}</option>{% endfor %}</select><button class="btn btn-secondary btn-sm">Show</button></form></div>
+<form method="post" class="card">{{ csrf() }}<input type="hidden" name="action" value="payout"><input type="hidden" name="year" value="{{ year }}">
+<h2>X-rays referred in {{ year }}{% if items|selectattr('taken_on', 'lt', year|string)|list %} and unpaid rebates from earlier{% endif %}</h2>
+{% set unpaid = items|selectattr('rebate_payout_id', 'none')|selectattr('rebate_cents', 'gt', 0)|list %}
+<div class="table-wrap"><table><thead><tr><th>Pay</th><th>Date</th><th>X-ray</th><th>Patient</th><th class="num">Net</th><th class="num">Rebate</th><th>Status</th></tr></thead><tbody>
+{% for x in items %}<tr><td>{% if x.rebate_payout_id is none and x.rebate_cents > 0 %}<label class="sr-only" for="c{{ x.id }}">Pay rebate of {{ x.number }}</label><input id="c{{ x.id }}" type="checkbox" name="ids" value="{{ x.id }}" {{ 'checked' if x.fully_paid }}>{% endif %}</td>
+<td>{{ x.taken_on|date }}</td><td><a href="{{ url_for('xray.detail', xray_id=x.id) }}">{{ x.number }}</a><br><small class="muted">{{ x.branch }}</small></td><td>{{ x.who }}</td>
+<td class="num">{{ x.total_cents|peso }}</td><td class="num">{{ x.rebate_cents|peso }}</td>
+<td>{% if x.rebate_payout_id %}<span class="badge badge-green">Rebate paid</span>{% elif not x.rebate_cents %}<span class="muted">No rebate</span>{% elif x.fully_paid %}<span class="badge">To pay</span>{% else %}<span class="badge badge-amber">Patient not fully paid</span>{% endif %}</td></tr>
+{% else %}<tr><td colspan="7" class="muted">No X-rays referred in {{ year }}.</td></tr>{% endfor %}</tbody></table></div>
+{% if unpaid %}<h2 class="mt-1">Record a rebate payout</h2><p class="hint">Tick the X-rays you are paying for (ticked: patient fully paid). Total to pay for the ticked X-rays is shown after saving.</p>
+<div class="form-grid"><div class="field"><label for="po">Date paid</label><input id="po" type="date" name="paid_on" value="{{ default_paid_on }}" required></div>
+<div class="field"><label for="pm">Paid with</label><select id="pm" name="method">{% for val, lab in pay_opts %}<option value="{{ val }}">{{ lab }}</option>{% endfor %}</select></div>
+<div class="field"><label for="pr">Reference</label><input id="pr" name="reference" maxlength="80"></div>
+<div class="field"><label for="pn">Notes</label><input id="pn" name="notes" maxlength="300"></div></div>
+<button class="btn">Record payout</button>{% endif %}</form>
+<div class="grid grid-2">
+<div class="card"><h2>Payouts</h2><ul class="list-plain">{% for po in payouts %}<li {% if po.status == 'void' %}style="opacity:.6"{% endif %}><div class="row between"><strong>{{ po.amount_cents|peso }}</strong><small class="muted">{{ po.paid_on|date }}</small></div>
+<small>{{ pay_label(po.method, po.account) }}{% if po.reference %} · {{ po.reference }}{% endif %} · {{ po.n }} X-ray(s) · {{ po.by_name or '—' }}{% if po.notes %} · {{ po.notes }}{% endif %}</small>
+{% if po.status == 'void' %}<br><small class="muted">Voided: {{ po.void_reason }}</small>{% else %}<details><summary><small>Void</small></summary><form method="post" action="{{ url_for('xray.payout_void', payout_id=po.id) }}">{{ csrf() }}<input type="hidden" name="year" value="{{ year }}"><label class="sr-only" for="pv{{ po.id }}">Reason</label><input id="pv{{ po.id }}" name="reason" placeholder="Reason" required><button class="btn btn-danger btn-sm mt-1">Void payout</button></form></details>{% endif %}</li>
+{% else %}<li class="muted">No payouts yet.</li>{% endfor %}</ul></div>
+<form method="post" class="card">{{ csrf() }}<input type="hidden" name="action" value="edit"><input type="hidden" name="year" value="{{ year }}"><h2>Details</h2>
+<div class="field"><label for="en">Name</label><input id="en" name="name" value="{{ r.name }}" required maxlength="120"></div>
+<div class="field"><label for="ec">Clinic</label><input id="ec" name="clinic" value="{{ r.clinic }}" maxlength="150"></div>
+<div class="field"><label for="ep">Contact no.</label><input id="ep" name="phone" value="{{ r.phone }}" maxlength="40"></div>
+<div class="field"><label for="er">Usual rebate (%)</label><input id="er" name="rate" value="{{ (r.rebate_bp / 100)|round(2)|string|replace('.0', '') if r.rebate_bp is not none else '' }}" inputmode="decimal"></div>
+<label class="check"><input type="checkbox" name="active" value="1" {{ 'checked' if r.active }}> Active (shown on new X-rays)</label>
+<button class="btn btn-secondary mt-1">Save</button></form>
+</div>
+{% endblock %}

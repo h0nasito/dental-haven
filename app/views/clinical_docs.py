@@ -24,8 +24,20 @@ CERT_KINDS = {
     "fit": ("Fit to work / school",
             "This is to certify that {patient}, {age}, was treated at Dental Haven {branch} on {date} and is fit to return "
             "to work / school on ____________."),
+    "referral": ("Referral for medical clearance",
+                 "Respectfully referring {patient}, {age}, a patient of Dental Haven {branch}, for medical evaluation and "
+                 "clearance before dental treatment.\n\n"
+                 "Planned dental procedure: ____\n"
+                 "Reason for referral (medical history / findings): ____\n"
+                 "Anesthesia to be used: local anesthesia\n\n"
+                 "Kindly evaluate the patient and let us know if they are cleared for the procedure, together with any "
+                 "precautions, medication adjustments or pre-medication needed. Please write your findings on the reply "
+                 "slip below and return it with the patient.\n\n"
+                 "Thank you very much."),
     "other": ("Certificate", "This is to certify that {patient}, {age}, "),
 }
+# Printed with a greeting to the physician (not "To whom it may concern") and a physician's reply slip
+REFERRAL_KINDS = {"referral"}
 
 
 def _patient(patient_id):
@@ -240,4 +252,4 @@ def cert_print(cert_id):
         abort(404)
     p = _patient(c["patient_id"])
     audit.record("certificate_printed", "patient", p["id"], f"Opened certificate #{cert_id} for printing")
-    return render_template("staff/docs/cert_print.html", c=c, p=p)
+    return render_template("staff/docs/cert_print.html", c=c, p=p, referral=c["kind"] in REFERRAL_KINDS)

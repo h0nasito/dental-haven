@@ -25,6 +25,8 @@
       {%- elif name == 'reports' %}<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>
       {%- elif name == 'clinic' %}<path d="M3 21h18M5 21V8l7-5 7 5v13"/><path d="M10 21v-5h4v5M12 8v4M10 10h4"/>
       {%- elif name == 'globe' %}<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/>
+      {%- elif name == 'xray' %}<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 7v10M9 9h6M8.5 12h7M9 15h6"/>
+      {%- elif name == 'bag' %}<path d="M5 8h14l-1 12H6z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/>
       {%- elif name == 'lab' %}<path d="M9 3h6M10 3v6L4.5 19a1.5 1.5 0 0 0 1.3 2h12.4a1.5 1.5 0 0 0 1.3-2L14 9V3"/><path d="M7 15h10"/>
       {%- endif %}</svg>
     {%- endmacro %}
@@ -99,6 +101,16 @@
         {% if current_user.can('evaluations.answer') or current_user.can('evaluations.manage') %}{{ nav('evals.index', 'Staff evaluations', 'evals.') }}{% endif %}
       {% endcall %}
     {% endcall %}
+    {% call group('X-ray', 'xray') %}{% if current_user.can('xray.view') %}
+      {{ nav('xray.index', 'X-ray records', 'xray.index') }}{{ nav('xray.report', 'X-ray report', 'xray.report') }}
+      {% if current_user.can('xray.rebates') %}{{ nav('xray.rebates', 'Referring dentists & rebates', 'xray.rebates') }}{% endif %}
+      {% if current_user.can('fees.manage') %}{{ nav('xray.prices', 'X-ray prices', 'xray.prices') }}{% endif %}
+    {% endif %}{% endcall %}
+    {% call group('Merchandise', 'bag') %}{% if current_user.can('merch.view') %}
+      {{ nav('merch.index', 'Sales', 'merch.index') }}{{ nav('merch.stock', 'Stock', 'merch.stock') }}
+      {% if current_user.can('merch.stock') %}{{ nav('merch.product_list', 'Products & prices', 'merch.product_list') }}{% endif %}
+      {{ nav('merch.report', 'Merchandise report', 'merch.report') }}
+    {% endif %}{% endcall %}
     {% call group('Laboratory', 'lab') %}{% if nav_lab %}
       {% call section('Cases') %}
         {{ nav('labs.index', 'Branch cases', 'labs.') }}

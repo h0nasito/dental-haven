@@ -6,9 +6,26 @@
 {% with branch=c.branch, branch_address=c.branch_address, branch_phone=c.branch_phone %}{% include "staff/docs/_letterhead.html" %}{% endwith %}
 <p style="text-align:right">{{ c.issued_on|date }}</p>
 <h1 style="text-align:center;text-transform:uppercase;letter-spacing:.08em;font-size:1.3rem;margin:1.5rem 0">{{ c.title }}</h1>
-<p style="margin-bottom:.5rem">To whom it may concern:</p>
+{% if referral %}<p style="margin-bottom:.5rem">Dear Doctor,</p>{% else %}<p style="margin-bottom:.5rem">To whom it may concern:</p>{% endif %}
 <div class="pre" style="line-height:1.8">{{ c.body }}</div>
 <div class="signature"><div class="sig-line"></div><strong>{{ c.dentist }}</strong><br>
 <small>{% if c.license_no %}PRC Lic. No. {{ c.license_no }}{% endif %}{% if c.ptr_no %} · PTR No. {{ c.ptr_no }}{% endif %}</small></div>
+{% if referral %}
+<div class="reply-slip">
+<p class="cut-line">✂ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -</p>
+<h2>Physician's reply</h2>
+<p>Patient: <strong>{{ p.first_name }} {{ p.last_name }}</strong> · Referred by {{ c.dentist }}, Dental Haven {{ c.branch or '' }} · {{ c.issued_on|date }}</p>
+<p class="tick">☐ Medically cleared for the planned dental procedure</p>
+<p class="tick">☐ Cleared, with these precautions: <span class="blank"></span></p>
+<p class="tick">☐ Not cleared at this time. Defer treatment until: <span class="blank"></span></p>
+<p>Diagnosis / findings: <span class="blank"></span></p>
+<p><span class="blank full"></span></p>
+<p>Recommendations / medication: <span class="blank"></span></p>
+<p><span class="blank full"></span></p>
+<div class="row between reply-sign"><div>Date: <span class="blank short"></span></div>
+<div class="sig-block"><div class="sig-line"></div>Physician's signature over printed name<br><small>License No. <span class="blank short"></span></small></div></div>
+<p class="muted"><small>Please return this slip to Dental Haven {{ c.branch or '' }}{% if c.branch_phone %} ({{ c.branch_phone }}){% endif %}.</small></p>
+</div>
+{% endif %}
 </main>
 {% endblock %}

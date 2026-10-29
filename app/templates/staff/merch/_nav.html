@@ -1,0 +1,6 @@
+<nav class="tabs" aria-label="Merchandise">
+  <a href="{{ url_for('merch.index') }}" class="{{ 'active' if active == 'sales' else '' }}">Sales</a>
+  <a href="{{ url_for('merch.stock') }}" class="{{ 'active' if active == 'stock' else '' }}">Stock</a>
+  {% if current_user.can('merch.stock') %}<a href="{{ url_for('merch.product_list') }}" class="{{ 'active' if active == 'products' else '' }}">Products &amp; prices</a>{% endif %}
+  <a href="{{ url_for('merch.report') }}" class="{{ 'active' if active == 'report' else '' }}">Report</a>
+</nav>

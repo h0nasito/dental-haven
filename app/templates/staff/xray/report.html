@@ -1,0 +1,28 @@
+{% extends "staff/layout.html" %}
+{% block page_title %}X-ray report{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>X-ray report</h1><p>{{ start|date }} – {{ end|date }}. X-rays by the date taken; payments by the date received.</p></div></div>
+{% set active = 'report' %}{% include "staff/xray/_nav.html" %}
+<form class="toolbar" method="get">
+<div class="field"><label for="xf">From</label><input id="xf" type="date" name="from" value="{{ start.isoformat() }}"></div>
+<div class="field"><label for="xt">To</label><input id="xt" type="date" name="to" value="{{ end.isoformat() }}"></div>
+<button class="btn btn-secondary">Show</button></form>
+<div class="grid grid-3" style="margin-bottom:1rem">
+<div class="stat"><div class="label">X-rays</div><div class="value">{{ sums.n }}</div><div class="sub">{{ sums.walkins or 0 }} walk-in · {{ sums.referred or 0 }} referred</div></div>
+<div class="stat"><div class="label">Net sales</div><div class="value">{{ sums.net|peso }}</div><div class="sub">gross {{ sums.gross|peso }} · discount {{ sums.discount|peso }}</div></div>
+<div class="stat"><div class="label">Collected</div><div class="value">{{ collected|peso }}</div><div class="sub">open balances (all dates): {{ open_n }} · {{ open_total|peso }}</div></div>
+</div>
+<div class="grid grid-2">
+<div class="card"><h2>By X-ray type</h2><div class="table-wrap"><table><thead><tr><th>Type</th><th class="num">Count</th><th class="num">Amount</th></tr></thead><tbody>
+{% for r in by_type %}<tr><td>{{ r.name }}</td><td class="num">{{ r.n }}</td><td class="num">{{ r.amt|peso }}</td></tr>{% else %}<tr><td colspan="3" class="muted">None</td></tr>{% endfor %}</tbody></table></div></div>
+<div class="card"><h2>Collections by payment type</h2><div class="table-wrap"><table><thead><tr><th>Paid with</th><th class="num">Payments</th><th class="num">Amount</th></tr></thead><tbody>
+{% for p in pays %}<tr><td>{{ p.label }}</td><td class="num">{{ p.n }}</td><td class="num">{{ p.amt|peso }}</td></tr>{% else %}<tr><td colspan="3" class="muted">None</td></tr>{% endfor %}</tbody></table></div></div>
+<div class="card"><h2>By branch</h2><div class="table-wrap"><table><thead><tr><th>Branch</th><th class="num">X-rays</th><th class="num">Net</th></tr></thead><tbody>
+{% for r in by_branch %}<tr><td>{{ r.name }}</td><td class="num">{{ r.n }}</td><td class="num">{{ r.net|peso }}</td></tr>{% else %}<tr><td colspan="3" class="muted">None</td></tr>{% endfor %}</tbody></table></div></div>
+<div class="card"><h2>Referring dentists</h2><div class="table-wrap"><table><thead><tr><th>Dentist</th><th class="num">X-rays</th><th class="num">Net</th><th class="num">Rebate</th></tr></thead><tbody>
+{% for r in by_ref %}<tr><td>{{ r.name }}{% if r.clinic %}<br><small class="muted">{{ r.clinic }}</small>{% endif %}</td><td class="num">{{ r.n }}</td><td class="num">{{ r.net|peso }}</td><td class="num">{{ r.rebate|peso }}</td></tr>{% else %}<tr><td colspan="4" class="muted">None</td></tr>{% endfor %}</tbody></table></div>
+<p class="muted"><small>Rebates earned in the period: {{ sums.rebates|peso }}.</small></p></div>
+<div class="card"><h2>Taken by</h2><div class="table-wrap"><table><thead><tr><th>Staff</th><th class="num">X-rays</th></tr></thead><tbody>
+{% for r in by_taker %}<tr><td>{{ r.name }}</td><td class="num">{{ r.n }}</td></tr>{% else %}<tr><td colspan="2" class="muted">None</td></tr>{% endfor %}</tbody></table></div></div>
+</div>
+{% endblock %}

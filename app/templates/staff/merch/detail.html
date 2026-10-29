@@ -1,0 +1,31 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}{{ s.number }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('merch.index') }}">← Merchandise</a><h1>{{ s.number }} {% if s.status == 'void' %}<span class="badge badge-red">Voided</span>{% elif balance <= 0 %}<span class="badge badge-green">Paid</span>{% endif %}</h1>
+<p>{{ s.sold_on|date }} · {{ s.branch }} · {{ who }}</p></div>
+<a class="btn btn-secondary btn-sm" href="{{ url_for('merch.receipt', sale_id=s.id) }}" target="_blank">Print receipt</a></div>
+{% if s.status == 'void' %}<p class="notice">Voided: {{ s.void_reason }}</p>{% endif %}
+<div class="grid" style="grid-template-columns:minmax(0,3fr) minmax(260px,2fr)">
+<div class="card"><div class="table-wrap"><table><thead><tr><th>Product</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Amount</th></tr></thead><tbody>
+{% for it in items %}<tr><td>{{ it.description }}{% if it.rx_required %} <span class="badge badge-amber">Rx</span>{% endif %}</td><td class="num">{{ it.qty }} {{ it.unit }}</td><td class="num">{{ it.unit_price_cents|peso }}</td><td class="num">{{ it.amount_cents|peso }}</td></tr>{% endfor %}</tbody>
+<tfoot>{% if s.discount_cents %}<tr><td colspan="3">Discount</td><td class="num">−{{ s.discount_cents|peso }}</td></tr>{% endif %}
+<tr><td colspan="3"><strong>Total</strong></td><td class="num"><strong>{{ s.total_cents|peso }}</strong></td></tr>
+<tr><td colspan="3">Paid</td><td class="num">{{ paid|peso }}</td></tr>
+<tr><td colspan="3"><strong>Balance</strong></td><td class="num"><strong>{{ balance|peso }}</strong></td></tr></tfoot></table></div>
+{% if s.notes %}<p class="pre">{{ s.notes }}</p>{% endif %}<p class="muted"><small>Sold by {{ s.created_name or '—' }}</small></p></div>
+<div>
+<div class="card"><h2>Payments</h2>
+<ul class="list-plain">{% for p in pays %}<li {% if p.status == 'void' %}style="opacity:.6"{% endif %}><div class="row between"><strong>{{ p.amount_cents|peso }}</strong><small class="muted">{{ p.received_at|date }}</small></div>
+<small>{{ pay_label(p.method, p.account) }}{% if p.reference %} · Ref {{ p.reference }}{% endif %} · {{ p.received_name or '—' }}</small>
+{% if p.status == 'void' %}<br><small class="muted">Voided: {{ p.void_reason }}</small>{% elif current_user.can('merch.void') %}<details><summary><small>Void</small></summary><form method="post" action="{{ url_for('merch.pay_void', sale_id=s.id, pay_id=p.id) }}">{{ csrf() }}<label class="sr-only" for="vr{{ p.id }}">Reason</label><input id="vr{{ p.id }}" name="reason" placeholder="Reason" required><button class="btn btn-danger btn-sm mt-1">Void payment</button></form></details>{% endif %}</li>
+{% else %}<li class="muted">No payments yet.</li>{% endfor %}</ul>
+{% if s.status == 'ok' and balance > 0 and current_user.can('merch.sell') %}<form method="post" action="{{ url_for('merch.pay', sale_id=s.id) }}" class="mt-1">{{ csrf() }}
+<div class="field"><label for="pa">Amount (₱)</label><input id="pa" name="amount" value="{{ '%.2f'|format(balance / 100) }}" inputmode="decimal" required></div>
+<div class="field"><label for="pm">Paid with</label><select id="pm" name="method">{% for val, lab in pay_opts %}<option value="{{ val }}">{{ lab }}</option>{% endfor %}</select></div>
+<div class="field"><label for="pr">Reference / OR no.</label><input id="pr" name="reference" maxlength="80"></div>
+<button class="btn">Record payment</button></form>{% endif %}</div>
+{% if s.status == 'ok' and current_user.can('merch.void') %}<div class="card"><details><summary>Void this sale</summary>
+<form method="post" action="{{ url_for('merch.void', sale_id=s.id) }}" class="mt-1">{{ csrf() }}<p class="hint">Void its payments first. The products go back into stock.</p><label class="sr-only" for="vx">Reason</label><input id="vx" name="reason" placeholder="Reason" required><button class="btn btn-danger btn-sm mt-1">Void sale</button></form></details></div>{% endif %}
+</div></div>
+{% endblock %}

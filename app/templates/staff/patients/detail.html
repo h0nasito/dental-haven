@@ -50,7 +50,7 @@
 
 {% set T = [('profile', 'Profile', true), ('notes', 'Progress Notes', clinical), ('plans', 'Treatment Plan', clinical), ('chart', 'Charts', clinical),
             ('billing', 'Bills & Payment', current_user.can('billing.view') or current_user.can('quotes.view')), ('rx', 'Prescriptions', clinical),
-            ('certs', 'Certificates', clinical), ('documents', 'Uploads', true), ('remarks', 'Remarks', true), ('diagnosis', 'Diagnosis', clinical),
+            ('certs', 'Certificates', clinical), ('xray', 'X-rays', current_user.can('xray.view')), ('documents', 'Uploads', true), ('remarks', 'Remarks', true), ('diagnosis', 'Diagnosis', clinical),
             ('changes', 'Change log', clinical or current_user.is_super_admin)] %}
 <nav class="pills" aria-label="Patient sections">{% for key, label, ok in T if ok %}<a href="?tab={{ key }}" class="{% if tab == key %}active{% endif %}" {% if tab == key %}aria-current="page"{% endif %}>{{ label }}{% if key == 'documents' and documents %} <span class="pill-n">{{ documents|length }}</span>{% endif %}</a>{% endfor %}</nav>
 
@@ -129,7 +129,7 @@
 {% for gr in pn_groups %}<tr>
 <td><strong class="pn-date">{{ gr.date|date if gr.date else '—' }}</strong><br><small>{{ gr.dentist or '—' }}</small>
 {% set others = gr.made_by|reject('equalto', gr.dentist)|list %}{% if others %}<br><small class="muted">Entered by {{ others|join(', ') }}</small>{% endif %}</td>
-<td>{% if gr.lines %}<ul class="pn-lines">{% for ln in gr.lines %}<li><span>{{ ln.text }}{% if ln.tooth %} <span class="muted">(#{{ ln.tooth }})</span>{% endif %}</span>{% if ln.price is not none and current_user.can('billing.view') %}<span class="pn-price">{{ ln.price|peso }}</span>{% endif %}</li>{% endfor %}</ul>{% endif %}
+<td>{% if gr.lines %}<ul class="pn-lines">{% for ln in gr.lines %}<li><span>{{ ln.text }}{% if ln.tooth %} <span class="muted">(#{{ ln.tooth }})</span>{% endif %}{% if ln.xray %} {% if current_user.can('xray.view') %}<a class="badge badge-blue" href="{{ url_for('xray.detail', xray_id=ln.xray.id) }}">X-ray {{ ln.xray.number }}</a>{% else %}<span class="badge badge-blue">X-ray</span>{% endif %}{% if ln.xray.status == 'void' %} <span class="badge badge-red">Voided</span>{% endif %}{% endif %}</span>{% if ln.price is not none and current_user.can('billing.view') %}<span class="pn-price">{{ ln.price|peso }}</span>{% endif %}</li>{% endfor %}</ul>{% endif %}
 {% for t in gr.visit_notes_text or [] %}<p class="pre pn-note">{{ t }}</p>{% endfor %}
 {% for n in gr.notes %}<p class="pre pn-note">{% if n.amended %}<span class="badge badge-blue">Amendment</span> {% endif %}{{ n.body }}</p>{% endfor %}
 {% for vn in gr.visits or [] %}{% if vn.recall_date %}<small class="pn-recall">Recall {{ vn.recall_date|date }}{% if vn.recall_reason %} · {{ vn.recall_reason }}{% endif %}</small><br>{% endif %}{% if vn.signature_name %}<a href="{{ url_for('patients.visit_note_signature', patient_id=p.id, vid=vn.id) }}" target="_blank" rel="noopener"><small>✓ Signed by patient</small></a><br>{% endif %}{% endfor %}
@@ -422,12 +422,25 @@
 {% endif %}
 
 {% if tab == 'certs' and clinical %}
-<div class="card"><div class="card-head"><h2>Certificates</h2>{% if current_user.can('cert.create') %}<a class="btn btn-secondary btn-sm" href="{{ url_for('docs.cert_new', patient_id=p.id) }}">+ New certificate</a>{% endif %}</div>
+<div class="card"><div class="card-head"><h2>Certificates &amp; referrals</h2>{% if current_user.can('cert.create') %}<div class="row">
+<a class="btn btn-secondary btn-sm" href="{{ url_for('docs.cert_new', patient_id=p.id, kind='dental') }}">+ Dental certificate</a>
+<a class="btn btn-secondary btn-sm" href="{{ url_for('docs.cert_new', patient_id=p.id, kind='referral') }}">+ Referral for clearance</a>
+<a class="btn btn-ghost btn-sm" href="{{ url_for('docs.cert_new', patient_id=p.id) }}">Other…</a></div>{% endif %}</div>
 <ul class="list-plain">{% for c in certificates %}<li><div class="row between"><strong>{{ c.title }}</strong><small class="muted">{{ c.issued_on|date }} · {{ c.dentist }}</small></div>
 <div class="row mt-1"><a class="btn btn-ghost btn-sm" href="{{ url_for('docs.cert_print', cert_id=c.id) }}" target="_blank">Print</a>
 {% if current_user.can('cert.edit') %}<a class="btn btn-ghost btn-sm" href="{{ url_for('docs.cert_edit', cert_id=c.id) }}">Edit</a>{% endif %}
 {% if current_user.can('cert.delete') %}<form method="post" action="{{ url_for('docs.cert_delete', cert_id=c.id) }}" data-confirm="Delete this certificate?">{{ csrf() }}<button class="btn btn-danger btn-sm">Delete</button></form>{% endif %}</div></li>
 {% else %}<li class="muted">No certificates.</li>{% endfor %}</ul></div>
+{% endif %}
+
+{% if tab == 'xray' %}
+<div class="card"><div class="card-head"><h2>X-rays</h2>{% if current_user.can('xray.manage') %}<a class="btn btn-secondary btn-sm" href="{{ url_for('xray.new', patient_id=p.id) }}">+ New X-ray</a>{% endif %}</div>
+<p class="hint">X-rays have their own receipts and payments; they are not in the progress notes or the patient's bills.</p>
+{% if xrays %}<div class="table-wrap"><table><thead><tr><th>Date</th><th>X-ray</th><th>Requested by</th><th class="num">Amount</th><th class="num">Balance</th></tr></thead><tbody>
+{% for x in xrays %}<tr {% if x.status == 'void' %}style="opacity:.6"{% endif %}><td>{{ x.taken_on|date }}<br><small class="muted">{{ x.branch }}</small></td>
+<td><a href="{{ url_for('xray.detail', xray_id=x.id) }}"><strong>{{ x.number }}</strong></a>{% if x.status == 'void' %} <span class="badge badge-red">Voided</span>{% endif %}<br>{{ x.what or '' }}{% if x.files %} <small class="muted">· 🖼 {{ x.files }}</small>{% endif %}</td>
+<td>{{ x.requested or '—' }}</td><td class="num">{{ x.total_cents|peso }}</td><td class="num">{% if x.balance > 0 %}<strong>{{ x.balance|peso }}</strong>{% elif x.status == 'ok' %}<span class="badge badge-green">Paid</span>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div>{% else %}<p class="muted">No X-rays.</p>{% endif %}</div>
 {% endif %}
 
 {% if tab == 'documents' %}

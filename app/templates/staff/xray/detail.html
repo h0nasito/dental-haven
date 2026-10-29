@@ -1,0 +1,49 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}{{ x.number }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('xray.index') }}">← X-ray</a><h1>{{ x.number }} {% if x.status == 'void' %}<span class="badge badge-red">Voided</span>{% elif balance <= 0 %}<span class="badge badge-green">Paid</span>{% endif %}</h1>
+<p>{{ x.taken_on|date }} · {{ x.branch }}</p></div>
+<div class="row"><a class="btn btn-secondary btn-sm" href="{{ url_for('xray.receipt', xray_id=x.id) }}" target="_blank">Print receipt</a>
+{% if x.status == 'ok' and current_user.can('xray.manage') %}<a class="btn btn-secondary btn-sm" href="{{ url_for('xray.edit', xray_id=x.id) }}">Edit</a>{% endif %}</div></div>
+{% if x.status == 'void' %}<p class="notice">Voided: {{ x.void_reason }}</p>{% endif %}
+<div class="grid" style="grid-template-columns:minmax(0,3fr) minmax(260px,2fr)">
+<div>
+<div class="card"><dl class="dl">
+<dt>Patient</dt><dd>{% if x.patient_id %}<a href="{{ url_for('patients.detail', patient_id=x.patient_id, tab='xray') }}">{{ who }}</a> <small class="muted">{{ x.chart_no }}</small>{% else %}{{ who }}{% if x.walkin_phone %} · {{ x.walkin_phone }}{% endif %}{% endif %}</dd>
+<dt>Requested by</dt><dd>{{ requested or '—' }}</dd>
+<dt>Taken by</dt><dd>{{ x.taken_name or '—' }}</dd>
+{% if x.notes %}<dt>Notes</dt><dd class="pre">{{ x.notes }}</dd>{% endif %}
+<dt>Recorded by</dt><dd>{{ x.created_name or '—' }} · {{ x.created_at|date }}</dd></dl>
+<div class="table-wrap"><table><thead><tr><th>X-ray</th><th>Tooth / area</th><th class="num">Price</th></tr></thead><tbody>
+{% for it in items %}<tr><td>{{ it.description }}</td><td>{{ it.tooth or '' }}</td><td class="num">{{ it.price_cents|peso }}</td></tr>{% endfor %}</tbody>
+<tfoot>{% if x.discount_cents %}<tr><td colspan="2">Discount</td><td class="num">−{{ x.discount_cents|peso }}</td></tr>{% endif %}
+<tr><td colspan="2"><strong>Total</strong></td><td class="num"><strong>{{ x.total_cents|peso }}</strong></td></tr>
+<tr><td colspan="2">Paid</td><td class="num">{{ paid|peso }}</td></tr>
+<tr><td colspan="2"><strong>Balance</strong></td><td class="num"><strong>{{ balance|peso }}</strong></td></tr></tfoot></table></div>
+{% if x.referrer_id %}<p class="mt-1">Referral fee / rebate for {{ x.referrer_name }}: <strong>{{ x.rebate_cents|peso }}</strong>
+{% if payout %}<span class="badge badge-green">Paid out {{ payout.paid_on|date }}</span>{% elif x.rebate_cents %}<span class="badge">Not paid out yet</span>{% endif %}</p>{% endif %}
+</div>
+<div class="card"><h2>Images</h2>
+{% if files %}<div class="xr-files">{% for f in files %}<figure>{% if f.mime.startswith('image/') %}<a href="{{ url_for('xray.file', file_id=f.id) }}" target="_blank" rel="noopener"><img src="{{ url_for('xray.file', file_id=f.id) }}" alt="X-ray image {{ loop.index }}" loading="lazy"></a>{% else %}<a href="{{ url_for('xray.file', file_id=f.id) }}" target="_blank" rel="noopener">📄 {{ f.original_name }}</a>{% endif %}
+<figcaption><small class="muted">{{ f.original_name }}</small> <a href="{{ url_for('xray.file', file_id=f.id, download=1) }}"><small>Download</small></a>
+{% if current_user.can('xray.manage') %}<form method="post" action="{{ url_for('xray.file_delete', file_id=f.id) }}" data-confirm="Delete this file?" style="display:inline">{{ csrf() }}<button class="btn btn-ghost btn-sm">Delete</button></form>{% endif %}</figcaption></figure>{% endfor %}</div>
+{% else %}<p class="muted">No images yet.</p>{% endif %}
+{% if x.status == 'ok' and current_user.can('xray.manage') %}<form method="post" action="{{ url_for('xray.files_add', xray_id=x.id) }}" enctype="multipart/form-data" class="row mt-1">{{ csrf() }}
+<label class="sr-only" for="fl">Images</label><input id="fl" type="file" name="files" accept="image/png,image/jpeg,image/webp,application/pdf" multiple required><button class="btn btn-secondary btn-sm">Upload</button></form>{% endif %}</div>
+</div>
+<div>
+<div class="card"><h2>Payments</h2>
+<ul class="list-plain">{% for p in pays %}<li {% if p.status == 'void' %}style="opacity:.6"{% endif %}><div class="row between"><strong>{{ p.amount_cents|peso }}</strong><small class="muted">{{ p.received_at|date }}</small></div>
+<small>{{ pay_label(p.method, p.account) }}{% if p.reference %} · Ref {{ p.reference }}{% endif %} · {{ p.received_name or '—' }}</small>
+{% if p.status == 'void' %}<br><small class="muted">Voided: {{ p.void_reason }}</small>{% elif current_user.can('xray.void') %}<details><summary><small>Void</small></summary><form method="post" action="{{ url_for('xray.pay_void', xray_id=x.id, pay_id=p.id) }}">{{ csrf() }}<label class="sr-only" for="vr{{ p.id }}">Reason</label><input id="vr{{ p.id }}" name="reason" placeholder="Reason" required><button class="btn btn-danger btn-sm mt-1">Void payment</button></form></details>{% endif %}</li>
+{% else %}<li class="muted">No payments yet.</li>{% endfor %}</ul>
+{% if x.status == 'ok' and balance > 0 and current_user.can('xray.manage') %}<form method="post" action="{{ url_for('xray.pay', xray_id=x.id) }}" class="mt-1">{{ csrf() }}
+<div class="field"><label for="pa">Amount (₱)</label><input id="pa" name="amount" value="{{ '%.2f'|format(balance / 100) }}" inputmode="decimal" required></div>
+<div class="field"><label for="pm">Paid with</label><select id="pm" name="method">{% for val, lab in pay_opts %}<option value="{{ val }}">{{ lab }}</option>{% endfor %}</select></div>
+<div class="field"><label for="pr">Reference / OR no.</label><input id="pr" name="reference" maxlength="80"></div>
+<button class="btn">Record payment</button></form>{% endif %}</div>
+{% if x.status == 'ok' and current_user.can('xray.void') %}<div class="card"><details><summary>Void this X-ray</summary>
+<form method="post" action="{{ url_for('xray.void', xray_id=x.id) }}" class="mt-1">{{ csrf() }}<p class="hint">Void its payments first. The record stays, marked voided.</p><label class="sr-only" for="vx">Reason</label><input id="vx" name="reason" placeholder="Reason" required><button class="btn btn-danger btn-sm mt-1">Void X-ray</button></form></details></div>{% endif %}
+</div></div>
+{% endblock %}

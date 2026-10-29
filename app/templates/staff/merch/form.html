@@ -1,0 +1,34 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}New sale{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('merch.index') }}">← Merchandise</a><h1>New sale</h1></div>
+{% if branches|length > 1 %}<form method="get" class="row"><label class="sr-only" for="bs">Branch</label><select id="bs" name="branch_id">{% for b in branches %}<option value="{{ b.id }}" {{ 'selected' if b.id == branch_id }}>{{ b.name }}</option>{% endfor %}</select>{% if patient %}<input type="hidden" name="patient_id" value="{{ patient.id }}">{% endif %}<button class="btn btn-secondary btn-sm">Change branch</button></form>{% endif %}</div>
+<form method="post" class="card" style="max-width:920px">{{ csrf() }}<input type="hidden" name="branch_id" value="{{ branch_id }}">{% if patient %}<input type="hidden" name="patient_id" value="{{ patient.id }}">{% endif %}
+{% if errors %}<div class="flash flash-error"><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
+<p class="muted">Branch: <strong>{% for b in branches if b.id == branch_id %}{{ b.name }}{% endfor %}</strong> · stock shown is this branch's.</p>
+<h2>Buyer</h2>
+{% if patient %}<p><strong>{{ patient.last_name }}, {{ patient.first_name }}</strong> <small class="muted">{{ patient.chart_no }}</small></p>
+{% else %}<div class="form-grid">
+<div class="field"><label for="cn">Clinic patient: chart no.</label><input id="cn" name="chart_no" value="{{ v.chart_no }}" placeholder="optional"></div>
+<div class="field"><label for="bn">Or buyer's name</label><input id="bn" name="buyer_name" value="{{ v.buyer_name }}" maxlength="120" placeholder="optional (walk-in)"></div>
+</div>{% endif %}
+<h2>Products</h2>
+<div class="table-wrap"><table><thead><tr><th>Product</th><th class="num">Qty</th><th class="num">Price each (₱)</th></tr></thead><tbody>
+{% for i in range(max_lines) %}{% set ln = v.lines[i] if i < v.lines|length else {} %}
+<tr {% if i >= v.lines|length and i > 0 %}data-ms-extra hidden{% endif %}><td><label class="sr-only" for="pd{{ i }}">Product</label><select id="pd{{ i }}" name="product_{{ i }}" data-ms-product><option value="">—</option>
+{% for cat, group in prods|groupby('category') %}<optgroup label="{{ cat }}">{% for p in group %}{% set have = (stock.get(p.id) or {}).get('qty', 0) %}<option value="{{ p.id }}" data-price="{{ '%.2f'|format(p.price_cents / 100) if p.price_cents is not none else '' }}" {{ 'selected' if ln.product_id == p.id }} {{ 'disabled' if have <= 0 and ln.product_id != p.id }}>{{ p.name }}{% if p.rx_required %} (Rx){% endif %} · {% if p.price_cents is not none %}{{ p.price_cents|peso }}{% else %}no price{% endif %} · {{ have }} in stock</option>{% endfor %}</optgroup>{% endfor %}</select></td>
+<td class="num"><label class="sr-only" for="qt{{ i }}">Quantity</label><input id="qt{{ i }}" name="qty_{{ i }}" value="{{ ln.qty or '1' }}" inputmode="numeric" style="max-width:5rem;text-align:right"></td>
+<td class="num"><label class="sr-only" for="pr{{ i }}">Price</label><input id="pr{{ i }}" name="price_{{ i }}" value="{{ ln.price or '' }}" inputmode="decimal" placeholder="from price list" style="max-width:9rem;text-align:right"></td></tr>{% endfor %}
+</tbody></table></div>
+<button type="button" class="btn btn-ghost btn-sm" data-ms-more>+ Add product</button>
+<p class="hint">Products marked (Rx) need a dentist's prescription. Out-of-stock products can't be chosen: stock them in first.</p>
+<div class="form-grid mt-1">
+<div class="field"><label for="dc">Discount (₱)</label><input id="dc" name="discount" value="{{ v.discount }}" inputmode="decimal"></div>
+<div class="field"><label for="pa">Amount paid (₱)</label><input id="pa" name="pay_amount" inputmode="decimal" placeholder="full amount"><span class="hint">Empty = paid in full. Type 0 if not paid yet.</span></div>
+<div class="field"><label for="pm">Paid with</label><select id="pm" name="pay_method">{% for val, lab in pay_opts %}<option value="{{ val }}">{{ lab }}</option>{% endfor %}</select></div>
+<div class="field"><label for="rf">Reference / OR no.</label><input id="rf" name="reference" maxlength="80"></div>
+</div>
+<div class="field"><label for="nt">Notes</label><input id="nt" name="notes" value="{{ v.notes }}" maxlength="500"></div>
+<button class="btn">Save sale</button></form>
+{% endblock %}

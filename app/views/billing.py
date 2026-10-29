@@ -938,6 +938,7 @@ def business():
     for _ in range(24):
         months.append(d)
         d = (d - timedelta(days=1)).replace(day=1)
+    from ..tithe import rate as tithe_rate
     return render_template("staff/billing/business.html", cur=cur, prev=prev, label=label, plabel=plabel, notes=notes, groups=br.GROUPS,
                            month=start, months=months, mine=mine, shown=shown, bid=bid if len(shown) == 1 and len(mine) > 1 else None,
-                           partial=end < br.month_bounds(m)[1], prev_range=(p0, p1))
+                           partial=end < br.month_bounds(m)[1], prev_range=(p0, p1), tithe_pct=tithe_rate(conn))

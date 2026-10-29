@@ -220,3 +220,48 @@ class TestEnteredBy(TestVisitNote):
 
 for _n in [n for n in dir(TestVisitNote) if n.startswith("test_")]:
     setattr(TestEnteredBy, _n, None)
+
+
+class TestVisitNoteXray(Base):
+    """X-rays added in a progress note: kept in the dentist's record, paid in the X-ray section (not the patient's bill)."""
+    _post = TestVisitNote._post
+
+    def setUp(self):
+        self.doc = self.q("SELECT id FROM users WHERE email = 'dentist.sjdm@demo.dentalhaven.test'")["id"]
+        self.pid = self.q("SELECT patient_id AS id FROM patient_assignments WHERE dentist_id = ? LIMIT 1", (self.doc,))["id"]
+        self.sjdm = self.branch("sjdm")
+
+    def test_xray_in_progress_note_goes_to_xray_section(self):
+        from app.views.patients import notes_to_bill
+        doc = self.login("dentist.sjdm")
+        invs = self.conn.scalar("SELECT COUNT(*) FROM invoices WHERE patient_id = ?", (self.pid,))
+        from datetime import date
+        r = self._post(doc, dentist_id="", signature="", recall_date="", visit_date=date.today().isoformat(), line_service_id=["", "", ""],
+                       line_desc=["PANORAMIC XRAY", "Xray - Periapical", "Oral prophylaxis (Mild)"], line_tooth=["", "36", ""],
+                       line_qty=["", "", ""], line_price=["1000", "300", "800"], line_disc=["", "", ""], bill_disc="")
+        self.assertEqual(r.status_code, 302)
+        v = self.q("SELECT * FROM visit_notes WHERE patient_id = ? AND status = 'saved' ORDER BY id DESC", (self.pid,))
+        x = self.q("SELECT * FROM xrays WHERE visit_note_id = ?", (v["id"],))
+        self.assertIsNotNone(x)
+        self.assertEqual((x["total_cents"], x["requested_by"], x["patient_id"]), (100000, self.doc, self.pid))
+        self.assertEqual([i["description"] for i in self.conn.all("SELECT description FROM xray_items WHERE xray_id = ?", (x["id"],))],
+                         ["Panoramic"])
+        procs = self.conn.all("SELECT description, xray_id FROM procedures WHERE visit_note_id = ? ORDER BY id", (v["id"],))
+        self.assertEqual([(p["description"], bool(p["xray_id"])) for p in procs],
+                         [("PANORAMIC XRAY", True), ("Xray - Periapical", False), ("Oral prophylaxis (Mild)", False)])
+        # the cashier's "to bill" has the periapical and prophylaxis only
+        with self.app.test_request_context():
+            entry = next(e for e in notes_to_bill(self.conn, [self.sjdm], self.pid) if e["kind"] == "note" and e["id"] == v["id"])
+        self.assertEqual(entry["services"], "Xray - Periapical, Oral prophylaxis (Mild)")
+        self.assertEqual(entry["estimate"], 110000)
+        admin = self.login("admin")
+        admin.post(f"/staff/patients/{self.pid}/visit-note/{v['id']}/bill", data={"action": "create"})
+        inv = self.q("SELECT * FROM invoices WHERE patient_id = ? ORDER BY id DESC", (self.pid,))
+        self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM invoices WHERE patient_id = ?", (self.pid,)), invs + 1)
+        self.assertEqual(inv["total_cents"], 110000)
+        # the progress note links to the X-ray record
+        notes = admin.get(f"/staff/patients/{self.pid}?tab=notes").data.decode()
+        self.assertIn(f"X-ray {x['number']}", notes)
+        # cancelling the visit voids the unpaid X-ray
+        admin.post(f"/staff/patients/{self.pid}/visit-notes/{v['id']}/cancel", data={"reason": "wrong patient"})
+        self.assertEqual(self.q("SELECT status FROM xrays WHERE id = ?", (x["id"],))["status"], "void")

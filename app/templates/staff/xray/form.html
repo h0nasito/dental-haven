@@ -1,0 +1,52 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}{{ 'Edit ' ~ x.number if x else 'New X-ray' }}{% endblock %}
+{% block content %}
+<div class="page-head"><div>{% if x %}<a href="{{ url_for('xray.detail', xray_id=x.id) }}">← {{ x.number }}</a>{% elif patient %}<a href="{{ url_for('patients.detail', patient_id=patient.id, tab='xray') }}">← {{ patient.last_name }}, {{ patient.first_name }}</a>{% else %}<a href="{{ url_for('xray.index') }}">← X-ray</a>{% endif %}
+<h1>{{ 'Edit ' ~ x.number if x else 'New X-ray' }}</h1></div></div>
+<form method="post" enctype="multipart/form-data" class="card" style="max-width:920px">{{ csrf() }}
+{% if errors %}<div class="flash flash-error"><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
+<h2>Patient</h2>
+{% if patient %}<input type="hidden" name="patient_id" value="{{ patient.id }}"><p><strong>{{ patient.last_name }}, {{ patient.first_name }}</strong> <small class="muted">{{ patient.chart_no }}</small></p>
+{% else %}<div class="form-grid">
+<div class="field"><label for="cn">Clinic patient: chart no.</label><input id="cn" name="chart_no" value="{{ v.chart_no }}" placeholder="e.g. DH-000123"><span class="hint">Leave empty for a walk-in.</span></div>
+<div class="field"><label for="wn">Walk-in name</label><input id="wn" name="walkin_name" value="{{ v.walkin_name }}" maxlength="120"></div>
+<div class="field"><label for="wp">Walk-in contact no.</label><input id="wp" name="walkin_phone" value="{{ v.walkin_phone }}" maxlength="40"></div>
+</div>{% endif %}
+<div class="form-grid">
+<div class="field"><label for="br">Branch</label><select id="br" name="branch_id" required>{% for b in branches %}<option value="{{ b.id }}" {{ 'selected' if b.id == v.branch_id }}>{{ b.name }}</option>{% endfor %}</select></div>
+<div class="field"><label for="dt">Date taken</label><input id="dt" type="date" name="taken_on" value="{{ v.taken_on }}" required></div>
+<div class="field"><label for="tb">Taken by</label><select id="tb" name="taken_by"><option value="">—</option>{% for u in staff %}<option value="{{ u.id }}" {{ 'selected' if u.id == v.taken_by }}>{{ u.name }}</option>{% endfor %}</select></div>
+</div>
+<h2>Requested by</h2>
+<div class="form-grid">
+<div class="field"><label for="rq">Dentist who asked for it</label><select id="rq" name="requested" data-xr-requested>
+<option value="">— not recorded —</option>
+<optgroup label="Clinic dentists">{% for d in dentists %}<option value="d:{{ d.id }}" {{ 'selected' if v.requested == 'd:' ~ d.id }}>{{ d.name }}</option>{% endfor %}</optgroup>
+<optgroup label="Outside (referring) dentists">{% for r in referrers %}<option value="r:{{ r.id }}" {{ 'selected' if v.requested == 'r:' ~ r.id }}>{{ r.name }}{% if r.clinic %} – {{ r.clinic }}{% endif %}{% if r.rebate_bp %} ({{ (r.rebate_bp / 100)|round(2)|string|replace('.0', '') }}% rebate){% endif %}</option>{% endfor %}
+<option value="new" {{ 'selected' if v.requested == 'new' }}>+ New outside dentist…</option></optgroup></select></div>
+<div class="field" data-xr-new><label for="nr">New outside dentist: name</label><input id="nr" name="new_ref_name" value="{{ v.new_ref_name or '' }}" maxlength="120"></div>
+<div class="field" data-xr-new><label for="nc">Their clinic</label><input id="nc" name="new_ref_clinic" value="{{ v.new_ref_clinic or '' }}" maxlength="150"></div>
+</div>
+<h2>X-rays taken</h2>
+<div class="table-wrap"><table><thead><tr><th>Type</th><th>Tooth / area</th><th class="num">Price (₱)</th></tr></thead><tbody>
+{% for i in range(max_items) %}{% set it = v["items"][i] if i < v["items"]|length else {} %}
+<tr {% if i >= v["items"]|length and i > 0 %}data-xr-extra hidden{% endif %}><td><label class="sr-only" for="ty{{ i }}">Type</label><select id="ty{{ i }}" name="type_{{ i }}" data-xr-type><option value="">—</option>{% for t in types %}<option value="{{ t.id }}" data-price="{{ '%.2f'|format(t.price_cents / 100) if t.price_cents is not none else '' }}" {{ 'selected' if it.type_id == t.id }}>{{ t.name }}{% if t.price_cents is not none %} · {{ t.price_cents|peso }}{% endif %}</option>{% endfor %}</select></td>
+<td><label class="sr-only" for="to{{ i }}">Tooth</label><input id="to{{ i }}" name="tooth_{{ i }}" value="{{ it.tooth or '' }}" maxlength="60" placeholder="e.g. 36, 37"></td>
+<td class="num"><label class="sr-only" for="pr{{ i }}">Price</label><input id="pr{{ i }}" name="price_{{ i }}" value="{{ it.price or '' }}" inputmode="decimal" placeholder="from price list" style="max-width:9rem;text-align:right"></td></tr>{% endfor %}
+</tbody></table></div>
+<button type="button" class="btn btn-ghost btn-sm" data-xr-more>+ Add line</button>
+<p class="hint">Periapical X-rays are recorded in the progress notes as a procedure (billed with the visit), not here.</p>
+<div class="form-grid mt-1">
+<div class="field"><label for="dc">Discount (₱)</label><input id="dc" name="discount" value="{{ v.discount }}" inputmode="decimal"></div>
+<div class="field" data-xr-rebate><label for="rb">Referral fee / rebate (₱)</label><input id="rb" name="rebate" value="{{ v.rebate }}" inputmode="decimal"><span class="hint">For outside dentists. Empty = their usual rebate %. Paid out from “Referring dentists &amp; rebates”.</span></div>
+</div>
+{% if not x %}<h2>Payment now</h2>
+<div class="form-grid">
+<div class="field"><label for="pa">Amount paid (₱)</label><input id="pa" name="pay_amount" inputmode="decimal" placeholder="0.00"></div>
+<div class="field"><label for="pm">Paid with</label><select id="pm" name="pay_method">{% for val, lab in pay_opts %}<option value="{{ val }}">{{ lab }}</option>{% endfor %}</select></div>
+</div>
+<div class="field"><label for="fl">X-ray images</label><input id="fl" type="file" name="files" accept="image/png,image/jpeg,image/webp,application/pdf" multiple><span class="hint">JPG, PNG, WEBP or PDF, up to 25 MB each. You can add more later.</span></div>{% endif %}
+<div class="field"><label for="nt">Notes</label><textarea id="nt" name="notes" rows="2" maxlength="1000">{{ v.notes }}</textarea></div>
+<button class="btn">{{ 'Save changes' if x else 'Save X-ray' }}</button></form>
+{% endblock %}

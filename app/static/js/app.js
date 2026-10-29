@@ -1484,3 +1484,48 @@ document.addEventListener('change', function (e) {
     next();
   });
 })();
+
+// X-ray form: outside-dentist fields, price from the price list, more lines
+(function () {
+  var req = document.querySelector('[data-xr-requested]');
+  if (!req) return;
+  function sync() {
+    var v = req.value;
+    document.querySelectorAll('[data-xr-new]').forEach(function (el) { el.hidden = v !== 'new'; });
+    document.querySelectorAll('[data-xr-rebate]').forEach(function (el) { el.hidden = !(v === 'new' || v.indexOf('r:') === 0); });
+  }
+  req.addEventListener('change', sync);
+  sync();
+  document.querySelectorAll('[data-xr-type]').forEach(function (sel) {
+    sel.addEventListener('change', function () {
+      var opt = sel.options[sel.selectedIndex];
+      var price = sel.closest('tr').querySelector('input[name^="price_"]');
+      if (price && opt) price.placeholder = opt.getAttribute('data-price') || 'enter price';
+    });
+  });
+  var more = document.querySelector('[data-xr-more]');
+  if (more) more.addEventListener('click', function () {
+    var row = document.querySelector('tr[data-xr-extra][hidden]');
+    if (row) row.hidden = false;
+    if (!document.querySelector('tr[data-xr-extra][hidden]')) more.hidden = true;
+  });
+})();
+
+// Merchandise sale form: price from the price list, more lines
+(function () {
+  var sels = document.querySelectorAll('[data-ms-product]');
+  if (!sels.length) return;
+  sels.forEach(function (sel) {
+    sel.addEventListener('change', function () {
+      var opt = sel.options[sel.selectedIndex];
+      var price = sel.closest('tr').querySelector('input[name^="price_"]');
+      if (price && opt) price.placeholder = opt.getAttribute('data-price') || 'enter price';
+    });
+  });
+  var more = document.querySelector('[data-ms-more]');
+  if (more) more.addEventListener('click', function () {
+    var row = document.querySelector('tr[data-ms-extra][hidden]');
+    if (row) row.hidden = false;
+    if (!document.querySelector('tr[data-ms-extra][hidden]')) more.hidden = true;
+  });
+})();

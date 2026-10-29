@@ -48,6 +48,7 @@
   {% for sq in seqs %}<div class="field"><label for="prefix_{{ sq.id }}">{{ sq.name }}</label><input id="prefix_{{ sq.id }}" name="prefix_{{ sq.id }}" value="{{ sq.prefix or '' }}" maxlength="10"><span class="hint">Next number: {{ sq.next_no or 1 }}</span></div>{% endfor %}
   <p class="notice">Tax is off by default. Confirm VAT/non-VAT registration and official receipt requirements with the clinic's accountant before turning it on.</p>
 {% endif %}
+{% if prefix == 'report.' %}<p class="hint">The tithe is worked out from the <strong>Monthly business report</strong>: collections minus expenses (daily expenses, monthly bills, lab fees) minus payroll. A month at a loss has no tithe. You can see it any time on that report.</p>{% endif %}
 {% if prefix == 'approvals.' %}<p class="hint">One email per approver, only on days when something waits for them. It lists the type of request and the staff names, with links (no reasons, amounts or dates). Each person can turn it off in Profile settings. Uses the same email setup as dentist emails.</p>{% endif %}
 {% if prefix == 'payroll.' %}<p class="notice">Until pay rules are confirmed, payroll figures are labelled "unconfirmed estimate" and can't be approved.</p>{% endif %}
 {% if prefix == 'booking.' %}<p class="hint">With auto-confirm off, every online request waits for staff confirmation, and patients are told the time is only a request.</p>{% endif %}

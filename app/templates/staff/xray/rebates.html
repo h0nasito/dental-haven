@@ -1,0 +1,19 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Referring dentists & rebates{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Referring dentists &amp; rebates</h1><p>Outside dentists who send patients for X-rays, and the rebates (referral fees) they earned in {{ year }}. Pay them out in one go, e.g. at the end of December.</p></div>
+<form method="get" class="row"><label class="sr-only" for="yr">Year</label><select id="yr" name="year">{% for y in years %}<option {{ 'selected' if y == year }}>{{ y }}</option>{% endfor %}</select><button class="btn btn-secondary btn-sm">Show</button></form></div>
+{% set active = 'rebates' %}{% include "staff/xray/_nav.html" %}
+<div class="card"><div class="table-wrap"><table><thead><tr><th>Dentist</th><th class="num">X-rays {{ year }}</th><th class="num">Net</th><th class="num">Rebate earned</th><th class="num">Paid out</th><th class="num">To pay</th></tr></thead><tbody>
+{% for r in rows %}{% set due = r.earned - r.paid_out + (unpaid_before.get(r.id) or 0) %}<tr {% if not r.active %}style="opacity:.6"{% endif %}><td><a href="{{ url_for('xray.referrer', ref_id=r.id, year=year) }}"><strong>{{ r.name }}</strong></a>{% if r.clinic %}<br><small class="muted">{{ r.clinic }}</small>{% endif %}{% if r.rebate_bp %} <span class="badge">{{ (r.rebate_bp / 100)|round(2)|string|replace('.0', '') }}%</span>{% endif %}</td>
+<td class="num">{{ r.n }}</td><td class="num">{{ r.net|peso }}</td><td class="num">{{ r.earned|peso }}</td><td class="num">{{ r.paid_out|peso }}</td>
+<td class="num">{% if due > 0 %}<strong>{{ due|peso }}</strong>{% if unpaid_before.get(r.id) %}<br><small class="muted">incl. {{ unpaid_before.get(r.id)|peso }} from earlier years</small>{% endif %}{% else %}—{% endif %}</td></tr>
+{% else %}<tr><td colspan="6" class="muted">No referring dentists yet. Add one below, or pick “+ New outside dentist” on an X-ray.</td></tr>{% endfor %}</tbody></table></div></div>
+<form method="post" class="card" style="max-width:720px">{{ csrf() }}<input type="hidden" name="year" value="{{ year }}"><h2>Add a referring dentist</h2>
+<div class="form-grid"><div class="field"><label for="rn">Name</label><input id="rn" name="name" required maxlength="120"></div>
+<div class="field"><label for="rc">Clinic</label><input id="rc" name="clinic" maxlength="150"></div>
+<div class="field"><label for="rp">Contact no.</label><input id="rp" name="phone" maxlength="40"></div>
+<div class="field"><label for="rr">Usual rebate (%)</label><input id="rr" name="rate" inputmode="decimal" placeholder="e.g. 10"><span class="hint">Filled in on each X-ray; you can change it there.</span></div></div>
+<button class="btn">Add</button></form>
+{% endblock %}

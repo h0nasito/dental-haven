@@ -1,0 +1,6 @@
+<nav class="tabs" aria-label="X-ray">
+  <a href="{{ url_for('xray.index') }}" class="{{ 'active' if active == 'list' else '' }}">X-ray records</a>
+  <a href="{{ url_for('xray.report') }}" class="{{ 'active' if active == 'report' else '' }}">X-ray report</a>
+  {% if current_user.can('xray.rebates') %}<a href="{{ url_for('xray.rebates') }}" class="{{ 'active' if active == 'rebates' else '' }}">Referring dentists &amp; rebates</a>{% endif %}
+  {% if current_user.can('fees.manage') %}<a href="{{ url_for('xray.prices') }}" class="{{ 'active' if active == 'prices' else '' }}">X-ray prices</a>{% endif %}
+</nav>
