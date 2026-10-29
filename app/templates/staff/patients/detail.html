@@ -137,9 +137,14 @@
 <td>{% if gr.attachments %}<a href="?tab=documents">{{ gr.attachments }} file{{ 's' if gr.attachments != 1 }}</a>{% else %}<span class="muted">—</span>{% endif %}</td>
 <td><details class="kebab"><summary aria-label="Actions">⋯</summary><div class="kebab-menu">
 {% if gr.invoices and current_user.can('billing.view') %}<p class="kebab-h">Billing</p>{% for iid, num in gr.invoices.items() %}<a href="{{ url_for('billing.invoice', invoice_id=iid) }}">Open {{ num }}</a>{% endfor %}{% endif %}
-{% if current_user.can('progress.actions') and gr.procs %}<p class="kebab-h">Record</p>{% for pr in gr.procs %}
+{% if current_user.can('progress.actions') and gr.procs %}<p class="kebab-h">Record</p>
+<details><summary>{{ "Change dentist" if gr.dentist else "Set dentist" }}</summary><form method="post" action="{{ url_for('patients.procedures_dentist', patient_id=p.id) }}" class="mt-1">{{ csrf() }}
+{% for pr in gr.procs %}<input type="hidden" name="ids" value="{{ pr.id }}">{% endfor %}
+<label class="sr-only" for="vd{{ loop.index }}-{{ gr.procs[0].id }}">Dentist</label><select id="vd{{ loop.index }}-{{ gr.procs[0].id }}" name="dentist_id" required><option value="">Choose dentist…</option>{% for d in all_dentists %}<option value="{{ d.id }}" {{ 'selected' if d.name == gr.dentist }}>{{ d.name }}</option>{% endfor %}</select>
+<div class="row mt-1"><button class="btn btn-secondary btn-sm">Save</button></div></form></details>
+{% for pr in gr.procs %}
 <details><summary>Edit “{{ (pr.description or "").split("\n")[0]|truncate(28) }}”</summary><form method="post" action="{{ url_for('patients.procedure_action', patient_id=p.id, proc_id=pr.id) }}" class="mt-1">{{ csrf() }}
-<label class="sr-only" for="ed{{ pr.id }}">Description</label><input id="ed{{ pr.id }}" name="description" value="{{ pr.description }}">
+<label class="sr-only" for="ed{{ pr.id }}">Description</label><textarea id="ed{{ pr.id }}" name="description" rows="3">{{ pr.description }}</textarea>
 <label class="sr-only" for="et{{ pr.id }}">Tooth</label><input id="et{{ pr.id }}" name="tooth" value="{{ pr.tooth }}" placeholder="Tooth" class="mt-1">
 <label class="sr-only" for="edt{{ pr.id }}">Date</label><input id="edt{{ pr.id }}" type="date" name="performed_at" value="{{ (pr.performed_at or '')[:10] }}" class="mt-1">
 <div class="row mt-1"><button class="btn btn-secondary btn-sm" name="action" value="edit">Save</button><button class="btn btn-danger btn-sm" name="action" value="delete" formnovalidate data-confirm="Delete “{{ (pr.description or "").split("\n")[0]|truncate(40) }}” from the progress notes?">Delete</button></div></form></details>{% endfor %}{% endif %}

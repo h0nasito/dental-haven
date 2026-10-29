@@ -156,6 +156,27 @@ class TestBillingReport(Base):
         got = {r["description"]: r["dentist_id"] for r in self.conn.all("SELECT description, dentist_id FROM invoice_items WHERE invoice_id = ?", (inv["id"],))}
         self.assertEqual(got, {"CBCT SCAN": None, "Denture Impression": self.dentist["id"]})
 
+    def test_visit_dentist_from_bill_and_set_by_staff(self):
+        from app.util import now_str
+        inv = self.q("SELECT id FROM invoices WHERE patient_id = ? AND substr(issued_at, 1, 10) = '2026-10-13'", (self.pid,))
+        self.conn.execute("UPDATE invoice_items SET dentist_id = ? WHERE invoice_id = ?", (self.dentist["id"], inv["id"]))
+        pr = self.conn.insert("procedures", {"patient_id": self.pid, "description": "Extraction\nVisit text one", "status": "completed",
+                                             "performed_at": "2026-10-13", "created_at": now_str(), "legacy_key": "pn-vd-1"})
+        lone = self.conn.insert("procedures", {"patient_id": self.pid, "description": "Trial crown", "status": "completed",
+                                               "performed_at": "2026-09-02", "created_at": now_str(), "legacy_key": "pn-vd-2"})
+        c = self.login("admin")
+        page = c.get(f"/staff/patients/{self.pid}?tab=notes").data.decode()
+        row = page.split("Visit text one")[0].rsplit("pn-date", 1)[1]
+        self.assertIn(self.dentist["name"], row)            # shown from the bill, nothing saved yet
+        self.assertIn("Set dentist", page)
+        r = c.post(f"/staff/patients/{self.pid}/procedures/dentist", data={"ids": [lone], "dentist_id": self.dentist["id"]})
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(self.q("SELECT performed_by FROM procedures WHERE id = ?", (lone,))["performed_by"], self.dentist["id"])
+        # editing keeps the note's lines
+        c.post(f"/staff/patients/{self.pid}/procedures/{pr}", data={"action": "edit", "description": "Extraction\r\nVisit text one\r\nLine 2",
+                                                                    "tooth": "", "performed_at": "2026-10-13"})
+        self.assertEqual(self.q("SELECT description FROM procedures WHERE id = ?", (pr,))["description"], "Extraction\nVisit text one\nLine 2")
+
     def test_not_a_billing_report(self):
         r = self.login("admin").post("/staff/admin/import/billing-report", data={"files": [(io.BytesIO(b"not excel"), "x.xlsx")]},
                                      content_type="multipart/form-data", follow_redirects=True)

@@ -331,16 +331,33 @@ def progress_groups(conn, patient_id, procedures, notes):
         it = dict(it)
         pool.setdefault((it["day"] or "", it["dentist"] or ""), []).append(it)
     branch_names = {b["id"]: b["name"] for b in conn.all("SELECT id, name FROM branches")}
+    # MyMedsPH visits come without a dentist: show the one on that day's bill (one dentist that day, or the same procedure)
+    billed_by: dict[str, list] = {}
+    for it in items:
+        if it["dentist"]:
+            billed_by.setdefault(it["day"] or "", []).append((it["description"].split(" · ")[0].strip().lower(), it["dentist"]))
+
+    def who_did(pr, day, first):
+        if pr["dentist"] or not pr["legacy_key"]:
+            return pr["dentist"]
+        lines = billed_by.get(day, [])
+        names = {n for _, n in lines}
+        if len(names) == 1:
+            return next(iter(names))
+        f = first.strip().lower()
+        return next((n for w, n in lines if w and f and (w.startswith(f) or f.startswith(w))), None)
+
     for pr in procedures:
         if pr["status"] != "completed":
             continue
         day = (pr["performed_at"] or pr["created_at"])[:10]
-        gr = grp(day, pr["dentist"], branch_names.get(pr["branch_id"], ""))
-        price, inv = None, None
-        # imported visits: "service\nnote" (MyMedsPH repeats the visit's note on every procedure: show it once)
         first, _, extra = (pr["description"] or "").partition("\n")
         extra = extra.strip()
-        for it in pool.get((day, pr["dentist"] or ""), []):
+        who = who_did(pr, day, first)
+        gr = grp(day, who, branch_names.get(pr["branch_id"], ""))
+        price, inv = None, None
+        # imported visits: "service\nnote" (MyMedsPH repeats the visit's note on every procedure: show it once)
+        for it in pool.get((day, who or ""), []):
             idesc = it["description"].split(" · ")[0].strip().lower()
             same = (pr["service_id"] and it["service_id"] == pr["service_id"]) or it["description"].strip().lower() == first.strip().lower() \
                 or idesc == first.strip().lower()
@@ -940,13 +957,51 @@ def procedure_action(patient_id, proc_id):
         audit.record("progress_deleted", "patient", patient_id, f"Deleted progress note: {pr['description'][:60]}", {"entry": dict(pr)})
         flash("Progress note deleted. A copy is kept in the audit trail.", "success")
     else:
-        vals = {"description": clean(request.form.get("description"), 1000) or pr["description"],
+        desc = (request.form.get("description") or "").replace("\r\n", "\n").strip()[:8000]
+        vals = {"description": desc or pr["description"],
                 "tooth": clean(request.form.get("tooth"), 40),
                 "performed_at": (parse_date(request.form.get("performed_at")) or parse_date(pr["performed_at"]) or today()).isoformat()}
+        if "dentist_id" in request.form:
+            did = _dentist_choice(conn, request.form.get("dentist_id"))
+            if did is not False:
+                vals.update(performed_by=did, legacy_dentist=0)       # set by staff: a later billing report upload keeps it
         conn.update("procedures", proc_id, vals)
         audit.record("progress_edited", "patient", patient_id, "Edited progress note", audit.diff(dict(pr), vals, vals.keys()))
         flash("Progress note updated.", "success")
     return redirect(url_for("patients.detail", patient_id=patient_id, tab="clinical"))
+
+
+def _dentist_choice(conn, raw):
+    """Form value -> dentist user id, None for 'not set', or False when it isn't a dentist."""
+    if not raw:
+        return None
+    try:
+        did = int(raw)
+    except ValueError:
+        return False
+    return did if conn.one("SELECT id FROM users WHERE id = ? AND role = 'dentist'", (did,)) else False
+
+
+@bp.route("/<int:patient_id>/procedures/dentist", methods=["POST"])
+@require("progress.actions")
+def procedures_dentist(patient_id):
+    """Set the dentist on all the procedures of one visit (progress notes row)."""
+    conn = get_db()
+    _load(patient_id)
+    _require_clinical(patient_id, edit=True, perm="progress.actions")
+    did = _dentist_choice(conn, request.form.get("dentist_id"))
+    ids = [int(x) for x in request.form.getlist("ids") if x.isdigit()][:200]
+    if did is False or not ids:
+        flash("Choose a dentist.", "error")
+        return redirect(url_for("patients.detail", patient_id=patient_id, tab="notes"))
+    marks = ",".join("?" * len(ids))
+    rows = conn.all(f"SELECT id, performed_by FROM procedures WHERE patient_id = ? AND id IN ({marks})", (patient_id, *ids))
+    for r in rows:
+        conn.execute("UPDATE procedures SET performed_by = ?, legacy_dentist = 0 WHERE id = ?", (did, r["id"]))
+    audit.record("progress_edited", "patient", patient_id, "Set the dentist on a visit",
+                 {"procedures": [r["id"] for r in rows], "from": sorted({r["performed_by"] or 0 for r in rows}), "to": did})
+    flash("Dentist saved for this visit.", "success")
+    return redirect(url_for("patients.detail", patient_id=patient_id, tab="notes"))
 
 
 @bp.route("/<int:patient_id>/notes/<int:note_id>/delete", methods=["POST"])
