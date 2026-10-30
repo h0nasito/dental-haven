@@ -132,6 +132,7 @@ CATALOG: list[Perm] = [
     Perm("inventory.manage", "Update inventory: stock counts, receive and use items, edit items and prices", "Inventory"),
     Perm("inventory.order", "Make the monthly order list for their branch (before month end)", "Inventory"),
     Perm("inventory.order_approve", "Approve order lists, mark them ordered and received (adds to stock)", "Inventory", True),
+    Perm("inventory.order_void", "Void inventory order approval: undo an approval, cancel a list at any stage, void a received list (takes its stock back out)", "Inventory", True),
     # Expenses
     Perm("expenses.view", "View Expenses", "Expenses", True),
     Perm("expenses.post", "Post Expenses", "Expenses", True),

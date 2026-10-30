@@ -1,6 +1,12 @@
 {% extends "staff/layout.html" %}
 {% from "macros.html" import csrf %}
-{% block page_title %}Order list · {{ o.location }}{% endblock %}
+{% block page_title %}Order list · {{ o.location }}{% if can_void and o.status != 'cancelled' %}<div class="card mt-1"><details><summary>Void{% if o.status in ('approved','ordered') %} or undo approval{% endif %}</summary>
+<form method="post" class="mt-1">{{ csrf() }}
+<div class="field"><label for="vr">Reason</label><input id="vr" name="void_reason" maxlength="500" required placeholder="e.g. Approved by mistake, wrong quantities"></div>
+<div class="row" style="gap:.5rem">{% if o.status in ('approved','ordered') %}<button class="btn btn-secondary" name="action" value="unapprove" data-confirm="Undo the approval? The list goes back to waiting for approval.">Undo approval</button>{% endif %}
+<button class="btn btn-danger" name="action" value="void" data-confirm="Void this order list?{% if o.status == 'received' %} The received quantities are taken back out of {{ o.location }} stock.{% endif %}">Void order list</button></div>
+<p class="hint">{% if o.status == 'received' %}Voiding a received list takes its received quantities back out of {{ o.location }} stock. {% endif %}Recorded in the audit trail.</p></form></details></div>{% endif %}
+{% endblock %}
 {% block content %}
 <div class="page-head"><div><a href="{{ url_for('inv_orders.index') }}">← Order lists</a>
 <h1>{{ o.location }} · {{ month_label(o.for_month) }}</h1>
@@ -55,4 +61,10 @@
 <button class="btn" data-confirm="Add the received quantities to {{ o.location }} stock?">Confirm received</button></form>{% endif %}
 {% if o.status in ('draft','submitted','approved') and (can_approve or o.created_by == current_user.id) %}
 <form method="post" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="cancel"><button class="btn btn-ghost btn-sm" data-confirm="Cancel this order list?">Cancel order list</button></form>{% endif %}
+{% if can_void and o.status != 'cancelled' %}<div class="card mt-1"><details><summary>Void{% if o.status in ('approved','ordered') %} or undo approval{% endif %}</summary>
+<form method="post" class="mt-1">{{ csrf() }}
+<div class="field"><label for="vr">Reason</label><input id="vr" name="void_reason" maxlength="500" required placeholder="e.g. Approved by mistake, wrong quantities"></div>
+<div class="row" style="gap:.5rem">{% if o.status in ('approved','ordered') %}<button class="btn btn-secondary" name="action" value="unapprove" data-confirm="Undo the approval? The list goes back to waiting for approval.">Undo approval</button>{% endif %}
+<button class="btn btn-danger" name="action" value="void" data-confirm="Void this order list?{% if o.status == 'received' %} The received quantities are taken back out of {{ o.location }} stock.{% endif %}">Void order list</button></div>
+<p class="hint">{% if o.status == 'received' %}Voiding a received list takes its received quantities back out of {{ o.location }} stock. {% endif %}Recorded in the audit trail.</p></form></details></div>{% endif %}
 {% endblock %}

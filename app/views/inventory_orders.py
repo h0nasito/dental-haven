@@ -40,6 +40,10 @@ def can_approve():
     return g.user.is_super_admin or g.user.can("inventory.order_approve")
 
 
+def can_void():
+    return g.user.is_super_admin or g.user.can("inventory.order_void")
+
+
 def _guard():
     if not (can_make() or can_approve()):
         abort(403)
@@ -183,6 +187,47 @@ def order(order_id):
             abort(403)
         if action in ("approve", "return", "ordered", "receive") and not can_approve():
             abort(403)
+        if action in ("unapprove", "void"):
+            if not can_void():
+                abort(403)
+            reason = clean(f.get("void_reason"), 500)
+            if len(reason) < 3:
+                flash("Write the reason.", "error")
+                return back
+            if action == "unapprove" and o["status"] not in ("approved", "ordered"):
+                flash("Only an approved or ordered list can go back for approval.", "error")
+                return back
+            if action == "void" and o["status"] == "cancelled":
+                flash("This order list is already cancelled.", "error")
+                return back
+            with conn.transaction():
+                if action == "unapprove":
+                    conn.execute("UPDATE inventory_order_lines SET approved_qty = NULL WHERE order_id = ?", (order_id,))
+                    conn.execute("UPDATE inventory_orders SET status = 'submitted', approved_by = NULL, approved_at = NULL, ordered_at = NULL, "
+                                 "review_note = ?, updated_at = ? WHERE id = ?", (f"Approval undone: {reason}", now_str(), order_id))
+                    notify(conn, [o["created_by"], o["submitted_by"]], "inventory_order", f"Order list approval undone: {o['location']}",
+                           reason[:200], f"/staff/inventory/orders/{order_id}", exclude=g.user.id)
+                    flash("Approval undone. The list is waiting for approval again.", "success")
+                else:
+                    taken = 0
+                    if o["status"] == "received":
+                        loc = conn.one("SELECT * FROM inventory_locations WHERE id = ?", (o["location_id"],))
+                        for ln in lines:
+                            q = ln["received_qty"] or 0
+                            if q > 0 and ln["item_id"]:
+                                item = conn.one("SELECT * FROM inventory_items WHERE id = ?", (ln["item_id"],))
+                                cur = conn.scalar("SELECT qty FROM inventory_stock WHERE location_id = ? AND item_id = ?", (loc["id"], item["id"])) or 0
+                                _apply(conn, loc, item, change=-min(q, cur), kind="adjust",
+                                       note=f"Order list #{order_id} voided: {reason}"[:200])
+                                taken += 1
+                    conn.execute("UPDATE inventory_orders SET status = 'cancelled', review_note = ?, updated_at = ? WHERE id = ?",
+                                 (f"Voided: {reason}", now_str(), order_id))
+                    flash("Order list voided." + (f" Received quantities of {taken} item{'s' if taken != 1 else ''} were taken back out of stock."
+                                                   if taken else ""), "success")
+                audit.record(f"inventory_order_{action}", "inventory_order", order_id,
+                             f"Order list {o['location']} {o['for_month']}: {'approval undone' if action == 'unapprove' else 'voided'}",
+                             {"reason": reason, "status_before": o["status"]}, branch_id=o["branch_id"])
+            return back
         allowed_from = {"submit": ("draft",), "approve": ("submitted",), "return": ("submitted",), "ordered": ("approved",),
                         "receive": ("approved", "ordered"), "cancel": ("draft", "submitted", "approved")}
         if action in allowed_from and o["status"] not in allowed_from[action]:
@@ -274,7 +319,7 @@ def order(order_id):
     items = conn.all("SELECT name, unit FROM inventory_items WHERE active = 1 AND scope = ? ORDER BY name", (_scope(conn, o),))
     total = sum(round((ln["approved_qty"] if ln["approved_qty"] is not None else ln["qty"]) * ln["unit_price_cents"])
                 for ln in lines if ln["unit_price_cents"] is not None)
-    return render_template("staff/inventory/order.html", o=o, lines=lines, items=items, statuses=STATUSES, month_label=month_label,
+    return render_template("staff/inventory/order.html", o=o, can_void=can_void(), lines=lines, items=items, statuses=STATUSES, month_label=month_label,
                            editable=editable, can_approve=can_approve(), can_make=can_make(), total=total, fmt_qty=fmt_qty, peso=peso)
 
 

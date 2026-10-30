@@ -53,6 +53,34 @@ class TestInventoryOrders(Base):
         self.assertEqual(self.q("SELECT qty FROM inventory_stock WHERE location_id = ? AND item_id = ?", (self.loc["id"], self.item["id"]))["qty"], 7)
         self.assertIsNotNone(self.q("SELECT id FROM inventory_moves WHERE item_id = ? AND kind = 'received' AND note LIKE 'Order list #%'", (self.item["id"],)))
         self.assertIn("Order list", admin.get(f"/staff/inventory/orders/{oid}/print").data.decode())
+        # voiding a received list (super admin / "Void inventory order approval") takes the stock back out; staff can't
+        self.assertEqual(staff.post(f"/staff/inventory/orders/{oid}", data={"action": "void", "void_reason": "mistake"}).status_code, 403)
+        self.assertIn("Void order list", admin.get(f"/staff/inventory/orders/{oid}").data.decode())
+        admin.post(f"/staff/inventory/orders/{oid}", data={"action": "void", "void_reason": ""})
+        self.assertEqual(self.q("SELECT status FROM inventory_orders WHERE id = ?", (oid,))["status"], "received")   # reason needed
+        admin.post(f"/staff/inventory/orders/{oid}", data={"action": "void", "void_reason": "Received twice by mistake"})
+        self.assertEqual(self.q("SELECT status FROM inventory_orders WHERE id = ?", (oid,))["status"], "cancelled")
+        self.assertEqual(self.q("SELECT qty FROM inventory_stock WHERE location_id = ? AND item_id = ?", (self.loc["id"], self.item["id"]))["qty"], 2)
+
+    def test_undo_approval(self):
+        staff = self.login("staff.malolos")
+        oid = self.start(staff)
+        staff.post(f"/staff/inventory/orders/{oid}", data={"action": "submit"})
+        admin = self.login("admin")
+        admin.post(f"/staff/inventory/orders/{oid}", data={"action": "approve"})
+        admin.post(f"/staff/inventory/orders/{oid}", data={"action": "ordered"})
+        admin.post(f"/staff/inventory/orders/{oid}", data={"action": "unapprove", "void_reason": "Approved by mistake"})
+        o = self.q("SELECT * FROM inventory_orders WHERE id = ?", (oid,))
+        self.assertEqual((o["status"], o["approved_by"]), ("submitted", None))
+        self.assertIn("Approved by mistake", o["review_note"])
+        # a person given the permission can do it
+        from app.util import now_str
+        uid = self.q("SELECT id FROM users WHERE email LIKE 'staff.malolos@%'")["id"]
+        admin.post(f"/staff/inventory/orders/{oid}", data={"action": "approve"})
+        self.conn.execute("INSERT INTO user_permissions (user_id, permission, granted) VALUES (?, 'inventory.order_void', 1)", (uid,))
+        self.login("staff.malolos").post(f"/staff/inventory/orders/{oid}", data={"action": "unapprove", "void_reason": "Wrong items"})
+        self.assertEqual(self.q("SELECT status FROM inventory_orders WHERE id = ?", (oid,))["status"], "submitted")
+        self.conn.execute("DELETE FROM user_permissions WHERE user_id = ?", (uid,))
 
     def test_access(self):
         d = self.login("dentist.malolos")
