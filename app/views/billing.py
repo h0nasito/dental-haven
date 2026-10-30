@@ -111,6 +111,35 @@ def invoice_new():
                            branches=branches_for_user(g.user))
 
 
+@bp.route("/invoices/<int:invoice_id>/mymeds-paid", methods=["POST"])
+@require("billing.void")
+def mymeds_paid(invoice_id):
+    """An imported MyMedsPH bill that MyMedsPH shows as paid but isn't paid here: record the payment as "Paid in MyMedsPH",
+    dated on the bill date, so it doesn't count as money received today (daily collection, deposits). Void it like any
+    payment. Billing report uploads count it as already paid."""
+    import secrets
+    from ..billing import LEGACY_METHOD
+    conn = get_db()
+    inv = _load_invoice(invoice_id)
+    bal = inv["total_cents"] - paid_amount(conn, invoice_id)
+    amt = parse_money(request.form.get("amount"))
+    if not inv["legacy"] or inv["status"] != "issued":
+        abort(404)
+    if not amt or amt <= 0 or amt > bal:
+        flash(f"Enter an amount up to the balance ({bal / 100:,.2f}).", "error")
+        return redirect(url_for("billing.invoice", invoice_id=invoice_id))
+    day = (inv["issued_at"] or inv["created_at"])[:10]
+    pid = conn.insert("payments", {"invoice_id": invoice_id, "branch_id": inv["branch_id"], "kind": "payment", "amount_cents": amt,
+                                   "method": LEGACY_METHOD, "account": "", "reference": clean(request.form.get("reference"), 80),
+                                   "received_at": f"{day} 12:00:00", "received_by": g.user.id, "status": "valid",
+                                   "notes": "Paid in MyMedsPH (marked by staff)", "created_at": now_str(),
+                                   "legacy_key": f"mmm:{invoice_id}:{secrets.token_hex(4)}"})
+    audit.record("payment_mymeds_marked", "invoice", invoice_id, f"Marked {amt / 100:,.2f} as paid in MyMedsPH", {"payment": pid},
+                 inv["branch_id"])
+    flash("Recorded as paid in MyMedsPH, on the bill date (not in today's collections).", "success")
+    return redirect(url_for("billing.invoice", invoice_id=invoice_id))
+
+
 @bp.route("/invoices/<int:invoice_id>")
 @require("billing.view")
 def invoice(invoice_id):

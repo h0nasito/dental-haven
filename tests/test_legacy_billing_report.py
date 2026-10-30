@@ -193,6 +193,23 @@ class TestBillingReport(Base):
         self.assertEqual(got, {"CBCT SCAN": other["id"], "Denture Impression": self.dentist["id"]})
         self.assertEqual(self.paid("2026-10-01"), 850000 + 2000000)
 
+    def test_mark_paid_in_mymeds(self):
+        inv = self.q("SELECT id FROM invoices WHERE patient_id = ? AND substr(issued_at, 1, 10) = '2026-10-13'", (self.pid,))
+        self.conn.execute("DELETE FROM payments WHERE invoice_id = ?", (inv["id"],))
+        a = self.login("admin")
+        self.assertIn("Paid in MyMedsPH (old bill)", a.get(f"/staff/invoices/{inv['id']}").data.decode())
+        a.post(f"/staff/invoices/{inv['id']}/mymeds-paid", data={"amount": "3000"})
+        p = self.q("SELECT * FROM payments WHERE invoice_id = ? AND status = 'valid'", (inv["id"],))
+        self.assertEqual((p["amount_cents"], p["received_at"][:10], p["method"]), (300000, "2026-10-13", "mymeds"))
+        self.assertTrue(p["legacy_key"].startswith("mmm:"))
+        self.assertEqual(self.login("staff.malolos").post(f"/staff/invoices/{inv['id']}/mymeds-paid", data={"amount": "1"}).status_code, 403)
+        # a billing report upload counts it as paid already (nothing added twice)
+        from app import legacy_billing_report as br
+        with self.app.app_context():
+            br.apply(self.conn, br.read_reports([("doc.xlsx", workbook(self.rows[2:3][:0] + [["Oct 13, 2026", self.name, self.dentist["name"],
+                     "Dental Haven Malolos ", "", "Extraction (#14, 15)", 3000.0, 0.0, 3000.0, 3000.0, ""]]))]), None)
+        self.assertEqual(self.paid("2026-10-13"), 300000)
+
     def test_not_a_billing_report(self):
         r = self.login("admin").post("/staff/admin/import/billing-report", data={"files": [(io.BytesIO(b"not excel"), "x.xlsx")]},
                                      content_type="multipart/form-data", follow_redirects=True)

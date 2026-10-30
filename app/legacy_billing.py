@@ -102,8 +102,9 @@ def undo(conn) -> dict:
     conn.execute("CREATE TEMP TABLE tmp_legacy_undo (id INTEGER PRIMARY KEY)")
     conn.execute("INSERT INTO tmp_legacy_undo (id) SELECT id FROM invoices WHERE legacy = 1 AND status = 'issued'")
     # keep bills staff have worked on: one pass over each table
-    conn.execute("DELETE FROM tmp_legacy_undo WHERE id IN (SELECT invoice_id FROM payments WHERE method != ? "
-                 "AND (legacy_key IS NULL OR (legacy_key NOT LIKE 'mmc:%' AND legacy_key NOT LIKE 'mmb:%')))", (LEGACY_METHOD,))
+    conn.execute("DELETE FROM tmp_legacy_undo WHERE id IN (SELECT invoice_id FROM payments WHERE (method != ? "
+                 "AND (legacy_key IS NULL OR (legacy_key NOT LIKE 'mmc:%' AND legacy_key NOT LIKE 'mmb:%'))) OR legacy_key LIKE 'mmm:%')",
+                 (LEGACY_METHOD,))
     conn.execute("DELETE FROM tmp_legacy_undo WHERE id IN (SELECT invoice_id FROM invoice_items WHERE dentist_id IS NOT NULL AND legacy_dentist = 0)")
     for t in ("patient_credits", "payment_signatures", "dentist_commissions", "quotations", "visit_notes"):
         conn.execute(f"DELETE FROM tmp_legacy_undo WHERE id IN (SELECT invoice_id FROM {t} WHERE invoice_id IS NOT NULL)")
