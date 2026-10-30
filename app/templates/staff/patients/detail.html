@@ -147,6 +147,8 @@
 <label class="sr-only" for="ed{{ pr.id }}">Description</label><textarea id="ed{{ pr.id }}" name="description" rows="3">{{ pr.description }}</textarea>
 <label class="sr-only" for="et{{ pr.id }}">Tooth</label><input id="et{{ pr.id }}" name="tooth" value="{{ pr.tooth }}" placeholder="Tooth" class="mt-1">
 <label class="sr-only" for="edt{{ pr.id }}">Date</label><input id="edt{{ pr.id }}" type="date" name="performed_at" value="{{ (pr.performed_at or '')[:10] }}" class="mt-1">
+{% if not pr.xray_id %}{% set cur_price = proc_prices.get(pr.id) %}<label for="epr{{ pr.id }}" class="mt-1">Price (₱)</label><input id="epr{{ pr.id }}" name="price" value="{{ '%.2f'|format(cur_price / 100) if cur_price is not none else '' }}" inputmode="decimal" placeholder="price">
+<input type="hidden" name="price_was" value="{{ '%.2f'|format(cur_price / 100) if cur_price is not none else '' }}"><small class="muted">Changes the bill too, as long as it has no payment yet.</small>{% endif %}
 <div class="row mt-1"><button class="btn btn-secondary btn-sm" name="action" value="edit">Save</button><button class="btn btn-danger btn-sm" name="action" value="delete" formnovalidate data-confirm="Delete “{{ (pr.description or "").split("\n")[0]|truncate(40) }}” from the progress notes?">Delete</button></div></form></details>{% endfor %}{% endif %}
 {% if gr.billed and current_user.can('billing.view') %}<p class="kebab-h">Billed items</p>{% for b in gr.billed %}
 {% if b.status == 'draft' and current_user.can('bills.edit') %}<form method="post" action="{{ url_for('billing.invoice_edit', invoice_id=b.inv_id) }}">{{ csrf() }}

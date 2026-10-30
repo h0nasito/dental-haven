@@ -527,6 +527,8 @@ def detail(patient_id):
     if clinical and tab == "notes":
         import json
         ctx["pn_groups"] = progress_groups(conn, patient_id, ctx["procedures"], ctx["notes"])
+        ctx["proc_prices"] = {ln["proc"]["id"]: (ln["price"] if ln["price"] is not None else ln["proc"]["price_cents"])
+                              for gr in ctx["pn_groups"] for ln in gr["lines"] if ln["proc"]}
         from ..fee_schedule import picker_options
         ctx["price_options"] = picker_options(conn) or conn.all(
             "SELECT pi.name, pi.service_id, pi.price_from_cents AS price, pi.unit, '' AS category, 1 AS per_count FROM price_items pi "
@@ -958,6 +960,65 @@ def assign(patient_id):
 # Progress note actions, attachment delete, patient delete
 # ---------------------------------------------------------------------------
 
+def bill_line_for(conn, pr):
+    """The bill line of a progress-note procedure: on its own bill (recorded procedure or the visit's bill), else (imported
+    visits) a bill line of the same patient, day and service. Returns (invoice row, line row) or (None, None)."""
+    first = (pr["description"] or "").split("\n", 1)[0].strip().lower()
+    inv_ids = []
+    if pr["invoice_id"]:
+        inv_ids.append(pr["invoice_id"])
+    if pr["visit_note_id"]:
+        v = conn.one("SELECT invoice_id FROM visit_notes WHERE id = ?", (pr["visit_note_id"],))
+        if v and v["invoice_id"]:
+            inv_ids.append(v["invoice_id"])
+    day = (pr["performed_at"] or pr["created_at"] or "")[:10]
+    cands = conn.all("SELECT ii.*, i.id AS inv FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id WHERE i.status != 'void' AND "
+                     + (f"i.id IN ({','.join('?' * len(inv_ids))})" if inv_ids else
+                        "i.patient_id = ? AND COALESCE(ii.done_on, substr(i.issued_at, 1, 10), substr(i.created_at, 1, 10)) = ?"),
+                     inv_ids or [pr["patient_id"], day])
+    for ln in cands:
+        d = (ln["description"] or "").split(" · ")[0].strip().lower()
+        if (pr["service_id"] and ln["service_id"] == pr["service_id"]) or d == first:
+            if (pr["tooth"] or "") and (ln["tooth"] or "") and (pr["tooth"] or "").replace(" ", "") != (ln["tooth"] or "").replace(" ", ""):
+                continue
+            return conn.one("SELECT * FROM invoices WHERE id = ?", (ln["inv"],)), ln
+    return None, None
+
+
+def _set_proc_price(conn, pr, price: int) -> str:
+    """Change the price of a progress-note procedure, and of its bill line if it has one (only while that bill has no
+    payments). Returns an error message, or ''."""
+    import json
+    from ..billing import line_amount, paid_amount
+    inv, ln = bill_line_for(conn, pr)
+    if inv:
+        if paid_amount(conn, inv["id"]) > 0:
+            return "This bill already has a payment, so its price can't be changed here. Void the payment first, or use a discount on the bill."
+        if inv["status"] == "issued" and not g.user.can("bills.edit"):
+            return "Only someone who can edit bills can change the price of a billed procedure."
+        conn.execute("UPDATE invoice_items SET unit_price_cents = ?, amount_cents = ? WHERE id = ?",
+                     (price, line_amount(ln["qty"], price, ln["discount_cents"] or 0), ln["id"]))
+        from .billing import _recalc
+        _recalc(conn, inv["id"])
+        audit.record("invoice_line_price", "invoice", inv["id"], f"Price of “{ln['description'][:60]}” changed from the progress note",
+                     {"before": ln["unit_price_cents"], "after": price}, inv["branch_id"])
+    conn.execute("UPDATE procedures SET price_cents = ? WHERE id = ?", (price, pr["id"]))
+    if pr["visit_note_id"]:           # a note not billed yet: the cashier's bill uses the new price
+        v = conn.one("SELECT lines_json, invoice_id FROM visit_notes WHERE id = ?", (pr["visit_note_id"],))
+        if v and not v["invoice_id"]:
+            try:
+                raw = json.loads(v["lines_json"] or "[]")
+            except ValueError:
+                raw = []
+            first = (pr["description"] or "").split("\n", 1)[0].strip().lower()
+            for r in raw:
+                if (r.get("desc") or "").strip().lower() == first and (r.get("tooth") or "") == (pr["tooth"] or ""):
+                    r["price"] = f"{price / 100:.2f}"
+                    break
+            conn.execute("UPDATE visit_notes SET lines_json = ? WHERE id = ?", (json.dumps(raw), pr["visit_note_id"]))
+    return ""
+
+
 @bp.route("/<int:patient_id>/procedures/<int:proc_id>", methods=["POST"])
 @require("progress.actions")
 def procedure_action(patient_id, proc_id):
@@ -980,9 +1041,18 @@ def procedure_action(patient_id, proc_id):
             did = _dentist_choice(conn, request.form.get("dentist_id"))
             if did is not False:
                 vals.update(performed_by=did, legacy_dentist=0)       # set by staff: a later billing report upload keeps it
-        conn.update("procedures", proc_id, vals)
+        raw_price = (request.form.get("price") or "").strip()
+        new_price = parse_money(raw_price) if raw_price else None
+        if raw_price and (new_price is None or new_price < 0):
+            flash("Check the price.", "error")
+            return redirect(url_for("patients.detail", patient_id=patient_id, tab="notes"))
+        err = ""
+        with conn.transaction():
+            conn.update("procedures", proc_id, vals)
+            if new_price is not None and str(request.form.get("price_was") or "") != raw_price:
+                err = _set_proc_price(conn, pr, new_price)
         audit.record("progress_edited", "patient", patient_id, "Edited progress note", audit.diff(dict(pr), vals, vals.keys()))
-        flash("Progress note updated.", "success")
+        flash(err, "error") if err else flash("Progress note updated.", "success")
     return redirect(url_for("patients.detail", patient_id=patient_id, tab="clinical"))
 
 

@@ -265,3 +265,34 @@ class TestVisitNoteXray(Base):
         # cancelling the visit voids the unpaid X-ray
         admin.post(f"/staff/patients/{self.pid}/visit-notes/{v['id']}/cancel", data={"reason": "wrong patient"})
         self.assertEqual(self.q("SELECT status FROM xrays WHERE id = ?", (x["id"],))["status"], "void")
+
+
+class TestProgressNotePrice(Base):
+    """Changing a saved progress note's price changes its bill, as long as the bill has no payment."""
+    _post = TestVisitNote._post
+
+    def setUp(self):
+        self.doc = self.q("SELECT id FROM users WHERE email = 'dentist.sjdm@demo.dentalhaven.test'")["id"]
+        self.pid = self.q("SELECT patient_id AS id FROM patient_assignments WHERE dentist_id = ? LIMIT 1", (self.doc,))["id"]
+        self.sjdm = self.branch("sjdm")
+
+    def test_change_price_until_paid(self):
+        from app.util import now_str
+        admin = self.login("admin")
+        self._post(admin, signature="", recall_date="", line_service_id=[""], line_desc=["Pasta (demo price test)"], line_tooth=["16"],
+                   line_qty=[""], line_price=["1000"], line_disc=[""], bill_disc="")
+        v = self.q("SELECT * FROM visit_notes WHERE patient_id = ? AND status = 'saved' ORDER BY id DESC", (self.pid,))
+        pr = self.q("SELECT * FROM procedures WHERE visit_note_id = ?", (v["id"],))
+        self.assertIn(f'id="epr{pr["id"]}"', admin.get(f"/staff/patients/{self.pid}?tab=notes").data.decode())
+        admin.post(f"/staff/patients/{self.pid}/procedures/{pr['id']}", data={"action": "edit", "description": pr["description"], "tooth": "16",
+                                                                             "performed_at": pr["performed_at"], "price": "1500", "price_was": "1000.00"})
+        inv = self.q("SELECT * FROM invoices WHERE id = ?", (v["invoice_id"],))
+        self.assertEqual(inv["total_cents"], 150000)
+        # once paid, the price stays
+        self.conn.insert("payments", {"invoice_id": inv["id"], "branch_id": self.sjdm, "kind": "payment", "amount_cents": 50000, "method": "cash",
+                                      "received_at": now_str(), "status": "valid", "created_at": now_str()})
+        r = admin.post(f"/staff/patients/{self.pid}/procedures/{pr['id']}", data={"action": "edit", "description": pr["description"], "tooth": "16",
+                                                                                 "performed_at": pr["performed_at"], "price": "900", "price_was": "1500.00"},
+                       follow_redirects=True)
+        self.assertIn("already has a payment", r.data.decode())
+        self.assertEqual(self.q("SELECT total_cents FROM invoices WHERE id = ?", (inv["id"],))["total_cents"], 150000)
