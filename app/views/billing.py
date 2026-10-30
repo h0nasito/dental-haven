@@ -111,6 +111,47 @@ def invoice_new():
                            branches=branches_for_user(g.user))
 
 
+@bp.route("/invoices/<int:invoice_id>/discount", methods=["POST"])
+@require("bills.edit")
+def issued_discount(invoice_id):
+    """Discount on an issued bill (e.g. senior citizen/PWD, promo): an amount or a % of the bill, with a reason. The bill's
+    total can't go below what's already paid. Replaces the bill's earlier discount; recorded in the bill's history."""
+    conn = get_db()
+    inv = _load_invoice(invoice_id)
+    back = url_for("billing.invoice", invoice_id=invoice_id)
+    if inv["status"] != "issued":
+        flash("Only issued bills here; on a draft, use Invoice discount.", "error")
+        return redirect(back)
+    raw = (request.form.get("value") or "").strip().rstrip("%")
+    reason = clean(request.form.get("reason"), 300)
+    sub_total = inv["subtotal_cents"]
+    if request.form.get("kind") == "percent":
+        try:
+            pct = float(raw)
+        except ValueError:
+            pct = -1
+        disc = round(sub_total * pct / 100) if 0 <= pct <= 100 else None
+    else:
+        disc = parse_money(raw) if raw else 0
+    paid = paid_amount(conn, invoice_id)
+    if disc is None or disc < 0 or disc > sub_total:
+        flash("Enter a discount between 0 and the bill's subtotal (or 0–100%).", "error")
+    elif len(reason) < 3:
+        flash("Write the reason for the discount (e.g. Senior citizen, ID checked).", "error")
+    elif compute_totals(conn.all("SELECT * FROM invoice_items WHERE invoice_id = ?", (invoice_id,)), disc, conn)["total_cents"] < paid:
+        flash(f"With this discount the bill would be less than what's already paid ({peso(paid)}). Refund or void a payment first.", "error")
+    else:
+        conn.execute("UPDATE invoices SET discount_cents = ? WHERE id = ?", (disc, invoice_id))
+        _recalc(conn, invoice_id)
+        if reason and reason not in (inv["notes"] or ""):
+            conn.execute("UPDATE invoices SET notes = ? WHERE id = ?", ((f"{inv['notes']} · " if inv["notes"] else "") + f"Discount: {reason}"[:500],
+                                                                       invoice_id))
+        audit.record("invoice_discount", "invoice", invoice_id, f"Discount {peso(disc)} on issued bill (was {peso(inv['discount_cents'] or 0)})",
+                     {"reason": reason}, inv["branch_id"])
+        flash(f"Discount of {peso(disc)} applied." if disc else "Discount removed.", "success")
+    return redirect(back)
+
+
 @bp.route("/invoices/<int:invoice_id>/mymeds-paid", methods=["POST"])
 @require("billing.void")
 def mymeds_paid(invoice_id):

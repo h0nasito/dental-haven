@@ -137,7 +137,7 @@ class TestLabWorkload(Base):
     def test_other_branch_dentist_sees_case_and_workload_but_cannot_update(self):
         self.assertIsNotNone(self.other)
         c = self.login(self.other["email"].replace(DOMAIN, ""))
-        page = c.get("/staff/lab/").data.decode()
+        page = c.get("/staff/lab/?view=branch").data.decode()
         self.assertIn("Lab workload", page)
         self.assertIn("Bridge", page)
         self.assertIn("Overdue", page)

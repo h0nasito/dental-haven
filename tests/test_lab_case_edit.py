@@ -95,3 +95,26 @@ class TestCaseArch(__import__("test_app").Base):
         c.post(f"/staff/lab/{cid}/edit", data={"item_id": str(it["id"]), "case_type": "Partial denture", "units": "1", "arch": "sideways",
                                                "teeth": "", "shade": "", "material": "", "material_new": "", "lab_fee": "", "instructions": ""})
         self.assertEqual(self.q("SELECT arch FROM lab_case_items WHERE case_id = ?", (cid,))["arch"], "")
+
+
+class TestDentistLabTabs(__import__("test_app").Base):
+    def test_my_cases_and_branch_cases(self):
+        from app.util import now_str, today
+        lab = self.q("SELECT id FROM laboratories WHERE name = 'DSDL'")["id"]
+        me = self.q("SELECT id FROM users WHERE email LIKE 'dentist.malolos@%'")["id"]
+        other = self.q("SELECT id FROM users WHERE email LIKE 'dentist.bocaue@%'")["id"]
+        p1 = self.conn.insert("patients", {"first_name": "Mine", "last_name": "Labtabcase", "chart_no": "DH-LT1", "preferred_branch_id": self.branch("malolos"), "created_at": now_str(), "updated_at": now_str()})
+        p2 = self.conn.insert("patients", {"first_name": "Other", "last_name": "Labtabcase", "chart_no": "DH-LT2", "preferred_branch_id": self.branch("malolos"), "created_at": now_str(), "updated_at": now_str()})
+        for pid, did in ((p1, me), (p2, other)):
+            self.conn.insert("lab_cases", {"lab_id": lab, "branch_id": self.branch("malolos"), "patient_id": pid, "dentist_id": did,
+                                           "case_type": "Crown", "status": "sent", "sent_on": today().isoformat(), "created_at": now_str()})
+        d = self.login("dentist.malolos")
+        mine = d.get("/staff/lab/").data.decode()
+        self.assertIn("My lab cases", mine)
+        self.assertIn("Labtabcase, Mine", mine)
+        self.assertNotIn("Labtabcase, Other", mine)
+        branch = d.get("/staff/lab/?view=branch").data.decode()
+        self.assertIn("Labtabcase, Other", branch)
+        self.assertIn("Labtabcase, Mine", branch)
+        # staff see no tabs
+        self.assertNotIn("My cases</a>", self.login("admin").get("/staff/lab/").data.decode())

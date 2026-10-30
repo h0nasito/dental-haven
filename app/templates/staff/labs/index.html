@@ -1,16 +1,17 @@
 {% extends "staff/layout.html" %}
 {% from "macros.html" import empty %}
-{% block page_title %}Branch cases{% endblock %}
+{% block page_title %}{{ 'My lab cases' if view == 'mine' else 'Branch cases' }}{% endblock %}
 {% block content %}
-<div class="page-head"><div><h1>Branch cases</h1><p>{% if lab_user %}Cases sent to your laboratory by the branches.{% elif all_view %}Crowns, bridges, dentures and other work the branches send to the laboratory. You can update your own branches' cases; other branches' cases are view only.{% else %}Crowns, bridges, dentures and other work sent to the laboratory.{% endif %}</p></div>
+<div class="page-head"><div><h1>{{ 'My lab cases' if view == 'mine' else 'Branch cases' }}</h1><p>{% if lab_user %}Cases sent to your laboratory by the branches.{% elif all_view %}Crowns, bridges, dentures and other work the branches send to the laboratory. You can update your own branches' cases; other branches' cases are view only.{% else %}Crowns, bridges, dentures and other work sent to the laboratory.{% endif %}</p></div>
 {% if current_user.can('lab.manage') %}<a class="btn" href="{{ url_for('labs.new') }}">+ New lab case</a>{% endif %}</div>
 {% if nav_lab_works or nav_lab_billing %}{% set active = 'cases' %}{% include "staff/lab_works/_nav.html" %}{% endif %}
+{% if view %}<nav class="pills" aria-label="Whose cases"><a href="{{ url_for('labs.index', view='mine', status=status, q=q) }}" class="{{ 'active' if view == 'mine' else '' }}">My cases</a><a href="{{ url_for('labs.index', view='branch', status=status, branch=branch or '', q=q) }}" class="{{ 'active' if view == 'branch' else '' }}">Branch cases</a></nav>{% endif %}
 <nav class="tabs" aria-label="Status">
-  <a href="{{ url_for('labs.index', status='open', branch=branch or '', q=q) }}" class="{{ 'active' if status == 'open' else '' }}">Open</a>
-  {% for k, l in statuses.items() if counts.get(k) or status == k or k == 'delivered' %}<a href="{{ url_for('labs.index', status=k, branch=branch or '', q=q) }}" class="{{ 'active' if status == k else '' }}">{{ l }}{% if counts.get(k) %} ({{ counts[k] }}){% endif %}</a>{% endfor %}
-  <a href="{{ url_for('labs.index', status='all', branch=branch or '', q=q) }}" class="{{ 'active' if status == 'all' else '' }}">All</a>
+  <a href="{{ url_for('labs.index', status='open', branch=branch or '', q=q, view=view or '') }}" class="{{ 'active' if status == 'open' else '' }}">Open</a>
+  {% for k, l in statuses.items() if counts.get(k) or status == k or k == 'delivered' %}<a href="{{ url_for('labs.index', status=k, branch=branch or '', q=q, view=view or '') }}" class="{{ 'active' if status == k else '' }}">{{ l }}{% if counts.get(k) %} ({{ counts[k] }}){% endif %}</a>{% endfor %}
+  <a href="{{ url_for('labs.index', status='all', branch=branch or '', q=q, view=view or '') }}" class="{{ 'active' if status == 'all' else '' }}">All</a>
 </nav>
-<form class="toolbar" method="get"><input type="hidden" name="status" value="{{ status }}">
+<form class="toolbar" method="get"><input type="hidden" name="status" value="{{ status }}">{% if view %}<input type="hidden" name="view" value="{{ view }}">{% endif %}
   <div class="field grow"><label for="lq">Search</label><input id="lq" name="q" value="{{ q }}" placeholder="Patient name, chart no., dentist, type of case or invoice no."></div>
   {% if branch_list %}<div class="field"><label for="lab-branch">Branch</label><select id="lab-branch" name="branch"><option value="">All branches</option>{% for b in branch_list %}<option value="{{ b.id }}" {% if b.id == branch %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select></div>{% endif %}
   <button class="btn btn-secondary">Show</button></form>

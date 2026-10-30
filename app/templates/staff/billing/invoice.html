@@ -102,6 +102,13 @@
 {% endif %}
 {% if inv.status == 'issued' and current_user.can('payments.add') and balance > 0 %}
 <h3 class="mt-1">Add payment</h3>{{ pay_form(inv, balance, paid, today, inv.first_name ~ ' ' ~ inv.last_name, '', comm_dentists, comm_info) }}{% endif %}
+{% if inv.status == 'issued' and current_user.can('bills.edit') %}
+<details class="mt-1" {{ 'open' if request.args.get('discount') }}><summary>Discount{% if inv.discount_cents %} ({{ inv.discount_cents|peso }}){% endif %}</summary><form method="post" action="{{ url_for('billing.issued_discount', invoice_id=inv.id) }}" class="mt-1">{{ csrf() }}
+<div class="row"><label class="sr-only" for="dk">Type</label><select id="dk" name="kind" style="max-width:150px"><option value="amount">Amount (₱)</option><option value="percent">Percent (%)</option></select>
+<label class="sr-only" for="dv">Discount</label><input id="dv" name="value" value="{{ '%.2f'|format(inv.discount_cents / 100) if inv.discount_cents else '' }}" inputmode="decimal" style="max-width:140px" required>
+<label class="sr-only" for="dr">Reason</label><input id="dr" name="reason" placeholder="Reason, e.g. Senior citizen (ID checked)" maxlength="300" required><button class="btn btn-secondary btn-sm">Apply discount</button></div>
+<p class="hint">Of the bill's subtotal {{ inv.subtotal_cents|peso }}. It replaces the bill's current discount; enter 0 to remove it. Senior citizen/PWD rules depend on the clinic's registration: confirm with your accountant.</p></form></details>
+{% endif %}
 {% if inv.legacy and inv.status == 'issued' and balance > 0 and current_user.can('billing.void') %}
 <details class="mt-1"><summary>Paid in MyMedsPH (old bill)</summary><form method="post" action="{{ url_for('billing.mymeds_paid', invoice_id=inv.id) }}" class="mt-1">{{ csrf() }}
 <p class="hint">For an imported bill that MyMedsPH shows as paid. It's recorded on the bill date ({{ (inv.issued_at or inv.created_at)|date }}) as “Paid in MyMedsPH”, so it doesn't count in today's collections.</p>

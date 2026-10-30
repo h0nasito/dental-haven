@@ -278,6 +278,13 @@ def index():
         abort(403)
     conn = get_db()
     frag, params = _scope("c")
+    # Dentists: "My cases" (cases where they're the dentist, the default) or "Branch cases" (everything they can see)
+    view = None
+    if g.user.role == "dentist":
+        asked = request.args.get("view")
+        view = asked if asked in ("mine", "branch") else ("branch" if request.args.get("branch") else "mine")
+        if view == "mine":
+            frag, params = frag + " AND c.dentist_id = ?", [*params, g.user.id]
     status = request.args.get("status", "open")
     where, args = [frag], list(params)
     all_view = g.user.is_super_admin or (g.user.can("lab.view") and g.user.can("lab.all_branches"))
@@ -322,7 +329,7 @@ def index():
     workload_cols = [k for k in workload_cols if any(w[k] for w in workload)]
     return render_template("staff/labs/index.html", rows=rows, status=status, statuses=STATUSES, counts=counts,
                            today=t.isoformat(), lab_user=bool(_my_labs()), workload=workload, workload_cols=workload_cols, all_view=all_view,
-                           branch_list=branch_list, branch=branch, q=q, soon=(t + timedelta(days=1)).isoformat())
+                           branch_list=branch_list, branch=branch, q=q, soon=(t + timedelta(days=1)).isoformat(), view=view)
 
 
 @bp.route("/new", methods=["GET", "POST"])
