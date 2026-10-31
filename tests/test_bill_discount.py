@@ -65,3 +65,51 @@ class TestDentistWhoDidWorkIsAssigned(Base):
         staff = self.q("SELECT id FROM users WHERE email LIKE 'staff.malolos@%'")["id"]
         self.conn.execute("UPDATE invoice_items SET dentist_id = ? WHERE id = ?", (staff, line))
         self.assertIsNone(self.q("SELECT 1 AS x FROM patient_assignments WHERE patient_id = ? AND dentist_id = ?", (pid, staff)))
+
+    def test_my_cases_shows_commission(self):
+        from app.util import now_str
+        uid = self.q("SELECT id FROM users WHERE email LIKE 'dentist.malolos@%'")["id"]
+        emp = self.q("SELECT id FROM employees WHERE user_id = ?", (uid,))
+        eid = emp["id"] if emp else self.conn.insert("employees", {"full_name": "Demo Dentist", "position": "Dentist", "employment_type": "regular",
+                                                                    "user_id": uid, "active": 1, "created_at": now_str()})
+        b = self.branch("malolos")
+        pid = self.conn.insert("patients", {"first_name": "Comm", "last_name": "Casetest", "chart_no": "DH-CM1", "preferred_branch_id": b,
+                                            "created_at": now_str(), "updated_at": now_str()})
+        inv = self.conn.insert("invoices", {"branch_id": b, "patient_id": pid, "status": "issued", "number": "CM-1", "issued_at": "2026-10-31",
+                                            "subtotal_cents": 240000, "discount_cents": 0, "tax_cents": 0, "total_cents": 240000, "created_at": now_str()})
+        self.conn.insert("invoice_items", {"invoice_id": inv, "description": "RESTORATION/PASTA-ANTERIOR", "qty": 2, "unit_price_cents": 120000,
+                                           "discount_cents": 0, "amount_cents": 240000, "dentist_id": uid, "done_on": "2026-10-31"})
+        self.conn.insert("dentist_commissions", {"employee_id": eid, "earned_on": "2026-10-31", "invoice_id": inv, "amount_cents": 72000,
+                                                 "status": "valid", "created_at": now_str()})
+        page = self.login("dentist.malolos").get("/staff/my-cases/?from=2026-10-01&to=2026-10-31&q=casetest").data.decode()
+        self.assertIn("commission ₱720.00", page)
+
+
+class TestPaymentBranch(Base):
+    def test_received_at_other_branch_and_move_bill(self):
+        from app.util import now_str
+        mal, gui = self.branch("malolos"), self.branch("guiguinto")
+        pid = self.q("SELECT id FROM patients WHERE preferred_branch_id = ? LIMIT 1", (mal,))["id"]
+        inv = self.conn.insert("invoices", {"branch_id": mal, "patient_id": pid, "status": "issued", "number": f"RB-{now_str()[-6:]}",
+                                            "issued_at": "2026-10-17", "subtotal_cents": 500000, "discount_cents": 0, "tax_cents": 0,
+                                            "total_cents": 500000, "created_at": now_str()})
+        self.conn.insert("invoice_items", {"invoice_id": inv, "description": "Crown", "qty": 1, "unit_price_cents": 500000, "discount_cents": 0,
+                                           "amount_cents": 500000})
+        a = self.login("admin")
+        page = a.get(f"/staff/invoices/{inv}").data.decode()
+        self.assertIn("Received at (branch)", page)
+        self.assertIn("Branch of this bill", page)
+        # move the unpaid bill to Guiguinto and back
+        a.post(f"/staff/invoices/{inv}/branch", data={"branch_id": gui})
+        self.assertEqual(self.q("SELECT branch_id FROM invoices WHERE id = ?", (inv,))["branch_id"], gui)
+        a.post(f"/staff/invoices/{inv}/branch", data={"branch_id": mal})
+        # paid at Guiguinto: the payment counts there; the bill stays Malolos
+        a.post(f"/staff/invoices/{inv}/payments", data={"action": "multi", "method": "cash", "amount": "5000", "received_at": "2026-10-31",
+                                                        "received_branch_id": gui, "not_signed_reason": "test"})
+        p = self.q("SELECT branch_id FROM payments WHERE invoice_id = ? AND status = 'valid'", (inv,))
+        self.assertIsNotNone(p)
+        self.assertEqual(p["branch_id"], gui)
+        self.assertEqual(self.q("SELECT branch_id FROM invoices WHERE id = ?", (inv,))["branch_id"], mal)
+        # with a payment the bill can't be moved
+        a.post(f"/staff/invoices/{inv}/branch", data={"branch_id": gui})
+        self.assertEqual(self.q("SELECT branch_id FROM invoices WHERE id = ?", (inv,))["branch_id"], mal)

@@ -40,6 +40,38 @@ def _months_between(a: date, b: date) -> list[str]:
     return out
 
 
+def _commissions(conn, dentist_id: int, lines: dict) -> dict:
+    """The dentist's commission per (bill, type of case), counted the way payroll counts it: per procedure (bill lines,
+    System settings → Payroll) or per payment (what the cashier recorded on the payments). Manual commission entries on a
+    bill always count. An entry for a whole bill is shared over the dentist's types of case on it, in proportion."""
+    from ..payroll import commission_items, dentist_rates, per_procedure
+    emp = conn.one("SELECT id FROM employees WHERE user_id = ?", (dentist_id,))
+    out: dict = {}
+    by_inv: dict[int, list] = {}
+    for k, x in lines.items():
+        by_inv.setdefault(k[0], []).append((k, x["billed"]))
+
+    def share(inv, amount):
+        parts = by_inv.get(inv) or []
+        tot = sum(b for _, b in parts)
+        for k, b in parts:
+            out[k] = out.get(k, 0) + (round(amount * b / tot) if tot else (amount if len(parts) == 1 else 0))
+
+    if per_procedure(conn):
+        r = dentist_rates(conn, emp["id"], today().isoformat()) if emp else None
+        svc = {s["service_id"]: s["commission_bp"] for s in conn.all("SELECT * FROM dentist_service_rates WHERE employee_id = ?", (emp["id"],))} if emp else {}
+        per_line = {i["id"]: i["commission_cents"] or 0
+                    for i in commission_items(conn, dentist_id, "0000-01-01", "9999-12-31", None, (r["commission_bp"] or 0) if r else 0, svc)}
+        for k, x in lines.items():
+            out[k] = out.get(k, 0) + sum(per_line.get(lid, 0) for lid in x["line_ids"])
+    if emp and by_inv:
+        marks = ",".join("?" * len(by_inv))
+        for m in conn.all(f"SELECT invoice_id, SUM(amount_cents) AS amt FROM dentist_commissions WHERE employee_id = ? AND status = 'valid' "
+                          f"AND invoice_id IN ({marks}) GROUP BY invoice_id", [emp["id"], *by_inv]):
+            share(m["invoice_id"], m["amt"] or 0)
+    return out
+
+
 def build_cases(conn, dentist_id: int) -> list[dict]:
     """One case per (patient, type of case), only where both are true: the patient is assigned to the dentist (patient
     profile → assigned dentist) AND the dentist is on the bill for that type of case (bill line → dentist). Visits,
@@ -72,7 +104,7 @@ def build_cases(conn, dentist_id: int) -> list[dict]:
             case(r["patient_id"], GENERAL)["visits"].append(r["d"][:10])
     # bill lines that are theirs, by type of case; each bill's payments are shared over its lines in proportion
     lines: dict[tuple, dict] = {}
-    for r in conn.all(f"SELECT i.patient_id, i.id AS inv, i.total_cents, ii.amount_cents, ii.description, ii.dentist_id, s.category AS scat, "
+    for r in conn.all(f"SELECT i.patient_id, i.id AS inv, i.total_cents, ii.id AS line_id, ii.amount_cents, ii.description, ii.dentist_id, s.category AS scat, "
                       "ii.done_on AS d, "
                       "(SELECT COALESCE(SUM(CASE WHEN kind = 'payment' THEN amount_cents ELSE -amount_cents END), 0) FROM payments "
                       " WHERE invoice_id = i.id AND status = 'valid') AS paid "
@@ -81,16 +113,19 @@ def build_cases(conn, dentist_id: int) -> list[dict]:
         if not mine(r["patient_id"], r["dentist_id"]):
             continue
         k = (r["inv"], kind(r["description"], r["scat"]))
-        x = lines.setdefault(k, {"patient_id": r["patient_id"], "billed": 0, "paid": r["paid"], "total": r["total_cents"]})
+        x = lines.setdefault(k, {"patient_id": r["patient_id"], "billed": 0, "paid": r["paid"], "total": r["total_cents"], "line_ids": []})
+        x["line_ids"].append(r["line_id"])
         c_ = case(r["patient_id"], k[1])
         c_["has_bill"] = True
         if r["d"]:
             c_["visits"].append(r["d"][:10])   # the day the billed work was done is a visit (imported records often have no procedure)
         x["billed"] += r["amount_cents"]
+    comm = _commissions(conn, dentist_id, lines)
     for (inv, cat_), x in lines.items():
         c = case(x["patient_id"], cat_)
         c["billed"] += x["billed"]
         c["paid"] += round(x["paid"] * x["billed"] / x["total"]) if x["total"] else 0
+        c["commission"] = c.get("commission", 0) + comm.get((inv, cat_), 0)
     for r in conn.all(f"SELECT a.patient_id, a.dentist_id, s.name AS service, s.category AS scat, a.start_at FROM appointments a "
                       f"LEFT JOIN services s ON s.id = a.service_id "
                       f"WHERE a.patient_id IN ({marks}) AND a.status IN ('requested', 'confirmed') AND a.start_at >= ? ORDER BY a.start_at",

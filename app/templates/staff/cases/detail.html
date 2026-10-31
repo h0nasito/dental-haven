@@ -5,6 +5,7 @@
 <div class="grid grid-4" style="margin-bottom:1rem">
 <div class="stat"><div class="label">Billed</div><div class="value">{{ c.billed|peso }}</div></div>
 <div class="stat"><div class="label">Paid</div><div class="value">{{ c.paid|peso }}</div></div>
+<div class="stat"><div class="label">Dentist commission</div><div class="value">{{ (c.commission or 0)|peso }}</div></div>
 <div class="stat {{ 'warn' if c.balance else '' }}"><div class="label">Balance</div><div class="value">{{ c.balance|peso }}</div></div>
 <div class="stat"><div class="label">Visits</div><div class="value">{{ c.n }}</div><div class="sub">{% if c.last %}last {{ c.last|date }}{% endif %}</div></div></div>
 {% if c.category == ORTHO and c.months %}

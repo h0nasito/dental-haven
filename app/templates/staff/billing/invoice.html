@@ -102,6 +102,11 @@
 {% endif %}
 {% if inv.status == 'issued' and current_user.can('payments.add') and balance > 0 %}
 <h3 class="mt-1">Add payment</h3>{{ pay_form(inv, balance, paid, today, inv.first_name ~ ' ' ~ inv.last_name, '', comm_dentists, comm_info) }}{% endif %}
+{% if inv.status != 'void' and current_user.can('bills.edit') and not (payments|selectattr('status', 'equalto', 'valid')|list) and my_pay_branches()|length > 1 %}
+<details class="mt-1"><summary>Branch of this bill ({{ inv.branch }})</summary><form method="post" action="{{ url_for('billing.invoice_branch', invoice_id=inv.id) }}" class="row mt-1">{{ csrf() }}
+<label class="sr-only" for="ib">Branch</label><select id="ib" name="branch_id">{% for b in my_pay_branches() %}<option value="{{ b.id }}" {{ 'selected' if b.id == inv.branch_id }}>{{ b.name }}</option>{% endfor %}</select><button class="btn btn-secondary btn-sm">Move bill</button></form>
+<p class="hint">For a bill made under the wrong branch. Only while it has no payments; the number stays.</p></details>
+{% endif %}
 {% if inv.status == 'issued' and current_user.can('bills.edit') %}
 <details class="mt-1" {{ 'open' if request.args.get('discount') }}><summary>Discount{% if inv.discount_cents %} ({{ inv.discount_cents|peso }}){% endif %}</summary><form method="post" action="{{ url_for('billing.issued_discount', invoice_id=inv.id) }}" class="mt-1">{{ csrf() }}
 <div class="row"><label class="sr-only" for="dk">Type</label><select id="dk" name="kind" style="max-width:150px"><option value="amount">Amount (₱)</option><option value="percent">Percent (%)</option></select>

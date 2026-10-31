@@ -39,11 +39,26 @@ def _recalc(conn, invoice_id):
     conn.update("invoices", invoice_id, totals)
 
 
+def _received_branch(inv) -> int:
+    """The branch where the money was received (the cashier picks it; a patient from Malolos may pay at Guiguinto).
+    Collections, the daily report and deposits count the payment there. Default: the cashier's selected branch, else the
+    bill's branch."""
+    bid = to_int(request.form.get("received_branch_id"))
+    if bid and g.user.in_branch(bid):
+        return bid
+    return inv["branch_id"]
+
+
+def _my_pay_branches():
+    from .common import branches_for_user
+    return branches_for_user(g.user) if getattr(g, "user", None) else []
+
+
 @bp.app_context_processor
 def _ctx():
     from ..billing import pay_label, pay_options
     return {"PAYMENT_METHODS": PAYMENT_METHODS, "PAYMENT_LABELS": {**PAYMENT_METHODS, CREDIT_METHOD: "Account credit"},
-            "pay_options": pay_options, "pay_label": pay_label}
+            "pay_options": pay_options, "pay_label": pay_label, "my_pay_branches": _my_pay_branches}
 
 
 # ---------------------------------------------------------------------------
@@ -109,6 +124,29 @@ def invoice_new():
             return redirect(url_for("billing.invoice", invoice_id=inv_id))
     return render_template("staff/billing/invoice_new.html", patient=patient, appt=appt, branch_id=branch_id,
                            branches=branches_for_user(g.user))
+
+
+@bp.route("/invoices/<int:invoice_id>/branch", methods=["POST"])
+@require("bills.edit")
+def invoice_branch(invoice_id):
+    """Move a bill to another branch (e.g. the work was done at Guiguinto but the bill was made under Malolos), while it
+    has no payments. The bill number stays."""
+    conn = get_db()
+    inv = _load_invoice(invoice_id)
+    bid = to_int(request.form.get("branch_id"))
+    back = redirect(url_for("billing.invoice", invoice_id=invoice_id))
+    if inv["status"] == "void" or not bid or bid == inv["branch_id"] or not g.user.in_branch(bid):
+        flash("Choose one of your branches.", "error")
+        return back
+    if conn.scalar("SELECT COUNT(*) FROM payments WHERE invoice_id = ? AND status = 'valid'", (invoice_id,)):
+        flash("This bill has payments, so it stays at its branch. Record new payments with “Received at” set to the branch "
+              "that got the money.", "error")
+        return back
+    conn.execute("UPDATE invoices SET branch_id = ? WHERE id = ?", (bid, invoice_id))
+    name = conn.scalar("SELECT name FROM branches WHERE id = ?", (bid,))
+    audit.record("invoice_branch_changed", "invoice", invoice_id, f"Bill moved from {inv['branch']} to {name}", branch_id=bid)
+    flash(f"Bill moved to {name}.", "success")
+    return back
 
 
 @bp.route("/invoices/<int:invoice_id>/discount", methods=["POST"])
@@ -393,7 +431,7 @@ def payment(invoice_id):
             elif received > today():
                 flash("The payment date can't be in the future.", "error")
             else:
-                pid = conn.insert("payments", {"invoice_id": invoice_id, "branch_id": inv["branch_id"], "kind": action,
+                pid = conn.insert("payments", {"invoice_id": invoice_id, "branch_id": _received_branch(inv), "kind": action,
                                                "amount_cents": amount, "method": method, "account": account,
                                                "reference": clean(request.form.get("reference"), 80),
                                                "received_at": received.isoformat(), "received_by": g.user.id, "status": "valid",
@@ -502,8 +540,9 @@ def _multi_payment(conn, inv, paid):
                                                 "not_signed_reason": "" if stored else reason, "captured_by": g.user.id,
                                                 "created_at": now_str()})
     ref, note = clean(request.form.get("reference"), 80), clean(request.form.get("notes"), 300)
+    at_branch = _received_branch(inv)
     for (m, account), amt in lines:
-        pid = conn.insert("payments", {"invoice_id": inv["id"], "branch_id": inv["branch_id"], "kind": "payment", "amount_cents": amt,
+        pid = conn.insert("payments", {"invoice_id": inv["id"], "branch_id": at_branch, "kind": "payment", "amount_cents": amt,
                                        "method": m, "account": account, "reference": ref, "received_at": received.isoformat(), "received_by": g.user.id,
                                        "status": "valid", "notes": note, "signature_id": sig_id, "created_at": now_str()})
         audit.record("payment_recorded", "invoice", inv["id"], f"Payment {peso(amt)} via {pay_label(m, account)}",

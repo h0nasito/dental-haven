@@ -15,6 +15,7 @@
 <div>
 <div class="form-grid">
 <div class="field"><label>Payment date</label><input type="date" name="received_at" aria-label="Payment date" value="{{ today }}" max="{{ today }}"></div>
+{% set pbs = my_pay_branches() %}{% if pbs|length > 1 %}{% set dflt = current_user.active_branch_id or inv.branch_id %}<div class="field"><label>Received at (branch)</label><select name="received_branch_id" aria-label="Branch that received the money">{% for b in pbs %}<option value="{{ b.id }}" {{ 'selected' if b.id == dflt }}>{{ b.name }}{% if b.id == inv.branch_id %} (bill's branch){% endif %}</option>{% endfor %}</select></div>{% endif %}
 <div class="field"><label>Reference / OR / check #</label><input name="reference" aria-label="Reference, OR or check number" maxlength="80"></div>
 <div class="field"><label>Remarks / check details</label><input name="notes" aria-label="Remarks" maxlength="300"></div></div>
 <fieldset class="pay-box"><legend>Patient signature</legend>
