@@ -161,6 +161,11 @@
         </select>
         <button class="btn btn-secondary btn-sm js-hide" type="submit">Switch</button>
       </form>
+      {% if current_user.can('patients.view') %}<form method="post" action="{{ url_for('patients.index') }}" class="top-search" role="search">{{ csrf() }}
+        <label for="top-q" class="sr-only">Search patients</label>
+        <div class="suggest-wrap"><input id="top-q" name="q" type="search" placeholder="🔍 Search patient…" autocomplete="off" maxlength="80"
+          data-suggest="{{ url_for('patients.suggest') }}" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="top-q-list">
+          <ul id="top-q-list" class="suggest-list" role="listbox" hidden></ul></div></form>{% endif %}
       <div class="spacer"></div>
       {% set alert_book = current_user.can('bookings.manage') or current_user.can('bookings.view') %}
       {% if alert_book or nav_lab_alert %}<button type="button" class="btn btn-secondary btn-sm req-sound" id="req-sound" hidden data-user="{{ current_user.id }}"{% if alert_book %} data-pulse="{{ url_for('sched.requests_pulse') }}"{% endif %}{% if nav_lab_alert %} data-lab-pulse="{{ url_for('labs.pulse') }}"{% endif %} aria-pressed="false" title="Play a sound when something new arrives">🔈 Sound alerts off</button>{% endif %}

@@ -14,8 +14,8 @@
 <input type="hidden" name="kind" value="{{ next_kind }}"><input type="hidden" name="lat"><input type="hidden" name="lng"><input type="hidden" name="acc">
 {% if not branches and not labs %}<p class="flash flash-error">Your account has no branch or laboratory with a time clock yet. Ask your manager to set it up.</p>{% endif %}
 <div class="field"><label for="cb">{{ 'Branch or laboratory' if labs else 'Branch' }}</label><select id="cb" name="place" {% if rec %}disabled{% endif %}>
-{% if labs and branches %}<optgroup label="Branches">{% endif %}{% for b in branches %}<option value="b:{{ b.id }}" {% if place == 'b:' ~ b.id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}{% if labs and branches %}</optgroup>{% endif %}
-{% if labs %}<optgroup label="Laboratories">{% for l in labs %}<option value="l:{{ l.id }}" {% if place == 'l:' ~ l.id %}selected{% endif %}>{{ l.name }}</option>{% endfor %}</optgroup>{% endif %}
+{% if labs and branches %}<optgroup label="Branches">{% endif %}{% for b in branches %}<option value="b:{{ b.id }}" {% if place == 'b:' ~ b.id %}selected{% endif %} data-lat="{{ b.latitude if b.latitude is not none else '' }}" data-lng="{{ b.longitude if b.longitude is not none else '' }}" data-radius="{{ b.clock_radius_m or 150 }}">{{ b.name }}</option>{% endfor %}{% if labs and branches %}</optgroup>{% endif %}
+{% if labs %}<optgroup label="Laboratories">{% for l in labs %}<option value="l:{{ l.id }}" {% if place == 'l:' ~ l.id %}selected{% endif %} data-lat="{{ l.latitude if l.latitude is not none else '' }}" data-lng="{{ l.longitude if l.longitude is not none else '' }}" data-radius="{{ l.clock_radius_m or 150 }}">{{ l.name }}</option>{% endfor %}</optgroup>{% endif %}
 </select>
 {% if rec %}<input type="hidden" name="place" value="{{ place }}">{% endif %}</div>
 <div class="field"><label class="check"><input type="checkbox" name="field" value="1" data-field-toggle> I'm on the field (working outside the clinic or lab)</label>
@@ -25,7 +25,13 @@
 <span class="hint">The other 30 minutes count as overtime once your supervisor approves it.</span></div>{% endif %}
 <div class="field"><label for="cp">Selfie in front of the {{ 'clinic or lab' if labs else 'clinic' }}</label><input id="cp" type="file" name="photo" accept="image/*" capture="user" required>
 <span class="hint">Your phone's camera opens. Include the clinic entrance or signage behind you (on the field: where you are).</span></div>
-<p class="hint" data-geo-status>Checking your location… If your phone asks, tap Allow.</p>
+<div class="geo-check"><button type="button" class="btn btn-secondary btn-sm" data-geo-check>📍 Check my location</button>
+<p class="geo-status" data-geo-status role="status" aria-live="polite">Checking your location… If your phone asks, tap <strong>Allow</strong>.</p>
+<details class="geo-help" data-geo-help hidden><summary>How to turn on location</summary>
+<p><strong>Android (Chrome):</strong> tap the icon at the left of the address bar (🔒 or ⓘ) → <em>Permissions</em> → <em>Location</em> → <em>Allow</em>. Also swipe down from the top of the screen and turn <em>Location</em> on.</p>
+<p><strong>iPhone (Safari):</strong> Settings → Privacy &amp; Security → <em>Location Services</em> on → <em>Safari Websites</em> → <em>While Using the App</em>. Then in Safari tap <em>aA</em> → <em>Website Settings</em> → <em>Location</em> → <em>Allow</em>.</p>
+<p><strong>Computer:</strong> click the 🔒 at the left of the address bar → <em>Location</em> → <em>Allow</em>.</p>
+<p>Then press <strong>Check my location</strong> again.</p></details></div>
 <button class="btn clock-btn">{{ 'Time in' if next_kind == 'in' else 'Time out' }}</button>
 </form>
 {% else %}

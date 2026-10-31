@@ -1036,3 +1036,23 @@ section[id] { scroll-margin-top: 72px; }
   .cm-date a { font-size: 1.1rem; }
   .cm-appt { font-size: .9rem; padding: .35rem .5rem; }
 }
+/* Live suggestions under a search box */
+.suggest-wrap { position: relative; }
+.suggest-wrap input { width: 100%; }
+.suggest-list { position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px); margin: 0; padding: .25rem 0; list-style: none; background: #fff;
+  border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(16, 37, 66, .12); max-height: 320px; overflow: auto; }
+.suggest-list a { display: block; padding: .5rem .75rem; text-decoration: none; color: inherit; }
+.suggest-list a small { color: var(--ink-3); }
+.suggest-list a:hover, .suggest-list a.on { background: var(--brand-50, #eef4fb); }
+.suggest-none { padding: .5rem .75rem; color: var(--ink-3); font-size: .9rem; }
+/* Time clock: location check */
+.geo-check { margin: .6rem 0 .8rem; }
+.geo-status { margin: .5rem 0 0; padding: .55rem .75rem; border-radius: 8px; background: var(--line-2, #f1f5f9); font-size: .92rem; }
+.geo-status.ok { background: #eaf7ef; color: #22543d; }
+.geo-status.warn { background: #fff8e6; color: #744210; }
+.geo-status.bad { background: #fdecec; color: #822727; }
+.geo-help { margin-top: .5rem; font-size: .88rem; }
+.geo-help p { margin: .4rem 0; }
+.top-search { flex: 1 1 260px; max-width: 360px; margin: 0 .5rem; }
+.top-search input { width: 100%; }
+@media (max-width: 760px) { .topbar { flex-wrap: wrap; } .top-search { order: 10; flex: 1 1 100%; width: 100%; max-width: none; margin: .4rem 0 0; } }

@@ -177,6 +177,20 @@ def _search_patients(conn, q):
         [*params, like, like, like, like, q])
 
 
+@bp.route("/appointments/patient-suggest", methods=["POST"])
+@require("appointments.manage")
+def patient_suggest():
+    """Live suggestions while typing in "Find the patient" (POST, so the typed name isn't in addresses or server logs).
+    Only patients the user may see; name and chart number only."""
+    from flask import jsonify
+    q = clean(request.form.get("q"), 80)
+    if len(q) < 2:
+        return jsonify([])
+    rows = _search_patients(get_db(), q)[:8]
+    return jsonify([{"name": f"{r['last_name']}, {r['first_name']}", "chart": r["chart_no"] or "",
+                     "url": url_for("sched.appointment_new", patient_id=r["id"])} for r in rows])
+
+
 @bp.route("/appointments/new", methods=["GET", "POST"])
 @require("appointments.manage")
 def appointment_new():

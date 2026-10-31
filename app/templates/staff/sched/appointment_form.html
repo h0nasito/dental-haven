@@ -6,7 +6,8 @@
 {% if not patient %}
 <div class="card" style="max-width:760px"><h2>1. Find the patient</h2>
 <form method="post" class="row">{{ csrf() }}<input type="hidden" name="action" value="search">
-<label class="sr-only" for="q">Search patients</label><input id="q" name="q" placeholder="Name, mobile or chart number" style="max-width:360px" autofocus>
+<label class="sr-only" for="q">Search patients</label><div class="suggest-wrap" style="max-width:360px;flex:1"><input id="q" name="q" placeholder="Name, mobile or chart number" autofocus autocomplete="off"
+ data-suggest="{{ url_for('sched.patient_suggest') }}" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="q-suggest"><ul id="q-suggest" class="suggest-list" role="listbox" hidden></ul></div>
 <button class="btn btn-secondary">Search</button></form>
 {% if results is not none %}
 <ul class="list-plain mt-1">{% for p in results %}<li class="row between"><span><strong>{{ p.last_name }}, {{ p.first_name }}</strong> <small class="muted">{{ p.chart_no }} · {{ p.phone|contact }}</small></span><a class="btn btn-sm" href="{{ url_for('sched.appointment_new', patient_id=p.id) }}">Select</a></li>

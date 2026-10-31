@@ -157,16 +157,53 @@ document.addEventListener('DOMContentLoaded', function () {
   // Time clock: fill in the phone's location before timing in/out
   document.querySelectorAll('form[data-geo]').forEach(function (form) {
     var status = form.querySelector('[data-geo-status]');
-    var say = function (t) { if (status) status.textContent = t; };
-    if (!navigator.geolocation) { say('Location isn\u2019t available on this device; your manager will review your time.'); return; }
-    navigator.geolocation.getCurrentPosition(function (pos) {
-      form.elements.lat.value = pos.coords.latitude.toFixed(6);
-      form.elements.lng.value = pos.coords.longitude.toFixed(6);
-      form.elements.acc.value = Math.round(pos.coords.accuracy);
-      say('Location found (within about ' + Math.round(pos.coords.accuracy) + ' m).');
-    }, function () {
-      say('Location is off or was not allowed. You can still time in, but your manager will review it. To fix: allow location for this site in your browser settings.');
-    }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+    var help = form.querySelector('[data-geo-help]');
+    var btn = form.querySelector('[data-geo-check]');
+    var place = form.querySelector('select[name=place]');
+    var shared = false;
+    function say(html, kind) { if (status) { status.innerHTML = html; status.className = 'geo-status ' + (kind || ''); } }
+    function dist(a, b, c, d) {
+      var R = 6371000, r = Math.PI / 180, x = (c - a) * r, y = (d - b) * r;
+      var h = Math.sin(x / 2) * Math.sin(x / 2) + Math.cos(a * r) * Math.cos(c * r) * Math.sin(y / 2) * Math.sin(y / 2);
+      return 2 * R * Math.asin(Math.sqrt(h));
+    }
+    function siteNote(lat, lng, acc) {
+      var opt = place && place.options[place.selectedIndex];
+      if (!opt || !opt.dataset.lat) return '';
+      var m = Math.round(dist(lat, lng, parseFloat(opt.dataset.lat), parseFloat(opt.dataset.lng)));
+      var ok = m <= parseInt(opt.dataset.radius || '150', 10) + Math.min(acc, 100);
+      return ok ? ' You are at ' + opt.textContent.trim() + ' (' + m + ' m away). ✓'
+                : ' But you are about ' + (m >= 1000 ? (m / 1000).toFixed(1) + ' km' : m + ' m') + ' from ' + opt.textContent.trim()
+                  + ' — check the branch above, or go near the clinic.';
+    }
+    var last = null;
+    function check() {
+      if (!navigator.geolocation) { say('This device can’t share location. You can still time in, but your manager will review it.', 'bad'); return; }
+      say('Getting your location… If your phone asks, tap <strong>Allow</strong>.', '');
+      navigator.geolocation.getCurrentPosition(function (pos) {
+        var c = pos.coords, acc = Math.round(c.accuracy);
+        form.elements.lat.value = c.latitude.toFixed(6); form.elements.lng.value = c.longitude.toFixed(6); form.elements.acc.value = acc;
+        shared = true; last = c; if (help) help.hidden = true;
+        var note = siteNote(c.latitude, c.longitude, acc);
+        say('✅ <strong>Location shared</strong> (within about ' + acc + ' m).' + note, note.indexOf('But') >= 0 ? 'warn' : 'ok');
+      }, function (err) {
+        shared = false; if (help) { help.hidden = false; help.open = true; }
+        var why = err && err.code === 1 ? 'Location is <strong>blocked</strong> for this site.' :
+                  err && err.code === 3 ? 'Finding your location took too long (weak GPS signal).' : 'Your location couldn’t be found (is Location turned on?).';
+        say('❌ <strong>Location not shared.</strong> ' + why + ' Follow the steps below, then press <em>Check my location</em> again.', 'bad');
+      }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+    }
+    if (btn) btn.addEventListener('click', check);
+    if (place) place.addEventListener('change', function () { if (last) { var a = Math.round(last.accuracy), n = siteNote(last.latitude, last.longitude, a);
+      say('✅ <strong>Location shared</strong> (within about ' + a + ' m).' + n, n.indexOf('But') >= 0 ? 'warn' : 'ok'); } });
+    form.addEventListener('submit', function (e) {
+      var field = form.querySelector('[data-field-toggle]');
+      if (!shared && !(field && field.checked) &&
+          !window.confirm('Your location is not shared, so your manager will have to review this time. Time in/out anyway?\n\nTip: press Cancel, then “Check my location”.')) {
+        e.preventDefault();
+      }
+    });
+    check();
   });
   // Time clock: "I'm on the field" shows the reason box and makes it required.
   document.querySelectorAll('[data-field-toggle]').forEach(function (cb) {
@@ -1529,3 +1566,55 @@ document.addEventListener('change', function (e) {
     if (!document.querySelector('tr[data-ms-extra][hidden]')) more.hidden = true;
   });
 })();
+
+// Live patient suggestions while typing (top bar search, New appointment → Find the patient)
+document.querySelectorAll('[data-suggest]').forEach(function (input) {
+  var list = document.getElementById(input.getAttribute('aria-controls'));
+  if (!list) return;
+  var form = input.closest('form');
+  var token = form && form.querySelector('[name=csrf_token]') ? form.querySelector('[name=csrf_token]').value : '';
+  var timer = null, seq = 0, active = -1;
+  function close() { list.hidden = true; list.innerHTML = ''; active = -1; input.setAttribute('aria-expanded', 'false'); }
+  function mark(i) {
+    var items = list.querySelectorAll('li a');
+    items.forEach(function (a, k) { a.classList.toggle('on', k === i); a.setAttribute('aria-selected', k === i ? 'true' : 'false'); });
+    active = i;
+  }
+  function show(rows) {
+    list.innerHTML = '';
+    if (!rows.length) {
+      var li = document.createElement('li'); li.className = 'suggest-none'; li.textContent = 'No match yet — press Search for more';
+      list.appendChild(li);
+    }
+    rows.forEach(function (r, i) {
+      var li = document.createElement('li'); var a = document.createElement('a');
+      a.href = r.url; a.setAttribute('role', 'option'); a.id = 'q-opt-' + i;
+      var b = document.createElement('strong'); b.textContent = r.name; a.appendChild(b);
+      var extra = [r.chart || r.chart_no, r.branch].filter(Boolean).join(' · ');
+      if (extra) { var s = document.createElement('small'); s.textContent = ' ' + extra; a.appendChild(s); }
+      li.appendChild(a); list.appendChild(li);
+    });
+    list.hidden = false; input.setAttribute('aria-expanded', 'true'); active = -1;
+  }
+  input.addEventListener('input', function () {
+    clearTimeout(timer);
+    var q = input.value.trim();
+    if (q.length < 2) { close(); return; }
+    timer = setTimeout(function () {
+      var my = ++seq, fd = new FormData(); fd.append('q', q); fd.append('csrf_token', token);
+      fetch(input.getAttribute('data-suggest'), { method: 'POST', body: fd, headers: { 'Accept': 'application/json', 'X-CSRF-Token': token }, credentials: 'same-origin' })
+        .then(function (r) { return r.ok ? r.json() : []; })
+        .then(function (d) { if (my === seq) show(Array.isArray(d) ? d : (d.results || [])); })
+        .catch(function () {});
+    }, 250);
+  });
+  input.addEventListener('keydown', function (e) {
+    var items = list.querySelectorAll('li a');
+    if (list.hidden || !items.length) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); mark(Math.min(items.length - 1, active + 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); mark(Math.max(0, active - 1)); }
+    else if (e.key === 'Enter' && active >= 0) { e.preventDefault(); window.location.href = items[active].href; }
+    else if (e.key === 'Escape') { close(); }
+  });
+  document.addEventListener('click', function (e) { if (!input.closest('.suggest-wrap').contains(e.target)) close(); });
+});

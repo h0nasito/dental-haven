@@ -213,3 +213,26 @@ class TestOverlapBooking(Base):
         self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM appointments WHERE dentist_id = ? AND substr(start_at, 1, 10) = ?", (did, d.isoformat())), n0 + 1)
         c.post(f"/staff/appointments/new?patient_id={pid}", data={**base, "time": "10:20", "duration": "40", "allow_overlap": "1"})
         self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM appointments WHERE dentist_id = ? AND substr(start_at, 1, 10) = ?", (did, d.isoformat())), n0 + 2)
+
+
+class TestPatientSuggest(Base):
+    def test_suggest_while_typing(self):
+        p = self.q("SELECT p.id, p.first_name, p.last_name FROM patients p WHERE p.preferred_branch_id = ? AND p.active = 1 LIMIT 1", (self.branch("malolos"),))
+        c = self.login("reception.malolos")
+        self.assertIn("data-suggest", c.get("/staff/appointments/new").data.decode())
+        rows = c.post("/staff/appointments/patient-suggest", data={"q": p["last_name"][:4]}).get_json()
+        self.assertTrue(any(r["name"] == f"{p['last_name']}, {p['first_name']}" for r in rows))
+        self.assertTrue(all("phone" not in r for r in rows))
+        self.assertEqual(c.post("/staff/appointments/patient-suggest", data={"q": "a"}).get_json(), [])
+        self.assertEqual(self.login("dentist.malolos").post("/staff/appointments/patient-suggest", data={"q": "ab"}).status_code, 403)
+
+    def test_top_bar_search(self):
+        c = self.login("reception.malolos")
+        page = c.get("/staff/").data.decode()
+        self.assertIn('id="top-q"', page)
+        p = self.q("SELECT first_name, last_name FROM patients WHERE preferred_branch_id = ? AND active = 1 LIMIT 1", (self.branch("malolos"),))
+        res = c.post("/staff/patients/suggest", data={"q": p["last_name"]}).get_json()["results"]
+        self.assertTrue(res)
+        r = c.post("/staff/patients/", data={"q": p["last_name"]})
+        self.assertEqual(r.status_code, 200)
+        self.assertNotIn('id="top-q"', self.login("technician.malolos").get("/staff/").data.decode()) if self.q("SELECT id FROM users WHERE email LIKE 'technician.malolos@%'") else None
