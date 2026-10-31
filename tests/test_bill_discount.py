@@ -156,3 +156,38 @@ class TestCollectionsByService(Base):
         with self.app.app_context():
             reps = {r["branch"] if "branch" in r else i: r for i, r in enumerate(daily_report.build(self.conn, t))}
         self.assertIn("1,550", self.login("admin").get(f"/staff/reports/daily-collection?date={t}").data.decode())
+
+
+class TestCalendarMonth(Base):
+    def test_month_view_shows_patient_and_procedure(self):
+        from app.util import today
+        a = self.q("SELECT a.start_at, p.last_name, p.first_name, s.name AS service FROM appointments a JOIN patients p ON p.id = a.patient_id "
+                   "JOIN services s ON s.id = a.service_id WHERE a.status != 'cancelled' ORDER BY a.start_at DESC LIMIT 1")
+        page = self.login("admin").get(f"/staff/calendar?view=month&date={a['start_at'][:10]}").data.decode()
+        self.assertIn("cal-month", page)
+        from html import escape
+        self.assertIn(escape(f"{a['last_name']}, {a['first_name']}", quote=False), page)
+        self.assertIn(escape(a["service"], quote=False), page)
+
+    def test_commission_sets_dentist_on_lines_without_one(self):
+        from app.util import now_str, today
+        from app.payroll import add_manual_commission
+        uid = self.q("SELECT id FROM users WHERE email LIKE 'dentist.malolos@%'")["id"]
+        emp = self.q("SELECT id FROM employees WHERE user_id = ?", (uid,))
+        eid = emp["id"] if emp else self.conn.insert("employees", {"full_name": "Demo Dentist", "position": "Dentist", "employment_type": "regular",
+                                                                    "user_id": uid, "active": 1, "created_at": now_str()})
+        mal = self.branch("malolos")
+        pid = self.conn.insert("patients", {"first_name": "Noset", "last_name": "Dentistline", "chart_no": "DH-NS1", "preferred_branch_id": mal,
+                                            "created_at": now_str(), "updated_at": now_str()})
+        inv = self.conn.insert("invoices", {"branch_id": mal, "patient_id": pid, "status": "issued", "number": "MM-NS1", "issued_at": "2024-01-04",
+                                            "subtotal_cents": 4500000, "discount_cents": 0, "tax_cents": 0, "total_cents": 4500000, "created_at": now_str(), "legacy": 1})
+        line = self.conn.insert("invoice_items", {"invoice_id": inv, "description": "Orthodontic Treatment (Metal Braces-Class 1)", "qty": 1,
+                                                  "unit_price_cents": 4500000, "discount_cents": 0, "amount_cents": 4500000})
+        with self.app.app_context():
+            add_manual_commission(self.conn, None, eid, today(), None, None, 20000, None, invoice_id=inv)
+        self.assertEqual(self.q("SELECT dentist_id FROM invoice_items WHERE id = ?", (line,))["dentist_id"], uid)
+        page = self.login("dentist.malolos").get("/staff/my-cases/?q=dentistline&from=2000-01-01").data.decode()
+        self.assertIn("Dentistline, Noset", page)
+        self.assertIn("commission ₱200.00", page)
+        t = today().isoformat()
+        self.assertIn("Dentistline, Noset", self.login("dentist.malolos").get(f"/staff/my-cases/?q=dentistline&from={t}&to={t}").data.decode())

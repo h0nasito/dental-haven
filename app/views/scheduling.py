@@ -56,7 +56,7 @@ def calendar():
     conn = get_db()
     user = g.user
     view = request.args.get("view", "day")
-    if view not in ("day", "chairs", "week"):
+    if view not in ("day", "chairs", "week", "month"):
         view = "day"
     day = parse_date(request.args.get("date")) or today()
     dentist_id = to_int(request.args.get("dentist"))
@@ -66,6 +66,11 @@ def calendar():
     if view == "week":
         start = week_start(day)
         end = start + timedelta(days=7)
+    elif view == "month":
+        first = day.replace(day=1)
+        start = first - timedelta(days=(first.weekday() + 1) % 7)        # grid starts on the Sunday on/before the 1st
+        nxt = (first + timedelta(days=32)).replace(day=1)
+        end = nxt + timedelta(days=(6 - nxt.weekday()) % 7 + 1) if nxt.weekday() != 6 else nxt
     else:
         start, end = day, day + timedelta(days=1)
     where = [scope, "a.start_at >= ?", "a.start_at < ?"]
@@ -112,14 +117,20 @@ def calendar():
                 a["top"] = ((s.hour - hours[0]) * 60 + s.minute)
                 a["height"] = max(22, int((e - s).total_seconds() // 60) - 2)
     days = []
-    if view == "week":
-        for i in range(7):
+    if view in ("week", "month"):
+        for i in range((end - start).days):
             d = start + timedelta(days=i)
-            days.append({"date": d, "appts": [a for a in appts if a["start_at"][:10] == d.isoformat()]})
+            days.append({"date": d, "appts": [a for a in appts if a["start_at"][:10] == d.isoformat()],
+                         "other_month": view == "month" and d.month != day.month})
+    if view == "month":
+        prev_d = (day.replace(day=1) - timedelta(days=1)).replace(day=1)
+        next_d = (day.replace(day=1) + timedelta(days=32)).replace(day=1)
+    else:
+        step = 7 if view == "week" else 1
+        prev_d, next_d = day - timedelta(days=step), day + timedelta(days=step)
     return render_template("staff/sched/calendar.html", view=view, day=day, appts=appts, columns=columns,
-                           hours=hours, days=days, dentists=dentist_list, dentist_id=dentist_id,
-                           prev=(day - timedelta(days=7 if view == "week" else 1)).isoformat(),
-                           next=(day + timedelta(days=7 if view == "week" else 1)).isoformat())
+                           hours=hours, days=days, dentists=dentist_list, dentist_id=dentist_id, today_iso=today().isoformat(),
+                           prev=prev_d.isoformat(), next=next_d.isoformat())
 
 
 @bp.route("/appointments")

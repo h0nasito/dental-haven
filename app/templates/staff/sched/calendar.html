@@ -3,14 +3,14 @@
 {% block page_title %}Calendar{% endblock %}
 {% block content %}
 <div class="page-head"><div><h1>{{ 'My schedule' if current_user.role == 'dentist' else 'Calendar' }}</h1>
-<p>{% if view == 'week' %}Week of {{ day|date }}{% else %}{{ day.strftime('%A') }}, {{ day|date }}{% endif %}</p></div>
+<p>{% if view == 'month' %}{{ day.strftime('%B %Y') }}{% elif view == 'week' %}Week of {{ day|date }}{% else %}{{ day.strftime('%A') }}, {{ day|date }}{% endif %}</p></div>
 {% if current_user.can('appointments.manage') %}<a class="btn" href="{{ url_for('sched.appointment_new', date=day.isoformat()) }}">+ New appointment</a>{% endif %}</div>
 <form class="toolbar" method="get">
   <div class="row"><a class="btn btn-secondary btn-sm" href="?view={{ view }}&date={{ prev }}&dentist={{ dentist_id or '' }}" aria-label="Previous">←</a>
   <a class="btn btn-secondary btn-sm" href="?view={{ view }}&dentist={{ dentist_id or '' }}">Today</a>
   <a class="btn btn-secondary btn-sm" href="?view={{ view }}&date={{ next }}&dentist={{ dentist_id or '' }}" aria-label="Next">→</a></div>
   <div class="field"><label for="date">Date</label><input id="date" type="date" name="date" value="{{ day.isoformat() }}"></div>
-  <div class="field"><label for="view">View</label><select id="view" name="view"><option value="day" {% if view=='day' %}selected{% endif %}>Day (by dentist)</option><option value="chairs" {% if view=='chairs' %}selected{% endif %}>Day (by chair)</option><option value="week" {% if view=='week' %}selected{% endif %}>Week</option></select></div>
+  <div class="field"><label for="view">View</label><select id="view" name="view"><option value="day" {% if view=='day' %}selected{% endif %}>Day (by dentist)</option><option value="chairs" {% if view=='chairs' %}selected{% endif %}>Day (by chair)</option><option value="week" {% if view=='week' %}selected{% endif %}>Week</option><option value="month" {% if view=='month' %}selected{% endif %}>Month</option></select></div>
   {% if not current_user.own_schedule_only %}<div class="field"><label for="dentist">Dentist</label><select id="dentist" name="dentist"><option value="">All dentists</option>{% for d in dentists %}<option value="{{ d.id }}" {% if dentist_id == d.id %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select></div>{% endif %}
   <label class="check" style="margin-bottom:.6rem"><input type="checkbox" name="show_cancelled" value="1" {% if request.args.get('show_cancelled') %}checked{% endif %}> Show cancelled</label>
   <button class="btn btn-secondary" type="submit">Apply</button>
@@ -34,6 +34,18 @@
   </div>
   <p class="muted" style="font-size:.85rem">Colours: <span class="badge badge-amber">Requested</span> <span class="badge badge-teal">Confirmed</span> <span class="badge badge-blue">Checked in</span> <span class="badge badge-green">Completed</span>. ⚠ = patient alert flag.</p>
   {% else %}<div class="card">{{ empty('No dentists, chairs or appointments for this view', ' Add dentist schedules under Administration, or pick another branch.') }}</div>{% endif %}
+{% elif view == 'month' %}
+  <div class="cal-month" role="grid" aria-label="{{ day.strftime('%B %Y') }}">
+    {% for wd in ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] %}<div class="cm-head" role="columnheader">{{ wd }}</div>{% endfor %}
+    {% for d in days %}
+    <div class="cm-day{{ ' cm-other' if d.other_month }}{{ ' cm-today' if d.date.isoformat() == today_iso }}{{ ' cm-empty' if not d.appts }}" role="gridcell">
+      <div class="cm-date"><a href="?view=day&date={{ d.date.isoformat() }}&dentist={{ dentist_id or '' }}">{{ d.date.day }}</a><span class="cm-dow">{{ d.date.strftime('%a, %b %d') }}</span>{% if d.appts %}<span class="cm-count">{{ d.appts|length }}</span>{% endif %}</div>
+      {% for a in d.appts %}<a class="cm-appt st-{{ a.status }}" href="{{ url_for('sched.appointment', appt_id=a.id) }}" title="{{ a.start_at|time }} {{ a.last_name }}, {{ a.first_name }} · {{ a.service }}{% if a.dentist %} · {{ a.dentist }}{% endif %}">
+        <span class="cm-time">{{ a.start_at|time }}</span> <span class="cm-name">{{ a.last_name }}, {{ a.first_name }}{% if a.alert_flag %} ⚠{% endif %}</span> <span class="cm-svc">{{ a.service }}</span>{% if not dentist_id and a.dentist %} <span class="cm-doc">· {{ a.dentist }}</span>{% endif %}</a>{% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+  <p class="muted" style="font-size:.85rem">Each appointment: time, patient and procedure. Colours: <span class="badge badge-amber">Requested</span> <span class="badge badge-teal">Confirmed</span> <span class="badge badge-blue">Checked in</span> <span class="badge badge-green">Completed</span>; no-shows are crossed out. Tap a date to open that day.</p>
 {% else %}
   <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
   {% for d in days %}

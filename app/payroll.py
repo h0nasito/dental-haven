@@ -245,6 +245,15 @@ def add_manual_commission(conn, dentist_user_id: int | None, employee_id: int | 
                                               "payment_id": payment_id, "description": description[:200], "base_cents": base_cents,
                                               "rate_bp": rate_bp, "amount_cents": amount_cents, "created_by": by_user_id,
                                               "created_at": now_str()})
+    # The dentist who earns the commission did the work: bill lines with no dentist yet get this dentist, so the case shows
+    # in their My cases (and the patient is assigned to them). Only when commission is counted per payment, so the lines
+    # don't add a second, per-procedure commission.
+    if invoice_id and not per_procedure(conn):
+        uid = conn.scalar("SELECT e.user_id FROM employees e JOIN users u ON u.id = e.user_id WHERE e.id = ? AND u.role = 'dentist'", (employee_id,))
+        if uid:
+            conn.execute("UPDATE invoice_items SET dentist_id = ?, legacy_dentist = 0, done_on = COALESCE(done_on, "
+                         "(SELECT substr(issued_at, 1, 10) FROM invoices WHERE id = ?)) WHERE invoice_id = ? AND dentist_id IS NULL",
+                         (uid, invoice_id, invoice_id))
     return cid, None
 
 

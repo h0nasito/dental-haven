@@ -121,6 +121,17 @@ def build_cases(conn, dentist_id: int) -> list[dict]:
             c_["visits"].append(r["d"][:10])   # the day the billed work was done is a visit (imported records often have no procedure)
         x["billed"] += r["amount_cents"]
     comm = _commissions(conn, dentist_id, lines)
+    # installments (e.g. braces adjustments paid each visit): the days the dentist earned a commission on the bill are visits
+    emp = conn.one("SELECT id FROM employees WHERE user_id = ?", (dentist_id,))
+    inv_cats: dict[int, set] = {}
+    for (inv, cat_) in lines:
+        inv_cats.setdefault(inv, set()).add(cat_)
+    if emp and inv_cats:
+        ids_ = list(inv_cats)
+        for m in conn.all(f"SELECT invoice_id, earned_on FROM dentist_commissions WHERE employee_id = ? AND status = 'valid' "
+                          f"AND invoice_id IN ({','.join('?' * len(ids_))})", [emp["id"], *ids_]):
+            for cat_ in inv_cats.get(m["invoice_id"], ()):
+                case(lines[(m["invoice_id"], cat_)]["patient_id"], cat_)["visits"].append((m["earned_on"] or "")[:10])
     for (inv, cat_), x in lines.items():
         c = case(x["patient_id"], cat_)
         c["billed"] += x["billed"]

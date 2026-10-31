@@ -1006,3 +1006,33 @@ section[id] { scroll-margin-top: 72px; }
 .xr-files figure { margin: 0; }
 .xr-files img { width: 100%; height: 130px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); background: #000; }
 .xr-files figcaption { word-break: break-word; }
+/* Calendar month view: a 7-column grid on wide screens, a day-by-day list on phones */
+.cal-month { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: #fff; }
+.cm-head { background: var(--surface-2, #f6f8fa); font-weight: 600; font-size: .85rem; padding: .4rem .5rem; border-bottom: 1px solid var(--line); text-align: center; }
+.cm-day { min-height: 110px; padding: .35rem; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); min-width: 0; }
+.cm-day:nth-child(7n) { border-right: 0; }
+.cm-other { background: #fafbfc; }
+.cm-other .cm-date a { color: var(--ink-3); }
+.cm-today { box-shadow: inset 0 0 0 2px #2b6cb0; }
+.cm-date { display: flex; align-items: center; gap: .35rem; margin-bottom: .25rem; }
+.cm-date a { font-weight: 700; text-decoration: none; color: inherit; }
+.cm-dow { display: none; }
+.cm-count { margin-left: auto; background: #c53030; color: #fff; border-radius: 999px; font-size: .72rem; padding: 0 .45rem; font-weight: 700; }
+.cm-appt { display: block; font-size: .76rem; line-height: 1.25; padding: .2rem .3rem; margin-bottom: .2rem; border-left: 3px solid #319795; background: #e6fffa;
+  border-radius: 4px; text-decoration: none; color: inherit; overflow: hidden; }
+.cm-appt .cm-time { font-weight: 700; }
+.cm-appt .cm-name { font-weight: 600; }
+.cm-appt .cm-svc { color: var(--ink-2, #4a5568); }
+.cm-appt .cm-doc { color: var(--ink-3); }
+.cm-appt.st-requested { border-left-color: #d69e2e; background: #fff8e6; }
+.cm-appt.st-checked_in { border-left-color: #2b6cb0; background: #eaf2fc; }
+.cm-appt.st-completed { border-left-color: #2f855a; background: #eaf7ef; }
+.cm-appt.st-cancelled, .cm-appt.st-no_show { border-left-color: #a0aec0; background: #f3f4f6; color: var(--ink-3); text-decoration: line-through; }
+@media (max-width: 760px) {
+  .cal-month { display: block; }
+  .cm-head, .cm-empty, .cm-other.cm-empty { display: none; }
+  .cm-day { min-height: 0; border-right: 0; padding: .6rem .7rem; }
+  .cm-dow { display: inline; font-weight: 600; }
+  .cm-date a { font-size: 1.1rem; }
+  .cm-appt { font-size: .9rem; padding: .35rem .5rem; }
+}
