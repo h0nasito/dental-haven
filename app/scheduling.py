@@ -108,7 +108,7 @@ def free_resource(conn, branch_id: int, start: str, end: str, exclude_id=None):
 
 
 def validate_slot(conn, *, branch_id: int, start: datetime, end: datetime, dentist_id=None, resource_id=None,
-                  exclude_id=None, allow_past=False) -> list[str]:
+                  exclude_id=None, allow_past=False, allow_overlap=False) -> list[str]:
     errors = []
     if end <= start:
         errors.append("End time must be after start time.")
@@ -128,6 +128,8 @@ def validate_slot(conn, *, branch_id: int, start: datetime, end: datetime, denti
         if windows is not None and not any(hm_to_min(a) <= s_min and e_min <= hm_to_min(b) for a, b in windows):
             errors.append("The dentist is not scheduled at this branch at that time.")
     s, e = fmt_dt(start), fmt_dt(end)
+    if allow_overlap:            # staff chose to double-book on purpose
+        return errors
     for c in find_conflicts(conn, s, e, dentist_id=dentist_id, resource_id=resource_id, exclude_id=exclude_id):
         who = []
         if dentist_id and c["dentist_id"] == dentist_id:

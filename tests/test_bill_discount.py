@@ -191,3 +191,25 @@ class TestCalendarMonth(Base):
         self.assertIn("commission ₱200.00", page)
         t = today().isoformat()
         self.assertIn("Dentistline, Noset", self.login("dentist.malolos").get(f"/staff/my-cases/?q=dentistline&from={t}&to={t}").data.decode())
+
+
+class TestOverlapBooking(Base):
+    def test_overlap_only_when_ticked(self):
+        from datetime import date, timedelta
+        did = self.q("SELECT id FROM users WHERE email LIKE 'dentist.malolos@%'")["id"]
+        b = self.branch("malolos")
+        pid = self.q("SELECT id FROM patients WHERE preferred_branch_id = ? LIMIT 1", (b,))["id"]
+        svc = self.q("SELECT id FROM services WHERE active = 1 LIMIT 1")["id"]
+        sched = self.q("SELECT weekday, start_time FROM dentist_schedules WHERE dentist_id = ? AND branch_id = ? LIMIT 1", (did, b))
+        d = date.today() + timedelta(days=21)
+        while d.weekday() != sched["weekday"]:
+            d += timedelta(days=1)
+        c = self.login("reception.malolos")
+        base = {"patient_id": pid, "branch_id": b, "service_id": svc, "dentist_id": did, "date": d.isoformat(), "status": "confirmed", "source": "staff"}
+        n0 = self.conn.scalar("SELECT COUNT(*) FROM appointments WHERE dentist_id = ? AND substr(start_at, 1, 10) = ?", (did, d.isoformat()))
+        c.post(f"/staff/appointments/new?patient_id={pid}", data={**base, "time": "10:00", "duration": "30"})
+        r = c.post(f"/staff/appointments/new?patient_id={pid}", data={**base, "time": "10:20", "duration": "40"})
+        self.assertIn("Allow overlap", r.data.decode())
+        self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM appointments WHERE dentist_id = ? AND substr(start_at, 1, 10) = ?", (did, d.isoformat())), n0 + 1)
+        c.post(f"/staff/appointments/new?patient_id={pid}", data={**base, "time": "10:20", "duration": "40", "allow_overlap": "1"})
+        self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM appointments WHERE dentist_id = ? AND substr(start_at, 1, 10) = ?", (did, d.isoformat())), n0 + 2)
