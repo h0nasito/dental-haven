@@ -35,8 +35,9 @@ class TestCaseTypes(Base):
             self.assertEqual(k(text), want, text)
         self.assertEqual(k("Visit", "Orthodontics & TMJ"), ORTHO)     # only the website service is known
 
-    def test_bill_lines_alone_dont_add_the_patient(self):
-        """A dentist named on a bill line doesn't get the patient in My cases unless the patient is assigned to them."""
+    def test_bill_line_dentist_gets_the_case(self):
+        """The dentist named on a bill line did the work: the patient is assigned to them, and the case shows in My cases
+        (only the lines billed to them)."""
         doc = self.q("SELECT id FROM users WHERE email = ?", ("dentist.malolos" + DOMAIN,))["id"]
         pid = self.conn.insert("patients", {"chart_no": "T-CT-1", "first_name": "Billline", "last_name": "Linked", "created_at": "2026-01-01 00:00:00"})
         branch = self.branch("malolos")
@@ -48,9 +49,7 @@ class TestCaseTypes(Base):
         self.conn.insert("invoice_items", {"invoice_id": inv, "description": "ORAL PROPHYLAXIS (MILD)", "qty": 1, "unit_price_cents": 100000,
                                            "discount_cents": 0, "amount_cents": 100000})
         c = self.login("dentist.malolos")
-        self.assertNotIn("Linked, Billline", c.get("/staff/my-cases/?q=billline").data.decode())
-        # once assigned, the cases billed to them show
-        self.conn.execute("INSERT INTO patient_assignments (patient_id, dentist_id, created_at) VALUES (?, ?, '2026-03-02 00:00:00')", (pid, doc))
+        self.assertIsNotNone(self.q("SELECT 1 AS x FROM patient_assignments WHERE patient_id = ? AND dentist_id = ?", (pid, doc)))
         page = c.get("/staff/my-cases/?q=billline").data.decode()
         self.assertIn("Linked, Billline", page)
         self.assertIn("Braces, Aligners &amp; Orthodontics", page)

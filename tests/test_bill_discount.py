@@ -42,3 +42,26 @@ class TestIssuedDiscount(Base):
         # a dentist (no bills.edit) can't
         self.assertEqual(self.login("dentist.malolos").post(f"/staff/invoices/{inv}/discount",
                                                             data={"kind": "amount", "value": "1", "reason": "x x"}).status_code, 403)
+
+
+class TestDentistWhoDidWorkIsAssigned(Base):
+    def test_bill_line_dentist_assigns_patient(self):
+        from app.util import now_str
+        uid = self.q("SELECT id FROM users WHERE email LIKE 'dentist.malolos@%'")["id"]
+        b = self.branch("malolos")
+        pid = self.conn.insert("patients", {"first_name": "Work", "last_name": "Assigntest", "chart_no": "DH-AS1", "preferred_branch_id": b,
+                                            "created_at": now_str(), "updated_at": now_str()})
+        self.assertIsNone(self.q("SELECT 1 AS x FROM patient_assignments WHERE patient_id = ?", (pid,)))
+        inv = self.conn.insert("invoices", {"branch_id": b, "patient_id": pid, "status": "issued", "number": "AS-1", "issued_at": "2026-10-31",
+                                            "subtotal_cents": 120000, "discount_cents": 0, "tax_cents": 0, "total_cents": 120000, "created_at": now_str()})
+        line = self.conn.insert("invoice_items", {"invoice_id": inv, "description": "Restoration", "qty": 1, "unit_price_cents": 120000,
+                                                  "discount_cents": 0, "amount_cents": 120000, "done_on": "2026-10-31"})
+        self.assertIsNone(self.q("SELECT 1 AS x FROM patient_assignments WHERE patient_id = ?", (pid,)))
+        self.conn.execute("UPDATE invoice_items SET dentist_id = ? WHERE id = ?", (uid, line))
+        self.assertIsNotNone(self.q("SELECT 1 AS x FROM patient_assignments WHERE patient_id = ? AND dentist_id = ?", (pid, uid)))
+        page = self.login("dentist.malolos").get("/staff/my-cases/?from=2026-10-01&to=2026-10-31").data.decode()
+        self.assertIn("Assigntest", page)
+        # staff (not dentists) on a line don't get assigned
+        staff = self.q("SELECT id FROM users WHERE email LIKE 'staff.malolos@%'")["id"]
+        self.conn.execute("UPDATE invoice_items SET dentist_id = ? WHERE id = ?", (staff, line))
+        self.assertIsNone(self.q("SELECT 1 AS x FROM patient_assignments WHERE patient_id = ? AND dentist_id = ?", (pid, staff)))
