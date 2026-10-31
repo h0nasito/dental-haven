@@ -142,6 +142,10 @@
 {% for pr in gr.procs %}<input type="hidden" name="ids" value="{{ pr.id }}">{% endfor %}
 <label class="sr-only" for="vd{{ loop.index }}-{{ gr.procs[0].id }}">Dentist</label><select id="vd{{ loop.index }}-{{ gr.procs[0].id }}" name="dentist_id" required><option value="">Choose dentist…</option>{% for d in all_dentists %}<option value="{{ d.id }}" {{ 'selected' if d.name == gr.dentist }}>{{ d.name }}</option>{% endfor %}</select>
 <div class="row mt-1"><button class="btn btn-secondary btn-sm">Save</button></div></form></details>
+{% if my_branches|length > 1 %}<details><summary>Change branch</summary><form method="post" action="{{ url_for('patients.procedures_branch', patient_id=p.id) }}" class="mt-1">{{ csrf() }}
+{% for pr in gr.procs %}<input type="hidden" name="ids" value="{{ pr.id }}">{% endfor %}{% for vn in gr.get('visits', []) %}<input type="hidden" name="vids" value="{{ vn.id }}">{% endfor %}
+<label class="sr-only" for="vb{{ gr.procs[0].id }}">Branch</label><select id="vb{{ gr.procs[0].id }}" name="branch_id" required>{% for b in my_branches %}<option value="{{ b.id }}" {{ 'selected' if b.name in (gr.branch or '') }}>{{ b.name }}</option>{% endfor %}</select>
+<div class="row mt-1"><button class="btn btn-secondary btn-sm">Move visit</button></div><small class="muted">The bill moves too if nothing is paid yet.</small></form></details>{% endif %}
 {% for pr in gr.procs %}
 <details><summary>Edit “{{ (pr.description or "").split("\n")[0]|truncate(28) }}”</summary><form method="post" action="{{ url_for('patients.procedure_action', patient_id=p.id, proc_id=pr.id) }}" class="mt-1">{{ csrf() }}
 <label class="sr-only" for="ed{{ pr.id }}">Description</label><textarea id="ed{{ pr.id }}" name="description" rows="3">{{ pr.description }}</textarea>

@@ -296,3 +296,28 @@ class TestProgressNotePrice(Base):
                        follow_redirects=True)
         self.assertIn("already has a payment", r.data.decode())
         self.assertEqual(self.q("SELECT total_cents FROM invoices WHERE id = ?", (inv["id"],))["total_cents"], 150000)
+
+    def test_change_branch(self):
+        from app.util import now_str
+        admin = self.login("admin")
+        self._post(admin, signature="", recall_date="", line_service_id=[""], line_desc=["Pasta (demo branch test)"], line_tooth=["16"],
+                   line_qty=[""], line_price=["1000"], line_disc=[""], bill_disc="")
+        v = self.q("SELECT * FROM visit_notes WHERE patient_id = ? AND status = 'saved' ORDER BY id DESC", (self.pid,))
+        pr = self.q("SELECT * FROM procedures WHERE visit_note_id = ?", (v["id"],))
+        self.assertIn("Change branch", admin.get(f"/staff/patients/{self.pid}?tab=notes").data.decode())
+        mal = self.branch("malolos")
+        admin.post(f"/staff/patients/{self.pid}/procedures/branch", data={"ids": [pr["id"]], "vids": [v["id"]], "branch_id": mal})
+        self.assertEqual(self.q("SELECT branch_id FROM procedures WHERE id = ?", (pr["id"],))["branch_id"], mal)
+        self.assertEqual(self.q("SELECT branch_id FROM visit_notes WHERE id = ?", (v["id"],))["branch_id"], mal)
+        self.assertEqual(self.q("SELECT branch_id FROM invoices WHERE id = ?", (v["invoice_id"],))["branch_id"], mal)
+        # with a payment, the bill stays where the money was received
+        self.conn.insert("payments", {"invoice_id": v["invoice_id"], "branch_id": mal, "kind": "payment", "amount_cents": 1000, "method": "cash",
+                                      "received_at": now_str(), "status": "valid", "created_at": now_str()})
+        admin.post(f"/staff/patients/{self.pid}/procedures/branch", data={"ids": [pr["id"]], "branch_id": self.sjdm})
+        self.assertEqual(self.q("SELECT branch_id FROM procedures WHERE id = ?", (pr["id"],))["branch_id"], self.sjdm)
+        self.assertEqual(self.q("SELECT branch_id FROM visit_notes WHERE id = ?", (v["id"],))["branch_id"], self.sjdm)
+        self.assertEqual(self.q("SELECT branch_id FROM invoices WHERE id = ?", (v["invoice_id"],))["branch_id"], mal)
+        # someone not at the target branch can't move it there
+        r = self.login("dentist.sjdm").post(f"/staff/patients/{self.pid}/procedures/branch", data={"ids": [pr["id"]], "branch_id": mal})
+        self.assertIn(r.status_code, (302, 403))
+        self.assertEqual(self.q("SELECT branch_id FROM procedures WHERE id = ?", (pr["id"],))["branch_id"], self.sjdm)

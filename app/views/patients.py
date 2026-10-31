@@ -527,6 +527,7 @@ def detail(patient_id):
     if clinical and tab == "notes":
         import json
         ctx["pn_groups"] = progress_groups(conn, patient_id, ctx["procedures"], ctx["notes"])
+        ctx["my_branches"] = branches_for_user(g.user)
         ctx["proc_prices"] = {ln["proc"]["id"]: (ln["price"] if ln["price"] is not None else ln["proc"]["price_cents"])
                               for gr in ctx["pn_groups"] for ln in gr["lines"] if ln["proc"]}
         from ..fee_schedule import picker_options
@@ -1065,6 +1066,62 @@ def _dentist_choice(conn, raw):
     except ValueError:
         return False
     return did if conn.one("SELECT id FROM users WHERE id = ? AND role = 'dentist'", (did,)) else False
+
+
+@bp.route("/<int:patient_id>/procedures/branch", methods=["POST"])
+@require("progress.actions")
+def procedures_branch(patient_id):
+    """Move one visit (progress notes row) to another branch, e.g. when the wrong branch was chosen. Its bill moves too
+    while nothing is paid on it; a bill with payments stays at the branch that received the money."""
+    from ..billing import paid_amount
+    conn = get_db()
+    _load(patient_id)
+    _require_clinical(patient_id, edit=True, perm="progress.actions")
+    back = redirect(url_for("patients.detail", patient_id=patient_id, tab="notes"))
+    bid = to_int(request.form.get("branch_id"))
+    if not bid or not g.user.in_branch(bid) or not conn.one("SELECT id FROM branches WHERE id = ? AND active = 1", (bid,)):
+        flash("Choose one of your branches.", "error")
+        return back
+    ids = [int(x) for x in request.form.getlist("ids") if x.isdigit()][:200]
+    vids = [int(x) for x in request.form.getlist("vids") if x.isdigit()][:50]
+    procs = conn.all(f"SELECT * FROM procedures WHERE patient_id = ? AND id IN ({','.join('?' * len(ids))})", (patient_id, *ids)) if ids else []
+    vids = sorted(set(vids) | {p["visit_note_id"] for p in procs if p["visit_note_id"]})
+    notes = conn.all(f"SELECT * FROM visit_notes WHERE patient_id = ? AND id IN ({','.join('?' * len(vids))})", (patient_id, *vids)) if vids else []
+    if not procs and not notes:
+        flash("Nothing to move.", "error")
+        return back
+    for row in [*procs, *notes]:
+        if row["branch_id"] and not g.user.in_branch(row["branch_id"]):
+            abort(403)
+    invs, kept = {}, []
+    for pr in procs:
+        inv, _ln = bill_line_for(conn, pr)
+        if inv:
+            invs[inv["id"]] = inv
+    for v in notes:
+        if v["invoice_id"] and v["invoice_id"] not in invs:
+            invs[v["invoice_id"]] = conn.one("SELECT * FROM invoices WHERE id = ?", (v["invoice_id"],))
+    with conn.transaction():
+        for pr in procs:
+            conn.execute("UPDATE procedures SET branch_id = ? WHERE id = ?", (bid, pr["id"]))
+        for v in notes:
+            conn.execute("UPDATE visit_notes SET branch_id = ? WHERE id = ?", (bid, v["id"]))
+        moved = 0
+        for inv in invs.values():
+            if not inv or inv["branch_id"] == bid or inv["status"] == "void":
+                continue
+            if paid_amount(conn, inv["id"]) or conn.scalar("SELECT COUNT(*) FROM payments WHERE invoice_id = ? AND status = 'valid'", (inv["id"],)):
+                kept.append(inv["number"] or "draft bill")
+                continue
+            conn.execute("UPDATE invoices SET branch_id = ? WHERE id = ?", (bid, inv["id"]))
+            moved += 1
+        bname = conn.scalar("SELECT name FROM branches WHERE id = ?", (bid,))
+        audit.record("progress_branch_changed", "patient", patient_id, f"Moved a visit to {bname}",
+                     {"procedures": [p["id"] for p in procs], "visit_notes": [v["id"] for v in notes],
+                      "from": sorted({r["branch_id"] or 0 for r in [*procs, *notes]}), "to": bid, "bills_moved": moved, "bills_kept": kept}, bid)
+    flash(f"Visit moved to {bname}." + (" Its bill moved too." if moved else "")
+          + (f" {', '.join(kept)} already has payments, so it stays at its branch." if kept else ""), "success")
+    return back
 
 
 @bp.route("/<int:patient_id>/procedures/dentist", methods=["POST"])
