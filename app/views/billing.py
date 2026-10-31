@@ -126,6 +126,29 @@ def invoice_new():
                            branches=branches_for_user(g.user))
 
 
+@bp.route("/invoices/<int:invoice_id>/payments/<int:payment_id>/branch", methods=["POST"])
+@require("bills.edit")
+def payment_branch(invoice_id, payment_id):
+    """Correct the branch a payment was received at (it counts in that branch's collections, daily report and deposits)."""
+    conn = get_db()
+    inv = _load_invoice(invoice_id)
+    p = conn.one("SELECT p.*, b.name AS branch_name FROM payments p LEFT JOIN branches b ON b.id = p.branch_id "
+                 "WHERE p.id = ? AND p.invoice_id = ? AND p.status = 'valid'", (payment_id, invoice_id))
+    if not p or p["method"] == CREDIT_METHOD:
+        abort(404)
+    bid = to_int(request.form.get("branch_id"))
+    if not bid or not g.user.in_branch(bid) or (p["branch_id"] and not g.user.in_branch(p["branch_id"])):
+        abort(403)
+    if bid != p["branch_id"]:
+        conn.execute("UPDATE payments SET branch_id = ? WHERE id = ?", (bid, payment_id))
+        name = conn.scalar("SELECT name FROM branches WHERE id = ?", (bid,))
+        audit.record("payment_branch_changed", "invoice", invoice_id,
+                     f"Payment {peso(p['amount_cents'])} on {(p['received_at'] or '')[:10]}: received at {name} (was {p['branch_name']})",
+                     {"payment_id": payment_id}, bid)
+        flash(f"The payment now counts in {name}'s collections for {(p['received_at'] or '')[:10]}.", "success")
+    return redirect(url_for("billing.invoice", invoice_id=invoice_id))
+
+
 @bp.route("/invoices/<int:invoice_id>/branch", methods=["POST"])
 @require("bills.edit")
 def invoice_branch(invoice_id):
@@ -225,8 +248,8 @@ def invoice(invoice_id):
     conn = get_db()
     inv = _load_invoice(invoice_id)
     items = conn.all("SELECT * FROM invoice_items WHERE invoice_id = ? ORDER BY id", (invoice_id,))
-    payments = conn.all("SELECT p.*, u.name AS received_by_name, v.name AS voided_by_name FROM payments p "
-                        "LEFT JOIN users u ON u.id = p.received_by LEFT JOIN users v ON v.id = p.voided_by "
+    payments = conn.all("SELECT p.*, u.name AS received_by_name, v.name AS voided_by_name, pb.name AS branch_name FROM payments p "
+                        "LEFT JOIN users u ON u.id = p.received_by LEFT JOIN users v ON v.id = p.voided_by LEFT JOIN branches pb ON pb.id = p.branch_id "
                         "WHERE p.invoice_id = ? ORDER BY p.id", (invoice_id,))
     paid = paid_amount(conn, invoice_id)
     history = conn.all("SELECT a.*, u.name AS actor FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id "
@@ -698,6 +721,55 @@ def _sales_data(conn, ids, start, end):
     return by_branch, methods, services_rows, daily
 
 
+def collections_by_service(conn, ids, start, end) -> list[dict]:
+    """Money received in the period by type of service: each payment (or refund) is shared over its bill's lines in
+    proportion to their amounts, by the date received, so braces installments paid this month count under Orthodontics
+    even if the bill is from an earlier year. Deposits not yet applied to a bill are their own row."""
+    from ..case_types import Classifier
+    marks = ",".join("?" for _ in ids) or "NULL"
+    s, e = start.isoformat(), end.isoformat()
+    pays = {r["invoice_id"]: r["amt"] for r in conn.all(
+        "SELECT invoice_id, SUM(CASE WHEN kind = 'payment' THEN amount_cents ELSE -amount_cents END) AS amt FROM payments "
+        f"WHERE status = 'valid' AND method != '{CREDIT_METHOD}' AND branch_id IN ({marks}) AND substr(received_at, 1, 10) BETWEEN ? AND ? "
+        "GROUP BY invoice_id", [*ids, s, e])}
+    kind = Classifier(conn)
+    out: dict[str, dict] = {}
+    inv_ids = list(pays)
+    lines: dict[int, list] = {}
+    for i in range(0, len(inv_ids), 500):
+        chunk = inv_ids[i:i + 500]
+        for ln in conn.all(f"SELECT ii.invoice_id, ii.amount_cents, ii.description, sv.category AS scat, u.name AS dentist FROM invoice_items ii "
+                           f"LEFT JOIN services sv ON sv.id = ii.service_id LEFT JOIN users u ON u.id = ii.dentist_id "
+                           f"WHERE ii.invoice_id IN ({','.join('?' * len(chunk))})", chunk):
+            lines.setdefault(ln["invoice_id"], []).append(ln)
+    docs: dict[str, dict] = {}
+    for inv, amt in pays.items():
+        ls = lines.get(inv) or []
+        tot = sum(max(0, l["amount_cents"]) for l in ls)
+        if not tot:
+            for bucket, key in ((out, "Other"), (docs, "No dentist set")):
+                r = bucket.setdefault(key, {"service": key, "amount": 0, "bills": set()})
+                r["amount"] += amt
+                r["bills"].add(inv)
+            continue
+        for l in ls:
+            part = round(amt * max(0, l["amount_cents"]) / tot)
+            for bucket, key in ((out, kind(l["description"], l["scat"])), (docs, l["dentist"] or "No dentist set")):
+                r = bucket.setdefault(key, {"service": key, "amount": 0, "bills": set()})
+                r["amount"] += part
+                r["bills"].add(inv)
+    dep = conn.scalar(f"SELECT COALESCE(SUM(CASE WHEN kind = 'deposit' THEN amount_cents ELSE -amount_cents END), 0) FROM patient_credits "
+                      f"WHERE status = 'valid' AND kind IN ('deposit', 'refund') AND branch_id IN ({marks}) AND entry_date BETWEEN ? AND ?",
+                      [*ids, s, e]) or 0
+    if dep:
+        out["Patient deposits (not yet on a bill)"] = {"service": "Patient deposits (not yet on a bill)", "amount": dep, "bills": set()}
+    rows = [{"service": r["service"], "amount": r["amount"], "bills": len(r["bills"])} for r in out.values() if r["amount"]]
+    by_doc = [{"service": r["service"], "amount": r["amount"], "bills": len(r["bills"])} for r in docs.values() if r["amount"]]
+    if dep:
+        by_doc.append({"service": "Patient deposits (not yet on a bill)", "amount": dep, "bills": 0})
+    return sorted(rows, key=lambda r: -r["amount"]), sorted(by_doc, key=lambda r: (r["service"] in ("No dentist set", "Patient deposits (not yet on a bill)"), -r["amount"]))
+
+
 def _outstanding(conn, ids):
     marks = ",".join("?" for _ in ids) or "NULL"
     rows = conn.all(
@@ -848,11 +920,13 @@ def sales():
     start, end = date_range_args(30)
     ids = _report_branches(conn)
     by_branch, methods, services_rows, daily = _sales_data(conn, ids, start, end)
+    coll_services, coll_dentists = collections_by_service(conn, ids, start, end)
     totals = {k: sum(r[k] for r in by_branch) for k in ("invoices", "sales", "discounts", "tax", "received", "refunded", "collections", "voids",
                                                           "expenses", "net_cash", "deposits")}
     outstanding = _outstanding(conn, ids)
     max_daily = max([d["sales"] for d in daily] + [1])
     return render_template("staff/billing/sales.html", start=start, end=end, by_branch=by_branch, totals=totals, methods=methods,
+                           coll_services=coll_services, coll_dentists=coll_dentists,
                            services_rows=services_rows, daily=daily, max_daily=max_daily, outstanding=outstanding,
                            outstanding_total=sum(r["balance"] for r in outstanding), branches=branches_for_user(g.user),
                            branch=to_int(request.args.get("branch")))

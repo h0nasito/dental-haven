@@ -113,3 +113,46 @@ class TestPaymentBranch(Base):
         # with a payment the bill can't be moved
         a.post(f"/staff/invoices/{inv}/branch", data={"branch_id": gui})
         self.assertEqual(self.q("SELECT branch_id FROM invoices WHERE id = ?", (inv,))["branch_id"], mal)
+
+
+class TestCollectionsByService(Base):
+    def test_installment_on_old_bill_counts_by_payment_date(self):
+        from app.util import now_str, today
+        mal = self.branch("malolos")
+        uid = self.q("SELECT id FROM users WHERE email LIKE 'dentist.malolos@%'")["id"]
+        pid = self.q("SELECT id FROM patients WHERE preferred_branch_id = ? LIMIT 1", (mal,))["id"]
+        inv = self.conn.insert("invoices", {"branch_id": mal, "patient_id": pid, "status": "issued", "number": "MM-CS1", "issued_at": "2024-01-04",
+                                            "subtotal_cents": 4500000, "discount_cents": 0, "tax_cents": 0, "total_cents": 4500000,
+                                            "created_at": now_str(), "legacy": 1})
+        self.conn.insert("invoice_items", {"invoice_id": inv, "description": "Orthodontic Treatment (Metal Braces-Class 1)", "qty": 1,
+                                           "unit_price_cents": 4500000, "discount_cents": 0, "amount_cents": 4500000, "dentist_id": uid})
+        t = today().isoformat()
+        a = self.login("admin")
+        a.post(f"/staff/invoices/{inv}/payments", data={"action": "multi", "method": "cash", "amount": "1550", "received_at": t,
+                                                        "not_signed_reason": "x", "received_branch_id": mal})
+        page = a.get(f"/staff/reports/sales?from={t}&to={t}&branch={mal}").data.decode()
+        self.assertIn("Collections by service", page)
+        sec = page.split("Collections by service")[1].split("Collections by dentist")[0]
+        self.assertIn("Braces, Aligners &amp; Orthodontics", sec)
+        dsec = page.split("Collections by dentist")[1].split("Collections by method")[0]
+        self.assertIn(self.q("SELECT name FROM users WHERE id = ?", (uid,))["name"], dsec)
+
+    def test_change_payment_branch(self):
+        from app.util import now_str, today
+        mal, gui = self.branch("malolos"), self.branch("guiguinto")
+        pid = self.q("SELECT id FROM patients WHERE preferred_branch_id = ? LIMIT 1", (mal,))["id"]
+        inv = self.conn.insert("invoices", {"branch_id": mal, "patient_id": pid, "status": "issued", "number": "MM-PB1", "issued_at": "2024-01-04",
+                                            "subtotal_cents": 4500000, "discount_cents": 0, "tax_cents": 0, "total_cents": 4500000, "created_at": now_str(), "legacy": 1})
+        self.conn.insert("invoice_items", {"invoice_id": inv, "description": "Orthodontic Treatment", "qty": 1, "unit_price_cents": 4500000,
+                                           "discount_cents": 0, "amount_cents": 4500000})
+        t = today().isoformat()
+        pay = self.conn.insert("payments", {"invoice_id": inv, "branch_id": mal, "kind": "payment", "amount_cents": 155000, "method": "bank_transfer",
+                                            "account": "BPI", "received_at": t, "status": "valid", "created_at": now_str()})
+        a = self.login("admin")
+        self.assertIn("Change branch", a.get(f"/staff/invoices/{inv}").data.decode())
+        a.post(f"/staff/invoices/{inv}/payments/{pay}/branch", data={"branch_id": gui})
+        self.assertEqual(self.q("SELECT branch_id FROM payments WHERE id = ?", (pay,))["branch_id"], gui)
+        from app import daily_report
+        with self.app.app_context():
+            reps = {r["branch"] if "branch" in r else i: r for i, r in enumerate(daily_report.build(self.conn, t))}
+        self.assertIn("1,550", self.login("admin").get(f"/staff/reports/daily-collection?date={t}").data.decode())
