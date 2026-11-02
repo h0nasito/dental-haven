@@ -815,6 +815,46 @@ def collections_by_service(conn, ids, start, end) -> list[dict]:
     return sorted(rows, key=lambda r: -r["amount"]), sorted(by_doc, key=lambda r: (r["service"] in ("No dentist set", "Patient deposits (not yet on a bill)"), -r["amount"]))
 
 
+def collection_list(conn, ids, start, end) -> list[dict]:
+    """Every payment, refund and deposit received in the period (the rows behind Net collections): date, patient,
+    bill, procedures on the bill, dentist(s) on its lines, method and amount (refunds negative)."""
+    marks = ",".join("?" for _ in ids) or "NULL"
+    s, e = start.isoformat(), end.isoformat()
+    pays = conn.all(
+        "SELECT p.id, p.invoice_id, p.kind, p.amount_cents, p.method, p.account, substr(p.received_at, 1, 10) AS d, i.number, "
+        "pt.id AS patient_id, pt.first_name, pt.last_name, b.name AS branch FROM payments p JOIN invoices i ON i.id = p.invoice_id "
+        "JOIN patients pt ON pt.id = i.patient_id JOIN branches b ON b.id = p.branch_id "
+        f"WHERE p.status = 'valid' AND p.method != ? AND p.branch_id IN ({marks}) AND p.received_at BETWEEN ? AND ? ORDER BY p.received_at, p.id",
+        [CREDIT_METHOD, *ids, s, e])
+    lines: dict[int, list] = {}
+    inv_ids = sorted({r["invoice_id"] for r in pays})
+    for i in range(0, len(inv_ids), 500):
+        chunk = inv_ids[i:i + 500]
+        for ln in conn.all(f"SELECT ii.invoice_id, ii.description, ii.tooth, u.name AS dentist FROM invoice_items ii LEFT JOIN users u ON u.id = ii.dentist_id "
+                           f"WHERE ii.invoice_id IN ({','.join('?' * len(chunk))}) ORDER BY ii.id", chunk):
+            lines.setdefault(ln["invoice_id"], []).append(ln)
+    out = []
+    for r in pays:
+        ls = lines.get(r["invoice_id"]) or []
+        procs = list(dict.fromkeys((l["description"] or "").split(" · ")[0] + (f" #{l['tooth']}" if l["tooth"] else "") for l in ls))
+        docs = list(dict.fromkeys(l["dentist"] for l in ls if l["dentist"]))
+        out.append({"date": r["d"], "patient_id": r["patient_id"], "patient": f"{r['last_name']}, {r['first_name']}", "bill": r["number"],
+                    "invoice_id": r["invoice_id"], "branch": r["branch"], "procedure": ", ".join(p for p in procs if p) or "—",
+                    "dentist": ", ".join(docs) or "—", "method": pay_label(r["method"], r["account"] or ""),
+                    "amount": r["amount_cents"] if r["kind"] == "payment" else -r["amount_cents"], "refund": r["kind"] != "payment"})
+    for r in conn.all(
+            "SELECT c.kind, c.amount_cents, c.method, c.account, c.entry_date AS d, pt.id AS patient_id, pt.first_name, pt.last_name, b.name AS branch "
+            "FROM patient_credits c JOIN patients pt ON pt.id = c.patient_id JOIN branches b ON b.id = c.branch_id "
+            f"WHERE c.status = 'valid' AND c.kind IN ('deposit', 'refund') AND c.branch_id IN ({marks}) AND c.entry_date BETWEEN ? AND ?",
+            [*ids, s, e]):
+        out.append({"date": r["d"], "patient_id": r["patient_id"], "patient": f"{r['last_name']}, {r['first_name']}", "bill": None, "invoice_id": None,
+                    "branch": r["branch"], "procedure": "Deposit (account credit)" if r["kind"] == "deposit" else "Deposit refund",
+                    "dentist": "—", "method": pay_label(r["method"], r["account"] or ""),
+                    "amount": r["amount_cents"] if r["kind"] == "deposit" else -r["amount_cents"], "refund": r["kind"] != "deposit"})
+    out.sort(key=lambda x: (x["date"] or "", x["patient"]))
+    return out
+
+
 def _outstanding(conn, ids):
     marks = ",".join("?" for _ in ids) or "NULL"
     rows = conn.all(
@@ -966,12 +1006,14 @@ def sales():
     ids = _report_branches(conn)
     by_branch, methods, services_rows, daily = _sales_data(conn, ids, start, end)
     coll_services, coll_dentists = collections_by_service(conn, ids, start, end)
+    coll_list = collection_list(conn, ids, start, end)
     totals = {k: sum(r[k] for r in by_branch) for k in ("invoices", "sales", "discounts", "tax", "received", "refunded", "collections", "voids",
                                                           "expenses", "net_cash", "deposits")}
     outstanding = _outstanding(conn, ids)
     max_daily = max([d["sales"] for d in daily] + [1])
     return render_template("staff/billing/sales.html", start=start, end=end, by_branch=by_branch, totals=totals, methods=methods,
-                           coll_services=coll_services, coll_dentists=coll_dentists,
+                           coll_services=coll_services, coll_dentists=coll_dentists, coll_list=coll_list,
+                           coll_list_total=sum(r["amount"] for r in coll_list),
                            services_rows=services_rows, daily=daily, max_daily=max_daily, outstanding=outstanding,
                            outstanding_total=sum(r["balance"] for r in outstanding), branches=branches_for_user(g.user),
                            branch=to_int(request.args.get("branch")))
@@ -1056,6 +1098,15 @@ def export(kind):
         for r in rows:
             w.writerow([r["received_at"], r["branch"], r["number"], r["kind"], PAYMENT_METHODS.get(r["method"], r["method"]),
                         r["reference"], (r["amount_cents"] if r["kind"] == "payment" else -r["amount_cents"]) / 100, r["status"], r["void_reason"]])
+    elif kind == "collections":
+        if not g.user.can("reports.sales"):
+            abort(403)
+        w.writerow(["Date", "Patient", "Bill", "Branch", "Procedure", "Dentist", "Payment method", "Collected (PHP)"])
+        rows = collection_list(conn, ids, start, end)
+        for r in rows:
+            w.writerow([r["date"], r["patient"], r["bill"] or "", r["branch"], r["procedure"], r["dentist"] if r["dentist"] != "—" else "",
+                        r["method"], r["amount"] / 100])
+        w.writerow(["", "", "", "", "", "", "Total", sum(r["amount"] for r in rows) / 100])
     elif kind == "appointments":
         if not g.user.can("reports.operations"):
             abort(403)

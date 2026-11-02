@@ -324,3 +324,31 @@ class TestCommissionReport(Base):
         self.assertIn("Root canal (demo)", csv)
         self.assertEqual(self.login("staff.malolos").get("/staff/commissions/").status_code, 403)
         self.assertEqual(self.login("dentist.malolos").get("/staff/commissions/").status_code, 403)
+
+
+class TestCollectionsList(Base):
+    def test_list_by_date_with_patient_procedure_method_dentist(self):
+        from app.util import now_str
+        uid = self.q("SELECT id FROM users WHERE email LIKE 'dentist.malolos@%'")["id"]
+        doc = self.q("SELECT name FROM users WHERE id = ?", (uid,))["name"]
+        mal = self.branch("malolos")
+        pt = self.q("SELECT * FROM patients WHERE preferred_branch_id = ? LIMIT 1", (mal,))
+        inv = self.conn.insert("invoices", {"branch_id": mal, "patient_id": pt["id"], "status": "issued", "number": "CL-1", "issued_at": "2026-09-01",
+                                            "subtotal_cents": 500000, "discount_cents": 0, "tax_cents": 0, "total_cents": 500000, "created_at": now_str()})
+        self.conn.insert("invoice_items", {"invoice_id": inv, "description": "Braces adjustment (demo)", "qty": 1, "unit_price_cents": 500000,
+                                           "discount_cents": 0, "amount_cents": 500000, "dentist_id": uid, "done_on": "2026-09-01"})
+        for amt, d in ((150000, "2026-10-05"), (70000, "2026-10-06")):
+            self.conn.insert("payments", {"invoice_id": inv, "branch_id": mal, "kind": "payment", "amount_cents": amt, "method": "cash",
+                                          "received_at": d, "status": "valid", "created_at": now_str()})
+        a = self.login("admin")
+        page = a.get(f"/staff/reports/sales?from=2026-10-05&to=2026-10-05&branch={mal}").data.decode()
+        self.assertIn("Collections list", page)
+        self.assertIn(pt["last_name"], page)
+        self.assertIn("Braces adjustment (demo)", page)
+        self.assertIn(doc, page)
+        self.assertIn("₱1,500.00", page)
+        self.assertNotIn("₱700.00", page)                     # the next day's payment isn't in this day's list
+        csv = a.get(f"/staff/reports/export/collections.csv?from=2026-10-05&to=2026-10-06&branch={mal}").data.decode()
+        self.assertIn("Braces adjustment (demo)", csv)
+        self.assertIn("Cash,1500.0", csv)
+        self.assertIn("Cash,700.0", csv)
