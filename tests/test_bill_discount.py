@@ -317,7 +317,10 @@ class TestCommissionReport(Base):
         self.assertIn("₱900.00", page)
         self.assertNotIn("₱50.00", page)                       # 2nd cutoff entry not in the 1st
         self.assertIn("₱50.00", a.get("/staff/commissions/?month=2026-10&half=2").data.decode())
-        csv = a.get("/staff/commissions/?month=2026-10&half=1&format=csv").data.decode()
+        self.conn.insert("dentist_commissions", {"employee_id": eid, "earned_on": "2026-10-25", "invoice_id": inv, "amount_cents": 0,
+                                                 "base_cents": 10000, "description": "Zero entry (demo)", "status": "valid", "created_at": now_str()})
+        self.assertNotIn("Zero entry (demo)", a.get("/staff/commissions/?month=2026-10&half=2").data.decode())   # ₱0 entries hidden
+        csv =a.get("/staff/commissions/?month=2026-10&half=1&format=csv").data.decode()
         self.assertIn("Root canal (demo)", csv)
         self.assertEqual(self.login("staff.malolos").get("/staff/commissions/").status_code, 403)
         self.assertEqual(self.login("dentist.malolos").get("/staff/commissions/").status_code, 403)

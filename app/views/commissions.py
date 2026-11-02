@@ -61,7 +61,8 @@ def build(conn, start: date, end: date, branch_ids: list[int], branch_id=None, d
                           "pay.method, (SELECT group_concat(description, ', ') FROM invoice_items WHERE invoice_id = c.invoice_id) AS items "
                           "FROM dentist_commissions c LEFT JOIN invoices i ON i.id = c.invoice_id LEFT JOIN patients p ON p.id = i.patient_id "
                           "LEFT JOIN payments pay ON pay.id = c.payment_id LEFT JOIN branches pb ON pb.id = pay.branch_id "
-                          "LEFT JOIN branches ib ON ib.id = i.branch_id WHERE c.employee_id = ? AND c.status = 'valid' AND c.earned_on BETWEEN ? AND ? "
+                          "LEFT JOIN branches ib ON ib.id = i.branch_id WHERE c.employee_id = ? AND c.status = 'valid' AND c.amount_cents != 0 "
+                          "AND c.earned_on BETWEEN ? AND ? "
                           "ORDER BY c.earned_on, c.id", (d["eid"], s, e)):
             if m["bid"] is not None and m["bid"] not in allowed:
                 continue
