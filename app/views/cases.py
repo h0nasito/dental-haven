@@ -98,8 +98,10 @@ def build_cases(conn, dentist_id: int) -> list[dict]:
         if mine(r["patient_id"], r["performed_by"]):
             case(r["patient_id"], kind(r["description"] or r["service"], r["scat"]))["visits"].append(r["d"])
     # saved progress notes (visits) with no coded procedure still count as a visit
+    # (only notes with something in them: written notes or a recall; a note whose procedures were all deleted is not a visit)
     for r in conn.all(f"SELECT v.patient_id, v.dentist_id, v.visit_date AS d FROM visit_notes v WHERE v.status = 'saved' AND v.cancelled_at IS NULL "
-                      f"AND v.patient_id IN ({marks}) AND NOT EXISTS (SELECT 1 FROM procedures p WHERE p.visit_note_id = v.id AND p.status = 'completed')", P):
+                      f"AND v.patient_id IN ({marks}) AND (TRIM(COALESCE(v.body, '')) != '' OR v.recall_date IS NOT NULL) "
+                      f"AND NOT EXISTS (SELECT 1 FROM procedures p WHERE p.visit_note_id = v.id AND p.status = 'completed')", P):
         if mine(r["patient_id"], r["dentist_id"]):
             case(r["patient_id"], GENERAL)["visits"].append(r["d"][:10])
     # bill lines that are theirs, by type of case; each bill's payments are shared over its lines in proportion
@@ -225,7 +227,7 @@ def detail(patient_id):
         visits = list(visits) + [x for x in conn.all(
             "SELECT v.visit_date AS at, v.dentist_id AS owner, 'Progress note' AS description, '' AS tooth, NULL AS service, u.name AS dentist, b.name AS branch "
             "FROM visit_notes v LEFT JOIN users u ON u.id = v.dentist_id LEFT JOIN branches b ON b.id = v.branch_id WHERE v.patient_id = ? "
-            "AND v.status = 'saved' AND v.cancelled_at IS NULL AND NOT EXISTS (SELECT 1 FROM procedures p WHERE p.visit_note_id = v.id "
+            "AND v.status = 'saved' AND v.cancelled_at IS NULL AND (TRIM(COALESCE(v.body, '')) != '' OR v.recall_date IS NOT NULL) AND NOT EXISTS (SELECT 1 FROM procedures p WHERE p.visit_note_id = v.id "
             "AND p.status = 'completed')", (patient_id,)) if mine(x["owner"])]
         visits.sort(key=lambda r: r["at"] or "", reverse=True)
     # the dentist's billed lines of this type count as visits too (imported MyMeds records often have only the bill)

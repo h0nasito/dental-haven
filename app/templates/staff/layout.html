@@ -98,6 +98,7 @@
       {% call section('People & pay') %}
         {% if current_user.can('compensation.manage') or current_user.can('attendance.manage') %}{{ nav('people.employees', 'Employees', 'people.employee') }}{% endif %}
         {% if current_user.can('payroll.prepare') or current_user.can('payroll.approve') %}{{ nav('people.payroll', 'Payroll', 'people.payroll') }}{% endif %}
+        {% if current_user.can('commission.view') %}{{ nav('commissions.index', 'Dentist commissions', 'commissions.') }}{% endif %}
         {% if current_user.can('evaluations.answer') or current_user.can('evaluations.manage') %}{{ nav('evals.index', 'Staff evaluations', 'evals.') }}{% endif %}
       {% endcall %}
     {% endcall %}

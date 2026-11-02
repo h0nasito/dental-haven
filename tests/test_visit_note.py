@@ -321,3 +321,32 @@ class TestProgressNotePrice(Base):
         r = self.login("dentist.sjdm").post(f"/staff/patients/{self.pid}/procedures/branch", data={"ids": [pr["id"]], "branch_id": mal})
         self.assertIn(r.status_code, (302, 403))
         self.assertEqual(self.q("SELECT branch_id FROM procedures WHERE id = ?", (pr["id"],))["branch_id"], self.sjdm)
+
+    def test_moving_procedure_date_moves_the_visit(self):
+        from datetime import date, timedelta
+        admin = self.login("admin")
+        t = date.today()
+        self._post(admin, signature="", recall_date="", visit_date=t.isoformat(), line_service_id=[""], line_desc=["Consultation (date test)"],
+                   line_tooth=[""], line_qty=[""], line_price=["650"], line_disc=[""], bill_disc="")
+        v = self.q("SELECT * FROM visit_notes WHERE patient_id = ? AND status = 'saved' ORDER BY id DESC", (self.pid,))
+        pr = self.q("SELECT * FROM procedures WHERE visit_note_id = ?", (v["id"],))
+        earlier = (t - timedelta(days=2)).isoformat()
+        admin.post(f"/staff/patients/{self.pid}/procedures/{pr['id']}", data={"action": "edit", "description": pr["description"], "tooth": "",
+                                                                             "performed_at": earlier})
+        self.assertEqual(self.q("SELECT visit_date FROM visit_notes WHERE id = ?", (v["id"],))["visit_date"], earlier)
+        self.assertEqual(self.q("SELECT performed_at FROM procedures WHERE id = ?", (pr["id"],))["performed_at"][:10], earlier)
+
+    def test_deleted_procedures_leave_no_visit_in_my_cases(self):
+        from datetime import date, timedelta
+        admin = self.login("admin")
+        t = date.today()
+        self._post(admin, signature="", recall_date="", body="", visit_date=t.isoformat(), line_service_id=[""], line_desc=["Consultation (orphan test)"],
+                   line_tooth=[""], line_qty=[""], line_price=["650"], line_disc=[""], bill_disc="")
+        v = self.q("SELECT * FROM visit_notes WHERE patient_id = ? AND status = 'saved' ORDER BY id DESC", (self.pid,))
+        pr = self.q("SELECT * FROM procedures WHERE visit_note_id = ?", (v["id"],))
+        admin.post(f"/staff/patients/{self.pid}/procedures/{pr['id']}", data={"action": "delete"})
+        from app.views.cases import build_cases
+        with self.app.test_request_context():
+            cases = [c for c in build_cases(self.conn, self.doc) if c["patient_id"] == self.pid]
+        self.assertFalse(any(t.isoformat() in (c.get("last") or "") and c["category"] == "General / other" and c["n"] == 1 and not c.get("billed")
+                             for c in cases))

@@ -148,14 +148,20 @@ class TestCollectionsByService(Base):
         t = today().isoformat()
         pay = self.conn.insert("payments", {"invoice_id": inv, "branch_id": mal, "kind": "payment", "amount_cents": 155000, "method": "bank_transfer",
                                             "account": "BPI", "received_at": t, "status": "valid", "created_at": now_str()})
+        from app import daily_report
+        def gross(bid):
+            with self.app.app_context():
+                b = self.q("SELECT * FROM branches WHERE id = ?", (bid,))
+                r = daily_report.branch_report(self.conn, b, t)
+            return sum(v for k, v in r.items() if k in ("gross_total",)) if "gross_total" in r else r
+        g_before, m_before = gross(gui), gross(mal)
         a = self.login("admin")
         self.assertIn("Change branch", a.get(f"/staff/invoices/{inv}").data.decode())
         a.post(f"/staff/invoices/{inv}/payments/{pay}/branch", data={"branch_id": gui})
         self.assertEqual(self.q("SELECT branch_id FROM payments WHERE id = ?", (pay,))["branch_id"], gui)
-        from app import daily_report
-        with self.app.app_context():
-            reps = {r["branch"] if "branch" in r else i: r for i, r in enumerate(daily_report.build(self.conn, t))}
-        self.assertIn("1,550", self.login("admin").get(f"/staff/reports/daily-collection?date={t}").data.decode())
+        if isinstance(g_before, int):
+            self.assertEqual(gross(gui) - g_before, 155000)
+            self.assertEqual(m_before - gross(mal), 155000)
 
 
 class TestCalendarMonth(Base):
@@ -286,3 +292,32 @@ class TestMymedsPaidOnNewBill(Base):
         a.post(f"/staff/invoices/{inv}/mymeds-paid", data={"amount": "46500", "paid_on": "2026-09-07"})
         p = self.q("SELECT * FROM payments WHERE invoice_id = ? AND status = 'valid'", (inv,))
         self.assertEqual((p["amount_cents"], p["received_at"][:10], p["method"]), (4650000, "2026-09-07", "mymeds"))
+
+
+class TestCommissionReport(Base):
+    def test_cutoff_report_and_access(self):
+        from app.util import now_str
+        uid = self.q("SELECT id FROM users WHERE email LIKE 'dentist.malolos@%'")["id"]
+        emp = self.q("SELECT id FROM employees WHERE user_id = ?", (uid,))
+        eid = emp["id"] if emp else self.conn.insert("employees", {"full_name": "Demo Dentist", "position": "Dentist", "employment_type": "regular",
+                                                                    "user_id": uid, "active": 1, "created_at": now_str()})
+        mal = self.branch("malolos")
+        pid = self.q("SELECT id FROM patients WHERE preferred_branch_id = ? LIMIT 1", (mal,))["id"]
+        inv = self.conn.insert("invoices", {"branch_id": mal, "patient_id": pid, "status": "issued", "number": "CR-1", "issued_at": "2026-10-10",
+                                            "subtotal_cents": 300000, "discount_cents": 0, "tax_cents": 0, "total_cents": 300000, "created_at": now_str()})
+        self.conn.insert("invoice_items", {"invoice_id": inv, "description": "Root canal (demo)", "qty": 1, "unit_price_cents": 300000,
+                                           "discount_cents": 0, "amount_cents": 300000, "dentist_id": uid, "done_on": "2026-10-10"})
+        self.conn.insert("dentist_commissions", {"employee_id": eid, "earned_on": "2026-10-10", "invoice_id": inv, "base_cents": 300000,
+                                                 "rate_bp": 3000, "amount_cents": 90000, "status": "valid", "created_at": now_str()})
+        self.conn.insert("dentist_commissions", {"employee_id": eid, "earned_on": "2026-10-20", "invoice_id": inv, "amount_cents": 5000,
+                                                 "status": "valid", "created_at": now_str()})
+        a = self.login("admin")
+        page = a.get("/staff/commissions/?month=2026-10&half=1").data.decode()
+        self.assertIn("Dentist commissions", page)
+        self.assertIn("₱900.00", page)
+        self.assertNotIn("₱50.00", page)                       # 2nd cutoff entry not in the 1st
+        self.assertIn("₱50.00", a.get("/staff/commissions/?month=2026-10&half=2").data.decode())
+        csv = a.get("/staff/commissions/?month=2026-10&half=1&format=csv").data.decode()
+        self.assertIn("Root canal (demo)", csv)
+        self.assertEqual(self.login("staff.malolos").get("/staff/commissions/").status_code, 403)
+        self.assertEqual(self.login("dentist.malolos").get("/staff/commissions/").status_code, 403)

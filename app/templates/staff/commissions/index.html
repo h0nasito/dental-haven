@@ -1,0 +1,30 @@
+{% extends "staff/layout.html" %}
+{% block page_title %}Dentist commissions{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Dentist commissions</h1>
+<p>{{ start|date }} – {{ end|date }} · counted {{ basis }}, the same way as payroll. Patients are shown by chart no.</p></div>
+<div class="row"><a class="btn btn-secondary btn-sm" href="?{{ query }}&print=1" target="_blank">Print</a><a class="btn btn-secondary btn-sm" href="?{{ query }}&format=csv">CSV</a></div></div>
+<form class="toolbar" method="get">
+<div class="field"><label for="cm">Month</label><select id="cm" name="month">{% for m in months %}<option value="{{ m.strftime('%Y-%m') }}" {{ 'selected' if m == month }}>{{ m.strftime('%B %Y') }}</option>{% endfor %}</select></div>
+<div class="field"><label for="ch">Cutoff</label><select id="ch" name="half"><option value="1" {{ 'selected' if half == 1 }}>1st – 15th</option><option value="2" {{ 'selected' if half == 2 }}>16th – end of month</option><option value="3" {{ 'selected' if half == 3 }}>Custom dates</option></select></div>
+{% if half == 3 %}<div class="field"><label for="cf">From</label><input id="cf" type="date" name="from" value="{{ start.isoformat() }}"></div>
+<div class="field"><label for="ct">To</label><input id="ct" type="date" name="to" value="{{ end.isoformat() }}"></div>{% endif %}
+<div class="field"><label for="cb">Branch</label><select id="cb" name="branch"><option value="">All branches</option>{% for b in branches %}<option value="{{ b.id }}" {{ 'selected' if b.id == branch_id }}>{{ b.name }}</option>{% endfor %}</select></div>
+<div class="field"><label for="cd">Dentist</label><select id="cd" name="dentist"><option value="">All dentists</option>{% for d in dentists %}<option value="{{ d.id }}" {{ 'selected' if d.id == dentist_id }}>{{ d.name }}</option>{% endfor %}</select></div>
+<button class="btn btn-secondary">Show</button></form>
+<div class="grid grid-3" style="margin-bottom:1rem">
+<div class="stat"><div class="label">Total commission</div><div class="value">{{ peso(total) }}</div><div class="sub">{{ start|date }} – {{ end|date }}</div></div>
+<div class="stat"><div class="label">Dentists</div><div class="value">{{ data|length }}</div></div>
+<div class="stat"><div class="label">Entries</div><div class="value">{{ data|sum(attribute='n') }}</div></div></div>
+{% if data %}
+<div class="card"><h2>Summary</h2><div class="table-wrap"><table><thead><tr><th>Dentist</th><th>By branch</th><th class="num">Entries</th><th class="num">Commission</th></tr></thead><tbody>
+{% for d in data %}<tr><td><a href="#d{{ d.user_id }}">{{ d.dentist }}</a></td><td><small>{% for b, amt in d.by_branch %}{{ b }} {{ peso(amt) }}{{ ' · ' if not loop.last }}{% endfor %}</small></td><td class="num">{{ d.n }}</td><td class="num"><strong>{{ peso(d.commission) }}</strong></td></tr>{% endfor %}</tbody>
+<tfoot><tr><th colspan="3">Total</th><th class="num">{{ peso(total) }}</th></tr></tfoot></table></div></div>
+{% for d in data %}<div class="card" id="d{{ d.user_id }}"><div class="card-head"><h2>{{ d.dentist }}</h2><strong>{{ peso(d.commission) }}</strong></div>
+<div class="table-wrap"><table><thead><tr><th>Date</th><th>Branch</th><th>Bill</th><th>Chart no.</th><th>Procedure / for</th><th class="num">Base</th><th class="num">%</th><th class="num">Commission</th></tr></thead><tbody>
+{% for r in d.rows %}<tr><td>{{ r.date|date }}</td><td>{{ r.branch }}</td><td>{{ r.bill }}</td><td>{{ r.chart }}</td><td>{{ r.what }} <small class="muted">· {{ r.kind }}</small></td>
+<td class="num">{{ peso(r.base) if r.base is not none else '—' }}</td><td class="num">{{ ((r.rate_bp / 100)|round(2)|string|replace('.0', '')) ~ '%' if r.rate_bp is not none else '—' }}</td><td class="num">{{ peso(r.amount) }}</td></tr>{% endfor %}</tbody>
+<tfoot><tr><th colspan="7">Total · {{ d.n }} entr{{ 'y' if d.n == 1 else 'ies' }}</th><th class="num">{{ peso(d.commission) }}</th></tr></tfoot></table></div></div>{% endfor %}
+{% else %}<div class="card"><p class="muted mb-0">No dentist commission in this cutoff{% if branch_id or dentist_id %} for the chosen filters{% endif %}.</p></div>{% endif %}
+<p class="hint">Payment = recorded by the cashier on a payment; Manual = added on the bill; Procedure = from bill lines (when commission is counted per procedure). Changes: System settings → Payroll.</p>
+{% endblock %}

@@ -1057,6 +1057,12 @@ def procedure_action(patient_id, proc_id):
         err = ""
         with conn.transaction():
             conn.update("procedures", proc_id, vals)
+            # the visit's date follows when all of its procedures are moved to the new date (e.g. a visit entered a day late)
+            if pr["visit_note_id"] and vals["performed_at"] != (pr["performed_at"] or "")[:10]:
+                others = conn.scalar("SELECT COUNT(*) FROM procedures WHERE visit_note_id = ? AND substr(performed_at, 1, 10) != ?",
+                                     (pr["visit_note_id"], vals["performed_at"]))
+                if not others:
+                    conn.execute("UPDATE visit_notes SET visit_date = ? WHERE id = ?", (vals["performed_at"], pr["visit_note_id"]))
             if new_price is not None and str(request.form.get("price_was") or "") != raw_price:
                 err = _set_proc_price(conn, pr, new_price)
         audit.record("progress_edited", "patient", patient_id, "Edited progress note", audit.diff(dict(pr), vals, vals.keys()))

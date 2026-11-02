@@ -165,6 +165,7 @@ CATALOG: list[Perm] = [
     Perm("announcements.manage", "Post announcements and set the monthly duty schedule", "Staff & payroll", False),
     Perm("attendance.manage", "Record, import and correct attendance", "Staff & payroll", True),
     Perm("compensation.manage", "View and edit compensation settings", "Staff & payroll", True),
+    Perm("commission.view", "View the dentist commission report (15th / end-of-month cutoffs, per dentist and procedure)", "Staff & payroll", True),
     Perm("payroll.prepare", "Prepare draft payroll summaries", "Staff & payroll", True),
     Perm("payroll.approve", "Approve payroll summaries", "Staff & payroll", True),
     # Configuration
@@ -200,7 +201,7 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
         "xray.view", "xray.manage", "merch.view", "merch.sell",
     },
     "hr": {
-        "dashboard.view", "attendance.view", "attendance.manage", "attendance.clock", "overtime.approve", "compensation.manage", "leave.request", "leave.approve", "reimburse.request", "reimburse.approve", "announcements.manage",
+        "dashboard.view", "attendance.view", "attendance.manage", "attendance.clock", "overtime.approve", "compensation.manage", "commission.view", "leave.request", "leave.approve", "reimburse.request", "reimburse.approve", "announcements.manage",
         "payroll.prepare", "reports.operations", "calendar.birthdays", "calendar.events",
     },
     "supervisor": {
