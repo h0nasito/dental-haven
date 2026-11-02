@@ -352,3 +352,8 @@ class TestCollectionsList(Base):
         self.assertIn("Braces adjustment (demo)", csv)
         self.assertIn("Cash,1500.0", csv)
         self.assertIn("Cash,700.0", csv)
+        gc = a.get(f"/staff/reports/export/collections.csv?from=2026-10-05&to=2026-10-06&branch={mal}&method=GCash").data.decode()
+        self.assertNotIn("Braces adjustment (demo)", gc)       # the method filter leaves out cash payments
+        page = a.get(f"/staff/reports/sales?from=2026-10-05&to=2026-10-06&branch={mal}&method=Cash").data.decode()
+        self.assertIn("Total (Cash)", page)
+        self.assertIn("Braces adjustment (demo)", page)

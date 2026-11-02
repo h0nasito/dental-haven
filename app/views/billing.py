@@ -1006,14 +1006,22 @@ def sales():
     ids = _report_branches(conn)
     by_branch, methods, services_rows, daily = _sales_data(conn, ids, start, end)
     coll_services, coll_dentists = collections_by_service(conn, ids, start, end)
-    coll_list = collection_list(conn, ids, start, end)
+    coll_all = collection_list(conn, ids, start, end)
+    coll_method = request.args.get("method") or ""
+    coll_methods: dict[str, dict] = {}
+    for r in coll_all:
+        m = coll_methods.setdefault(r["method"], {"method": r["method"], "n": 0, "amount": 0})
+        m["n"] += 1
+        m["amount"] += r["amount"]
+    coll_list = [r for r in coll_all if not coll_method or r["method"] == coll_method]
     totals = {k: sum(r[k] for r in by_branch) for k in ("invoices", "sales", "discounts", "tax", "received", "refunded", "collections", "voids",
                                                           "expenses", "net_cash", "deposits")}
     outstanding = _outstanding(conn, ids)
     max_daily = max([d["sales"] for d in daily] + [1])
     return render_template("staff/billing/sales.html", start=start, end=end, by_branch=by_branch, totals=totals, methods=methods,
                            coll_services=coll_services, coll_dentists=coll_dentists, coll_list=coll_list,
-                           coll_list_total=sum(r["amount"] for r in coll_list),
+                           coll_list_total=sum(r["amount"] for r in coll_list), coll_method=coll_method,
+                           coll_methods=sorted(coll_methods.values(), key=lambda m: -m["amount"]), coll_all_total=sum(r["amount"] for r in coll_all),
                            services_rows=services_rows, daily=daily, max_daily=max_daily, outstanding=outstanding,
                            outstanding_total=sum(r["balance"] for r in outstanding), branches=branches_for_user(g.user),
                            branch=to_int(request.args.get("branch")))
@@ -1102,7 +1110,7 @@ def export(kind):
         if not g.user.can("reports.sales"):
             abort(403)
         w.writerow(["Date", "Patient", "Bill", "Branch", "Procedure", "Dentist", "Payment method", "Collected (PHP)"])
-        rows = collection_list(conn, ids, start, end)
+        rows = [r for r in collection_list(conn, ids, start, end) if not request.args.get("method") or r["method"] == request.args.get("method")]
         for r in rows:
             w.writerow([r["date"], r["patient"], r["bill"] or "", r["branch"], r["procedure"], r["dentist"] if r["dentist"] != "—" else "",
                         r["method"], r["amount"] / 100])
