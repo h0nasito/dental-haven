@@ -100,3 +100,41 @@ class TestInventoryOrders(Base):
         with self.app.app_context(), mock.patch.object(io, "today", return_value=date(2031, 3, 10)):
             from app.db import get_db
             self.assertEqual(io.run_reminders(get_db()), 0)   # not yet near month end
+
+    def test_total_order_all_branches(self):
+        staff = self.login("staff.malolos")
+        oid = self.start(staff)
+        line = self.q("SELECT * FROM inventory_order_lines WHERE order_id = ? AND item_id = ?", (oid, self.item["id"]))
+        staff.post(f"/staff/inventory/orders/{oid}", data={"action": "submit"})
+        # a second branch orders the same item
+        loc2 = self.q("SELECT * FROM inventory_locations WHERE branch_id = ? LIMIT 1", (self.branch("guiguinto"),))
+        r = staff.post("/staff/inventory/orders", data={"location_id": loc2["id"], "for_month": self.month})
+        oid2 = int(r.headers["Location"].rstrip("/").split("/")[-1])
+        staff.post(f"/staff/inventory/orders/{oid2}", data={"action": "add", "item": self.item["name"], "qty": "5"})
+        staff.post(f"/staff/inventory/orders/{oid2}", data={"action": "submit"})
+        admin = self.login("admin")
+        admin.post(f"/staff/inventory/orders/{oid}", data={"action": "approve", f"approved_{line['id']}": "6"})
+        admin.post(f"/staff/inventory/orders/{oid2}", data={"action": "approve"})
+        q2 = self.conn.scalar("SELECT SUM(COALESCE(approved_qty, qty)) FROM inventory_order_lines WHERE order_id = ? AND item_id = ?", (oid2, self.item["id"]))
+        page = admin.get(f"/staff/inventory/orders/total?month={self.month}").data.decode()
+        self.assertIn("Total order", page)
+        row = page.split(self.item["name"])[1][:400]
+        from app.views.inventory import fmt_qty
+        self.assertIn(f"<strong>{fmt_qty(6 + q2)}</strong>", row)
+        self.assertIn(admin.get(f"/staff/inventory/orders/total?month={self.month}&print=1").status_code, (200,))
+        admin.post("/staff/inventory/orders/total", data={"action": "ordered", "month": self.month, "which": "approved"})
+        self.assertEqual(self.q("SELECT status FROM inventory_orders WHERE id = ?", (oid,))["status"], "ordered")
+        self.assertEqual(staff.get(f"/staff/inventory/orders/total?month={self.month}").status_code, 403)
+
+    def test_inventory_staff_can_get_lab_inventory(self):
+        lab_loc = self.q("SELECT l.*, lab.name AS lab_name FROM inventory_locations l JOIN laboratories lab ON lab.id = l.laboratory_id WHERE l.active = 1 LIMIT 1")
+        if not lab_loc:
+            self.skipTest("no laboratory inventory location in the demo data")
+        uid = self.q("SELECT id FROM users WHERE email LIKE 'staff.malolos@%'")["id"]
+        link = f'href="/staff/inventory/{lab_loc["id"]}"'
+        page = self.login("staff.malolos").get("/staff/inventory").data.decode()
+        self.assertNotIn(link, page)
+        self.conn.execute("INSERT INTO user_permissions (user_id, permission, granted) VALUES (?, 'inventory.labs', 1)", (uid,))
+        page = self.login("staff.malolos").get("/staff/inventory").data.decode()
+        self.assertIn(link, page)
+        self.conn.execute("DELETE FROM user_permissions WHERE user_id = ?", (uid,))

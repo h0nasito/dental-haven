@@ -1,0 +1,29 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Total order{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('inv_orders.index') }}">← Order lists</a><h1>Total order · {{ month_label(month) }}</h1>
+<p>All branches' order lists added up per item. Order the <strong>Total</strong> once; after the purchase, give each branch its column. Each branch then presses “Confirm received” on its own list, which adds the items to its stock.</p></div>
+<a class="btn btn-secondary btn-sm" href="{{ url_for('inv_orders.total', month=month, which=which, print=1) }}" target="_blank">Print</a></div>
+<form class="toolbar" method="get">
+<div class="field"><label for="tm">Month</label><input id="tm" type="month" name="month" value="{{ month }}"></div>
+<div class="field"><label for="tw">Lists</label><select id="tw" name="which">
+<option value="approved" {{ 'selected' if which == 'approved' }}>Approved (and ordered)</option>
+<option value="submitted" {{ 'selected' if which == 'submitted' }}>Submitted, approved and ordered</option>
+<option value="all" {{ 'selected' if which == 'all' }}>All, including drafts</option></select></div>
+<button class="btn btn-secondary">Show</button></form>
+{% if missing %}<p class="notice">Not included (no {{ 'approved ' if which == 'approved' }}list for {{ month_label(month) }}): {{ missing|join(', ') }}.</p>{% endif %}
+{% if rows %}
+<div class="card"><div class="table-wrap"><table class="total-order">
+<thead><tr><th>Item</th><th>Unit</th><th class="num">Total to order</th>{% for c in cols %}<th class="num"><a href="{{ url_for('inv_orders.order', order_id=c.id) }}">{{ c.location }}</a>{% if c.status != 'approved' %}<br><small class="muted">{{ c.status }}</small>{% endif %}</th>{% endfor %}<th class="num">Est. cost</th></tr></thead>
+<tbody>{% for cat, group in rows|groupby('category') %}<tr class="li-case"><td colspan="{{ 4 + cols|length }}"><strong>{{ cat }}</strong></td></tr>
+{% for r in group %}<tr><td>{{ r.name }}{% if r.notes %}<br><small class="muted">{{ r.notes|unique|join('; ')|truncate(80) }}</small>{% endif %}</td><td>{{ r.unit }}</td>
+<td class="num"><strong>{{ fmt_qty(r.total) }}</strong></td>{% for c in cols %}<td class="num">{{ fmt_qty(r.per.get(c.id)) if r.per.get(c.id) else '—' }}</td>{% endfor %}
+<td class="num">{{ peso(r.est) if r.est is not none else '—' }}</td></tr>{% endfor %}{% endfor %}</tbody>
+<tfoot><tr><th colspan="{{ 3 + cols|length }}" class="num">Estimated total</th><th class="num">{{ peso(est) }}</th></tr></tfoot></table></div>
+<p class="hint">{{ rows|length }} item{{ 's' if rows|length != 1 }} from {{ cols|length }} list{{ 's' if cols|length != 1 }}. Quantities are the approved quantities (or the requested ones before approval). Items typed in (not in the item list) are added up by name.</p></div>
+{% if approved_n %}<form method="post" class="card">{{ csrf() }}<input type="hidden" name="action" value="ordered"><input type="hidden" name="which" value="{{ which }}"><input type="hidden" name="month" value="{{ month }}">
+<h2>After ordering from the supplier</h2><p class="muted">Marks the {{ approved_n }} approved list{{ 's' if approved_n != 1 }} above as “Ordered from supplier”.</p>
+<button class="btn btn-secondary" data-confirm="Mark all approved lists for {{ month_label(month) }} as ordered?">Mark all as ordered</button></form>{% endif %}
+{% else %}<div class="card"><p class="muted mb-0">No {{ 'approved ' if which == 'approved' }}order lists for {{ month_label(month) }} yet.</p></div>{% endif %}
+{% endblock %}

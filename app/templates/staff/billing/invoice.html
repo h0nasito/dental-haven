@@ -115,11 +115,12 @@
 <label class="sr-only" for="dr">Reason</label><input id="dr" name="reason" placeholder="Reason, e.g. Senior citizen (ID checked)" maxlength="300" required><button class="btn btn-secondary btn-sm">Apply discount</button></div>
 <p class="hint">Of the bill's subtotal {{ inv.subtotal_cents|peso }}. It replaces the bill's current discount; enter 0 to remove it. Senior citizen/PWD rules depend on the clinic's registration: confirm with your accountant.</p></form></details>
 {% endif %}
-{% if inv.legacy and inv.status == 'issued' and balance > 0 and current_user.can('billing.void') %}
-<details class="mt-1"><summary>Paid in MyMedsPH (old bill)</summary><form method="post" action="{{ url_for('billing.mymeds_paid', invoice_id=inv.id) }}" class="mt-1">{{ csrf() }}
-<p class="hint">For an imported bill that MyMedsPH shows as paid. It's recorded on the bill date ({{ (inv.issued_at or inv.created_at)|date }}) as “Paid in MyMedsPH”, so it doesn't count in today's collections.</p>
-<div class="row"><label class="sr-only" for="mm">Amount</label><input id="mm" name="amount" value="{{ '%.2f'|format(balance / 100) }}" style="max-width:160px" inputmode="decimal">
-<label class="sr-only" for="mr">Note</label><input id="mr" name="reference" placeholder="Note, e.g. MyMedsPH billing report" maxlength="80"><button class="btn btn-secondary btn-sm">Mark paid</button></div></form></details>
+{% if inv.status == 'issued' and balance > 0 and current_user.can('billing.void') %}
+<details class="mt-1"><summary>Paid in MyMedsPH</summary><form method="post" action="{{ url_for('billing.mymeds_paid', invoice_id=inv.id) }}" class="mt-1">{{ csrf() }}
+<p class="hint">For a bill already paid in MyMedsPH (an old bill, or one entered again here). It's recorded on the date paid as “Paid in MyMedsPH”, so it doesn't count in today's collection.</p>
+<div class="row" style="flex-wrap:wrap;gap:.5rem"><label class="sr-only" for="mm">Amount</label><input id="mm" name="amount" value="{{ '%.2f'|format(balance / 100) }}" style="max-width:150px" inputmode="decimal">
+<label class="sr-only" for="mmd">Date paid</label><input id="mmd" type="date" name="paid_on" value="{{ mm_day }}" max="{{ today }}" style="max-width:170px" title="Date paid in MyMedsPH">
+<label class="sr-only" for="mr">Note</label><input id="mr" name="reference" placeholder="Note, e.g. MyMedsPH OR no." maxlength="80"><button class="btn btn-secondary btn-sm">Mark paid</button></div></form></details>
 {% endif %}
 {% if inv.status == 'issued' and current_user.can('billing.void') %}
 <details class="mt-1"><summary>Refund</summary><form method="post" action="{{ url_for('billing.payment', invoice_id=inv.id) }}" class="mt-1">{{ csrf() }}<input type="hidden" name="action" value="refund">

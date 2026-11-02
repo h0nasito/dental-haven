@@ -197,7 +197,7 @@ class TestBillingReport(Base):
         inv = self.q("SELECT id FROM invoices WHERE patient_id = ? AND substr(issued_at, 1, 10) = '2026-10-13'", (self.pid,))
         self.conn.execute("DELETE FROM payments WHERE invoice_id = ?", (inv["id"],))
         a = self.login("admin")
-        self.assertIn("Paid in MyMedsPH (old bill)", a.get(f"/staff/invoices/{inv['id']}").data.decode())
+        self.assertIn("Paid in MyMedsPH", a.get(f"/staff/invoices/{inv['id']}").data.decode())
         a.post(f"/staff/invoices/{inv['id']}/mymeds-paid", data={"amount": "3000"})
         p = self.q("SELECT * FROM payments WHERE invoice_id = ? AND status = 'valid'", (inv["id"],))
         self.assertEqual((p["amount_cents"], p["received_at"][:10], p["method"]), (300000, "2026-10-13", "mymeds"))

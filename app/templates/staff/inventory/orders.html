@@ -4,7 +4,8 @@
 {% block content %}
 <div class="page-head"><div><h1>Order lists</h1>
 <p>Each branch makes next month's order list before the end of the month (due {{ due|date }}). It starts with the items that are low or out of stock.
-After approval it's ordered from the supplier, and receiving it adds the items to the branch's stock.</p></div></div>
+After approval it's ordered from the supplier, and receiving it adds the items to the branch's stock.</p></div>
+{% if can_approve %}<a class="btn" href="{{ url_for('inv_orders.total') }}">Total order (all branches)</a>{% endif %}</div>
 {% if can_make %}<div class="card"><h2>Make an order list</h2>
 <form method="post" class="row" style="gap:.6rem;align-items:end;flex-wrap:wrap">{{ csrf() }}
 <div class="field mb-0"><label for="ol">Branch / location</label><select id="ol" name="location_id">{% for l in locs %}<option value="{{ l.id }}">{{ l.name }}</option>{% endfor %}</select></div>

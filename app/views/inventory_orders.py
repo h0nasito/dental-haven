@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import calendar
 import math
+import re
 from datetime import date, timedelta
 
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
@@ -169,6 +170,65 @@ def index():
         "SELECT 1 AS x FROM inventory_orders WHERE location_id = ? AND for_month = ? AND status != 'cancelled'", (x["id"], nm))]
     return render_template("staff/inventory/orders.html", rows=rows, locs=locs, status=status, statuses=STATUSES, next_month=nm,
                            month_label=month_label, missing=missing, due=month_end(), can_make=can_make(), can_approve=can_approve())
+
+
+@bp.route("/total", methods=["GET", "POST"])
+@login_required
+def total():
+    """All branches' order lists for one month added up per item: the person in charge orders the totals once, then
+    distributes to each branch (the columns), and each branch receives its own list into stock."""
+    if not can_approve():
+        abort(403)
+    conn = get_db()
+    locs = user_locations(conn)
+    ids = [x["id"] for x in locs] or [0]
+    month = request.values.get("month") or next_month()
+    if not re.match(r"^\d{4}-\d{2}$", month or ""):
+        month = next_month()
+    which = request.values.get("which", "approved")
+    statuses = {"approved": ("approved", "ordered"), "submitted": ("submitted", "approved", "ordered"),
+                "all": ("draft", "submitted", "approved", "ordered")}.get(which, ("approved", "ordered"))
+    marks = ",".join("?" * len(ids))
+    smarks = ",".join("?" * len(statuses))
+    orders = conn.all(f"SELECT o.*, l.name AS location, l.branch_id FROM inventory_orders o JOIN inventory_locations l ON l.id = o.location_id "
+                      f"WHERE o.for_month = ? AND o.location_id IN ({marks}) AND o.status IN ({smarks}) ORDER BY l.sort_order, l.name",
+                      [month, *ids, *statuses])
+    if request.method == "POST" and request.form.get("action") == "ordered":
+        n = 0
+        with conn.transaction():
+            for o in orders:
+                if o["status"] == "approved":
+                    conn.execute("UPDATE inventory_orders SET status = 'ordered', ordered_at = ? WHERE id = ?", (now_str(), o["id"]))
+                    audit.record("inventory_order_ordered", "inventory_order", o["id"], f"Order list {o['location']} {month}: ordered (total order)",
+                                 branch_id=o["branch_id"])
+                    n += 1
+        flash(f"{n} approved order list{'s' if n != 1 else ''} marked as ordered from the supplier. Each branch confirms "
+              "“Received” on its own list when its items arrive." if n else "No approved lists to mark.", "success" if n else "info")
+        return redirect(url_for("inv_orders.total", month=month, which=which))
+    cols = [{"id": o["id"], "location": o["location"], "status": o["status"]} for o in orders]
+    items: dict[str, dict] = {}
+    if orders:
+        omarks = ",".join("?" * len(orders))
+        for ln in conn.all(f"SELECT x.*, i.category FROM inventory_order_lines x LEFT JOIN inventory_items i ON i.id = x.item_id "
+                           f"WHERE x.order_id IN ({omarks}) ORDER BY x.name", [o["id"] for o in orders]):
+            key = f"i{ln['item_id']}" if ln["item_id"] else "n" + (ln["name"] or "").strip().lower()
+            q = ln["approved_qty"] if ln["approved_qty"] is not None else ln["qty"]
+            it = items.setdefault(key, {"name": ln["name"], "unit": ln["unit"], "category": ln["category"] or "Other", "price": ln["unit_price_cents"],
+                                        "total": 0, "per": {}, "notes": []})
+            it["total"] = round(it["total"] + (q or 0), 2)
+            it["per"][ln["order_id"]] = round(it["per"].get(ln["order_id"], 0) + (q or 0), 2)
+            if it["price"] is None and ln["unit_price_cents"] is not None:
+                it["price"] = ln["unit_price_cents"]
+            if ln["note"]:
+                it["notes"].append(ln["note"])
+    rows = sorted(items.values(), key=lambda r: (r["category"], r["name"].lower()))
+    for r in rows:
+        r["est"] = round(r["total"] * r["price"]) if r["price"] else None
+    est = sum(r["est"] or 0 for r in rows)
+    missing = [x["name"] for x in locs if x["branch_id"] and not any(o["location_id"] == x["id"] for o in orders)]
+    tpl = "staff/inventory/order_total_print.html" if request.args.get("print") else "staff/inventory/order_total.html"
+    return render_template(tpl, month=month, month_label=month_label, which=which, cols=cols, rows=rows, est=est, fmt_qty=fmt_qty,
+                           peso=peso, missing=missing, approved_n=sum(1 for o in orders if o["status"] == "approved"))
 
 
 @bp.route("/<int:order_id>", methods=["GET", "POST"])

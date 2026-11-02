@@ -268,3 +268,21 @@ class TestProgressNoteBillLines(Base):
                                       "received_at": now_str(), "status": "valid", "created_at": now_str()})
         a.post(f"/staff/invoices/{inv}/items/{dup1}/fix", data={"action": "price", "price": "1"})
         self.assertEqual(self.q("SELECT total_cents FROM invoices WHERE id = ?", (inv,))["total_cents"], 1250000)
+
+
+class TestMymedsPaidOnNewBill(Base):
+    def test_reentered_bill_marked_paid_on_work_date(self):
+        from app.util import now_str
+        gui = self.branch("guiguinto")
+        pid = self.q("SELECT id FROM patients WHERE preferred_branch_id = ? LIMIT 1", (gui,))["id"]
+        inv = self.conn.insert("invoices", {"branch_id": gui, "patient_id": pid, "status": "issued", "number": "GUI-T-11", "issued_at": "2026-11-02",
+                                            "subtotal_cents": 4650000, "discount_cents": 0, "tax_cents": 0, "total_cents": 4650000, "created_at": now_str()})
+        self.conn.insert("invoice_items", {"invoice_id": inv, "description": "RCT - RETREATMENT", "qty": 1, "unit_price_cents": 4650000,
+                                           "discount_cents": 0, "amount_cents": 4650000, "done_on": "2026-09-07"})
+        a = self.login("admin")
+        page = a.get(f"/staff/invoices/{inv}").data.decode()
+        self.assertIn("Paid in MyMedsPH", page)
+        self.assertIn('value="2026-09-07"', page)
+        a.post(f"/staff/invoices/{inv}/mymeds-paid", data={"amount": "46500", "paid_on": "2026-09-07"})
+        p = self.q("SELECT * FROM payments WHERE invoice_id = ? AND status = 'valid'", (inv,))
+        self.assertEqual((p["amount_cents"], p["received_at"][:10], p["method"]), (4650000, "2026-09-07", "mymeds"))

@@ -54,10 +54,11 @@ def user_locations(conn=None):
     if g.user.is_super_admin:
         return rows
     labs = {r["lab_id"] for r in conn.all("SELECT lab_id FROM user_labs WHERE user_id = ?", (g.user.id,))}
+    all_labs = g.user.can("inventory.labs")       # inventory staff who also look after the laboratory's supplies
     from ..lab_queue import is_lab_only
     lab_only = is_lab_only(conn, g.user)
     return [r for r in rows if (r["branch_id"] and r["branch_id"] in g.user.branch_ids and not lab_only)
-            or (r["laboratory_id"] and r["laboratory_id"] in labs)]
+            or (r["laboratory_id"] and (all_labs or r["laboratory_id"] in labs))]
 
 
 def scope_of(loc) -> str:

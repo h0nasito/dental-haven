@@ -255,21 +255,25 @@ def issued_discount(invoice_id):
 @bp.route("/invoices/<int:invoice_id>/mymeds-paid", methods=["POST"])
 @require("billing.void")
 def mymeds_paid(invoice_id):
-    """An imported MyMedsPH bill that MyMedsPH shows as paid but isn't paid here: record the payment as "Paid in MyMedsPH",
-    dated on the bill date, so it doesn't count as money received today (daily collection, deposits). Void it like any
-    payment. Billing report uploads count it as already paid."""
+    """A bill already paid in MyMedsPH (an imported bill, or one re-entered here): record the payment as "Paid in MyMedsPH",
+    dated when it was paid (default: the day the work was done, else the bill date), so it doesn't count as money received
+    today (daily collection, deposits). Void it like any payment. Billing report uploads count it as already paid."""
     import secrets
     from ..billing import LEGACY_METHOD
     conn = get_db()
     inv = _load_invoice(invoice_id)
     bal = inv["total_cents"] - paid_amount(conn, invoice_id)
     amt = parse_money(request.form.get("amount"))
-    if not inv["legacy"] or inv["status"] != "issued":
+    if inv["status"] != "issued":
         abort(404)
     if not amt or amt <= 0 or amt > bal:
         flash(f"Enter an amount up to the balance ({bal / 100:,.2f}).", "error")
         return redirect(url_for("billing.invoice", invoice_id=invoice_id))
-    day = (inv["issued_at"] or inv["created_at"])[:10]
+    paid_on = parse_date(request.form.get("paid_on"))
+    if paid_on and paid_on > today():
+        flash("The date paid can't be in the future.", "error")
+        return redirect(url_for("billing.invoice", invoice_id=invoice_id))
+    day = paid_on.isoformat() if paid_on else (inv["issued_at"] or inv["created_at"])[:10]
     pid = conn.insert("payments", {"invoice_id": invoice_id, "branch_id": inv["branch_id"], "kind": "payment", "amount_cents": amt,
                                    "method": LEGACY_METHOD, "account": "", "reference": clean(request.form.get("reference"), 80),
                                    "received_at": f"{day} 12:00:00", "received_by": g.user.id, "status": "valid",
@@ -277,7 +281,7 @@ def mymeds_paid(invoice_id):
                                    "legacy_key": f"mmm:{invoice_id}:{secrets.token_hex(4)}"})
     audit.record("payment_mymeds_marked", "invoice", invoice_id, f"Marked {amt / 100:,.2f} as paid in MyMedsPH", {"payment": pid},
                  inv["branch_id"])
-    flash("Recorded as paid in MyMedsPH, on the bill date (not in today's collections).", "success")
+    flash(f"Recorded as paid in MyMedsPH on {day}" + (" (not in today's collections)." if day != today().isoformat() else "."), "success")
     return redirect(url_for("billing.invoice", invoice_id=invoice_id))
 
 
@@ -311,6 +315,8 @@ def invoice(invoice_id):
                            balance=inv["total_cents"] - paid, state=payment_state(inv["total_cents"], paid, inv["status"]),
                            services=services(), history=history, tax_label=settings.get("invoice.tax_label"),
                            tax_enabled=settings.get("invoice.tax_enabled"), tax_inclusive=settings.get("invoice.tax_inclusive"),
+                           mm_day=(conn.scalar("SELECT MIN(done_on) FROM invoice_items WHERE invoice_id = ? AND done_on IS NOT NULL", (invoice_id,))
+                                   or (inv["issued_at"] or inv["created_at"] or "")[:10]),
                            today=today().isoformat())
 
 
