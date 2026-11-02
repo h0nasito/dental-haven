@@ -45,7 +45,7 @@ class TestNoteDelete(Base):
         item = self.conn.insert("invoice_items", {"invoice_id": inv, "description": "ORTHODONTIC TREATMENT (demo)", "qty": 1,
                                                   "unit_price_cents": 950000, "amount_cents": 950000, "done_on": date.today().isoformat()})
         page = a.get(f"/staff/patients/{self.pid}?tab=notes").data.decode()
-        self.assertIn("from draft", page)
+        self.assertIn("Remove line", page)
         r = a.post(f"/staff/invoices/{inv}/edit", data={"action": "remove_item", "item_id": item,
                                                                 "next": f"/staff/patients/{self.pid}?tab=notes"})
         self.assertIn(f"/staff/patients/{self.pid}", r.headers["Location"])

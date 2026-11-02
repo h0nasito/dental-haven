@@ -236,3 +236,35 @@ class TestPatientSuggest(Base):
         r = c.post("/staff/patients/", data={"q": p["last_name"]})
         self.assertEqual(r.status_code, 200)
         self.assertNotIn('id="top-q"', self.login("technician.malolos").get("/staff/").data.decode()) if self.q("SELECT id FROM users WHERE email LIKE 'technician.malolos@%'") else None
+
+
+class TestProgressNoteBillLines(Base):
+    def test_dash_names_match_and_duplicate_line_removed(self):
+        from app.util import now_str
+        mal = self.branch("malolos")
+        pid = self.conn.insert("patients", {"first_name": "Dash", "last_name": "Matchtest", "chart_no": "DH-DM1", "preferred_branch_id": mal,
+                                            "created_at": now_str(), "updated_at": now_str()})
+        self.conn.insert("procedures", {"patient_id": pid, "description": "Oral Prophylaxis (Moderate) -\nNote", "status": "completed",
+                                        "performed_at": "2026-09-07", "created_at": now_str(), "legacy_key": "pn-dm-1"})
+        inv = self.conn.insert("invoices", {"branch_id": mal, "patient_id": pid, "status": "issued", "number": "MM-DM1", "issued_at": "2026-09-07",
+                                            "subtotal_cents": 8600000, "discount_cents": 0, "tax_cents": 0, "total_cents": 8600000, "created_at": now_str(), "legacy": 1})
+        self.conn.insert("invoice_items", {"invoice_id": inv, "description": "Oral Prophylaxis (Moderate)", "qty": 1, "unit_price_cents": 200000,
+                                           "discount_cents": 0, "amount_cents": 200000, "done_on": "2026-09-07"})
+        dup1 = self.conn.insert("invoice_items", {"invoice_id": inv, "description": "Root Canal Treatment", "qty": 1, "unit_price_cents": 4200000,
+                                                  "discount_cents": 0, "amount_cents": 4200000, "done_on": "2026-09-07"})
+        dup2 = self.conn.insert("invoice_items", {"invoice_id": inv, "description": "Root Canal Treatment", "qty": 1, "unit_price_cents": 4200000,
+                                                  "discount_cents": 0, "amount_cents": 4200000, "done_on": "2026-09-07"})
+        a = self.login("admin")
+        page = a.get(f"/staff/patients/{pid}?tab=notes").data.decode()
+        row = page.split("Oral Prophylaxis (Moderate) -")[1][:300]
+        self.assertIn("₱2,000.00", row)                        # matched with its bill line
+        self.assertIn(f'id="bp{dup2}"', page)                   # bill-only line: editable
+        a.post(f"/staff/invoices/{inv}/items/{dup2}/fix", data={"action": "remove"})
+        self.assertIsNone(self.q("SELECT id FROM invoice_items WHERE id = ?", (dup2,)))
+        self.assertEqual(self.q("SELECT total_cents FROM invoices WHERE id = ?", (inv,))["total_cents"], 4400000)
+        a.post(f"/staff/invoices/{inv}/items/{dup1}/fix", data={"action": "price", "price": "10500"})
+        self.assertEqual(self.q("SELECT total_cents FROM invoices WHERE id = ?", (inv,))["total_cents"], 1250000)
+        self.conn.insert("payments", {"invoice_id": inv, "branch_id": mal, "kind": "payment", "amount_cents": 1000, "method": "cash",
+                                      "received_at": now_str(), "status": "valid", "created_at": now_str()})
+        a.post(f"/staff/invoices/{inv}/items/{dup1}/fix", data={"action": "price", "price": "1"})
+        self.assertEqual(self.q("SELECT total_cents FROM invoices WHERE id = ?", (inv,))["total_cents"], 1250000)

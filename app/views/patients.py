@@ -310,6 +310,13 @@ def _age(birth):
     return t.year - b.year - ((t.month, t.day) < (b.month, b.day))
 
 
+def svc_key(text) -> str:
+    """A service name for matching a procedure with its bill line: lower case, the part before " · ", without a trailing
+    dash or extra spaces ("Oral Prophylaxis (Moderate) -" = "Oral prophylaxis (moderate)")."""
+    t = (text or "").split("\n", 1)[0].split(" · ")[0]
+    return re.sub(r"\s+", " ", t).strip().rstrip("-–—:").strip().lower()
+
+
 def progress_groups(conn, patient_id, procedures, notes):
     """Progress notes grouped like a visit log: one row per date + dentist, with the procedures done (priced from the
     invoice line with the same dentist, date and service or description), other billed lines, and clinical notes."""
@@ -336,7 +343,7 @@ def progress_groups(conn, patient_id, procedures, notes):
     billed_by: dict[str, list] = {}
     for it in items:
         if it["dentist"]:
-            billed_by.setdefault(it["day"] or "", []).append((it["description"].split(" · ")[0].strip().lower(), it["dentist"]))
+            billed_by.setdefault(it["day"] or "", []).append((svc_key(it["description"]), it["dentist"]))
 
     def who_did(pr, day, first):
         if pr["dentist"] or not pr["legacy_key"]:
@@ -345,7 +352,7 @@ def progress_groups(conn, patient_id, procedures, notes):
         names = {n for _, n in lines}
         if len(names) == 1:
             return next(iter(names))
-        f = first.strip().lower()
+        f = svc_key(first)
         return next((n for w, n in lines if w and f and (w.startswith(f) or f.startswith(w))), None)
 
     for pr in procedures:
@@ -359,9 +366,7 @@ def progress_groups(conn, patient_id, procedures, notes):
         price, inv = None, None
         # imported visits: "service\nnote" (MyMedsPH repeats the visit's note on every procedure: show it once)
         for it in ([] if pr["xray_id"] else pool.get((day, who or ""), [])):
-            idesc = it["description"].split(" · ")[0].strip().lower()
-            same = (pr["service_id"] and it["service_id"] == pr["service_id"]) or it["description"].strip().lower() == first.strip().lower() \
-                or idesc == first.strip().lower()
+            same = (pr["service_id"] and it["service_id"] == pr["service_id"]) or svc_key(it["description"]) == svc_key(first)
             if same and not it.get("_used"):
                 it["_used"] = True
                 price, inv = it["amount_cents"], it
@@ -374,14 +379,17 @@ def progress_groups(conn, patient_id, procedures, notes):
         if extra and extra not in gr.setdefault("visit_notes_text", []):
             gr["visit_notes_text"].append(extra)
         gr["procs"].append(pr)
+    paid_by_inv: dict[int, int] = {}
     for (day, dentist), its in pool.items():
         for it in its:
             if it.get("_used"):
                 continue
             gr = grp(day, dentist, it["branch"])
             gr["lines"].append({"text": it["description"], "tooth": "", "price": it["amount_cents"], "proc": None})
+            if it["inv_id"] not in paid_by_inv:
+                paid_by_inv[it["inv_id"]] = conn.scalar("SELECT COUNT(*) FROM payments WHERE invoice_id = ? AND status = 'valid'", (it["inv_id"],)) or 0
             gr["billed"].append({"item_id": it["id"], "inv_id": it["inv_id"], "number": it["number"], "status": it["inv_status"],
-                                 "text": it["description"]})
+                                 "text": it["description"], "unit": it["unit_price_cents"], "has_pay": bool(paid_by_inv[it["inv_id"]])})
             gr["invoices"][it["inv_id"]] = it["number"] or "Draft invoice"
     from_visit = {r["note_id"]: (r["visit_date"], r["dentist"]) for r in conn.all(
         "SELECT v.note_id, v.visit_date, u.name AS dentist FROM visit_notes v LEFT JOIN users u ON u.id = v.dentist_id "
@@ -964,7 +972,7 @@ def assign(patient_id):
 def bill_line_for(conn, pr):
     """The bill line of a progress-note procedure: on its own bill (recorded procedure or the visit's bill), else (imported
     visits) a bill line of the same patient, day and service. Returns (invoice row, line row) or (None, None)."""
-    first = (pr["description"] or "").split("\n", 1)[0].strip().lower()
+    first = svc_key(pr["description"])
     inv_ids = []
     if pr["invoice_id"]:
         inv_ids.append(pr["invoice_id"])
@@ -978,8 +986,7 @@ def bill_line_for(conn, pr):
                         "i.patient_id = ? AND COALESCE(ii.done_on, substr(i.issued_at, 1, 10), substr(i.created_at, 1, 10)) = ?"),
                      inv_ids or [pr["patient_id"], day])
     for ln in cands:
-        d = (ln["description"] or "").split(" · ")[0].strip().lower()
-        if (pr["service_id"] and ln["service_id"] == pr["service_id"]) or d == first:
+        if (pr["service_id"] and ln["service_id"] == pr["service_id"]) or svc_key(ln["description"]) == first:
             if (pr["tooth"] or "") and (ln["tooth"] or "") and (pr["tooth"] or "").replace(" ", "") != (ln["tooth"] or "").replace(" ", ""):
                 continue
             return conn.one("SELECT * FROM invoices WHERE id = ?", (ln["inv"],)), ln

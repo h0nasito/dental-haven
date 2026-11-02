@@ -149,6 +149,45 @@ def payment_branch(invoice_id, payment_id):
     return redirect(url_for("billing.invoice", invoice_id=invoice_id))
 
 
+@bp.route("/invoices/<int:invoice_id>/items/<int:item_id>/fix", methods=["POST"])
+@require("bills.edit")
+def item_fix(invoice_id, item_id):
+    """Change the price of a bill line, or remove a line entered twice, while the bill has no payments (also on issued
+    bills). Used from the progress notes."""
+    conn = get_db()
+    inv = _load_invoice(invoice_id)
+    ln = conn.one("SELECT * FROM invoice_items WHERE id = ? AND invoice_id = ?", (item_id, invoice_id))
+    back = request.form.get("next") or url_for("billing.invoice", invoice_id=invoice_id)
+    if not back.startswith("/") or back.startswith("//"):
+        back = url_for("billing.invoice", invoice_id=invoice_id)
+    if not ln or inv["status"] == "void":
+        abort(404)
+    if conn.scalar("SELECT COUNT(*) FROM payments WHERE invoice_id = ? AND status = 'valid'", (invoice_id,)):
+        flash("This bill already has a payment, so its lines can't be changed. Void the payment first, or use a discount.", "error")
+        return redirect(back)
+    if request.form.get("action") == "remove":
+        if conn.scalar("SELECT COUNT(*) FROM invoice_items WHERE invoice_id = ?", (invoice_id,)) <= 1:
+            flash("That's the bill's only line. To remove it, void the bill instead.", "error")
+            return redirect(back)
+        conn.execute("DELETE FROM invoice_items WHERE id = ?", (item_id,))
+        _recalc(conn, invoice_id)
+        audit.record("invoice_line_removed", "invoice", invoice_id, f"Removed line “{ln['description'][:60]}” ({peso(ln['amount_cents'])})",
+                     {"line": dict(ln)}, inv["branch_id"])
+        flash(f"Removed “{ln['description'][:40]}” from {inv['number'] or 'the draft bill'}.", "success")
+    else:
+        price = parse_money(request.form.get("price"))
+        if price is None or price < 0:
+            flash("Check the price.", "error")
+            return redirect(back)
+        conn.execute("UPDATE invoice_items SET unit_price_cents = ?, amount_cents = ? WHERE id = ?",
+                     (price, line_amount(ln["qty"], price, ln["discount_cents"] or 0), item_id))
+        _recalc(conn, invoice_id)
+        audit.record("invoice_line_price", "invoice", invoice_id, f"Price of “{ln['description'][:60]}” changed",
+                     {"before": ln["unit_price_cents"], "after": price}, inv["branch_id"])
+        flash("Price changed.", "success")
+    return redirect(back)
+
+
 @bp.route("/invoices/<int:invoice_id>/branch", methods=["POST"])
 @require("bills.edit")
 def invoice_branch(invoice_id):

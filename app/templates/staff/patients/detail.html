@@ -155,10 +155,12 @@
 <input type="hidden" name="price_was" value="{{ '%.2f'|format(cur_price / 100) if cur_price is not none else '' }}"><small class="muted">Changes the bill too, as long as it has no payment yet.</small>{% endif %}
 <div class="row mt-1"><button class="btn btn-secondary btn-sm" name="action" value="edit">Save</button><button class="btn btn-danger btn-sm" name="action" value="delete" formnovalidate data-confirm="Delete “{{ (pr.description or "").split("\n")[0]|truncate(40) }}” from the progress notes?">Delete</button></div></form></details>{% endfor %}{% endif %}
 {% if gr.billed and current_user.can('billing.view') %}<p class="kebab-h">Billed items</p>{% for b in gr.billed %}
-{% if b.status == 'draft' and current_user.can('bills.edit') %}<form method="post" action="{{ url_for('billing.invoice_edit', invoice_id=b.inv_id) }}">{{ csrf() }}
-<input type="hidden" name="action" value="remove_item"><input type="hidden" name="item_id" value="{{ b.item_id }}"><input type="hidden" name="next" value="{{ url_for('patients.detail', patient_id=p.id, tab='notes') }}">
-<button class="btn btn-ghost btn-sm" data-confirm="Remove “{{ b.text|truncate(40) }}” from the draft invoice?">Remove “{{ b.text|truncate(26) }}” from draft</button></form>
-{% else %}<small class="muted">“{{ b.text|truncate(26) }}” is on issued invoice {{ b.number }}: to remove it, void the invoice and issue a new one.</small>{% endif %}{% endfor %}{% endif %}
+{% if not b.has_pay and current_user.can('bills.edit') %}<details><summary>Edit “{{ b.text|truncate(26) }}”{% if b.number %} ({{ b.number }}){% endif %}</summary>
+<form method="post" action="{{ url_for('billing.item_fix', invoice_id=b.inv_id, item_id=b.item_id) }}" class="mt-1">{{ csrf() }}<input type="hidden" name="next" value="{{ url_for('patients.detail', patient_id=p.id, tab='notes') }}">
+<label for="bp{{ b.item_id }}">Price (₱)</label><input id="bp{{ b.item_id }}" name="price" value="{{ '%.2f'|format(b.unit / 100) }}" inputmode="decimal">
+<div class="row mt-1"><button class="btn btn-secondary btn-sm" name="action" value="price">Save price</button>
+<button class="btn btn-danger btn-sm" name="action" value="remove" formnovalidate data-confirm="Remove “{{ b.text|truncate(40) }}” from {{ b.number or 'the bill' }}? Use this for a line entered twice.">Remove line</button></div></form></details>
+{% else %}<small class="muted">“{{ b.text|truncate(26) }}” is on {{ b.number or 'a bill' }}{% if b.has_pay %}, which already has a payment: void the payment first, or use a discount on the bill{% endif %}.</small>{% endif %}{% endfor %}{% endif %}
 {% if current_user.can('progress.actions') and gr.visits %}<p class="kebab-h">Visit</p>{% for vn in gr.visits %}
 <details><summary>Cancel visit{% if vn.recall_date %} &amp; recall{% endif %}</summary><form method="post" action="{{ url_for('patients.visit_note_cancel', patient_id=p.id, vid=vn.id) }}" class="mt-1">{{ csrf() }}
 <small class="muted">Removes this visit from the progress notes{% if vn.recall_date %} and cancels its recall on {{ vn.recall_date|date }}{% endif %}. The record{% if vn.signature_name %} and the patient's signature{% endif %} are kept for the clinic's records. Services and notes are removed separately above.</small>
