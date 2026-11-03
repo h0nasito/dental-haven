@@ -71,7 +71,7 @@
       {% call section('Billing') %}
         {% if current_user.can('quotes.view') %}{{ nav('quotes.index', 'Quotations', 'quotes.') }}{% endif %}
         {% if current_user.can('billing.view') %}{{ nav('billing.invoices', 'Bills & invoices', 'billing.invoice', nav_counts.to_bill) }}{% endif %}
-        {% if current_user.can('deposits.view') or current_user.can('deposits.manage') %}{{ nav('deposits.index', 'Bank deposits', 'deposits.') }}{% endif %}
+        {% if current_user.can('deposits.view') or current_user.can('deposits.manage') %}<a class="nav {% if ep.startswith('deposits.') and request.args.get('fund') != 'xray' %}active{% endif %}" href="{{ url_for('deposits.index') }}"><span>Bank deposits</span></a>{% endif %}
       {% endcall %}
       {% call section('Expenses') %}
         {% if current_user.can('expenses.view') or current_user.can('expenses.add') %}{{ nav('expenses.index', 'Expenses', 'expenses.index') }}{{ nav('expenses.bills', 'Monthly bills', 'expenses.bills') }}{% endif %}
@@ -104,6 +104,7 @@
     {% endcall %}
     {% call group('X-ray', 'xray') %}{% if current_user.can('xray.view') %}
       {{ nav('xray.index', 'X-ray records', 'xray.index') }}{{ nav('xray.report', 'X-ray report', 'xray.report') }}
+      {% if current_user.can('deposits.view') or current_user.can('deposits.manage') %}<a class="nav {% if ep == 'deposits.index' and request.args.get('fund') == 'xray' %}active{% endif %}" href="{{ url_for('deposits.index', fund='xray') }}"><span>X-ray bank deposits</span></a>{% endif %}
       {% if current_user.can('xray.rebates') %}{{ nav('xray.rebates', 'Referring dentists & rebates', 'xray.rebates') }}{% endif %}
       {% if current_user.can('fees.manage') %}{{ nav('xray.prices', 'X-ray prices', 'xray.prices') }}{% endif %}
     {% endif %}{% endcall %}

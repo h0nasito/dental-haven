@@ -11,7 +11,7 @@ from test_app import Base  # noqa: E402
 
 class TestDeposits(Base):
     def setUp(self):
-        super().setUp()
+        Base.setUp(self)
         from app import settings
         self.bid = self.branch("bocaue")
         self.conn.execute("DELETE FROM cash_deposit_photos WHERE deposit_id IN (SELECT id FROM cash_deposits WHERE branch_id = ?)", (self.bid,))
@@ -148,3 +148,37 @@ class TestBillsAndNet(Base):
         r = self.login("staff.malolos").post("/staff/expenses/bills", data={"action": "add", "branch_id": self.branch("malolos"),
                                                                             "category": "Rent", "item": "X"})
         self.assertEqual(r.status_code, 403)
+
+
+class TestXrayDeposits(Base):
+    setUp = TestDeposits.setUp           # the same synthetic clinic cash, without running the clinic tests again
+
+    def test_xray_cash_and_deposits_are_separate(self):
+        from PIL import Image
+        from app.cash_deposits import net_cash, on_hand
+        self.conn.execute("DELETE FROM xray_payments WHERE branch_id = ? AND substr(received_at, 1, 7) = '2026-02'", (self.bid,))
+        xid = self.conn.insert("xrays", {"number": "XR-DEPTEST", "branch_id": self.bid, "walkin_name": "Walk-in (demo)", "taken_on": self.days[0],
+                                         "subtotal_cents": 120000, "total_cents": 120000, "created_at": self.days[0]})
+        for amt, method in ((100000, "cash"), (20000, "gcash")):
+            self.conn.insert("xray_payments", {"xray_id": xid, "branch_id": self.bid, "amount_cents": amt, "method": method,
+                                               "received_at": self.days[0], "status": "valid", "created_at": self.days[0]})
+        self.assertEqual(net_cash(self.conn, self.bid, *self.days, "xray"), 100000)     # X-ray cash only
+        self.assertEqual(net_cash(self.conn, self.bid, *self.days), 750000)              # clinic cash unchanged
+        a = self.login("admin")
+        page = a.get(f"/staff/deposits/?branch={self.bid}&fund=xray&from=2026-02-01&to=2026-02-28").data.decode()
+        self.assertIn("X-ray bank deposits", page)
+        self.assertIn("₱1,000.00", page)
+        jpg = io.BytesIO()
+        Image.new("RGB", (400, 300), (200, 200, 200)).save(jpg, "JPEG")
+        jpg.seek(0)
+        a.post("/staff/deposits/", data={"branch": self.bid, "fund": "xray", "deposit_date": "2026-02-04", "cash_from": self.days[0],
+                                         "cash_to": self.days[0], "amount": "1000", "bank": "BDO", "slip": (jpg, "slip.jpg")},
+               content_type="multipart/form-data")
+        d = self.q("SELECT * FROM cash_deposits WHERE branch_id = ? ORDER BY id DESC LIMIT 1", (self.bid,))
+        self.assertEqual((d["fund"], d["amount_cents"], d["expected_cents"]), ("xray", 100000, 100000))
+        with self.app.app_context():
+            self.assertEqual(on_hand(self.conn, self.bid, "2026-02-28", "xray"), 0)
+            self.assertEqual(on_hand(self.conn, self.bid, "2026-02-28"), 750000)       # the X-ray deposit doesn't touch clinic cash
+        clinic = a.get(f"/staff/deposits/?branch={self.bid}&from=2026-02-01&to=2026-02-28").data.decode()
+        self.assertNotIn("Matches", clinic)                                          # the X-ray deposit isn't listed on the clinic tab
+        self.assertIn("Matches", a.get(f"/staff/deposits/?branch={self.bid}&fund=xray&from=2026-02-01&to=2026-02-28").data.decode())

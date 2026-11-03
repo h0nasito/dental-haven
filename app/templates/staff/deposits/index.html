@@ -3,9 +3,10 @@
 {% block page_title %}Bank deposits{% endblock %}
 {% block content %}
 {% set bname = (branches|selectattr('id', 'equalto', bid)|first).name %}
-<div class="page-head"><div><h1>Bank deposits &amp; cash on hand</h1><p>{{ bname }} · Cash collected, minus cash refunds and cash expenses, minus what was deposited in the bank.</p></div>
-<a class="btn btn-secondary btn-sm" href="{{ url_for('deposits.index', branch=bid, format='csv', **{'from': start.isoformat(), 'to': end.isoformat()}) }}">CSV export</a></div>
-<form class="toolbar" method="get">
+<div class="page-head"><div><h1>{{ 'X-ray bank deposits' if fund == 'xray' else 'Bank deposits' }} &amp; cash on hand</h1><p>{{ bname }} · {% if fund == 'xray' %}X-ray cash: X-ray payments received in cash, minus what was deposited in the X-ray bank account. Kept apart from the clinic's cash.{% else %}Cash collected, minus cash refunds and cash expenses, minus what was deposited in the bank. X-ray cash is on the X-ray tab.{% endif %}</p></div>
+<a class="btn btn-secondary btn-sm" href="{{ url_for('deposits.index', branch=bid, fund=fund, format='csv', **{'from': start.isoformat(), 'to': end.isoformat()}) }}">CSV export</a></div>
+<nav class="tabs" aria-label="Which cash">{% for k, l in FUNDS.items() %}<a class="{{ 'active' if fund == k }}" href="{{ url_for('deposits.index', branch=bid, fund=k, **{'from': start.isoformat(), 'to': end.isoformat()}) }}">{{ l }}</a>{% endfor %}</nav>
+<form class="toolbar" method="get"><input type="hidden" name="fund" value="{{ fund }}">
 {% if branches|length > 1 %}<div class="field"><label for="db">Branch</label><select id="db" name="branch">{% for b in branches %}<option value="{{ b.id }}" {% if b.id == bid %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select></div>{% endif %}
 <div class="field"><label for="df">From</label><input id="df" type="date" name="from" value="{{ start.isoformat() }}"></div>
 <div class="field"><label for="dt">To</label><input id="dt" type="date" name="to" value="{{ end.isoformat() }}"></div>
@@ -40,11 +41,11 @@
 <td class="num">{{ ('−' ~ (r.expenses|peso)) if r.expenses else '—' }}</td><td class="num">{{ ('−' ~ (r.deposited|peso)) if r.deposited else '—' }}</td><td class="num"><strong>{{ r.balance|peso }}</strong></td></tr>
 {% else %}<tr><td colspan="6" class="empty">No cash movement in this period.</td></tr>{% endfor %}</tbody>
 <tfoot><tr><td><strong>Total</strong></td><td class="num">{{ cb.totals.in|peso }}</td><td class="num">{{ cb.totals.refunds|peso }}</td><td class="num">{{ cb.totals.expenses|peso }}</td><td class="num">{{ cb.totals.deposited|peso }}</td><td class="num"><strong>{{ cb.closing|peso }}</strong></td></tr></tfoot></table></div>
-<p class="hint">Cash only: GCash, Maya, card, bank transfer and checks are not counted. Cash expenses (not voided) are taken out because they were paid from the cash collected. Counting starts {{ cb.since|date }}.</p></div>
+<p class="hint">{% if fund == 'xray' %}X-ray payments in cash only: GCash, Maya, card and bank transfers are not counted.{% else %}Cash only: GCash, Maya, card, bank transfer and checks are not counted. Cash expenses (not voided) are taken out because they were paid from the cash collected. X-ray cash is counted on the X-ray tab.{% endif %} Counting starts {{ cb.since|date }}.</p></div>
 </div>
 <div>
 {% if can_manage %}
-<div class="card"><h2>Record a deposit</h2><form method="post" enctype="multipart/form-data">{{ csrf() }}<input type="hidden" name="branch" value="{{ bid }}">
+<div class="card"><h2>Record {{ 'an X-ray' if fund == 'xray' else 'a' }} deposit</h2><form method="post" enctype="multipart/form-data">{{ csrf() }}<input type="hidden" name="branch" value="{{ bid }}"><input type="hidden" name="fund" value="{{ fund }}">
 <div class="field"><label for="ddd">Date deposited</label><input id="ddd" type="date" name="deposit_date" value="{{ today }}" max="{{ today }}" required></div>
 <div class="form-grid">
 <div class="field"><label for="dcf">Cash of (from)</label><input id="dcf" type="date" name="cash_from" value="{{ sugg_from }}" max="{{ today }}"></div>
@@ -59,7 +60,7 @@
 <div class="field"><label for="dno">Notes <span class="hint">Optional, e.g. why it is short or over</span></label><textarea id="dno" name="notes" rows="2" maxlength="500"></textarea></div>
 <button class="btn">Save deposit</button></form></div>
 {% endif %}
-{% if current_user.is_super_admin %}<form method="post" class="card mt-1">{{ csrf() }}<input type="hidden" name="action" value="since"><input type="hidden" name="branch" value="{{ bid }}"><h2>Start counting from</h2>
+{% if current_user.is_super_admin %}<form method="post" class="card mt-1">{{ csrf() }}<input type="hidden" name="action" value="since"><input type="hidden" name="branch" value="{{ bid }}"><input type="hidden" name="fund" value="{{ fund }}"><h2>Start counting from</h2>
 <p class="hint mt-0">Cash before this date is treated as already deposited (all branches).</p>
 <div class="field"><label for="dsi">Count cash on hand from</label><input id="dsi" type="date" name="since" value="{{ cb.since }}" max="{{ today }}"></div>
 <button class="btn btn-secondary btn-sm">Save</button></form>{% endif %}

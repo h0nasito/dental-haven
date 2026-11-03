@@ -10,7 +10,7 @@ from flask import Blueprint, Response, abort, flash, g, redirect, render_templat
 
 from .. import audit
 from ..auth import require
-from ..cash_deposits import book, net_cash, on_hand, since
+from ..cash_deposits import FUNDS, book, net_cash, on_hand, since
 from ..db import get_db
 from ..uploads import IMAGE_TYPES, document_path, save_document, save_private_photo, sniff
 from ..util import clean, now_str, parse_date, parse_money, to_int, today
@@ -47,11 +47,17 @@ def _save_slip(f):
     return stored, err
 
 
+def _fund() -> str:
+    f = request.values.get("fund") or "clinic"
+    return f if f in FUNDS else "clinic"
+
+
 @bp.route("/", methods=["GET", "POST"])
 @require("deposits.view", "deposits.manage", any_of=True)
 def index():
     conn = get_db()
     bid, branches = _branch(conn)
+    fund = _fund()
     if request.method == "POST" and request.form.get("action") == "since":
         if not g.user.is_super_admin:
             abort(403)
@@ -61,7 +67,7 @@ def index():
             settings.put("deposits.since", d.isoformat(), g.user.id, conn)
             audit.record("cash_deposits_since", "cash_deposit", None, f"Cash on hand counted from {d.isoformat()}")
             flash("Saved.", "success")
-        return redirect(url_for("deposits.index", branch=bid))
+        return redirect(url_for("deposits.index", branch=bid, fund=fund))
     if request.method == "POST":
         if not g.user.can("deposits.manage"):
             abort(403)
@@ -90,19 +96,19 @@ def index():
                 stored, err = _save_slip(x)
                 if err:
                     flash(f"Deposit slip picture: {err}", "error")
-                    return redirect(url_for("deposits.index", branch=bid))
+                    return redirect(url_for("deposits.index", branch=bid, fund=fund))
                 saved.append(stored)
-            expected = net_cash(conn, bid, c_from.isoformat(), c_to.isoformat()) if c_from else 0
+            expected = net_cash(conn, bid, c_from.isoformat(), c_to.isoformat(), fund) if c_from else 0
             with conn.transaction():
                 did = conn.insert("cash_deposits", {
-                    "branch_id": bid, "deposit_date": d.isoformat(), "cash_from": c_from.isoformat() if c_from else "",
+                    "branch_id": bid, "fund": fund, "deposit_date": d.isoformat(), "cash_from": c_from.isoformat() if c_from else "",
                     "cash_to": c_to.isoformat() if c_to else "", "bank": clean(f.get("bank"), 80), "account": clean(f.get("account"), 40),
                     "slip_no": clean(f.get("slip_no"), 60), "amount_cents": amt, "expected_cents": expected,
                     "deposited_by": clean(f.get("deposited_by"), 120) or g.user.name, "notes": clean(f.get("notes"), 500),
                     "slip_stored": saved[0], "created_by": g.user.id, "created_at": now_str()})
                 for stored in saved:
                     conn.insert("cash_deposit_photos", {"deposit_id": did, "stored_name": stored, "uploaded_by": g.user.id, "created_at": now_str()})
-                audit.record("cash_deposit_recorded", "cash_deposit", did, f"Bank deposit ₱{amt / 100:,.2f} on {d.isoformat()}"
+                audit.record("cash_deposit_recorded", "cash_deposit", did, f"{FUNDS[fund]} bank deposit ₱{amt / 100:,.2f} on {d.isoformat()}"
                              + (f" for cash of {c_from} to {c_to}" if c_from else ""))
             if c_from and expected != amt:
                 diff = amt - expected
@@ -110,22 +116,22 @@ def index():
                       f"(₱{expected / 100:,.2f}). Add a note if this is expected.", "warning")
             else:
                 flash("Deposit saved.", "success")
-            return redirect(url_for("deposits.index", branch=bid))
+            return redirect(url_for("deposits.index", branch=bid, fund=fund))
     start, end = date_range_args(default_days=31)
     if "from" not in request.args:
         start = today().replace(day=1)
-    cb = book(conn, bid, start, end)
+    cb = book(conn, bid, start, end, fund)
     deposits = conn.all("SELECT d.*, u.name AS by_name FROM cash_deposits d LEFT JOIN users u ON u.id = d.created_by "
-                        "WHERE d.branch_id = ? AND d.deposit_date BETWEEN ? AND ? ORDER BY d.deposit_date DESC, d.id DESC",
-                        (bid, start.isoformat(), end.isoformat()))
+                        "WHERE d.branch_id = ? AND d.fund = ? AND d.deposit_date BETWEEN ? AND ? ORDER BY d.deposit_date DESC, d.id DESC",
+                        (bid, fund, start.isoformat(), end.isoformat()))
     photos: dict[int, list] = {}
     if deposits:
         ids = [d["id"] for d in deposits]
         for ph in conn.all(f"SELECT * FROM cash_deposit_photos WHERE deposit_id IN ({','.join('?' * len(ids))}) ORDER BY id", ids):
             photos.setdefault(ph["deposit_id"], []).append(ph)
     banks = [r["bank"] for r in conn.all("SELECT bank, MAX(id) AS m FROM cash_deposits WHERE bank != '' GROUP BY bank ORDER BY m DESC LIMIT 10")]
-    last = conn.one("SELECT bank, account FROM cash_deposits WHERE branch_id = ? AND status = 'ok' ORDER BY id DESC LIMIT 1", (bid,))
-    last_cov = conn.scalar("SELECT MAX(cash_to) FROM cash_deposits WHERE branch_id = ? AND status = 'ok' AND cash_to != ''", (bid,))
+    last = conn.one("SELECT bank, account FROM cash_deposits WHERE branch_id = ? AND fund = ? AND status = 'ok' ORDER BY id DESC LIMIT 1", (bid, fund))
+    last_cov = conn.scalar("SELECT MAX(cash_to) FROM cash_deposits WHERE branch_id = ? AND fund = ? AND status = 'ok' AND cash_to != ''", (bid, fund))
     yesterday = (today() - timedelta(days=1)).isoformat()
     sugg_from = max(since(conn), (parse_date(last_cov) + timedelta(days=1)).isoformat() if last_cov else since(conn))
     sugg_to = max(sugg_from, yesterday) if sugg_from <= yesterday else today().isoformat()
@@ -147,10 +153,10 @@ def index():
                                           "Void" if d["status"] == "void" else "OK", d["notes"])])
         audit.record("cash_deposits_exported", "cash_deposit", None, f"Exported cash book {start} to {end}")
         return Response("﻿" + buf.getvalue(), mimetype="text/csv",
-                        headers={"Content-Disposition": f'attachment; filename="cash-book-{start}-to-{end}.csv"', "Cache-Control": "no-store"})
+                        headers={"Content-Disposition": f'attachment; filename="{fund}-cash-book-{start}-to-{end}.csv"', "Cache-Control": "no-store"})
     return render_template("staff/deposits/index.html", bid=bid, branches=branches, cb=cb, deposits=deposits, start=start, end=end,
-                           on_hand=on_hand(conn, bid), banks=banks, last=last, today=today().isoformat(), sugg_from=sugg_from, sugg_to=sugg_to,
-                           sugg_amount=net_cash(conn, bid, sugg_from, sugg_to), can_manage=g.user.can("deposits.manage"),
+                           on_hand=on_hand(conn, bid, None, fund), banks=banks, fund=fund, FUNDS=FUNDS, last=last, today=today().isoformat(), sugg_from=sugg_from, sugg_to=sugg_to,
+                           sugg_amount=net_cash(conn, bid, sugg_from, sugg_to, fund), can_manage=g.user.can("deposits.manage"),
                            photos=photos, max_photos=MAX_PHOTOS, bank_list=bank_list(conn))
 
 
@@ -185,7 +191,7 @@ def add_photos(deposit_id):
     files = [x for x in request.files.getlist("slip") if x and x.filename][:max(0, MAX_PHOTOS - have)]
     if d["status"] != "ok" or not files:
         flash(f"Choose a picture (up to {MAX_PHOTOS} per deposit).", "error")
-        return redirect(url_for("deposits.index", branch=d["branch_id"]))
+        return redirect(url_for("deposits.index", branch=d["branch_id"], fund=d["fund"]))
     n = 0
     for x in files:
         stored, err = _save_slip(x)
@@ -199,7 +205,7 @@ def add_photos(deposit_id):
     if n:
         audit.record("cash_deposit_photo_added", "cash_deposit", d["id"], f"Added {n} picture(s) to the deposit of {d['deposit_date']}")
         flash("Picture added.", "success")
-    return redirect(url_for("deposits.index", branch=d["branch_id"]))
+    return redirect(url_for("deposits.index", branch=d["branch_id"], fund=d["fund"]))
 
 
 @bp.route("/<int:deposit_id>/void", methods=["POST"])
@@ -218,4 +224,4 @@ def void(deposit_id):
                          (reason, g.user.id, now_str(), d["id"]))
             audit.record("cash_deposit_voided", "cash_deposit", d["id"], f"Voided deposit of ₱{d['amount_cents'] / 100:,.2f} on {d['deposit_date']}: {reason}")
         flash("Deposit voided.", "success")
-    return redirect(url_for("deposits.index", branch=d["branch_id"]))
+    return redirect(url_for("deposits.index", branch=d["branch_id"], fund=d["fund"]))
