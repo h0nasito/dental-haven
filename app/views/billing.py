@@ -9,7 +9,7 @@ from flask import Blueprint, Response, abort, flash, g, redirect, render_templat
 
 from .. import audit, settings
 from ..auth import require
-from ..billing import (CREDIT_METHOD, MAX_PROOFS, PAYMENT_METHODS, PROOF_METHODS, parse_pay, pay_label, collections, commission_dentists, compute_totals, credit_balance,
+from ..billing import (CREDIT_METHOD, MAX_PROOFS, clinic_share, PAYMENT_METHODS, PROOF_METHODS, parse_pay, pay_label, collections, commission_dentists, compute_totals, credit_balance,
                        invoice_commission_info, lab_share, line_amount, next_invoice_number, paid_amount, payment_state)
 from ..db import get_db
 from ..fee_schedule import picker_options
@@ -188,6 +188,74 @@ def item_fix(invoice_id, item_id):
     return redirect(back)
 
 
+@bp.route("/invoices/<int:invoice_id>/items/<int:item_id>/to-xray", methods=["POST"])
+@require("bills.edit")
+def item_to_xray(invoice_id, item_id):
+    """Move an X-ray typed on a patient bill to the X-ray section: an X-ray record with the line's price, and the line's
+    share of each payment on the bill becomes an X-ray payment (same date, method and branch). The bill loses the line;
+    a bill that had only X-rays is voided. X-rays then show in the X-ray report and X-ray deposits, not in the clinic's."""
+    from .xray import type_for
+    conn = get_db()
+    inv = _load_invoice(invoice_id)
+    ln = conn.one("SELECT * FROM invoice_items WHERE id = ? AND invoice_id = ?", (item_id, invoice_id))
+    back = redirect(url_for("billing.invoice", invoice_id=invoice_id))
+    if not ln or inv["status"] != "issued":
+        abort(404)
+    pays = conn.all("SELECT * FROM payments WHERE invoice_id = ? AND status = 'valid' ORDER BY id", (invoice_id,))
+    if any(p["kind"] != "payment" or p["method"] == CREDIT_METHOD for p in pays):
+        flash("This bill has a refund or a payment from account credit, so the X-ray can't be moved automatically. "
+              "Void those first, or record the X-ray in the X-ray section and remove the line.", "error")
+        return back
+    lines = conn.all("SELECT * FROM invoice_items WHERE invoice_id = ?", (invoice_id,))
+    tot = sum(max(0, l["amount_cents"]) for l in lines)
+    a = max(0, ln["amount_cents"])
+    t = type_for(conn, ln["description"])
+    disc = round((inv["discount_cents"] or 0) * a / tot) if tot else 0
+    with conn.transaction(immediate=True):
+        nxt = (conn.scalar("SELECT MAX(id) FROM xrays") or 0) + 1
+        number = f"XR-{nxt:06d}"
+        taken = (ln["done_on"] or inv["issued_at"] or inv["created_at"] or today().isoformat())[:10]
+        xid = conn.insert("xrays", {"number": number, "branch_id": inv["branch_id"], "patient_id": inv["patient_id"], "taken_on": taken,
+                                    "requested_by": ln["dentist_id"], "notes": f"Moved from bill {inv['number']}", "subtotal_cents": a,
+                                    "discount_cents": disc, "total_cents": a - disc, "rebate_cents": 0, "status": "ok",
+                                    "created_by": g.user.id, "created_at": now_str()})
+        conn.insert("xray_items", {"xray_id": xid, "type_id": t["id"] if t else None, "description": t["name"] if t else ln["description"],
+                                   "tooth": ln["tooth"] or "", "price_cents": a})
+        moved = 0
+        for p in pays:
+            share = min(p["amount_cents"], round(p["amount_cents"] * a / tot)) if tot else 0
+            if share <= 0:
+                continue
+            conn.insert("xray_payments", {"xray_id": xid, "branch_id": p["branch_id"], "amount_cents": share, "method": p["method"],
+                                          "account": p["account"] or "", "reference": p["reference"] or "", "received_at": p["received_at"],
+                                          "received_by": p["received_by"], "status": "valid", "created_at": now_str()})
+            if share >= p["amount_cents"]:
+                conn.execute("UPDATE payments SET status = 'void', void_reason = ?, voided_by = ?, voided_at = ? WHERE id = ?",
+                             (f"Moved to X-ray {number}", g.user.id, now_str(), p["id"]))
+            else:
+                conn.execute("UPDATE payments SET amount_cents = amount_cents - ? WHERE id = ?", (share, p["id"]))
+            moved += share
+        # the progress-note procedure for this X-ray now points to the X-ray record
+        conn.execute("UPDATE procedures SET xray_id = ? WHERE id = (SELECT id FROM procedures WHERE patient_id = ? AND xray_id IS NULL "
+                     "AND status = 'completed' AND substr(COALESCE(performed_at, created_at), 1, 10) = ? AND UPPER(TRIM(description)) = UPPER(TRIM(?)) "
+                     "ORDER BY id LIMIT 1)", (xid, inv["patient_id"], taken, ln["description"]))
+        conn.execute("DELETE FROM invoice_items WHERE id = ?", (item_id,))
+        if disc:
+            conn.execute("UPDATE invoices SET discount_cents = MAX(0, discount_cents - ?) WHERE id = ?", (disc, invoice_id))
+        left = conn.scalar("SELECT COUNT(*) FROM invoice_items WHERE invoice_id = ?", (invoice_id,))
+        if left:
+            _recalc(conn, invoice_id)
+        else:
+            conn.execute("UPDATE invoices SET status = 'void', void_reason = ?, voided_by = ?, voided_at = ? WHERE id = ?",
+                         (f"Only X-rays: moved to X-ray {number}", g.user.id, now_str(), invoice_id))
+        audit.record("invoice_line_to_xray", "invoice", invoice_id, f"Moved “{ln['description'][:60]}” ({peso(a)}) to X-ray {number}"
+                     + (f" with {peso(moved)} paid" if moved else ""), {"line": dict(ln), "xray_id": xid}, inv["branch_id"])
+        audit.record("xray_created", "xray", xid, f"X-ray {number} moved from bill {inv['number']}", {"invoice_id": invoice_id})
+    flash(f"Moved to X-ray {number}" + (f", with {peso(moved)} of the payments" if moved else "") + "."
+          + ("" if left else " The bill had only X-rays, so it was voided."), "success")
+    return back
+
+
 @bp.route("/invoices/<int:invoice_id>/branch", methods=["POST"])
 @require("bills.edit")
 def invoice_branch(invoice_id):
@@ -290,6 +358,8 @@ def mymeds_paid(invoice_id):
 def invoice(invoice_id):
     conn = get_db()
     inv = _load_invoice(invoice_id)
+    from ..billing import mark_xray_lines
+    mark_xray_lines(conn)                 # X-ray lines get a "Move to X-ray" button
     items = conn.all("SELECT * FROM invoice_items WHERE invoice_id = ? ORDER BY id", (invoice_id,))
     payments = conn.all("SELECT p.*, u.name AS received_by_name, v.name AS voided_by_name, pb.name AS branch_name FROM payments p "
                         "LEFT JOIN users u ON u.id = p.received_by LEFT JOIN users v ON v.id = p.voided_by LEFT JOIN branches pb ON pb.id = p.branch_id "
@@ -810,9 +880,11 @@ def _sales_data(conn, ids, start, end):
     marks = ",".join("?" for _ in ids) or "NULL"
     s, e = start.isoformat(), end.isoformat()
     by_branch = []
+    amt = clinic_share(conn)                                                  # X-ray lines on bills are left out (own section)
+    inv_amt = clinic_share(conn, "i", "i.total_cents", "i.id")
     for b in conn.all(f"SELECT id, name FROM branches WHERE id IN ({marks}) ORDER BY sort_order", ids):
-        sales = conn.one("SELECT COUNT(*) AS n, COALESCE(SUM(total_cents),0) AS total, COALESCE(SUM(discount_cents),0) AS disc, "
-                         "COALESCE(SUM(tax_cents),0) AS tax FROM invoices WHERE status='issued' AND branch_id=? AND issued_at BETWEEN ? AND ?",
+        sales = conn.one(f"SELECT COUNT(*) AS n, COALESCE(SUM({inv_amt}),0) AS total, COALESCE(SUM(i.discount_cents),0) AS disc, "
+                         "COALESCE(SUM(i.tax_cents),0) AS tax FROM invoices i WHERE i.status='issued' AND i.branch_id=? AND i.issued_at BETWEEN ? AND ?",
                          (b["id"], s, e))
         coll = collections(conn, [b["id"]], s, e)
         expenses = conn.scalar("SELECT COALESCE(SUM(amount_cents),0) FROM expenses WHERE status='posted' AND branch_id=? "
@@ -824,8 +896,8 @@ def _sales_data(conn, ids, start, end):
                           "net_cash": coll["net"] - expenses})
     methods = conn.all(
         "SELECT method, SUM(amount) AS amount, SUM(n) AS n FROM ("
-        f"SELECT method, SUM(CASE WHEN kind='payment' THEN amount_cents ELSE -amount_cents END) AS amount, COUNT(*) AS n FROM payments "
-        f"WHERE status='valid' AND method != '{CREDIT_METHOD}' AND branch_id IN ({marks}) AND received_at BETWEEN ? AND ? GROUP BY method "
+        f"SELECT p.method, SUM(CASE WHEN p.kind='payment' THEN {amt} ELSE -{amt} END) AS amount, COUNT(*) AS n FROM payments p "
+        f"WHERE p.status='valid' AND p.method != '{CREDIT_METHOD}' AND p.branch_id IN ({marks}) AND p.received_at BETWEEN ? AND ? GROUP BY p.method "
         "UNION ALL "
         f"SELECT method, SUM(CASE WHEN kind='deposit' THEN amount_cents ELSE -amount_cents END) AS amount, COUNT(*) AS n FROM patient_credits "
         f"WHERE status='valid' AND kind IN ('deposit','refund') AND branch_id IN ({marks}) AND entry_date BETWEEN ? AND ? GROUP BY method"
@@ -833,10 +905,10 @@ def _sales_data(conn, ids, start, end):
     services_rows = conn.all(
         "SELECT COALESCE(sv.name, 'Other / custom') AS service, COUNT(*) AS lines, SUM(ii.qty) AS qty, SUM(ii.amount_cents) AS amount "
         f"FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id LEFT JOIN services sv ON sv.id = ii.service_id "
-        f"WHERE i.status='issued' AND i.branch_id IN ({marks}) AND i.issued_at BETWEEN ? AND ? GROUP BY COALESCE(sv.name, 'Other / custom') ORDER BY amount DESC",
+        f"WHERE i.status='issued' AND COALESCE(ii.xray, 0) = 0 AND i.branch_id IN ({marks}) AND i.issued_at BETWEEN ? AND ? GROUP BY COALESCE(sv.name, 'Other / custom') ORDER BY amount DESC",
         [*ids, s, e])
-    daily = conn.all(f"SELECT issued_at AS d, SUM(total_cents) AS sales FROM invoices WHERE status='issued' AND branch_id IN ({marks}) "
-                     "AND issued_at BETWEEN ? AND ? GROUP BY issued_at ORDER BY issued_at", [*ids, s, e])
+    daily = conn.all(f"SELECT i.issued_at AS d, SUM({inv_amt}) AS sales FROM invoices i WHERE i.status='issued' AND i.branch_id IN ({marks}) "
+                     "AND i.issued_at BETWEEN ? AND ? GROUP BY i.issued_at ORDER BY i.issued_at", [*ids, s, e])
     return by_branch, methods, services_rows, daily
 
 
@@ -844,7 +916,9 @@ def collections_by_service(conn, ids, start, end) -> list[dict]:
     """Money received in the period by type of service: each payment (or refund) is shared over its bill's lines in
     proportion to their amounts, by the date received, so braces installments paid this month count under Orthodontics
     even if the bill is from an earlier year. Deposits not yet applied to a bill are their own row."""
+    from ..billing import mark_xray_lines
     from ..case_types import Classifier
+    mark_xray_lines(conn)
     marks = ",".join("?" for _ in ids) or "NULL"
     s, e = start.isoformat(), end.isoformat()
     pays = {r["invoice_id"]: r["amt"] for r in conn.all(
@@ -857,7 +931,7 @@ def collections_by_service(conn, ids, start, end) -> list[dict]:
     lines: dict[int, list] = {}
     for i in range(0, len(inv_ids), 500):
         chunk = inv_ids[i:i + 500]
-        for ln in conn.all(f"SELECT ii.invoice_id, ii.amount_cents, ii.description, sv.category AS scat, u.name AS dentist FROM invoice_items ii "
+        for ln in conn.all(f"SELECT ii.invoice_id, ii.amount_cents, ii.description, ii.xray, sv.category AS scat, u.name AS dentist FROM invoice_items ii "
                            f"LEFT JOIN services sv ON sv.id = ii.service_id LEFT JOIN users u ON u.id = ii.dentist_id "
                            f"WHERE ii.invoice_id IN ({','.join('?' * len(chunk))})", chunk):
             lines.setdefault(ln["invoice_id"], []).append(ln)
@@ -872,6 +946,8 @@ def collections_by_service(conn, ids, start, end) -> list[dict]:
                 r["bills"].add(inv)
             continue
         for l in ls:
+            if l["xray"] == 1:
+                continue            # the X-ray line's share is X-ray money (own section), not the clinic's
             part = round(amt * max(0, l["amount_cents"]) / tot)
             for bucket, key in ((out, kind(l["description"], l["scat"])), (docs, l["dentist"] or "No dentist set")):
                 r = bucket.setdefault(key, {"service": key, "amount": 0, "bills": set()})
@@ -894,8 +970,9 @@ def collection_list(conn, ids, start, end) -> list[dict]:
     bill, procedures on the bill, dentist(s) on its lines, method and amount (refunds negative)."""
     marks = ",".join("?" for _ in ids) or "NULL"
     s, e = start.isoformat(), end.isoformat()
+    amt = clinic_share(conn)          # X-ray lines on bills are left out: X-rays have their own section
     pays = conn.all(
-        "SELECT p.id, p.invoice_id, p.kind, p.amount_cents, p.method, p.account, substr(p.received_at, 1, 10) AS d, i.number, "
+        f"SELECT p.id, p.invoice_id, p.kind, {amt} AS amount_cents, p.method, p.account, substr(p.received_at, 1, 10) AS d, i.number, "
         "pt.id AS patient_id, pt.first_name, pt.last_name, b.name AS branch FROM payments p JOIN invoices i ON i.id = p.invoice_id "
         "JOIN patients pt ON pt.id = i.patient_id JOIN branches b ON b.id = p.branch_id "
         f"WHERE p.status = 'valid' AND p.method != ? AND p.branch_id IN ({marks}) AND p.received_at BETWEEN ? AND ? ORDER BY p.received_at, p.id",
@@ -905,7 +982,7 @@ def collection_list(conn, ids, start, end) -> list[dict]:
     for i in range(0, len(inv_ids), 500):
         chunk = inv_ids[i:i + 500]
         for ln in conn.all(f"SELECT ii.invoice_id, ii.description, ii.tooth, u.name AS dentist FROM invoice_items ii LEFT JOIN users u ON u.id = ii.dentist_id "
-                           f"WHERE ii.invoice_id IN ({','.join('?' * len(chunk))}) ORDER BY ii.id", chunk):
+                           f"WHERE ii.invoice_id IN ({','.join('?' * len(chunk))}) AND COALESCE(ii.xray, 0) = 0 ORDER BY ii.id", chunk):
             lines.setdefault(ln["invoice_id"], []).append(ln)
     proof: dict[int, int] = {}
     pids = [r["id"] for r in pays]
@@ -916,6 +993,8 @@ def collection_list(conn, ids, start, end) -> list[dict]:
             proof[ph["payment_id"]] = ph["id"]
     out = []
     for r in pays:
+        if not r["amount_cents"]:
+            continue                    # all of it was for X-rays
         ls = lines.get(r["invoice_id"]) or []
         procs = list(dict.fromkeys((l["description"] or "").split(" · ")[0] + (f" #{l['tooth']}" if l["tooth"] else "") for l in ls))
         docs = list(dict.fromkeys(l["dentist"] for l in ls if l["dentist"]))

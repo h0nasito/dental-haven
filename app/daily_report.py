@@ -39,8 +39,10 @@ def branch_report(conn, branch, day: str) -> dict:
     bid = branch["id"]
     gross: dict[str, int] = {}
     refunds = 0
-    for r in conn.all("SELECT kind, method, account, amount_cents FROM payments WHERE status = 'valid' AND method != ? AND branch_id = ? "
-                      "AND substr(received_at, 1, 10) = ?", (CREDIT_METHOD, bid, day)):
+    from .billing import clinic_share
+    amt = clinic_share(conn)          # X-ray lines on bills are left out: X-rays have their own section
+    for r in conn.all(f"SELECT p.kind, p.method, p.account, {amt} AS amount_cents FROM payments p WHERE p.status = 'valid' AND p.method != ? "
+                      "AND p.branch_id = ? AND substr(p.received_at, 1, 10) = ?", (CREDIT_METHOD, bid, day)):
         if r["kind"] == "payment":
             k = _method(r["method"], r["account"])
             gross[k] = gross.get(k, 0) + r["amount_cents"]

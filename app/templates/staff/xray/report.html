@@ -8,10 +8,11 @@
 <div class="field"><label for="xt">To</label><input id="xt" type="date" name="to" value="{{ end.isoformat() }}"></div>
 <button class="btn btn-secondary">Show</button></form>
 <div class="grid grid-3" style="margin-bottom:1rem">
-<div class="stat"><div class="label">X-rays</div><div class="value">{{ sums.n }}</div><div class="sub">{{ sums.walkins or 0 }} walk-in · {{ sums.referred or 0 }} referred</div></div>
-<div class="stat"><div class="label">Net sales</div><div class="value">{{ sums.net|peso }}</div><div class="sub">gross {{ sums.gross|peso }} · discount {{ sums.discount|peso }}</div></div>
-<div class="stat"><div class="label">Collected</div><div class="value">{{ collected|peso }}</div><div class="sub">open balances (all dates): {{ open_n }} · {{ open_total|peso }}</div></div>
+<div class="stat"><div class="label">X-rays</div><div class="value">{{ sums.n + bill.n }}</div><div class="sub">{{ sums.walkins or 0 }} walk-in · {{ sums.referred or 0 }} referred{% if bill.n %} · {{ bill.n }} on patient bills{% endif %}</div></div>
+<div class="stat"><div class="label">Net sales</div><div class="value">{{ (sums.net + bill.net)|peso }}</div><div class="sub">gross {{ sums.gross|peso }} · discount {{ sums.discount|peso }}{% if bill.net %} · on patient bills {{ bill.net|peso }}{% endif %}</div></div>
+<div class="stat"><div class="label">Collected</div><div class="value">{{ collected|peso }}</div><div class="sub">{% if bill.collected %}incl. {{ bill.collected|peso }} paid on patient bills · {% endif %}open balances (all dates): {{ open_n }} · {{ open_total|peso }}</div></div>
 </div>
+{% if bill.n or bill.collected %}<p class="hint">Includes X-rays typed as lines on patient bills (e.g. PANORAMIC XRAY on a bill with other procedures): the line amounts by bill date, and their share of each payment on that bill by the date paid. These are left out of the clinic's Sales &amp; collections.</p>{% endif %}
 <div class="grid grid-2">
 <div class="card"><h2>By X-ray type</h2><div class="table-wrap"><table><thead><tr><th>Type</th><th class="num">Count</th><th class="num">Amount</th></tr></thead><tbody>
 {% for r in by_type %}<tr><td>{{ r.name }}</td><td class="num">{{ r.n }}</td><td class="num">{{ r.amt|peso }}</td></tr>{% else %}<tr><td colspan="3" class="muted">None</td></tr>{% endfor %}</tbody></table></div></div>

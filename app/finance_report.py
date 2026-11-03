@@ -32,8 +32,10 @@ def build(conn, branches: list[dict], start: str, end: str) -> dict:
         c = cats.setdefault(label, {"collected": {}, "refunds": {}})
         c[field][bid] = c[field].get(bid, 0) + amt
 
-    for r in conn.all(f"SELECT branch_id, kind, method, account, SUM(amount_cents) AS amt FROM payments WHERE status = 'valid' AND method != ? "
-                      f"AND branch_id IN ({marks}) AND substr(received_at, 1, 10) BETWEEN ? AND ? GROUP BY branch_id, kind, method, account",
+    from .billing import clinic_share
+    amt = clinic_share(conn)          # X-ray lines on bills are left out: X-rays have their own section
+    for r in conn.all(f"SELECT p.branch_id, p.kind, p.method, p.account, SUM({amt}) AS amt FROM payments p WHERE p.status = 'valid' AND p.method != ? "
+                      f"AND p.branch_id IN ({marks}) AND substr(p.received_at, 1, 10) BETWEEN ? AND ? GROUP BY p.branch_id, p.kind, p.method, p.account",
                       [CREDIT_METHOD, *ids, start, end]):
         add(_label(r["method"], r["account"]), r["branch_id"], "collected" if r["kind"] == "payment" else "refunds", r["amt"])
     for r in conn.all(f"SELECT branch_id, kind, method, account, SUM(amount_cents) AS amt FROM patient_credits WHERE status = 'valid' "

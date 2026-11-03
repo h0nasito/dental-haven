@@ -25,8 +25,10 @@ def _collected(conn, ids, start: str, end: str) -> int:
     if not ids:
         return 0
     m = _in(ids)
-    p = conn.one(f"SELECT COALESCE(SUM(CASE WHEN kind='payment' THEN amount_cents ELSE -amount_cents END), 0) AS n FROM payments "
-                 f"WHERE status='valid' AND method != ? AND branch_id IN ({m}) AND substr(received_at, 1, 10) BETWEEN ? AND ?",
+    from .billing import clinic_share
+    amt = clinic_share(conn)          # X-ray lines on bills are left out: X-rays have their own section
+    p = conn.one(f"SELECT COALESCE(SUM(CASE WHEN p.kind='payment' THEN {amt} ELSE -{amt} END), 0) AS n FROM payments p "
+                 f"WHERE p.status='valid' AND p.method != ? AND p.branch_id IN ({m}) AND substr(p.received_at, 1, 10) BETWEEN ? AND ?",
                  [CREDIT_METHOD, *ids, start, end])["n"]
     d = conn.one(f"SELECT COALESCE(SUM(CASE WHEN kind='deposit' THEN amount_cents WHEN kind='refund' THEN -amount_cents ELSE 0 END), 0) AS n "
                  f"FROM patient_credits WHERE status='valid' AND branch_id IN ({m}) AND entry_date BETWEEN ? AND ?", [*ids, start, end])["n"]

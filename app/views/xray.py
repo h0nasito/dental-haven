@@ -566,9 +566,39 @@ def report():
     rows = conn.all(f"SELECT x.id, x.total_cents FROM xrays x WHERE x.status = 'ok' AND x.branch_id IN ({_marks(scope)})", scope)
     paid = paid_of(conn, [r["id"] for r in rows])
     open_bal = [r["total_cents"] - paid.get(r["id"], 0) for r in rows if r["total_cents"] > paid.get(r["id"], 0)]
-    return render_template("staff/xray/report.html", start=start, end=end, sums=sums, by_type=by_type, by_branch=by_branch, by_ref=by_ref,
-                           by_taker=by_taker, pays=[{**dict(p), "label": pay_label(p["method"], p["account"])} for p in pays],
-                           collected=sum(p["amt"] for p in pays), open_n=len(open_bal), open_total=sum(open_bal))
+    # X-rays typed as lines on patient bills (before the X-ray section, or imported): left out of the clinic's collections,
+    # so they are counted here: the line amounts by bill date, and their share of each bill payment by the date received.
+    from ..billing import CREDIT_METHOD, clinic_share
+    clinic = clinic_share(conn)
+    bill_types = conn.all(f"SELECT ii.description AS name, COUNT(*) AS n, SUM(ii.amount_cents) AS amt, b.name AS branch FROM invoice_items ii "
+                          f"JOIN invoices i ON i.id = ii.invoice_id JOIN branches b ON b.id = i.branch_id WHERE i.status = 'issued' AND ii.xray = 1 "
+                          f"AND i.branch_id IN ({_marks(scope)}) AND i.issued_at BETWEEN ? AND ? GROUP BY ii.description, b.name", args)
+    bill_pays = conn.all(f"SELECT p.method, p.account, SUM(CASE WHEN p.kind = 'payment' THEN p.amount_cents - {clinic} ELSE -(p.amount_cents - {clinic}) END) AS amt, "
+                         f"COUNT(*) AS n FROM payments p WHERE p.status = 'valid' AND p.method != ? AND p.branch_id IN ({_marks(scope)}) "
+                         f"AND substr(p.received_at, 1, 10) BETWEEN ? AND ? AND EXISTS (SELECT 1 FROM invoice_items ii WHERE ii.invoice_id = p.invoice_id "
+                         f"AND ii.xray = 1) GROUP BY p.method, p.account", [CREDIT_METHOD, *args])
+    bill_pays = [r for r in bill_pays if r["amt"]]
+    bill = {"n": sum(r["n"] for r in bill_types), "net": sum(r["amt"] or 0 for r in bill_types), "collected": sum(r["amt"] for r in bill_pays)}
+    types_m: dict[str, dict] = {r["name"]: dict(r) for r in by_type}
+    for r in bill_types:
+        t = types_m.setdefault(r["name"], {"name": r["name"], "n": 0, "amt": 0})
+        t["n"] += r["n"]
+        t["amt"] = (t["amt"] or 0) + (r["amt"] or 0)
+    branch_m: dict[str, dict] = {r["name"]: dict(r) for r in by_branch}
+    for r in bill_types:
+        t = branch_m.setdefault(r["branch"], {"name": r["branch"], "n": 0, "net": 0})
+        t["n"] += r["n"]
+        t["net"] = (t["net"] or 0) + (r["amt"] or 0)
+    pays_m: dict[str, dict] = {}
+    for r in [*pays, *bill_pays]:
+        lbl = pay_label(r["method"], r["account"])
+        t = pays_m.setdefault(lbl, {"label": lbl, "n": 0, "amt": 0})
+        t["n"] += r["n"]
+        t["amt"] += r["amt"]
+    return render_template("staff/xray/report.html", start=start, end=end, sums=sums, by_ref=by_ref, by_taker=by_taker, bill=bill,
+                           by_type=sorted(types_m.values(), key=lambda r: -r["n"]), by_branch=sorted(branch_m.values(), key=lambda r: r["name"]),
+                           pays=sorted(pays_m.values(), key=lambda r: -r["amt"]),
+                           collected=sum(p["amt"] for p in pays) + bill["collected"], open_n=len(open_bal), open_total=sum(open_bal))
 
 
 # ---------------------------------------------------------------------------

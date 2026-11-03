@@ -395,3 +395,81 @@ class TestPaymentProof(Base):
         # the collections list links the proof; patients' proof files aren't open to other branches
         self.assertIn(f"/proofs/{pr['id']}", a.get(f"/staff/reports/sales?from=2026-11-02&to=2026-11-02&branch={mal}").data.decode())
         self.assertNotEqual(self.login("reception.sjdm").get(f"/staff/invoices/{inv}/proofs/{pr['id']}").status_code, 200)
+
+
+class TestXrayLinesLeftOutOfCollections(Base):
+    def test_xray_share_of_bill_payments_not_counted(self):
+        from app import daily_report, finance_report
+        from app.billing import collections
+        from app.util import now_str
+        bid = self.branch("bocaue")
+        day = "2026-03-03"
+        self.conn.execute("DELETE FROM payments WHERE branch_id = ? AND substr(received_at, 1, 10) = ?", (bid, day))
+        self.conn.execute("DELETE FROM patient_credits WHERE branch_id = ? AND entry_date = ?", (bid, day))
+        pid = self.q("SELECT id FROM patients LIMIT 1")["id"]
+        inv = self.conn.insert("invoices", {"branch_id": bid, "patient_id": pid, "status": "issued", "number": "XL-1", "issued_at": day,
+                                            "subtotal_cents": 150000, "discount_cents": 0, "tax_cents": 0, "total_cents": 150000, "created_at": now_str()})
+        for desc, amt in (("Consultation (demo)", 50000), ("PANORAMIC XRAY", 100000)):
+            self.conn.insert("invoice_items", {"invoice_id": inv, "description": desc, "qty": 1, "unit_price_cents": amt, "discount_cents": 0,
+                                               "amount_cents": amt})
+        self.conn.insert("payments", {"invoice_id": inv, "branch_id": bid, "kind": "payment", "amount_cents": 150000, "method": "cash",
+                                      "received_at": day, "status": "valid", "created_at": now_str()})
+        with self.app.app_context():
+            self.assertEqual(collections(self.conn, [bid], day, day)["net"], 50000)          # only the consultation
+            b = self.q("SELECT * FROM branches WHERE id = ?", (bid,))
+            self.assertEqual(daily_report.branch_report(self.conn, b, day)["gross_total"], 50000)
+            self.assertEqual(finance_report.build(self.conn, [b], day, day)["total"], 50000)
+        self.assertEqual(self.q("SELECT xray FROM invoice_items WHERE invoice_id = ? AND description = 'PANORAMIC XRAY'", (inv,))["xray"], 1)
+        page = self.login("admin").get(f"/staff/reports/sales?from={day}&to={day}&branch={bid}").data.decode()
+        lst = page.split('id="collections-list"')[1].split('Daily sales')[0]
+        self.assertIn("Consultation (demo)", lst)
+        self.assertNotIn("PANORAMIC XRAY", lst)
+        self.assertIn("₱500.00", lst)
+        self.assertNotIn("₱1,500.00", lst)
+        # ...and counted in the X-ray report instead
+        xr = self.login("admin").get(f"/staff/xray/report?from={day}&to={day}").data.decode()
+        self.assertIn("on patient bills", xr)
+        self.assertIn("₱1,000.00", xr)
+
+
+class TestMoveLineToXray(Base):
+    def _bill(self, lines, paid):
+        from app.util import now_str
+        bid = self.branch("bocaue")
+        pid = self.q("SELECT id FROM patients LIMIT 1")["id"]
+        tot = sum(a for _d, a in lines)
+        inv = self.conn.insert("invoices", {"branch_id": bid, "patient_id": pid, "status": "issued", "number": f"MX-{now_str()[-8:]}-{tot}",
+                                            "issued_at": "2026-10-30", "subtotal_cents": tot, "discount_cents": 0, "tax_cents": 0,
+                                            "total_cents": tot, "created_at": now_str()})
+        for d, a in lines:
+            self.conn.insert("invoice_items", {"invoice_id": inv, "description": d, "qty": 1, "unit_price_cents": a, "discount_cents": 0,
+                                               "amount_cents": a, "done_on": "2026-10-30"})
+        if paid:
+            self.conn.insert("payments", {"invoice_id": inv, "branch_id": bid, "kind": "payment", "amount_cents": paid, "method": "cash",
+                                          "received_at": "2026-10-30", "status": "valid", "created_at": now_str()})
+        return inv
+
+    def test_move_xray_line_with_its_payment_share(self):
+        inv = self._bill([("PANORAMIC XRAY", 100000), ("Denture impression (demo)", 300000)], 400000)
+        a = self.login("admin")
+        self.assertIn("Move to X-ray", a.get(f"/staff/invoices/{inv}").data.decode())
+        ln = self.q("SELECT id FROM invoice_items WHERE invoice_id = ? AND description = 'PANORAMIC XRAY'", (inv,))
+        a.post(f"/staff/invoices/{inv}/items/{ln['id']}/to-xray")
+        i = self.q("SELECT * FROM invoices WHERE id = ?", (inv,))
+        self.assertEqual((i["status"], i["total_cents"]), ("issued", 300000))
+        self.assertEqual(self.q("SELECT amount_cents FROM payments WHERE invoice_id = ? AND status = 'valid'", (inv,))["amount_cents"], 300000)
+        x = self.q("SELECT * FROM xrays WHERE notes LIKE ? ORDER BY id DESC", (f"%{i['number']}%",))
+        self.assertEqual(x["total_cents"], 100000)
+        xp = self.q("SELECT * FROM xray_payments WHERE xray_id = ?", (x["id"],))
+        self.assertEqual((xp["amount_cents"], xp["method"], xp["received_at"][:10]), (100000, "cash", "2026-10-30"))
+        self.assertEqual(self.q("SELECT description FROM xray_items WHERE xray_id = ?", (x["id"],))["description"], "Panoramic")
+
+    def test_bill_with_only_xray_is_voided(self):
+        inv = self._bill([("PANORAMIC XRAY", 100000)], 50000)
+        ln = self.q("SELECT id FROM invoice_items WHERE invoice_id = ?", (inv,))
+        self.login("admin").post(f"/staff/invoices/{inv}/items/{ln['id']}/to-xray")
+        self.assertEqual(self.q("SELECT status FROM invoices WHERE id = ?", (inv,))["status"], "void")
+        self.assertIsNone(self.q("SELECT id FROM payments WHERE invoice_id = ? AND status = 'valid'", (inv,)))
+        x = self.q("SELECT x.* FROM xrays x JOIN xray_payments p ON p.xray_id = x.id WHERE x.notes LIKE ? ORDER BY x.id DESC",
+                   (f"%{self.q('SELECT number FROM invoices WHERE id = ?', (inv,))['number']}%",))
+        self.assertEqual(self.q("SELECT SUM(amount_cents) AS s FROM xray_payments WHERE xray_id = ?", (x["id"],))["s"], 50000)

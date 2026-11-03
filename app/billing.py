@@ -110,16 +110,39 @@ def credit_balance(conn, patient_id: int) -> int:
         "FROM patient_credits WHERE patient_id = ? AND status = 'valid'", (patient_id,)) or 0)
 
 
+def mark_xray_lines(conn) -> None:
+    """Flag bill lines that are X-rays (invoice_items.xray = 1), so collection reports can leave them out: X-rays are
+    their own section with their own collections and deposits. Only lines not checked yet (new or edited)."""
+    rows = conn.all("SELECT id, description FROM invoice_items WHERE xray IS NULL")
+    if not rows:
+        return
+    from .views.xray import type_for
+    for r in rows:
+        conn.execute("UPDATE invoice_items SET xray = ? WHERE id = ?", (1 if type_for(conn, r["description"]) else 0, r["id"]))
+
+
+def clinic_share(conn, alias: str = "p", amount: str = "", invoice_id: str = "") -> str:
+    """SQL for the part of a payment that is for the clinic's work, not X-rays on the same bill: each payment is shared
+    over its bill's lines in proportion, and the X-ray lines' share is left out. Use as SUM({clinic_share}) etc."""
+    mark_xray_lines(conn)
+    a = alias
+    amount, invoice_id = amount or f"{a}.amount_cents", invoice_id or f"{a}.invoice_id"
+    return (f"CAST(ROUND({amount} * (SELECT CASE WHEN COALESCE(SUM(MAX(ii.amount_cents, 0)), 0) > 0 "
+            f"THEN 1.0 - 1.0 * SUM(CASE WHEN ii.xray = 1 THEN MAX(ii.amount_cents, 0) ELSE 0 END) / SUM(MAX(ii.amount_cents, 0)) ELSE 1.0 END "
+            f"FROM invoice_items ii WHERE ii.invoice_id = {invoice_id})) AS INTEGER)")
+
+
 def collections(conn, branch_ids: list[int], start: str, end: str) -> dict:
     """Money actually received in the period: payments (excluding account-credit applications) plus
     patient deposits, minus refunds of either. Account credit used on a bill is not counted twice."""
     if not branch_ids:
         return {"received": 0, "refunded": 0, "net": 0}
     marks = ",".join("?" for _ in branch_ids)
+    amt = clinic_share(conn)          # X-ray lines on bills are not the clinic's collections
     pay = conn.one(
-        "SELECT COALESCE(SUM(CASE WHEN kind='payment' THEN amount_cents ELSE 0 END),0) AS received, "
-        "COALESCE(SUM(CASE WHEN kind='refund' THEN amount_cents ELSE 0 END),0) AS refunded FROM payments "
-        f"WHERE status='valid' AND method != ? AND branch_id IN ({marks}) AND received_at BETWEEN ? AND ?",
+        f"SELECT COALESCE(SUM(CASE WHEN p.kind='payment' THEN {amt} ELSE 0 END),0) AS received, "
+        f"COALESCE(SUM(CASE WHEN p.kind='refund' THEN {amt} ELSE 0 END),0) AS refunded FROM payments p "
+        f"WHERE p.status='valid' AND p.method != ? AND p.branch_id IN ({marks}) AND p.received_at BETWEEN ? AND ?",
         [CREDIT_METHOD, *branch_ids, start, end])
     dep = conn.one(
         "SELECT COALESCE(SUM(CASE WHEN kind='deposit' THEN amount_cents ELSE 0 END),0) AS received, "
