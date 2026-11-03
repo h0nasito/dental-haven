@@ -1,6 +1,6 @@
 {% from "macros.html" import csrf %}
 {% macro pay_form(inv, balance, paid, today, patient_name, return_to='', comm_dentists=[], comm_info={}) %}
-<form method="post" action="{{ url_for('billing.payment', invoice_id=inv.id) }}" class="payform" data-payform data-total="{{ inv.total_cents }}" data-paid="{{ paid }}">
+<form method="post" action="{{ url_for('billing.payment', invoice_id=inv.id) }}" enctype="multipart/form-data" class="payform" data-payform data-proof-methods="gcash maya card bank_transfer check hmo other" data-total="{{ inv.total_cents }}" data-paid="{{ paid }}">
 {{ csrf() }}<input type="hidden" name="action" value="multi">{% if return_to %}<input type="hidden" name="return_to" value="{{ return_to }}">{% endif %}
 <div class="pay-top"><div><span class="pay-lbl">Patient</span><div>{{ patient_name }}</div></div><div><span class="pay-lbl">Bill date</span><div>{{ (inv.issued_at or inv.created_at)|date }} · {{ inv.number or 'Draft' }}</div></div></div>
 <fieldset class="pay-box"><legend>Payment lines</legend>
@@ -11,6 +11,9 @@
 </div>
 <button type="button" class="btn btn-ghost btn-sm" data-pay-add>+ Add payment line</button>
 <p class="hint">Split payments (e.g. part cash, part GCash) go on separate lines.</p></fieldset>
+<fieldset class="pay-box" data-proof-box><legend>Proof of payment</legend>
+<div class="field"><label for="proof{{ inv.id }}">Screenshot or photo (GCash, Maya, bank transfer, card slip, check)</label><input id="proof{{ inv.id }}" type="file" name="proof" accept="image/*,application/pdf" multiple></div>
+<p class="hint">Up to 4 pictures or PDFs. Kept private: only staff who can see bills can open them. If the patient sends it later, add it on the bill's payment row.</p></fieldset>
 <div class="pay-grid">
 <div>
 <div class="form-grid">

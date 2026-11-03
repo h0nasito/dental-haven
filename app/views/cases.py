@@ -107,7 +107,7 @@ def build_cases(conn, dentist_id: int) -> list[dict]:
     # bill lines that are theirs, by type of case; each bill's payments are shared over its lines in proportion
     lines: dict[tuple, dict] = {}
     for r in conn.all(f"SELECT i.patient_id, i.id AS inv, i.total_cents, ii.id AS line_id, ii.amount_cents, ii.description, ii.dentist_id, s.category AS scat, "
-                      "ii.done_on AS d, "
+                      "ii.done_on AS d, ii.tooth, i.issued_at, "
                       "(SELECT COALESCE(SUM(CASE WHEN kind = 'payment' THEN amount_cents ELSE -amount_cents END), 0) FROM payments "
                       " WHERE invoice_id = i.id AND status = 'valid') AS paid "
                       f"FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id LEFT JOIN services s ON s.id = ii.service_id "
@@ -122,6 +122,8 @@ def build_cases(conn, dentist_id: int) -> list[dict]:
         if r["d"]:
             c_["visits"].append(r["d"][:10])   # the day the billed work was done is a visit (imported records often have no procedure)
         x["billed"] += r["amount_cents"]
+        what = (r["description"] or "").split(" · ")[0] + (f" #{r['tooth']}" if r["tooth"] else "")
+        c_.setdefault("items", []).append({"d": (r["d"] or r["issued_at"] or "")[:10], "what": what, "amount": r["amount_cents"]})
     comm = _commissions(conn, dentist_id, lines)
     # installments (e.g. braces adjustments paid each visit): the days the dentist earned a commission on the bill are visits
     emp = conn.one("SELECT id FROM employees WHERE user_id = ?", (dentist_id,))
@@ -193,6 +195,11 @@ def index():
             and (flt != "overdue" or c.get("adjust") == "overdue")
             and (flt != "active" or (c["days_since"] is not None and c["days_since"] <= 90))
             and (not dated or any(lo <= v <= hi for v in c["visits"]))]
+    for c in rows:   # the procedures and their prices: the ones in the chosen dates, else the latest
+        its = sorted(c.get("items", []), key=lambda i: i["d"], reverse=True)
+        if dated:
+            its = [i for i in its if lo <= i["d"] <= hi] or its
+        c["shown_items"], c["more_items"] = its[:6], max(0, len(its) - 6)
     counts = {k: sum(1 for c in allc if c["category"] == k) for k in cats}
     ortho = [c for c in rows if c["category"] == ORTHO]           # the boxes count what the filters show
     summary = {"cases": len(rows), "ortho": len(ortho), "ortho_overdue": sum(1 for c in ortho if c.get("adjust") == "overdue"),

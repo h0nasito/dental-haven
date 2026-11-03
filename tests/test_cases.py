@@ -35,6 +35,8 @@ class TestCases(Base):
         self.assertIn("Testpatient, Orthocase", page)
         self.assertIn("Adjustment overdue", page)
         self.assertIn("₱35,000.00", page)                       # balance
+        self.assertIn('case-procs', page)                         # the procedure with its price
+        self.assertIn("₱45,000.00", page.split('case-procs')[1].split('</table>')[0])
         # date filter: a visit 60 days ago is inside the last 90 days, not inside the last 30
         f90, f30 = (t - timedelta(days=90)).isoformat(), (t - timedelta(days=30)).isoformat()
         self.assertIn("Orthocase", d.get(f"/staff/my-cases/?q=orthocase&from={f90}&to={t.isoformat()}").data.decode())

@@ -357,3 +357,41 @@ class TestCollectionsList(Base):
         page = a.get(f"/staff/reports/sales?from=2026-10-05&to=2026-10-06&branch={mal}&method=Cash").data.decode()
         self.assertIn("Total (Cash)", page)
         self.assertIn("Braces adjustment (demo)", page)
+
+
+class TestPaymentProof(Base):
+    def test_proof_with_gcash_payment_and_added_later(self):
+        import io
+        from test_about import IMG
+        from app.util import now_str
+        mal = self.branch("malolos")
+        pid = self.q("SELECT id FROM patients WHERE preferred_branch_id = ? LIMIT 1", (mal,))["id"]
+        inv = self.conn.insert("invoices", {"branch_id": mal, "patient_id": pid, "status": "issued", "number": "PP-1", "issued_at": "2026-11-01",
+                                            "subtotal_cents": 300000, "discount_cents": 0, "tax_cents": 0, "total_cents": 300000, "created_at": now_str()})
+        self.conn.insert("invoice_items", {"invoice_id": inv, "description": "Filling", "qty": 1, "unit_price_cents": 300000, "discount_cents": 0,
+                                           "amount_cents": 300000})
+        a = self.login("admin")
+        self.assertIn("Proof of payment", a.get(f"/staff/invoices/{inv}").data.decode())
+        # part cash, part GCash with the screenshot: the proof goes with the GCash line only
+        a.post(f"/staff/invoices/{inv}/payments", data={"action": "multi", "method": ["cash", "gcash"], "amount": ["500", "1000"],
+                                                        "received_at": "2026-11-02", "not_signed_reason": "test",
+                                                        "proof": (io.BytesIO(IMG), "gcash.png")}, content_type="multipart/form-data")
+        gc = self.q("SELECT id FROM payments WHERE invoice_id = ? AND method = 'gcash'", (inv,))
+        cash = self.q("SELECT id FROM payments WHERE invoice_id = ? AND method = 'cash'", (inv,))
+        pr = self.q("SELECT * FROM payment_proofs WHERE payment_id = ?", (gc["id"],))
+        self.assertIsNotNone(pr)
+        self.assertIsNone(self.q("SELECT id FROM payment_proofs WHERE payment_id = ?", (cash["id"],)))
+        r = a.get(f"/staff/invoices/{inv}/proofs/{pr['id']}")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("no-store", r.headers["Cache-Control"])
+        # a Maya payment without proof shows "No proof yet"; the proof is added later from the bill
+        a.post(f"/staff/invoices/{inv}/payments", data={"action": "multi", "method": "maya", "amount": "300", "received_at": "2026-11-02",
+                                                        "not_signed_reason": "test"}, content_type="multipart/form-data")
+        maya = self.q("SELECT id FROM payments WHERE invoice_id = ? AND method = 'maya'", (inv,))
+        self.assertIn("No proof yet", a.get(f"/staff/invoices/{inv}").data.decode())
+        a.post(f"/staff/invoices/{inv}/payments/{maya['id']}/proof", data={"proof": (io.BytesIO(IMG), "maya.png")}, content_type="multipart/form-data")
+        self.assertIsNotNone(self.q("SELECT id FROM payment_proofs WHERE payment_id = ?", (maya["id"],)))
+        self.assertNotIn("No proof yet", a.get(f"/staff/invoices/{inv}").data.decode())
+        # the collections list links the proof; patients' proof files aren't open to other branches
+        self.assertIn(f"/proofs/{pr['id']}", a.get(f"/staff/reports/sales?from=2026-11-02&to=2026-11-02&branch={mal}").data.decode())
+        self.assertNotEqual(self.login("reception.sjdm").get(f"/staff/invoices/{inv}/proofs/{pr['id']}").status_code, 200)

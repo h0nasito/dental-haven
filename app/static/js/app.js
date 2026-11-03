@@ -280,8 +280,19 @@ document.addEventListener('DOMContentLoaded', function () {
       dsel.addEventListener('change', fillRate);
       if (!pctIn.value) fillRate();
     }
+    // Proof of payment: shown when a line is GCash, Maya, bank transfer, card, check...
+    var proofBox = form.querySelector('[data-proof-box]');
+    var proofM = (form.dataset.proofMethods || '').split(' ');
+    function proof() {
+      if (!proofBox) return;
+      var need = false;
+      list.querySelectorAll('select').forEach(function (s) { if (proofM.indexOf(s.value.split(':')[0]) !== -1) need = true; });
+      proofBox.hidden = !need;
+    }
     form.addEventListener('input', update);
     form.addEventListener('change', update);
+    form.addEventListener('change', proof);
+    proof();
     form.querySelector('[data-pay-add]').addEventListener('click', function () {
       var first = list.querySelector('[data-pay-line]');
       var line = first.cloneNode(true);

@@ -5,11 +5,11 @@ import csv
 import io
 from datetime import timedelta
 
-from flask import Blueprint, Response, abort, flash, g, redirect, render_template, request, url_for
+from flask import Blueprint, Response, abort, flash, g, redirect, render_template, request, send_file, url_for
 
 from .. import audit, settings
 from ..auth import require
-from ..billing import (CREDIT_METHOD, PAYMENT_METHODS, parse_pay, pay_label, collections, commission_dentists, compute_totals, credit_balance,
+from ..billing import (CREDIT_METHOD, MAX_PROOFS, PAYMENT_METHODS, PROOF_METHODS, parse_pay, pay_label, collections, commission_dentists, compute_totals, credit_balance,
                        invoice_commission_info, lab_share, line_amount, next_invoice_number, paid_amount, payment_state)
 from ..db import get_db
 from ..fee_schedule import picker_options
@@ -303,10 +303,14 @@ def invoice(invoice_id):
     lab_cases = conn.all("SELECT id, case_type, teeth, lab_fee_cents, sent_on FROM lab_cases WHERE patient_id = ? AND status != 'cancelled' "
                          "ORDER BY id DESC LIMIT 20", (inv["patient_id"],))
     dentist_names = {d["id"]: d["name"] for d in conn.all("SELECT id, name FROM users WHERE role = 'dentist'")}
+    proofs: dict[int, list] = {}
+    for ph in conn.all("SELECT id, payment_id FROM payment_proofs WHERE invoice_id = ? ORDER BY id", (invoice_id,)):
+        proofs.setdefault(ph["payment_id"], []).append(ph)
     manual_comm = conn.all("SELECT c.*, e.full_name AS dentist, u.name AS by_name FROM dentist_commissions c JOIN employees e ON e.id = c.employee_id "
                            "LEFT JOIN users u ON u.id = c.created_by WHERE c.invoice_id = ? AND c.status = 'valid' ORDER BY c.earned_on, c.id",
                            (invoice_id,))
     return render_template("staff/billing/invoice.html", inv=inv, items=items, payments=payments, paid=paid, inv_dentists=inv_dentists,
+                           proofs=proofs, PROOF_METHODS=PROOF_METHODS, MAX_PROOFS=MAX_PROOFS,
                            manual_comm=manual_comm, comm_dentists=commission_dentists(conn), comm_info=invoice_commission_info(conn, inv),
                            fee_options=picker_options(conn) if inv["status"] == "draft" else [],
                            lab_cases=lab_cases, dentist_names=dentist_names, default_dentist=appt["dentist_id"] if appt else None,
@@ -551,6 +555,69 @@ def payment(invoice_id):
     return redirect(url_for("billing.invoice", invoice_id=invoice_id))
 
 
+def _save_proofs(files) -> tuple[list[str], str | None]:
+    """Proof of payment pictures (made small, no location data) or PDF scans, kept privately. Returns (stored names, error)."""
+    from ..uploads import IMAGE_TYPES, save_document, save_private_photo, sniff
+    out = []
+    for f in files[:MAX_PROOFS]:
+        head = f.stream.read(16)
+        f.stream.seek(0)
+        if sniff(head) in IMAGE_TYPES:
+            stored, err = save_private_photo(f, "payment-proofs")
+        else:
+            stored, _mime, _size, _orig, err = save_document(f)
+        if err:
+            return [], f"Proof of payment: {err}"
+        out.append(stored)
+    return out, None
+
+
+def _proof_files():
+    return [x for x in request.files.getlist("proof") if x and x.filename]
+
+
+@bp.route("/invoices/<int:invoice_id>/payments/<int:payment_id>/proof", methods=["POST"])
+@require("payments.add")
+def payment_proof(invoice_id, payment_id):
+    """Add proof of payment to a payment already recorded (e.g. the GCash screenshot sent later)."""
+    conn = get_db()
+    inv = _load_invoice(invoice_id)
+    p = conn.one("SELECT * FROM payments WHERE id = ? AND invoice_id = ? AND status = 'valid'", (payment_id, invoice_id))
+    if not p:
+        abort(404)
+    have = conn.scalar("SELECT COUNT(*) FROM payment_proofs WHERE payment_id = ?", (payment_id,)) or 0
+    files = _proof_files()[:max(0, MAX_PROOFS - have)]
+    back = redirect(url_for("patients.detail", patient_id=inv["patient_id"], tab="billing") if request.form.get("return_to") == "patient"
+                    else url_for("billing.invoice", invoice_id=invoice_id))
+    if not files:
+        flash(f"Choose a picture or PDF of the proof of payment (up to {MAX_PROOFS} per payment).", "error")
+        return back
+    names, err = _save_proofs(files)
+    if err:
+        flash(err, "error")
+        return back
+    for n in names:
+        conn.insert("payment_proofs", {"invoice_id": invoice_id, "payment_id": payment_id, "stored_name": n, "uploaded_by": g.user.id,
+                                       "created_at": now_str()})
+    audit.record("payment_proof_added", "invoice", invoice_id, f"Proof of payment added ({len(names)} file{'s' if len(names) != 1 else ''})",
+                 {"payment_id": payment_id}, inv["branch_id"])
+    flash("Proof of payment saved.", "success")
+    return back
+
+
+@bp.route("/invoices/<int:invoice_id>/proofs/<int:proof_id>")
+@require("billing.view")
+def proof_file(invoice_id, proof_id):
+    from ..uploads import document_path
+    _load_invoice(invoice_id)
+    ph = get_db().one("SELECT * FROM payment_proofs WHERE id = ? AND invoice_id = ?", (proof_id, invoice_id))
+    if not ph:
+        abort(404)
+    resp = send_file(document_path(ph["stored_name"]), max_age=0)
+    resp.headers["Cache-Control"] = "private, no-store"
+    return resp
+
+
 def _multi_payment(conn, inv, paid):
     """Several payment lines (e.g. part cash, part GCash) saved together with the patient's signature."""
     from ..uploads import save_signature
@@ -604,6 +671,9 @@ def _multi_payment(conn, inv, paid):
             if bp is None:
                 return "Enter the dentist's commission % (0–100), or choose “No commission”."
             comm = {"employee_id": emp["id"], "amount": None, "bp": bp, "base": base}
+    proof_names, err = _save_proofs(_proof_files()) if any(m in PROOF_METHODS for (m, _a), _x in lines) else ([], None)
+    if err:
+        return err
     sig_id = conn.insert("payment_signatures", {"invoice_id": inv["id"], "patient_id": inv["patient_id"], "stored_name": stored,
                                                 "not_signed_reason": "" if stored else reason, "captured_by": g.user.id,
                                                 "created_at": now_str()})
@@ -614,7 +684,11 @@ def _multi_payment(conn, inv, paid):
                                        "method": m, "account": account, "reference": ref, "received_at": received.isoformat(), "received_by": g.user.id,
                                        "status": "valid", "notes": note, "signature_id": sig_id, "created_at": now_str()})
         audit.record("payment_recorded", "invoice", inv["id"], f"Payment {peso(amt)} via {pay_label(m, account)}",
-                     {"payment_id": pid, "signed": bool(stored)}, inv["branch_id"])
+                     {"payment_id": pid, "signed": bool(stored), "proof": bool(proof_names and m in PROOF_METHODS)}, inv["branch_id"])
+        if proof_names and m in PROOF_METHODS:      # the proof goes with the GCash / bank / card line(s)
+            for n in proof_names:
+                conn.insert("payment_proofs", {"invoice_id": inv["id"], "payment_id": pid, "stored_name": n, "uploaded_by": g.user.id,
+                                               "created_at": now_str()})
     comm_note = ""
     if comm:
         from ..payroll import add_manual_commission
@@ -833,6 +907,13 @@ def collection_list(conn, ids, start, end) -> list[dict]:
         for ln in conn.all(f"SELECT ii.invoice_id, ii.description, ii.tooth, u.name AS dentist FROM invoice_items ii LEFT JOIN users u ON u.id = ii.dentist_id "
                            f"WHERE ii.invoice_id IN ({','.join('?' * len(chunk))}) ORDER BY ii.id", chunk):
             lines.setdefault(ln["invoice_id"], []).append(ln)
+    proof: dict[int, int] = {}
+    pids = [r["id"] for r in pays]
+    for i in range(0, len(pids), 500):
+        chunk = pids[i:i + 500]
+        for ph in conn.all(f"SELECT payment_id, MIN(id) AS id FROM payment_proofs WHERE payment_id IN ({','.join('?' * len(chunk))}) "
+                           "GROUP BY payment_id", chunk):
+            proof[ph["payment_id"]] = ph["id"]
     out = []
     for r in pays:
         ls = lines.get(r["invoice_id"]) or []
@@ -841,7 +922,8 @@ def collection_list(conn, ids, start, end) -> list[dict]:
         out.append({"date": r["d"], "patient_id": r["patient_id"], "patient": f"{r['last_name']}, {r['first_name']}", "bill": r["number"],
                     "invoice_id": r["invoice_id"], "branch": r["branch"], "procedure": ", ".join(p for p in procs if p) or "—",
                     "dentist": ", ".join(docs) or "—", "method": pay_label(r["method"], r["account"] or ""),
-                    "amount": r["amount_cents"] if r["kind"] == "payment" else -r["amount_cents"], "refund": r["kind"] != "payment"})
+                    "amount": r["amount_cents"] if r["kind"] == "payment" else -r["amount_cents"], "refund": r["kind"] != "payment",
+                    "proof_id": proof.get(r["id"]), "needs_proof": r["kind"] == "payment" and r["method"] in PROOF_METHODS})
     for r in conn.all(
             "SELECT c.kind, c.amount_cents, c.method, c.account, c.entry_date AS d, pt.id AS patient_id, pt.first_name, pt.last_name, b.name AS branch "
             "FROM patient_credits c JOIN patients pt ON pt.id = c.patient_id JOIN branches b ON b.id = c.branch_id "

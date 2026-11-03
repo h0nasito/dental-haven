@@ -13,6 +13,8 @@ PAYMENT_METHODS = {
 }
 
 DEFAULT_BANKS = ["BDO", "BPI", "Security Bank", "RCBC", "AUB"]
+PROOF_METHODS = ("gcash", "maya", "card", "bank_transfer", "check", "hmo", "other")   # these come with a proof of payment
+MAX_PROOFS = 4
 BANK_METHODS = ("bank_transfer",)          # these ask which bank account the money went into
 
 
