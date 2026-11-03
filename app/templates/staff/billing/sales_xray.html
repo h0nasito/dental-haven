@@ -1,0 +1,32 @@
+{% extends "staff/layout.html" %}
+{% block page_title %}Sales & collections · X-ray{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Sales &amp; collections</h1><p>{{ start|date }} – {{ end|date }}. <strong>X-ray</strong> sales and collections, kept apart from the clinic's. <strong>Sales</strong> means X-rays taken in this period. <strong>Collected</strong> means X-ray payments received in this period.</p></div></div>
+{% include "staff/billing/_sales_tabs.html" %}
+<form class="toolbar" method="get"><input type="hidden" name="tab" value="xray">
+<div class="field"><label for="from">From</label><input id="from" type="date" name="from" value="{{ start.isoformat() }}"></div>
+<div class="field"><label for="to">To</label><input id="to" type="date" name="to" value="{{ end.isoformat() }}"></div>
+<div class="field"><label for="branch">Branch</label><select id="branch" name="branch"><option value="">{{ 'Selected branch' if current_user.active_branch_id else 'All my branches' }}</option>{% for b in branches %}<option value="{{ b.id }}" {% if branch == b.id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select></div>
+<button class="btn btn-secondary">Apply</button></form>
+<div class="grid grid-4" style="margin-bottom:1rem">
+<div class="stat"><div class="label">X-ray sales</div><div class="value">{{ x.sales|peso }}</div><div class="sub">{{ x.n }} X-ray{{ 's' if x.n != 1 }}{% if x.on_bills %} (incl. {{ x.on_bills }} still on patient bills){% endif %} · {{ x.discounts|peso }} discounts</div></div>
+<div class="stat"><div class="label">X-ray collected</div><div class="value">{{ x.collected|peso }}</div><div class="sub">{{ x.rows|length }} payment{{ 's' if x.rows|length != 1 }}</div></div>
+<div class="stat warn"><div class="label">X-ray balances</div><div class="value">{{ x.open_total|peso }}</div><div class="sub">{{ x.open_n }} unpaid X-ray{{ 's' if x.open_n != 1 }} (all dates)</div></div>
+<div class="stat"><div class="label">Referral rebates</div><div class="value">{{ x.rebates|peso }}</div><div class="sub">earned on X-rays in this period</div></div>
+</div>
+<div class="card"><h2>By branch</h2><div class="table-wrap"><table><thead><tr><th>Branch</th><th class="num">X-rays</th><th class="num">Sales</th><th class="num">Collected</th></tr></thead><tbody>
+{% for b in x.by_branch %}<tr><td>{{ b.branch }}</td><td class="num">{{ b.n }}</td><td class="num">{{ b.sales|peso }}</td><td class="num">{{ b.collected|peso }}</td></tr>{% else %}<tr><td colspan="4" class="empty">No X-rays in this range.</td></tr>{% endfor %}</tbody>
+{% if x.by_branch %}<tfoot><tr><td>Total</td><td class="num">{{ x.n }}</td><td class="num">{{ x.sales|peso }}</td><td class="num">{{ x.collected|peso }}</td></tr></tfoot>{% endif %}</table></div></div>
+<div class="grid grid-2">
+<div class="card"><h2>Sales by X-ray type</h2><div class="table-wrap"><table><thead><tr><th>Type</th><th class="num">Count</th><th class="num">Amount</th></tr></thead><tbody>
+{% for t in x.by_type %}<tr><td>{{ t.name }}</td><td class="num">{{ t.n }}</td><td class="num">{{ t.amount|peso }}</td></tr>{% else %}<tr><td colspan="3" class="empty">None</td></tr>{% endfor %}</tbody></table></div></div>
+<div class="card"><h2>Collected by method</h2><div class="table-wrap"><table><thead><tr><th>Method</th><th class="num">Payments</th><th class="num">Amount</th></tr></thead><tbody>
+{% for m in x.methods %}<tr><td>{{ m.method }}</td><td class="num">{{ m.n }}</td><td class="num">{{ m.amount|peso }}</td></tr>{% else %}<tr><td colspan="3" class="empty">No payments in this range.</td></tr>{% endfor %}</tbody></table></div></div>
+</div>
+<div class="card" id="xray-collections-list"><h2>X-ray collections list</h2><p class="hint">Each X-ray payment received from {{ start|date }} to {{ end|date }}. Rows marked “patient bill” are X-rays still typed on a regular bill: open the bill and use <strong>Move to X-ray</strong> to move them here for good.</p>
+<div class="table-wrap"><table><thead><tr><th>Date</th><th>Patient</th><th>X-ray</th><th>Requested by</th><th>Payment method</th><th>Branch</th><th class="num">Collected</th></tr></thead><tbody>
+{% for r in x.rows[:500] %}<tr><td>{{ r.date|date }}</td><td>{% if r.patient_id %}<a href="{{ url_for('patients.detail', patient_id=r.patient_id) }}">{{ r.who }}</a>{% else %}{{ r.who }}{% endif %}<br><small><a class="muted" href="{{ url_for('xray.detail', xray_id=r.xray_id) if r.xray_id else url_for('billing.invoice', invoice_id=r.invoice_id) }}">{{ r.ref }}</a></small></td><td>{{ r.what }}</td><td>{{ r.requested }}</td><td>{{ r.method }}</td><td>{{ r.branch }}</td><td class="num">{{ r.amount|peso }}</td></tr>
+{% else %}<tr><td colspan="7" class="empty">No X-ray payments in this range.</td></tr>{% endfor %}</tbody>
+{% if x.rows %}<tfoot><tr><td colspan="6">Total · {{ x.rows|length }} payment{{ 's' if x.rows|length != 1 }}</td><td class="num">{{ x.collected|peso }}</td></tr></tfoot>{% endif %}</table></div>
+{% if x.rows|length > 500 %}<p class="muted">Showing 500 of {{ x.rows|length }}.</p>{% endif %}</div>
+{% endblock %}

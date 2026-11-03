@@ -3,6 +3,7 @@
 {% block content %}
 <div class="page-head"><div><h1>Sales &amp; collections</h1><p>{{ start|date }} – {{ end|date }}. Voided invoices: {{ totals.voids }} (not counted). <strong>Sales</strong> means invoices issued in this period. <strong>Collections</strong> means payments received in this period, minus refunds, whenever the invoice was issued.</p></div>
 {% if current_user.can('reports.export') %}<div class="row">{% for k, l in [('sales','Summary'),('collections','Collections list'),('services','Services'),('payments','Payments'),('outstanding','Balances')] %}<a class="btn btn-secondary btn-sm" href="{{ url_for('billing.export', kind=k, **{'from': start.isoformat(), 'to': end.isoformat(), 'branch': branch or ''}) }}">CSV: {{ l }}</a>{% endfor %}</div>{% endif %}</div>
+{% include "staff/billing/_sales_tabs.html" %}
 <form class="toolbar" method="get">
 <div class="field"><label for="from">From</label><input id="from" type="date" name="from" value="{{ start.isoformat() }}"></div>
 <div class="field"><label for="to">To</label><input id="to" type="date" name="to" value="{{ end.isoformat() }}"></div>

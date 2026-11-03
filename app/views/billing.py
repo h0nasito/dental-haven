@@ -1165,6 +1165,10 @@ def sales():
     conn = get_db()
     start, end = date_range_args(30)
     ids = _report_branches(conn)
+    if request.args.get("tab") == "xray":         # X-rays are their own section, with their own sales and collections
+        from .xray import sales_data
+        return render_template("staff/billing/sales_xray.html", start=start, end=end, x=sales_data(conn, ids, start, end),
+                               branches=branches_for_user(g.user), branch=to_int(request.args.get("branch")))
     by_branch, methods, services_rows, daily = _sales_data(conn, ids, start, end)
     coll_services, coll_dentists = collections_by_service(conn, ids, start, end)
     coll_all = collection_list(conn, ids, start, end)

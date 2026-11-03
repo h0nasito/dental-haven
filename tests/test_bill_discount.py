@@ -473,3 +473,24 @@ class TestMoveLineToXray(Base):
         x = self.q("SELECT x.* FROM xrays x JOIN xray_payments p ON p.xray_id = x.id WHERE x.notes LIKE ? ORDER BY x.id DESC",
                    (f"%{self.q('SELECT number FROM invoices WHERE id = ?', (inv,))['number']}%",))
         self.assertEqual(self.q("SELECT SUM(amount_cents) AS s FROM xray_payments WHERE xray_id = ?", (x["id"],))["s"], 50000)
+
+
+class TestSalesXrayTab(Base):
+    def test_xray_tab_lists_xray_sales_and_payments(self):
+        from app.util import now_str
+        bid = self.branch("bocaue")
+        day = "2026-03-09"
+        xid = self.conn.insert("xrays", {"number": "XR-TAB001", "branch_id": bid, "walkin_name": "Walkin Demo", "taken_on": day,
+                                         "subtotal_cents": 120000, "total_cents": 120000, "status": "ok", "created_at": now_str()})
+        self.conn.insert("xray_items", {"xray_id": xid, "description": "Panoramic", "price_cents": 120000})
+        self.conn.insert("xray_payments", {"xray_id": xid, "branch_id": bid, "amount_cents": 120000, "method": "gcash",
+                                           "received_at": day, "status": "valid", "created_at": now_str()})
+        a = self.login("admin")
+        page = a.get(f"/staff/reports/sales?tab=xray&from={day}&to={day}&branch={bid}").data.decode()
+        self.assertIn("X-ray collections list", page)
+        self.assertIn("Walkin Demo (walk-in)", page)
+        self.assertIn("XR-TAB001", page)
+        self.assertIn("₱1,200.00", page)
+        clinic = a.get(f"/staff/reports/sales?from={day}&to={day}&branch={bid}").data.decode()
+        self.assertNotIn("XR-TAB001", clinic)
+        self.assertIn("tab=xray", clinic)

@@ -1,0 +1,1 @@
+{% set _t = request.args.get('tab') or 'clinic' %}<nav class="tabs" aria-label="Clinic or X-ray">{% for k, l in [('clinic', 'Clinic'), ('xray', 'X-ray')] %}<a class="{{ 'active' if _t == k }}" href="{{ url_for('billing.sales', tab=(k if k != 'clinic' else None), branch=branch or None, **{'from': start.isoformat(), 'to': end.isoformat()}) }}">{{ l }}</a>{% endfor %}</nav>

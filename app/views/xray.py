@@ -811,3 +811,82 @@ def create_from_visit(conn, patient_id, branch_id, dentist_id, visit_date, xline
     for it in items:
         conn.insert("xray_items", {"xray_id": xid, **it})
     return xid, number
+
+
+def sales_data(conn, ids, start, end) -> dict:
+    """X-ray sales and collections for the Sales & collections X-ray tab: X-ray records (by date taken) and their payments
+    (by date received), plus X-rays still typed on patient bills (line amounts by bill date; their share of each bill
+    payment by date paid). Outstanding X-ray balances are all dates."""
+    from ..billing import CREDIT_METHOD, clinic_share
+    s, e = start.isoformat(), end.isoformat()
+    m = _marks(ids)
+    args = [*ids, s, e]
+    clinic = clinic_share(conn)       # also flags X-ray lines on patient bills
+    recs = conn.all(f"SELECT x.*, b.name AS branch, p.first_name, p.last_name, rq.name AS requested_name, r.name AS referrer_name, "
+                    f"r.clinic AS referrer_clinic FROM xrays x JOIN branches b ON b.id = x.branch_id LEFT JOIN patients p ON p.id = x.patient_id "
+                    f"LEFT JOIN users rq ON rq.id = x.requested_by LEFT JOIN xray_referrers r ON r.id = x.referrer_id "
+                    f"WHERE x.status = 'ok' AND x.branch_id IN ({m}) AND x.taken_on BETWEEN ? AND ?", args)
+    bill_lines = conn.all(f"SELECT ii.description, ii.amount_cents, b.name AS branch FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id "
+                          f"JOIN branches b ON b.id = i.branch_id WHERE i.status = 'issued' AND ii.xray = 1 AND i.branch_id IN ({m}) "
+                          f"AND i.issued_at BETWEEN ? AND ?", args)
+    names = {r["id"]: r for r in conn.all(f"SELECT xi.xray_id AS id, group_concat(xi.description, ', ') AS what FROM xray_items xi JOIN xrays x ON x.id = xi.xray_id "
+                                          f"WHERE x.branch_id IN ({m}) GROUP BY xi.xray_id", ids)}
+    rows = []
+    for p in conn.all(f"SELECT xp.*, x.number, x.patient_id, x.walkin_name, x.referrer_id, pt.first_name, pt.last_name, b.name AS branch, "
+                      f"rq.name AS requested_name, r.name AS referrer_name, r.clinic AS referrer_clinic FROM xray_payments xp "
+                      f"JOIN xrays x ON x.id = xp.xray_id JOIN branches b ON b.id = xp.branch_id LEFT JOIN patients pt ON pt.id = x.patient_id "
+                      f"LEFT JOIN users rq ON rq.id = x.requested_by LEFT JOIN xray_referrers r ON r.id = x.referrer_id "
+                      f"WHERE xp.status = 'valid' AND x.status = 'ok' AND xp.branch_id IN ({m}) AND substr(xp.received_at, 1, 10) BETWEEN ? AND ? "
+                      "ORDER BY xp.received_at, xp.id", args):
+        rows.append({"date": p["received_at"][:10], "who": who(p), "patient_id": p["patient_id"], "ref": p["number"], "xray_id": p["xray_id"],
+                     "invoice_id": None, "what": (names.get(p["xray_id"]) or {}).get("what") or "—", "requested": requested_label(p) or "—",
+                     "method": pay_label(p["method"], p["account"]), "branch": p["branch"], "amount": p["amount_cents"]})
+    for p in conn.all(f"SELECT p.invoice_id, p.kind, p.method, p.account, p.received_at, (p.amount_cents - {clinic}) AS amt, i.number, i.patient_id, "
+                      f"pt.first_name, pt.last_name, b.name AS branch, (SELECT group_concat(ii.description, ', ') FROM invoice_items ii "
+                      f"WHERE ii.invoice_id = p.invoice_id AND ii.xray = 1) AS what, (SELECT u.name FROM invoice_items ii JOIN users u ON u.id = ii.dentist_id "
+                      f"WHERE ii.invoice_id = p.invoice_id AND ii.xray = 1 LIMIT 1) AS dentist FROM payments p JOIN invoices i ON i.id = p.invoice_id "
+                      f"JOIN patients pt ON pt.id = i.patient_id JOIN branches b ON b.id = p.branch_id WHERE p.status = 'valid' AND p.method != ? "
+                      f"AND p.branch_id IN ({m}) AND substr(p.received_at, 1, 10) BETWEEN ? AND ? "
+                      "AND EXISTS (SELECT 1 FROM invoice_items ii WHERE ii.invoice_id = p.invoice_id AND ii.xray = 1)", [CREDIT_METHOD, *args]):
+        if not p["amt"]:
+            continue
+        rows.append({"date": p["received_at"][:10], "who": f"{p['last_name']}, {p['first_name']}", "patient_id": p["patient_id"],
+                     "ref": f"{p['number']} (patient bill)", "xray_id": None, "invoice_id": p["invoice_id"], "what": p["what"] or "—",
+                     "requested": p["dentist"] or "—", "method": pay_label(p["method"], p["account"]), "branch": p["branch"],
+                     "amount": p["amt"] if p["kind"] == "payment" else -p["amt"]})
+    rows.sort(key=lambda r: (r["date"], r["who"]))
+    by_branch: dict[str, dict] = {}
+    for r in recs:
+        b = by_branch.setdefault(r["branch"], {"branch": r["branch"], "n": 0, "sales": 0, "collected": 0})
+        b["n"] += 1
+        b["sales"] += r["total_cents"]
+    for r in bill_lines:
+        b = by_branch.setdefault(r["branch"], {"branch": r["branch"], "n": 0, "sales": 0, "collected": 0})
+        b["n"] += 1
+        b["sales"] += r["amount_cents"]
+    for r in rows:
+        b = by_branch.setdefault(r["branch"], {"branch": r["branch"], "n": 0, "sales": 0, "collected": 0})
+        b["collected"] += r["amount"]
+    by_type: dict[str, dict] = {}
+    for it in conn.all(f"SELECT xi.description, xi.price_cents FROM xray_items xi JOIN xrays x ON x.id = xi.xray_id WHERE x.status = 'ok' "
+                       f"AND x.branch_id IN ({m}) AND x.taken_on BETWEEN ? AND ?", args):
+        t = by_type.setdefault(it["description"], {"name": it["description"], "n": 0, "amount": 0})
+        t["n"] += 1
+        t["amount"] += it["price_cents"]
+    for it in bill_lines:
+        t = by_type.setdefault(it["description"], {"name": it["description"], "n": 0, "amount": 0})
+        t["n"] += 1
+        t["amount"] += it["amount_cents"]
+    methods: dict[str, dict] = {}
+    for r in rows:
+        t = methods.setdefault(r["method"], {"method": r["method"], "n": 0, "amount": 0})
+        t["n"] += 1
+        t["amount"] += r["amount"]
+    every = conn.all(f"SELECT id, total_cents FROM xrays WHERE status = 'ok' AND branch_id IN ({m})", ids)
+    paid = paid_of(conn, [r["id"] for r in every])
+    open_bal = [r["total_cents"] - paid.get(r["id"], 0) for r in every if r["total_cents"] > paid.get(r["id"], 0)]
+    return {"n": len(recs) + len(bill_lines), "on_bills": len(bill_lines), "sales": sum(r["total_cents"] for r in recs) + sum(r["amount_cents"] for r in bill_lines),
+            "discounts": sum(r["discount_cents"] for r in recs), "collected": sum(r["amount"] for r in rows), "rows": rows,
+            "by_branch": sorted(by_branch.values(), key=lambda b: b["branch"]), "by_type": sorted(by_type.values(), key=lambda t: -t["amount"]),
+            "methods": sorted(methods.values(), key=lambda t: -t["amount"]), "open_n": len(open_bal), "open_total": sum(open_bal),
+            "rebates": sum(r["rebate_cents"] for r in recs)}
