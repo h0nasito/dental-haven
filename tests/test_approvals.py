@@ -101,3 +101,32 @@ class TestApprovals(Base):
     def test_system_setting_shown(self):
         page = self.login("admin").get("/staff/admin/system").data.decode()
         self.assertIn("Approval reminder emails", page)
+
+
+class TestOvertimeReason(Base):
+    def test_employee_adds_reason_and_approver_sees_it(self):
+        from app.util import now_str
+        uid = self.q("SELECT id FROM users WHERE email LIKE 'reception.malolos@%'")["id"]
+        mal = self.branch("malolos")
+        emp = self.q("SELECT id FROM employees WHERE user_id = ?", (uid,))
+        eid = emp["id"] if emp else self.conn.insert("employees", {"full_name": "Reception Demo", "position": "Receptionist", "employment_type": "regular",
+                                                                    "user_id": uid, "active": 1, "ot_eligible": 1, "created_at": now_str()})
+        self.conn.execute("UPDATE employees SET ot_eligible = 1 WHERE id = ?", (eid,))
+        self.conn.execute("DELETE FROM time_records WHERE employee_id = ? AND work_date = '2026-11-02'", (eid,))
+        rid = self.conn.insert("time_records", {"employee_id": eid, "branch_id": mal, "work_date": "2026-11-02", "time_in": "08:00",
+                                                "time_out": "18:30", "ot_minutes": 90, "status": "ok", "created_at": now_str()})
+        r = self.login("reception.malolos")
+        r.post(f"/staff/attendance/{rid}/ot-reason", data={"ot_reason": "Last patient (demo) finished late"})
+        self.assertEqual(self.q("SELECT ot_reason FROM time_records WHERE id = ?", (rid,))["ot_reason"], "Last patient (demo) finished late")
+        admin = self.login("admin").get(f"/staff/attendance?from=2026-11-01&to=2026-11-03&employee={eid}").data.decode()
+        self.assertIn("Reason: Last patient (demo) finished late", admin)
+        # someone else can't write another person's reason
+        self.assertEqual(self.login("dentist.malolos").post(f"/staff/attendance/{rid}/ot-reason", data={"ot_reason": "x"}).status_code, 404)
+        # after time out today, the time clock page lets the employee give the reason
+        from app.util import today
+        self.conn.execute("DELETE FROM time_records WHERE employee_id = ? AND work_date = ?", (eid, today().isoformat()))
+        tid = self.conn.insert("time_records", {"employee_id": eid, "branch_id": mal, "work_date": today().isoformat(), "time_in": "08:00",
+                                                "time_out": "18:00", "ot_minutes": 60, "status": "ok", "created_at": now_str()})
+        page = r.get("/staff/clock").data.decode()
+        self.assertIn("Overtime today: 60 min", page)
+        self.assertIn(f"/staff/attendance/{tid}/ot-reason", page)

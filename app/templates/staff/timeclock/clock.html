@@ -22,7 +22,9 @@
 <div data-field-box hidden><label for="cfr">Where are you and why?</label><input id="cfr" name="field_reason" maxlength="200" placeholder="e.g. Supplier pickup in Manila, home service, seminar">
 <span class="hint">Your time is recorded now and counts once your supervisor, HR or admin approves it. Choose above the branch that handles your attendance.</span></div></div>
 {% if next_kind == 'out' and emp.ot_eligible %}<div class="field"><label class="check"><input type="checkbox" name="short_lunch" value="1"> I only took a 30-minute lunch today (not 1 hour)</label>
-<span class="hint">The other 30 minutes count as overtime once your supervisor approves it.</span></div>{% endif %}
+<span class="hint">The other 30 minutes count as overtime once your supervisor approves it.</span></div>
+<div class="field"><label for="cot">Overtime reason <span class="hint">if you worked past your hours</span></label><input id="cot" name="ot_reason" maxlength="200" placeholder="e.g. Last patient finished late, inventory count">
+<span class="hint">Your supervisor sees it when approving your overtime. You can also add or change it on this page after you time out.</span></div>{% endif %}
 <div class="field"><label for="cp">Selfie in front of the {{ 'clinic or lab' if labs else 'clinic' }}</label><input id="cp" type="file" name="photo" accept="image/*" capture="user" required>
 <span class="hint">Your phone's camera opens. Include the clinic entrance or signage behind you (on the field: where you are).</span></div>
 <div class="geo-check"><button type="button" class="btn btn-secondary btn-sm" data-geo-check>📍 Check my location</button>
@@ -35,7 +37,11 @@
 <button class="btn clock-btn">{{ 'Time in' if next_kind == 'in' else 'Time out' }}</button>
 </form>
 {% else %}
-<p class="clock-now">You're done for today. 👋</p><p class="muted">If a time is wrong, ask your manager to correct it in Attendance.</p>
+<p class="clock-now">You're done for today. 👋</p>
+{% if rec and rec.ot_minutes and emp.ot_eligible and not rec.ot_approved_by %}<form method="post" action="{{ url_for('people.attendance_ot_reason', rec_id=rec.id) }}" class="card mt-1" style="text-align:left">{{ csrf() }}
+<p class="mb-0"><strong>Overtime today: {{ rec.ot_minutes }} min</strong> <small class="muted">(waiting for approval)</small></p>
+<div class="field mt-1"><label for="cotl">Overtime reason</label><input id="cotl" name="ot_reason" value="{{ rec.ot_reason }}" maxlength="200" placeholder="What did you work on?" required></div>
+<button class="btn btn-secondary btn-sm">{{ 'Change reason' if rec.ot_reason else 'Save reason' }}</button></form>{% endif %}<p class="muted">If a time is wrong, ask your manager to correct it in Attendance.</p>
 {% endif %}
 </div>
 <div class="card"><h2>Today</h2>

@@ -524,7 +524,7 @@ def attendance():
         warnings = conn.all(f"SELECT w.*, e.full_name FROM late_warnings w JOIN employees e ON e.id = w.employee_id WHERE {ws} "
                             "ORDER BY w.id DESC LIMIT 20", wp)
     return render_template("staff/people/attendance.html", rows=rows, start=start, end=end, status=status, emps=emps, emp=emp,
-                           warnings=warnings, can_ot=g.user.can("overtime.approve"),
+                           warnings=warnings, can_ot=g.user.can("overtime.approve"), own_emp=_own_employee_id(),
                            manage=manage, branches=branches_for_user(g.user), today=today().isoformat())
 
 
@@ -559,6 +559,27 @@ def attendance_record():
             audit.record("dtr_recorded", "time_record", rid, f"DTR {emp['full_name']} {d.isoformat()}", branch_id=branch_id)
             flash("Time record saved.", "success")
     return redirect(url_for("people.attendance"))
+
+
+@bp.route("/attendance/<int:rec_id>/ot-reason", methods=["POST"])
+@require("attendance.clock", "attendance.view", any_of=True)
+def attendance_ot_reason(rec_id):
+    """The employee explains their own overtime (what they worked on), before it is approved."""
+    conn = get_db()
+    own = _own_employee_id()
+    r = conn.one("SELECT t.*, e.full_name FROM time_records t JOIN employees e ON e.id = t.employee_id WHERE t.id = ?", (rec_id,))
+    if not r or not own or r["employee_id"] != own:
+        abort(404)
+    reason = clean(request.form.get("ot_reason"), 200)
+    if r["ot_approved_by"]:
+        flash("This overtime has already been reviewed. Ask your supervisor to change it.", "error")
+    elif not reason:
+        flash("Write what you worked on during the overtime.", "error")
+    else:
+        conn.execute("UPDATE time_records SET ot_reason = ? WHERE id = ?", (reason, rec_id))
+        audit.record("overtime_reason", "time_record", rec_id, f"Overtime reason added for {r['work_date']}", {"reason": reason}, r["branch_id"])
+        flash("Overtime reason saved. Your supervisor sees it when approving.", "success")
+    return redirect(request.referrer if (request.referrer or "").startswith(request.host_url) else url_for("people.attendance"))
 
 
 @bp.route("/attendance/<int:rec_id>/overtime", methods=["POST"])

@@ -195,6 +195,8 @@ def clock():
                              (values["time_in"], values["time_out"], "exception" if notes and status == "ok" else status, notes, rid))
                 if kind == "out" and emp["ot_eligible"] and request.form.get("short_lunch") == "1":
                     conn.execute("UPDATE time_records SET short_lunch = 1 WHERE id = ?", (rid,))
+                if kind == "out" and emp["ot_eligible"] and clean(request.form.get("ot_reason"), 200):
+                    conn.execute("UPDATE time_records SET ot_reason = ? WHERE id = ?", (clean(request.form.get("ot_reason"), 200), rid))
             if field:
                 # The whole day waits for approval (again, if an earlier field punch was already approved).
                 prev = conn.one("SELECT field_reason FROM time_records WHERE id = ?", (rid,))["field_reason"]
