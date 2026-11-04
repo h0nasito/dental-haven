@@ -108,7 +108,7 @@ def free_resource(conn, branch_id: int, start: str, end: str, exclude_id=None):
 
 
 def validate_slot(conn, *, branch_id: int, start: datetime, end: datetime, dentist_id=None, resource_id=None,
-                  exclude_id=None, allow_past=False, allow_overlap=False) -> list[str]:
+                  exclude_id=None, allow_past=False, allow_overlap=False, allow_off_schedule=False) -> list[str]:
     errors = []
     if end <= start:
         errors.append("End time must be after start time.")
@@ -123,7 +123,7 @@ def validate_slot(conn, *, branch_id: int, start: datetime, end: datetime, denti
         errors.append("The branch is closed on that day.")
     elif s_min < hm_to_min(hours[0]) or e_min > hm_to_min(hours[1]):
         errors.append(f"Outside branch hours ({hours[0]}–{hours[1]}).")
-    if dentist_id:
+    if dentist_id and not allow_off_schedule:       # a reliever may work outside their schedule (staff confirmed)
         windows = dentist_windows(conn, dentist_id, branch_id, start.date())
         if windows is not None and not any(hm_to_min(a) <= s_min and e_min <= hm_to_min(b) for a, b in windows):
             errors.append("The dentist is not scheduled at this branch at that time.")

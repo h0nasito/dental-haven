@@ -17,6 +17,17 @@ from .common import branches_for_user, dentists, paginate, services
 
 bp = Blueprint("sched", __name__, url_prefix="/staff")
 
+
+@bp.app_context_processor
+def _sched_ctx():
+    def dentist_schedules():
+        """{dentist_id: {"branch:weekday": [[start, end], ...]}} for the 'not scheduled' warning on appointment forms."""
+        out: dict = {}
+        for r in get_db().all("SELECT dentist_id, branch_id, weekday, start_time, end_time FROM dentist_schedules"):
+            out.setdefault(str(r["dentist_id"]), {}).setdefault(f"{r['branch_id']}:{r['weekday']}", []).append([r["start_time"], r["end_time"]])
+        return out
+    return {"dentist_schedules": dentist_schedules}
+
 APPT_SELECT = (
     "SELECT a.*, p.first_name, p.last_name, p.chart_no, p.alert_flag, p.phone AS patient_phone, s.name AS service, "
     "u.name AS dentist, b.name AS branch, r.name AS resource FROM appointments a "
@@ -221,6 +232,7 @@ def appointment_new():
             "duration": clean(request.form.get("duration"), 4), "status": request.form.get("status", "confirmed"),
             "source": request.form.get("source", "staff"), "internal_notes": clean(request.form.get("internal_notes"), 2000),
             "allow_overlap": bool(request.form.get("allow_overlap")),
+            "off_schedule": bool(request.form.get("off_schedule")),
         }
         errors = _validate_and_save(conn, patient, v)
         if isinstance(errors, int):
@@ -250,10 +262,14 @@ def _validate_and_save(conn, patient, v, appt=None):
     svc = conn.one("SELECT * FROM services WHERE id = ? AND active = 1", (v["service_id"],)) if v["service_id"] else None
     if not svc:
         errors["service_id"] = "Choose a service."
-    if v["dentist_id"] and not conn.one("SELECT 1 AS x FROM users u JOIN user_branches ub ON ub.user_id = u.id "
-                                        "WHERE u.id = ? AND u.role='dentist' AND u.active=1 AND ub.branch_id = ?",
-                                        (v["dentist_id"], v["branch_id"] or 0)):
-        errors["dentist_id"] = "That dentist doesn't work at this branch."
+    # reliever: the dentist covers outside their schedule or at another branch (staff confirmed it on the form)
+    off = bool(v.get("off_schedule") or request.form.get("off_schedule")) and user.can("appointments.manage")
+    if v["dentist_id"] and not conn.one("SELECT 1 AS x FROM users u WHERE u.id = ? AND u.role = 'dentist' AND u.active = 1", (v["dentist_id"],)):
+        errors["dentist_id"] = "Choose an active dentist."
+    elif v["dentist_id"] and not off and not conn.one("SELECT 1 AS x FROM users u JOIN user_branches ub ON ub.user_id = u.id "
+                                                      "WHERE u.id = ? AND u.role='dentist' AND u.active=1 AND ub.branch_id = ?",
+                                                      (v["dentist_id"], v["branch_id"] or 0)):
+        errors["dentist_id"] = "That dentist doesn't work at this branch. If they are a reliever here, tick “Reliever” and save again."
     if v["resource_id"] and not conn.one("SELECT id FROM resources WHERE id = ? AND branch_id = ? AND active = 1",
                                          (v["resource_id"], v["branch_id"] or 0)):
         errors["resource_id"] = "That chair isn't at this branch."
@@ -280,9 +296,11 @@ def _validate_and_save(conn, patient, v, appt=None):
                 return {"_form": ["All chairs at this branch are taken at that time. Choose another time, or tick “Allow overlap”."],
                         "_overlap": True}
         problems = validate_slot(conn, branch_id=v["branch_id"], start=start, end=end, dentist_id=v["dentist_id"],
-                                 resource_id=resource_id, exclude_id=exclude, allow_overlap=overlap)
+                                 resource_id=resource_id, exclude_id=exclude, allow_overlap=overlap, allow_off_schedule=off)
         if problems:
             out = {"_form": problems}
+            if any("not scheduled" in p for p in problems):
+                out["_form"] = out["_form"] + ["If this dentist is a reliever at that time, tick “Reliever” and save again."]
             if any(p.startswith("Conflict:") for p in problems):
                 out["_overlap"] = True
                 out["_form"] = problems + ["To book it anyway, tick “Allow overlap (double booking)” and save again."]
@@ -292,7 +310,7 @@ def _validate_and_save(conn, patient, v, appt=None):
                 "patient_id": patient["id"], "branch_id": v["branch_id"], "service_id": v["service_id"],
                 "dentist_id": v["dentist_id"], "resource_id": resource_id, "start_at": fmt_dt(start), "end_at": fmt_dt(end),
                 "status": v["status"], "source": v["source"], "internal_notes": v["internal_notes"],
-                "created_by": user.id, "created_at": now_str(), "overlap_ok": 1 if overlap else 0,
+                "created_by": user.id, "created_at": now_str(), "overlap_ok": 1 if overlap else 0, "off_schedule_ok": 1 if off else 0,
             })
             audit.record("appointment_created", "appointment", appt_id,
                          f"Booked {svc['name']} {fmt_dt(start)} ({v['status']})", {"source": v["source"]}, v["branch_id"])
@@ -301,7 +319,8 @@ def _validate_and_save(conn, patient, v, appt=None):
             before = {k: appt[k] for k in ("branch_id", "service_id", "dentist_id", "resource_id", "start_at", "end_at")}
             after = {"branch_id": v["branch_id"], "service_id": v["service_id"], "dentist_id": v["dentist_id"],
                      "resource_id": resource_id, "start_at": fmt_dt(start), "end_at": fmt_dt(end)}
-            conn.update("appointments", appt_id, {**after, "updated_at": now_str(), "overlap_ok": 1 if overlap else 0})
+            conn.update("appointments", appt_id, {**after, "updated_at": now_str(), "overlap_ok": 1 if overlap else 0,
+                                                 "off_schedule_ok": 1 if off else 0})
             audit.record("appointment_rescheduled", "appointment", appt_id, f"Rescheduled to {fmt_dt(start)}",
                          audit.diff(before, after, after.keys()), v["branch_id"])
             cancel_appointment_reminders(conn, appt_id, "Rescheduled", regenerate=True)
@@ -357,7 +376,8 @@ def appointment_status(appt_id):
         if new == "confirmed":
             problems = validate_slot(conn, branch_id=a["branch_id"], start=parse_dt(a["start_at"]), end=parse_dt(a["end_at"]),
                                      dentist_id=a["dentist_id"], resource_id=a["resource_id"], exclude_id=appt_id, allow_past=True,
-                                     allow_overlap=bool(a["overlap_ok"]) if "overlap_ok" in a.keys() else False)
+                                     allow_overlap=bool(a["overlap_ok"]) if "overlap_ok" in a.keys() else False,
+                                     allow_off_schedule=bool(a["off_schedule_ok"]) if "off_schedule_ok" in a.keys() else False)
             if problems:
                 flash("Can't confirm: " + " ".join(problems), "error")
                 return redirect(url_for("sched.appointment", appt_id=appt_id))

@@ -494,3 +494,34 @@ class TestSalesXrayTab(Base):
         clinic = a.get(f"/staff/reports/sales?from={day}&to={day}&branch={bid}").data.decode()
         self.assertNotIn("XR-TAB001", clinic)
         self.assertIn("tab=xray", clinic)
+
+
+class TestRelieverBooking(Base):
+    def test_dentist_outside_schedule_only_when_reliever_ticked(self):
+        from datetime import date, timedelta
+        did = self.q("SELECT id FROM users WHERE email LIKE 'dentist.malolos@%'")["id"]
+        b = self.branch("malolos")
+        pid = self.q("SELECT id FROM patients WHERE preferred_branch_id = ? LIMIT 1", (b,))["id"]
+        svc = self.q("SELECT id FROM services WHERE active = 1 LIMIT 1")["id"]
+        worked = {r["weekday"] for r in self.conn.all("SELECT weekday FROM dentist_schedules WHERE dentist_id = ? AND branch_id = ?", (did, b))}
+        hours = {r["weekday"] for r in self.conn.all("SELECT weekday FROM branch_hours WHERE branch_id = ? AND closed = 0", (b,))}
+        off = [w for w in hours if w not in worked]
+        if not off:
+            self.skipTest("demo dentist works every open day")
+        d = date.today() + timedelta(days=21)
+        while d.weekday() != off[0]:
+            d += timedelta(days=1)
+        c = self.login("reception.malolos")
+        page = c.get(f"/staff/appointments/new?patient_id={pid}").data.decode()
+        self.assertIn("data-dentist-schedules", page)
+        self.assertIn("Reliever", page)
+        data = {"patient_id": pid, "branch_id": b, "service_id": svc, "dentist_id": did, "date": d.isoformat(), "time": "10:00",
+                "duration": "30", "status": "confirmed", "source": "staff"}
+        q = "SELECT * FROM appointments WHERE dentist_id = ? AND start_at = ?"
+        r = c.post(f"/staff/appointments/new?patient_id={pid}", data=data)
+        self.assertIn("tick “Reliever”", r.data.decode())
+        self.assertIsNone(self.q(q, (did, f"{d.isoformat()} 10:00")))
+        c.post(f"/staff/appointments/new?patient_id={pid}", data={**data, "off_schedule": "1"})
+        a = self.q(q, (did, f"{d.isoformat()} 10:00"))
+        self.assertIsNotNone(a)
+        self.assertEqual(a["off_schedule_ok"], 1)

@@ -1629,3 +1629,55 @@ document.querySelectorAll('[data-suggest]').forEach(function (input) {
   });
   document.addEventListener('click', function (e) { if (!input.closest('.suggest-wrap').contains(e.target)) close(); });
 });
+
+/* Appointment forms: warn when the chosen dentist isn't scheduled at that branch, day and time (e.g. a reliever).
+   Staff can still choose them: confirming ticks "Reliever". */
+(function () {
+  var sel = document.getElementById('f-dentist');
+  if (!sel || !sel.dataset.dentistSchedules) return;
+  var form = sel.form, sched = {};
+  try { sched = JSON.parse(sel.dataset.dentistSchedules); } catch (e) { return; }
+  var box = form.querySelector('[data-off-schedule]'), warn = form.querySelector('[data-off-schedule-warn]');
+  var days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  function val(name) { var el = form.querySelector('[name=' + name + ']'); return el ? el.value : ''; }
+  function problem() {
+    var d = sel.value, s = sched[d];
+    if (!d || !s) return '';                      // no dentist, or no schedule set up: nothing to check
+    var date = val('date'), time = val('time'), br = val('branch_id');
+    if (!date || !br) return '';
+    var wd = (new Date(date + 'T00:00:00').getDay() + 6) % 7;
+    var win = s[br + ':' + wd] || [];
+    var bname = (form.querySelector('[name=branch_id] option:checked') || {}).textContent || 'this branch';
+    var who = sel.options[sel.selectedIndex].textContent;
+    if (!win.length) return who + ' is not scheduled at ' + bname + ' on ' + days[wd] + '.';
+    if (time && !win.some(function (w) { return w[0] <= time && time < w[1]; }))
+      return who + ' is not scheduled at ' + bname + ' at ' + time + ' on ' + days[wd] + ' (schedule: ' +
+        win.map(function (w) { return w[0] + '–' + w[1]; }).join(', ') + ').';
+    return '';
+  }
+  function show() {
+    var p = problem();
+    if (warn) { warn.hidden = !p || (box && box.checked); warn.textContent = p ? p + ' Tick “Reliever” if they are covering.' : ''; }
+    return p;
+  }
+  var last = sel.value;
+  sel.addEventListener('change', function () {
+    var p = problem();
+    if (p && !(box && box.checked)) {
+      if (window.confirm(p + '\n\nDo you really want to choose this dentist (e.g. as a reliever)?')) { if (box) box.checked = true; }
+      else { sel.value = last; }
+    }
+    last = sel.value;
+    show();
+  });
+  ['date', 'time', 'branch_id'].forEach(function (n) { var el = form.querySelector('[name=' + n + ']'); if (el) el.addEventListener('change', show); });
+  if (box) box.addEventListener('change', show);
+  form.addEventListener('submit', function (e) {
+    var p = problem();
+    if (p && box && !box.checked) {
+      if (window.confirm(p + '\n\nDo you really want to book this dentist (e.g. as a reliever)?')) box.checked = true;
+      else e.preventDefault();
+    }
+  });
+  show();
+})();
