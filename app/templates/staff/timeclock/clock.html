@@ -10,7 +10,7 @@
 <div class="card clock-card">
 {% if next_kind %}
 <p class="clock-now">{{ now.strftime('%A, %B %d') }}</p>
-<form method="post" enctype="multipart/form-data" data-geo>{{ csrf() }}
+<form method="post" enctype="multipart/form-data" data-geo{% if next_kind == 'out' and rec and rec.time_in %} data-early-out="{{ rec.time_in }}"{% endif %}>{{ csrf() }}
 <input type="hidden" name="kind" value="{{ next_kind }}"><input type="hidden" name="lat"><input type="hidden" name="lng"><input type="hidden" name="acc">
 {% if not branches and not labs %}<p class="flash flash-error">Your account has no branch or laboratory with a time clock yet. Ask your manager to set it up.</p>{% endif %}
 <div class="field"><label for="cb">{{ 'Branch or laboratory' if labs else 'Branch' }}</label><select id="cb" name="place" {% if rec %}disabled{% endif %}>
@@ -38,6 +38,9 @@
 </form>
 {% else %}
 <p class="clock-now">You're done for today. 👋</p>
+{% if undo %}<form method="post" action="{{ url_for('timeclock.undo_out') }}" class="notice mt-1" data-confirm="Undo your time out of {{ rec.time_out }}? You'll need to time out again when you leave.">{{ csrf() }}
+<p class="mb-0">Pressed <strong>Time out</strong> by mistake? You can undo it for {{ undo_minutes }} minutes after.</p>
+<button class="btn btn-secondary btn-sm mt-1">Undo time out</button></form>{% endif %}
 {% if rec and rec.ot_minutes and emp.ot_eligible and not rec.ot_approved_by %}<form method="post" action="{{ url_for('people.attendance_ot_reason', rec_id=rec.id) }}" class="card mt-1" style="text-align:left">{{ csrf() }}
 <p class="mb-0"><strong>Overtime today: {{ rec.ot_minutes }} min</strong> <small class="muted">(waiting for approval)</small></p>
 <div class="field mt-1"><label for="cotl">Overtime reason</label><input id="cotl" name="ot_reason" value="{{ rec.ot_reason }}" maxlength="200" placeholder="What did you work on?" required></div>

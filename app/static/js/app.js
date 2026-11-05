@@ -1681,3 +1681,19 @@ document.querySelectorAll('[data-suggest]').forEach(function (input) {
   });
   show();
 })();
+
+/* Time clock: ask before a time out that comes soon after time in (likely pressed by mistake). */
+(function () {
+  var form = document.querySelector('form[data-early-out]');
+  if (!form) return;
+  form.addEventListener('submit', function (e) {
+    var t = (form.dataset.earlyOut || '').split(':'), now = new Date();
+    if (t.length < 2) return;
+    var mins = now.getHours() * 60 + now.getMinutes() - (parseInt(t[0], 10) * 60 + parseInt(t[1], 10));
+    if (mins >= 0 && mins < 240) {
+      var h = parseInt(t[0], 10), label = ((h + 11) % 12 + 1) + ':' + t[1] + (h < 12 ? ' AM' : ' PM');
+      if (!window.confirm('You timed in at ' + label + ', only ' + (mins < 60 ? mins + ' minutes' : Math.floor(mins / 60) + ' h ' + (mins % 60) + ' min') +
+          ' ago. Are you sure you want to TIME OUT now?')) { e.preventDefault(); e.stopImmediatePropagation(); }
+    }
+  }, true);
+})();

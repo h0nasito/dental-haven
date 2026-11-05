@@ -230,7 +230,51 @@ def clock():
     punches = conn.all("SELECT p.*, COALESCE(l.name, b.name) AS branch FROM time_punches p JOIN branches b ON b.id = p.branch_id "
                        "LEFT JOIN laboratories l ON l.id = p.lab_id WHERE p.employee_id = ? AND p.at >= ? ORDER BY p.id", (emp["id"], day))
     return _with_policy(render_template("staff/timeclock/clock.html", emp=emp, branches=branches, labs=labs, rec=rec, punches=punches,
-                                        next_kind=next_kind, branch_id=branch_id, place=place, now=now()))
+                                        next_kind=next_kind, branch_id=branch_id, place=place, now=now(),
+                                        undo=_undoable(conn, emp["id"], rec), undo_minutes=UNDO_MINUTES))
+
+
+UNDO_MINUTES = 10
+
+
+def _undoable(conn, emp_id: int, rec):
+    """Today's time out punch if it was made less than UNDO_MINUTES ago (and the record wasn't corrected since)."""
+    if not rec or not rec["time_out"] or rec["status"] in ("corrected", "excused"):
+        return None
+    p = conn.one("SELECT * FROM time_punches WHERE employee_id = ? AND time_record_id = ? AND kind = 'out' AND undone_at IS NULL "
+                 "ORDER BY id DESC LIMIT 1", (emp_id, rec["id"]))
+    if not p:
+        return None
+    from datetime import datetime as _dt
+    try:
+        at = _dt.strptime(p["at"][:19], "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None
+    left = UNDO_MINUTES * 60 - (now().replace(tzinfo=None) - at).total_seconds()
+    return {"punch": p, "seconds_left": int(left)} if left > 0 else None
+
+
+@bp.route("/undo-out", methods=["POST"])
+@require("attendance.clock")
+def undo_out():
+    """Undo a time out pressed by mistake, within a few minutes: the employee can time out again later."""
+    conn = get_db()
+    emp = _employee(conn)
+    if not emp:
+        abort(404)
+    rec = conn.one("SELECT * FROM time_records WHERE employee_id = ? AND work_date = ?", (emp["id"], today().isoformat()))
+    u = _undoable(conn, emp["id"], rec)
+    if not u:
+        flash(f"Time out can only be undone within {UNDO_MINUTES} minutes. Ask your manager to correct it in Attendance.", "error")
+        return redirect(url_for("timeclock.clock"))
+    with conn.transaction():
+        conn.execute("UPDATE time_punches SET undone_at = ? WHERE id = ?", (now_str(), u["punch"]["id"]))
+        conn.execute("UPDATE time_records SET time_out = NULL, short_lunch = 0 WHERE id = ?", (rec["id"],))
+        refresh_record(conn, rec["id"])
+        audit.record("time_out_undone", "time_record", rec["id"], f"{emp['full_name']} undid their time out of {rec['time_out']} (pressed by mistake)",
+                     branch_id=rec["branch_id"])
+    flash("Time out undone. Remember to time out when you leave.", "success")
+    return redirect(url_for("timeclock.clock"))
 
 
 @bp.route("/log")

@@ -203,3 +203,27 @@ class TestTimeClock(Base):
             self.conn.execute("DELETE FROM time_records WHERE employee_id = ?", (e,))
         self.conn.execute("UPDATE employees SET active = 0, user_id = NULL WHERE id = ?", (semp,))
         self.conn.execute("UPDATE users SET active = 0 WHERE id = ?", (sup,))
+
+
+class TestUndoTimeOut(Base):
+    def test_undo_time_out_within_minutes_only(self):
+        bid = self.branch("bocaue")
+        emp = self.q("SELECT e.* FROM employees e JOIN users u ON u.id = e.user_id WHERE u.email = 'reception.bocaue@demo.dentalhaven.test'")
+        self.conn.execute("DELETE FROM time_records WHERE employee_id = ?", (emp["id"],))
+        c = self.login("reception.bocaue")
+        for kind in ("in", "out"):
+            c.post("/staff/clock", data={"kind": kind, "branch_id": bid, "photo": (io.BytesIO(PNG), "selfie.png")}, content_type="multipart/form-data")
+        page = c.get("/staff/clock").data.decode()
+        self.assertIn("Undo time out", page)
+        c.post("/staff/clock/undo-out")
+        rec = self.q("SELECT * FROM time_records WHERE employee_id = ? ORDER BY id DESC", (emp["id"],))
+        self.assertIsNone(rec["time_out"])
+        self.assertIsNotNone(self.q("SELECT undone_at FROM time_punches WHERE time_record_id = ? AND kind = 'out'", (rec["id"],))["undone_at"])
+        page = c.get("/staff/clock").data.decode()
+        self.assertIn("data-early-out", page)                 # time out again (with the early warning)
+        # time out again; an old time out (over 10 minutes) can't be undone
+        c.post("/staff/clock", data={"kind": "out", "branch_id": bid, "photo": (io.BytesIO(PNG), "selfie.png")}, content_type="multipart/form-data")
+        self.conn.execute("UPDATE time_punches SET at = datetime(at, '-20 minutes') WHERE time_record_id = ? AND kind = 'out' AND undone_at IS NULL", (rec["id"],))
+        self.assertNotIn("Undo time out", c.get("/staff/clock").data.decode())
+        c.post("/staff/clock/undo-out")
+        self.assertIsNotNone(self.q("SELECT time_out FROM time_records WHERE id = ?", (rec["id"],))["time_out"])
