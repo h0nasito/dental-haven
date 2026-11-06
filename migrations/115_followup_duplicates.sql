@@ -1,0 +1,2 @@
+-- Follow-ups listed twice (same patient, same due time, same task, e.g. imported twice from MyMedsPH): keep the first, cancel the copies.
+UPDATE follow_ups SET status = 'cancelled', outcome = 'Duplicate of an identical follow-up (removed automatically)', completed_at = datetime('now', 'localtime') WHERE status = 'open' AND patient_id IS NOT NULL AND id NOT IN (SELECT MIN(id) FROM follow_ups WHERE status = 'open' AND patient_id IS NOT NULL GROUP BY patient_id, due_at, LOWER(TRIM(title)))

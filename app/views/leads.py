@@ -293,7 +293,70 @@ def followups():
         "today": conn.scalar(f"SELECT COUNT(*) FROM follow_ups f WHERE {fq} AND f.status='open' AND f.due_at >= ? AND f.due_at < ?",
                              [*fp, now_str(), tomorrow]),
     }
+    counts["duplicates"] = len(duplicate_followup_ids(conn)) if g.user.can("followups.manage") else 0
     return render_template("staff/leads/followups.html", rows=rows, view=view, counts=counts, now_s=now_str())
+
+
+def _dup_key(r) -> tuple:
+    """Two open follow-ups are copies when they are for the same person (same patient record, or a patient with the same
+    name, e.g. imported twice), due the same minute, with the same task."""
+    who = (f"{r['last_name'] or ''}|{r['first_name'] or ''}".strip().lower() if r["patient_id"] else f"lead:{r['lead_id']}")
+    return (who, (r["due_at"] or "")[:16], " ".join((r["title"] or "").lower().split()))
+
+
+def _open_followups(conn):
+    fq, fp = followup_scope(g.user)
+    return conn.all("SELECT f.id, f.patient_id, f.lead_id, f.due_at, f.title, f.branch_id, p.first_name, p.last_name FROM follow_ups f "
+                    f"LEFT JOIN patients p ON p.id = f.patient_id WHERE {fq} AND f.status = 'open' ORDER BY f.id", fp)
+
+
+def duplicate_followup_ids(conn) -> list[int]:
+    seen, dups = set(), []
+    for r in _open_followups(conn):
+        k = _dup_key(r)
+        if k in seen:
+            dups.append(r["id"])
+        else:
+            seen.add(k)
+    return dups
+
+
+@bp.route("/followups/dedupe", methods=["POST"])
+@require("followups.manage")
+def followups_dedupe():
+    """Cancel the copies of follow-ups listed more than once (the first one stays open)."""
+    conn = get_db()
+    ids = duplicate_followup_ids(conn)
+    for i in range(0, len(ids), 500):
+        chunk = ids[i:i + 500]
+        conn.execute(f"UPDATE follow_ups SET status = 'cancelled', outcome = 'Duplicate of an identical follow-up', completed_at = ?, "
+                     f"completed_by = ? WHERE id IN ({','.join('?' * len(chunk))})", [now_str(), g.user.id, *chunk])
+    audit.record("followups_deduplicated", "follow_up", None, f"Cancelled {len(ids)} duplicate follow-up(s)", {"ids": ids[:500]})
+    flash(f"Removed {len(ids)} duplicate follow-up{'s' if len(ids) != 1 else ''} (moved to Completed as cancelled)." if ids
+          else "No duplicates found.", "success")
+    return redirect(url_for("leads.followups"))
+
+
+@bp.route("/followups/bulk", methods=["POST"])
+@require("followups.manage")
+def followups_bulk():
+    """Close several follow-ups at once: done, or cancelled (e.g. old imported ones no longer needed)."""
+    conn = get_db()
+    fq, fp = followup_scope(g.user)
+    action = request.form.get("bulk")
+    ids = [i for i in (to_int(x) for x in request.form.getlist("ids")) if i][:500]
+    if action not in ("done", "cancelled") or not ids:
+        flash("Tick the follow-ups first, then choose Mark done or Cancel.", "error")
+        return redirect(request.referrer or url_for("leads.followups"))
+    note = clean(request.form.get("outcome"), 300) or ("Done" if action == "done" else "Cancelled")
+    mine = [r["id"] for r in conn.all(f"SELECT f.id FROM follow_ups f WHERE {fq} AND f.status = 'open' AND f.id IN ({','.join('?' * len(ids))})",
+                                      [*fp, *ids])]
+    if mine:
+        conn.execute(f"UPDATE follow_ups SET status = ?, outcome = ?, completed_at = ?, completed_by = ? WHERE id IN ({','.join('?' * len(mine))})",
+                     [action, note, now_str(), g.user.id, *mine])
+        audit.record("followups_bulk_closed", "follow_up", None, f"{len(mine)} follow-up(s) marked {action}: {note}", {"ids": mine})
+    flash(f"{len(mine)} follow-up{'s' if len(mine) != 1 else ''} marked {'done' if action == 'done' else 'cancelled'}.", "success")
+    return redirect(request.referrer or url_for("leads.followups"))
 
 
 @bp.route("/followups/new", methods=["GET", "POST"])
@@ -326,6 +389,11 @@ def followup_new():
             errors["due_at"] = "Enter a due date and time."
         if not v["branch_id"] or not g.user.in_branch(v["branch_id"]):
             errors["branch_id"] = "Choose one of your branches."
+        dup = conn.one("SELECT id FROM follow_ups WHERE status = 'open' AND patient_id IS ? AND lead_id IS ? AND due_at = ? "
+                       "AND LOWER(TRIM(title)) = LOWER(TRIM(?))", (patient_id, lead_id, fmt_dt(due), v["title"])) if not errors else None
+        if dup:                          # saved twice (double click): don't add a copy
+            flash("This follow-up already exists.", "success")
+            return redirect(url_for("leads.followup_detail", fu_id=dup["id"]))
         if not errors:
             fid = conn.insert("follow_ups", {"branch_id": v["branch_id"], "patient_id": patient_id, "lead_id": lead_id, "kind": v["kind"],
                                              "title": v["title"], "due_at": fmt_dt(due), "status": "open", "assignee_id": v["assignee_id"],

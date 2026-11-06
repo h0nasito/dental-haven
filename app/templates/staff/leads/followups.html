@@ -6,11 +6,17 @@
 {% if current_user.can('followups.manage') %}<a class="btn" href="{{ url_for('leads.followup_new') }}">+ Follow-up</a>{% endif %}</div>
 <div class="tabs">{% for s, l in [('due','Due & overdue'),('upcoming','Upcoming'),('done','Completed')] %}<a class="{% if view == s %}active{% endif %}" href="?view={{ s }}{% if request.args.get('mine') %}&mine=1{% endif %}">{{ l }}</a>{% endfor %}
 <a class="{% if request.args.get('mine') %}active{% endif %}" href="?view={{ view }}{% if not request.args.get('mine') %}&mine=1{% endif %}">{{ 'All' if request.args.get('mine') else 'Assigned to me' }}</a></div>
+{% set can_bulk = current_user.can('followups.manage') and view != 'done' %}
+{% if counts.duplicates and current_user.can('followups.manage') %}<form method="post" action="{{ url_for('leads.followups_dedupe') }}" class="notice mb-1" data-confirm="Cancel {{ counts.duplicates }} duplicate follow-up(s)? The first of each stays open; the copies move to Completed.">{{ csrf() }}
+<strong>{{ counts.duplicates }} follow-up{{ 's are' if counts.duplicates != 1 else ' is' }} listed twice</strong> (same patient, same due time, same task). <button class="btn btn-secondary btn-sm">Remove duplicates</button></form>{% endif %}
+{% if can_bulk and rows %}<form id="fu-bulk" method="post" action="{{ url_for('leads.followups_bulk') }}" data-bulk>{{ csrf() }}
+<div class="toolbar"><div class="field"><label for="fu-out">Outcome / note</label><input id="fu-out" name="outcome" maxlength="300" placeholder="e.g. Old MyMedsPH follow-up, already done"></div>
+<button class="btn btn-secondary" name="bulk" value="done" data-confirm="Mark the ticked follow-ups as done?">Mark ticked as done</button> <button class="btn btn-secondary" name="bulk" value="cancelled" data-confirm="Cancel the ticked follow-ups?">Cancel ticked</button> <span class="muted" data-check-count></span></div>{% endif %}
 <div class="card"><div class="table-wrap"><table>
-<thead><tr><th>Due</th><th>Task</th><th>Who</th><th>Type</th><th>Assignee</th><th>Status</th></tr></thead><tbody>
-{% for f in rows %}<tr><td>{% if f.status == 'open' and f.due_at < now_s %}<strong style="color:var(--red-700)">{{ f.due_at|dt }}</strong><br><span class="badge badge-red">Overdue</span>{% else %}{{ f.due_at|dt }}{% endif %}</td>
+<thead><tr>{% if can_bulk and rows %}<th><input type="checkbox" aria-label="Tick all" data-check-all></th>{% endif %}<th>Due</th><th>Task</th><th>Who</th><th>Type</th><th>Assignee</th><th>Status</th></tr></thead><tbody>
+{% for f in rows %}<tr>{% if can_bulk %}<td><input type="checkbox" name="ids" value="{{ f.id }}" data-check aria-label="Tick {{ f.title }}"></td>{% endif %}<td>{% if f.status == 'open' and f.due_at < now_s %}<strong style="color:var(--red-700)">{{ f.due_at|dt }}</strong><br><span class="badge badge-red">Overdue</span>{% else %}{{ f.due_at|dt }}{% endif %}</td>
 <td><a href="{{ url_for('leads.followup_detail', fu_id=f.id) }}">{{ f.title }}</a>{% if f.outcome %}<br><small class="muted">{{ f.outcome }}</small>{% endif %}</td>
 <td>{% if f.first_name %}{{ f.last_name }}, {{ f.first_name }}{% if f.alert_flag %} ⚠{% endif %}{% elif f.lead_name %}Lead: {{ f.lead_name }}{% else %}—{% endif %}</td>
 <td>{{ FOLLOWUP_KINDS.get(f.kind, f.kind) }}</td><td>{{ f.assignee or 'Unassigned' }}</td><td>{{ status_badge(f.status) }}</td></tr>
-{% else %}<tr><td colspan="6">{{ empty('Nothing here', ' No follow-ups in this view.') }}</td></tr>{% endfor %}</tbody></table></div></div>
+{% else %}<tr><td colspan="7">{{ empty('Nothing here', ' No follow-ups in this view.') }}</td></tr>{% endfor %}</tbody></table></div></div>{% if can_bulk and rows %}</form>{% endif %}
 {% endblock %}

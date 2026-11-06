@@ -311,7 +311,9 @@ def run_import(conn, data: dict, *, branch_id: int | None, user_id: int, commit:
                 # also recognised by patient, date, tooth and service.
                 have = Counter((r["patient_id"], (r["performed_at"] or "")[:10], r["tooth"] or "", (r["description"] or "").split("\n", 1)[0])
                                for r in conn.all("SELECT patient_id, performed_at, tooth, description FROM procedures WHERE legacy_key IS NOT NULL"))
-                fu_have = {(r["patient_id"], (r["due_at"] or "")[:10]) for r in conn.all("SELECT patient_id, due_at FROM follow_ups WHERE legacy_key LIKE 'fu-%'")}
+                # one imported follow-up per patient and day, also against open ones already there (no copies on re-import)
+                fu_have = {(r["patient_id"], (r["due_at"] or "")[:10]) for r in conn.all(
+                    "SELECT patient_id, due_at FROM follow_ups WHERE legacy_key LIKE 'fu-%' OR (status = 'open' AND patient_id IS NOT NULL)")}
                 proc_rows, fu_rows, fix_rows = [], [], []
                 parsed = []
                 for row in data["progress_notes"]["rows"]:

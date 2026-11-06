@@ -525,3 +525,43 @@ class TestRelieverBooking(Base):
         a = self.q(q, (did, f"{d.isoformat()} 10:00"))
         self.assertIsNotNone(a)
         self.assertEqual(a["off_schedule_ok"], 1)
+
+
+class TestFollowupDuplicates(Base):
+    def test_cleanup_and_no_double_save(self):
+        from pathlib import Path
+        from app.util import now_str
+        b = self.branch("malolos")
+        pid = self.q("SELECT id FROM patients WHERE preferred_branch_id = ? LIMIT 1", (b,))["id"]
+        ids = [self.conn.insert("follow_ups", {"branch_id": b, "patient_id": pid, "kind": "other", "title": t, "due_at": "2026-10-02 13:00",
+                                               "status": "open", "created_at": now_str()}) for t in ("Braces Adjustment", "Braces Adjustment ", "Other task")]
+        sql = (Path(__file__).resolve().parents[1] / "migrations" / "115_followup_duplicates.sql").read_text()
+        self.conn.execute(sql.split("\n", 1)[1].strip())
+        st = {r["id"]: r["status"] for r in self.conn.all("SELECT id, status FROM follow_ups WHERE id IN (?, ?, ?)", ids)}
+        self.assertEqual((st[ids[0]], st[ids[1]], st[ids[2]]), ("open", "cancelled", "open"))
+        # saving the same follow-up twice (double click) doesn't add a copy
+        a = self.login("admin")
+        data = {"kind": "post_treatment", "title": "Check filling (demo)", "due_at": "2026-12-01T10:00", "branch_id": b, "patient_id": pid}
+        for _ in range(2):
+            a.post(f"/staff/followups/new?patient_id={pid}", data=data)
+        self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM follow_ups WHERE patient_id = ? AND title = 'Check filling (demo)' AND status = 'open'", (pid,)), 1)
+
+    def test_remove_duplicates_button_and_bulk_close(self):
+        from app.util import now_str
+        b = self.branch("malolos")
+        pts = self.conn.all("SELECT * FROM patients WHERE preferred_branch_id = ? LIMIT 1", (b,))
+        p = pts[0]
+        twin = self.conn.insert("patients", {k: p[k] for k in p.keys() if k not in ("id", "chart_no", "legacy_key", "email", "phone")}
+                                | {"chart_no": "DUP-TWIN-1", "created_at": now_str()})
+        a1 = self.conn.insert("follow_ups", {"branch_id": b, "patient_id": p["id"], "kind": "other", "title": "Braces Adj", "due_at": "2026-10-02 14:00",
+                                             "status": "open", "created_at": now_str()})
+        a2 = self.conn.insert("follow_ups", {"branch_id": b, "patient_id": twin, "kind": "other", "title": "braces  adj", "due_at": "2026-10-02 14:00:00",
+                                             "status": "open", "created_at": now_str()})
+        a = self.login("admin")
+        self.assertIn("Remove duplicates", a.get("/staff/followups").data.decode())
+        a.post("/staff/followups/dedupe")
+        self.assertEqual(self.q("SELECT status FROM follow_ups WHERE id = ?", (a1,))["status"], "open")
+        self.assertEqual(self.q("SELECT status FROM follow_ups WHERE id = ?", (a2,))["status"], "cancelled")
+        a.post("/staff/followups/bulk", data={"bulk": "done", "ids": [str(a1)], "outcome": "Old follow-up (demo)"})
+        r = self.q("SELECT status, outcome FROM follow_ups WHERE id = ?", (a1,))
+        self.assertEqual((r["status"], r["outcome"]), ("done", "Old follow-up (demo)"))
