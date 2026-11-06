@@ -46,6 +46,11 @@
 <div class="field"><label for="pa">Amount paid (₱)</label><input id="pa" name="pay_amount" inputmode="decimal" placeholder="0.00"></div>
 <div class="field"><label for="pm">Paid with</label><select id="pm" name="pay_method">{% for val, lab in pay_opts %}<option value="{{ val }}">{{ lab }}</option>{% endfor %}</select></div>
 </div>
+<fieldset class="pay-box" data-sig-if="pa"><legend>Patient signature</legend>
+<div class="sigpad"><canvas data-sigpad width="600" height="180" aria-label="Signature pad: the patient signs here with a finger, stylus or mouse"></canvas>
+<input type="hidden" name="signature" data-sig-out></div>
+<div class="row between"><small class="muted">If paying now, the patient signs above to acknowledge the payment.</small><button type="button" class="btn btn-ghost btn-sm" data-sig-clear>Clear</button></div>
+<details class="mt-1"><summary><small>Patient can't sign</small></summary><div class="field mt-1"><label for="nsrc">Reason</label><input id="nsrc" name="not_signed_reason" maxlength="200" placeholder="e.g. Paid by parent via GCash, not in clinic"></div></details></fieldset>
 <div class="field"><label for="fl">X-ray images</label><input id="fl" type="file" name="files" accept="image/png,image/jpeg,image/webp,application/pdf" multiple><span class="hint">JPG, PNG, WEBP or PDF, up to 25 MB each. You can add more later.</span></div>{% endif %}
 <div class="field"><label for="nt">Notes</label><textarea id="nt" name="notes" rows="2" maxlength="1000">{{ v.notes }}</textarea></div>
 <button class="btn">{{ 'Save changes' if x else 'Save X-ray' }}</button></form>

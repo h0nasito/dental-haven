@@ -1710,3 +1710,18 @@ document.querySelectorAll('[data-suggest]').forEach(function (input) {
     }
   }, true);
 })();
+
+/* X-ray payments: the patient signs (or a reason is given), as on bills. On the new X-ray form only when paying now. */
+(function () {
+  document.querySelectorAll('form[data-sig-required], form:has(fieldset[data-sig-if])').forEach(function (form) {
+    form.addEventListener('submit', function (e) {
+      var cond = form.querySelector('fieldset[data-sig-if]');
+      if (cond) { var amt = document.getElementById(cond.dataset.sigIf); if (!amt || !(parseFloat(amt.value) > 0)) return; }
+      var canvas = form.querySelector('[data-sigpad]'), reason = form.querySelector('[name=not_signed_reason]');
+      if (!(canvas && canvas.dataset.drawn === '1') && !(reason && reason.value.trim())) {
+        e.preventDefault();
+        alert('Please ask the patient to sign, or open "Patient can\u2019t sign" and give the reason.');
+      }
+    });
+  });
+})();

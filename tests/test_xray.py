@@ -39,7 +39,7 @@ class TestXray(Base):
         invs = self.conn.scalar("SELECT COUNT(*) FROM invoices")
         r = self.new(c, walkin_name="Walk In Tester", walkin_phone="0917", requested="new", new_ref_name="Dr. Outside Demo",
                      new_ref_clinic="Smile Demo Clinic", type_1=self.peri, tooth_1="36", price_1="500", discount="100", rebate="150",
-                     pay_amount="1000", pay_method="cash", files=[(io.BytesIO(PNG), "pano.png")])
+                     pay_amount="1000", pay_method="cash", not_signed_reason="Demo test", files=[(io.BytesIO(PNG), "pano.png")])
         self.assertEqual(r.status_code, 302, r.data[:600])
         x = self.last()
         self.assertTrue(x["number"].startswith("XR-"))
@@ -55,7 +55,7 @@ class TestXray(Base):
         self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM procedures"), procs)
         self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM invoices"), invs)
         # pay the rest; receipt
-        c.post(f"/staff/xray/{x['id']}/pay", data={"amount": "400", "method": "gcash"})
+        c.post(f"/staff/xray/{x['id']}/pay", data={"amount": "400", "method": "gcash", "not_signed_reason": "Demo test"})
         self.assertIn("Paid", c.get(f"/staff/xray/{x['id']}").data.decode())
         self.assertIn(x["number"], c.get(f"/staff/xray/{x['id']}/receipt").data.decode())
         # another branch can't see it
@@ -107,7 +107,7 @@ class TestXray(Base):
         ref = self.q("SELECT * FROM xray_referrers WHERE name = 'Dr. Rebate Demo'")
         self.assertEqual(ref["rebate_bp"], 1000)
         c = self.login("staff.malolos")
-        self.new(c, walkin_name="Referred Walkin", requested=f"r:{ref['id']}", price_0="2000", pay_amount="2000", pay_method="cash")
+        self.new(c, walkin_name="Referred Walkin", requested=f"r:{ref['id']}", price_0="2000", pay_amount="2000", pay_method="cash", not_signed_reason="Demo test")
         x = self.last()
         self.assertEqual(x["rebate_cents"], 20000)
         page = a.get(f"/staff/xray/rebates/{ref['id']}").data.decode()
@@ -125,3 +125,20 @@ class TestXray(Base):
         # report
         rep = a.get("/staff/xray/report").data.decode()
         self.assertIn("Dr. Rebate Demo", rep)
+
+    def test_split_payment_with_patient_signature(self):
+        import base64
+        sig = "data:image/png;base64," + (PNG if isinstance(PNG, str) else base64.b64encode(PNG).decode())
+        c = self.login("admin")
+        self.new(c, walkin_name="Split Walkin", price_0="1000")
+        x = self.last()
+        # no signature and no reason: refused
+        c.post(f"/staff/xray/{x['id']}/pay", data={"amount": "500", "method": "cash", "amount_2": "500", "method_2": "gcash"})
+        self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM xray_payments WHERE xray_id = ?", (x["id"],)), 0)
+        c.post(f"/staff/xray/{x['id']}/pay", data={"amount": "500", "method": "cash", "amount_2": "500", "method_2": "gcash", "signature": sig})
+        pays = self.conn.all("SELECT * FROM xray_payments WHERE xray_id = ? ORDER BY id", (x["id"],))
+        self.assertEqual([(p["method"], p["amount_cents"]) for p in pays], [("cash", 50000), ("gcash", 50000)])
+        self.assertTrue(pays[0]["signature_name"])
+        page = c.get(f"/staff/xray/{x['id']}").data.decode()
+        self.assertIn(f"/payments/{pays[0]['id']}/signature", page)
+        self.assertEqual(c.get(f"/staff/xray/{x['id']}/payments/{pays[0]['id']}/signature").status_code, 200)

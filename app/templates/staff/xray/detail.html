@@ -36,12 +36,22 @@
 <div class="card"><h2>Payments</h2>
 <ul class="list-plain">{% for p in pays %}<li {% if p.status == 'void' %}style="opacity:.6"{% endif %}><div class="row between"><strong>{{ p.amount_cents|peso }}</strong><small class="muted">{{ p.received_at|date }}</small></div>
 <small>{{ pay_label(p.method, p.account) }}{% if p.reference %} · Ref {{ p.reference }}{% endif %} · {{ p.received_name or '—' }}</small>
+{% if p.signature_name %}<br><a href="{{ url_for('xray.pay_signature', xray_id=x.id, pay_id=p.id) }}" target="_blank" rel="noopener"><small>Signature</small></a>{% elif p.not_signed_reason %}<br><small class="muted">Not signed: {{ p.not_signed_reason }}</small>{% endif %}
 {% if p.status == 'void' %}<br><small class="muted">Voided: {{ p.void_reason }}</small>{% elif current_user.can('xray.void') %}<details><summary><small>Void</small></summary><form method="post" action="{{ url_for('xray.pay_void', xray_id=x.id, pay_id=p.id) }}">{{ csrf() }}<label class="sr-only" for="vr{{ p.id }}">Reason</label><input id="vr{{ p.id }}" name="reason" placeholder="Reason" required><button class="btn btn-danger btn-sm mt-1">Void payment</button></form></details>{% endif %}</li>
 {% else %}<li class="muted">No payments yet.</li>{% endfor %}</ul>
-{% if x.status == 'ok' and balance > 0 and current_user.can('xray.manage') %}<form method="post" action="{{ url_for('xray.pay', xray_id=x.id) }}" class="mt-1">{{ csrf() }}
-<div class="field"><label for="pa">Amount (₱)</label><input id="pa" name="amount" value="{{ '%.2f'|format(balance / 100) }}" inputmode="decimal" required></div>
+{% if x.status == 'ok' and balance > 0 and current_user.can('xray.manage') %}<form method="post" action="{{ url_for('xray.pay', xray_id=x.id) }}" class="mt-1" data-sig-required>{{ csrf() }}
+<div class="field"><label for="pa">Amount (₱)</label><input id="pa" name="amount" value="{{ '%.2f'|format(balance / 100) }}" inputmode="decimal"></div>
 <div class="field"><label for="pm">Paid with</label><select id="pm" name="method">{% for val, lab in pay_opts %}<option value="{{ val }}">{{ lab }}</option>{% endfor %}</select></div>
 <div class="field"><label for="pr">Reference / OR no.</label><input id="pr" name="reference" maxlength="80"></div>
+<details class="mb-1"><summary>+ Split payment (e.g. part cash, part GCash)</summary>
+<div class="field mt-1"><label for="pa2">Second amount (₱)</label><input id="pa2" name="amount_2" inputmode="decimal" placeholder="e.g. 500"><span class="hint">Lower the first amount to match, or leave the first amount empty to use the rest of the balance.</span></div>
+<div class="field"><label for="pm2">Paid with</label><select id="pm2" name="method_2">{% for val, lab in pay_opts %}<option value="{{ val }}" {{ 'selected' if val == 'gcash' }}>{{ lab }}</option>{% endfor %}</select></div>
+<div class="field"><label for="pr2">Reference no.</label><input id="pr2" name="reference_2" maxlength="80" placeholder="e.g. GCash ref."></div></details>
+<fieldset class="pay-box"><legend>Patient signature</legend>
+<div class="sigpad"><canvas data-sigpad width="600" height="180" aria-label="Signature pad: the patient signs here with a finger, stylus or mouse"></canvas>
+<input type="hidden" name="signature" data-sig-out></div>
+<div class="row between"><small class="muted">Patient signs above to acknowledge the payment.</small><button type="button" class="btn btn-ghost btn-sm" data-sig-clear>Clear</button></div>
+<details class="mt-1"><summary><small>Patient can't sign</small></summary><div class="field mt-1"><label for="nsrp">Reason</label><input id="nsrp" name="not_signed_reason" maxlength="200" placeholder="e.g. Paid by parent via GCash, not in clinic"></div></details></fieldset>
 <button class="btn">Record payment</button></form>{% endif %}</div>
 {% if x.status == 'ok' and current_user.can('xray.void') %}<div class="card"><details><summary>Void this X-ray</summary>
 <form method="post" action="{{ url_for('xray.void', xray_id=x.id) }}" class="mt-1">{{ csrf() }}<p class="hint">Void its payments first. The record stays, marked voided.</p><label class="sr-only" for="vx">Reason</label><input id="vx" name="reason" placeholder="Reason" required><button class="btn btn-danger btn-sm mt-1">Void X-ray</button></form></details></div>{% endif %}

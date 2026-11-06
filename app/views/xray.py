@@ -321,6 +321,11 @@ def new():
             errors.append("The payment can't be more than the amount to pay.")
         elif pay_amt and not pay:
             errors.append("Choose how the payment was made.")
+        sig = ("", "", None)
+        if pay_amt and not errors:
+            sig = _signature()
+            if sig[2]:
+                errors.append(sig[2])
         if not errors:
             with conn.transaction(immediate=True):
                 if v["requested"] == "new":
@@ -334,7 +339,7 @@ def new():
                 if pay_amt:
                     conn.insert("xray_payments", {"xray_id": xid, "branch_id": rec["branch_id"], "amount_cents": pay_amt, "method": pay[0],
                                                   "account": pay[1], "received_at": now_str(), "received_by": g.user.id,
-                                                  "created_at": now_str()})
+                                                  "signature_name": sig[0], "not_signed_reason": sig[1], "created_at": now_str()})
                 n, ferr = _add_files(conn, xid, request.files.getlist("files"))
             audit.record("xray_created", "xray", xid, f"Recorded X-ray XR-{nxt:06d}", {"items": len(items), "total": rec["total_cents"],
                                                                                         "images": n})
@@ -410,21 +415,65 @@ def pay(xray_id):
     conn = get_db()
     x = _load(xray_id)
     paid = paid_of(conn, [xray_id]).get(xray_id, 0)
-    amt = parse_money(request.form.get("amount"))
+    bal = x["total_cents"] - paid
+    # split payment (e.g. part cash, part GCash): a second line; an empty first amount is then the rest of the balance
+    raw2 = (request.form.get("amount_2") or "").strip()
+    amt2 = parse_money(raw2) if raw2 else 0
+    method2 = parse_pay(request.form.get("method_2"), conn)
+    raw1 = (request.form.get("amount") or "").strip()
+    amt = parse_money(raw1) if raw1 else (bal - (amt2 or 0) if amt2 else None)
     method = parse_pay(request.form.get("method"), conn)
     if x["status"] != "ok":
         flash("This X-ray is voided.", "error")
-    elif not amt or amt <= 0 or amt > x["total_cents"] - paid:
-        flash(f"Enter an amount up to the balance ({(x['total_cents'] - paid) / 100:,.2f}).", "error")
-    elif not method:
+    elif amt2 is None or amt2 < 0:
+        flash("Enter the second amount as a number, e.g. 500.", "error")
+    elif amt2 and not method2:
+        flash("Choose how the second payment was made.", "error")
+    elif amt is None or amt < 0 or (amt + amt2) <= 0 or amt + amt2 > bal:
+        flash(f"Enter amounts that add up to the balance or less ({bal / 100:,.2f}).", "error")
+    elif amt and not method:
         flash("Choose how the payment was made.", "error")
+    elif (sig := _signature())[2]:
+        flash(sig[2], "error")
     else:
-        pid = conn.insert("xray_payments", {"xray_id": xray_id, "branch_id": x["branch_id"], "amount_cents": amt, "method": method[0],
-                                            "account": method[1], "reference": clean(request.form.get("reference"), 80),
-                                            "received_at": now_str(), "received_by": g.user.id, "created_at": now_str()})
-        audit.record("xray_payment", "xray", xray_id, f"Payment on X-ray {x['number']}", {"payment": pid, "amount": amt})
-        flash("Payment recorded.", "success")
+        done = []
+        for a_, m_, ref in ((amt, method, request.form.get("reference")), (amt2, method2, request.form.get("reference_2"))):
+            if a_:
+                pid = conn.insert("xray_payments", {"xray_id": xray_id, "branch_id": x["branch_id"], "amount_cents": a_, "method": m_[0],
+                                                    "account": m_[1], "reference": clean(ref, 80), "signature_name": sig[0],
+                                                    "not_signed_reason": sig[1], "received_at": now_str(), "received_by": g.user.id,
+                                                    "created_at": now_str()})
+                audit.record("xray_payment", "xray", xray_id, f"Payment on X-ray {x['number']}", {"payment": pid, "amount": a_})
+                done.append(pid)
+        flash("Payments recorded." if len(done) > 1 else "Payment recorded.", "success")
     return redirect(url_for("xray.detail", xray_id=xray_id))
+
+
+def _signature() -> tuple[str, str, str | None]:
+    """The patient's signature for a payment (as on bills): (stored file, reason not signed, error)."""
+    from ..uploads import save_signature
+    reason = clean(request.form.get("not_signed_reason"), 200)
+    data_url = request.form.get("signature") or ""
+    if data_url:
+        stored, err = save_signature(data_url)
+        return (stored or "", "", err)
+    if not reason:
+        return "", "", "Ask the patient to sign, or open “Patient can't sign” and give the reason."
+    return "", reason, None
+
+
+@bp.route("/<int:xray_id>/payments/<int:pay_id>/signature")
+@require("xray.view")
+def pay_signature(xray_id, pay_id):
+    from flask import send_file
+    from ..uploads import document_path
+    _load(xray_id)
+    p = get_db().one("SELECT signature_name FROM xray_payments WHERE id = ? AND xray_id = ?", (pay_id, xray_id))
+    if not p or not p["signature_name"]:
+        abort(404)
+    resp = send_file(document_path(p["signature_name"]), mimetype="image/png", max_age=0)
+    resp.headers["Cache-Control"] = "private, no-store"
+    return resp
 
 
 @bp.route("/<int:xray_id>/payments/<int:pay_id>/void", methods=["POST"])
