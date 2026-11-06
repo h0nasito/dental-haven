@@ -1725,3 +1725,21 @@ document.querySelectorAll('[data-suggest]').forEach(function (input) {
     });
   });
 })();
+
+/* Payment form: the dentist commission is staff-only. It stays folded (no amounts shown), and folds itself
+   as soon as the patient starts signing. */
+(function () {
+  document.querySelectorAll('form').forEach(function (form) {
+    var comm = form.querySelector('details[data-comm]'), pad = form.querySelector('canvas[data-sigpad]');
+    if (!comm || !pad) return;
+    var sum = comm.querySelector('[data-comm-sum]'), sel = comm.querySelector('[data-comm-dentist]');
+    function label() {
+      if (!sum || !sel) return;
+      sum.textContent = sel.value ? 'For ' + sel.options[sel.selectedIndex].textContent.replace(/\s*\(.*\)\s*$/, '') + ' (open to check or change)'
+                                  : 'No commission on this payment';
+    }
+    if (sel) sel.addEventListener('change', label);
+    label();
+    ['pointerdown', 'touchstart', 'mousedown'].forEach(function (ev) { pad.addEventListener(ev, function () { comm.open = false; }, { passive: true }); });
+  });
+})();

@@ -21,14 +21,8 @@
 {% set pbs = my_pay_branches() %}{% if pbs|length > 1 %}{% set dflt = current_user.active_branch_id or inv.branch_id %}<div class="field"><label>Received at (branch)</label><select name="received_branch_id" aria-label="Branch that received the money">{% for b in pbs %}<option value="{{ b.id }}" {{ 'selected' if b.id == dflt }}>{{ b.name }}{% if b.id == inv.branch_id %} (bill's branch){% endif %}</option>{% endfor %}</select></div>{% endif %}
 <div class="field"><label>Reference / OR / check #</label><input name="reference" aria-label="Reference, OR or check number" maxlength="80"></div>
 <div class="field"><label>Remarks / check details</label><input name="notes" aria-label="Remarks" maxlength="300"></div></div>
-<fieldset class="pay-box"><legend>Patient signature</legend>
-<div class="sigpad"><canvas data-sigpad width="600" height="180" aria-label="Signature pad: the patient signs here with a finger, stylus or mouse"></canvas>
-<input type="hidden" name="signature" data-sig-out></div>
-<div class="row between"><small class="muted">Patient signs above to acknowledge the payment.</small><button type="button" class="btn btn-ghost btn-sm" data-sig-clear>Clear</button></div>
-<details class="mt-1"><summary><small>Patient can't sign</small></summary><div class="field mt-1"><label>Reason</label><input name="not_signed_reason" aria-label="Reason the patient can't sign" maxlength="200" placeholder="e.g. Paid by parent via GCash, not in clinic"></div></details>
-</fieldset>
 {% if current_user.can('commission.record') and comm_dentists %}{% set per_pay = settings_get('payroll.dentist_commission_basis') != 'procedure' %}{% set ci = comm_info or {} %}
-<details class="pay-box pay-comm" {% if per_pay %}open{% endif %} data-comm data-lab="{{ ci.lab_fee_cents or 0 }}"><summary><strong>Dentist commission</strong> <small class="muted">{{ 'counted on payday for this payment' if per_pay else '(optional; commission is counted per procedure in System settings)' }}</small></summary>
+<details class="pay-box pay-comm" data-comm data-lab="{{ ci.lab_fee_cents or 0 }}"><summary><strong>Dentist commission</strong> <span class="badge">Staff only</span> <small class="muted" data-comm-sum>{{ 'Pre-filled from the bill: open only to change it' if per_pay else 'Optional: commission is counted per procedure (System settings)' }}</small></summary>
 <div class="form-grid mt-1">
 <div class="field"><label>Dentist</label><select name="comm_dentist_id" aria-label="Dentist for commission" data-comm-dentist><option value="" data-rate="">— No commission —</option>{% for d in comm_dentists %}<option value="{{ d.id }}" data-rate="{{ (d.rate_bp / 100) if d.rate_bp is not none else '' }}" {% if per_pay and ci.dentist_id == d.id %}selected{% endif %}>{{ d.name }}{% if d.rate_bp is not none %} ({{ d.rate_bp / 100 }}%){% endif %}</option>{% endfor %}</select></div>
 <div class="field"><label>Type</label><select name="comm_mode" aria-label="Commission type" data-comm-mode><option value="percent">% of payment</option><option value="amount">Manual amount (₱)</option></select></div>
@@ -38,6 +32,13 @@
 <p class="comm-calc" data-comm-calc aria-live="polite"></p>
 <p class="hint">Pre-filled with the dentist's usual %. {% if ci.lab_fee_cents %}This bill has lab fees, so the % is applied after the lab fee share. {% endif %}Change the %, switch to a manual amount, or choose “No commission”.</p></details>
 {% endif %}
+<fieldset class="pay-box"><legend>Patient signature</legend>
+<div class="sigpad"><canvas data-sigpad width="600" height="180" aria-label="Signature pad: the patient signs here with a finger, stylus or mouse"></canvas>
+<input type="hidden" name="signature" data-sig-out></div>
+<div class="row between"><small class="muted">Patient signs above to acknowledge the payment.</small><button type="button" class="btn btn-ghost btn-sm" data-sig-clear>Clear</button></div>
+<details class="mt-1"><summary><small>Patient can't sign</small></summary><div class="field mt-1"><label>Reason</label><input name="not_signed_reason" aria-label="Reason the patient can't sign" maxlength="200" placeholder="e.g. Paid by parent via GCash, not in clinic"></div></details>
+</fieldset>
+
 </div>
 <div class="pay-summary"><h3>Payment summary</h3>
 <dl><dt>Total bill</dt><dd>{{ inv.total_cents|peso }}</dd><dt>Total paid</dt><dd class="c-green">{{ paid|peso }}</dd>
