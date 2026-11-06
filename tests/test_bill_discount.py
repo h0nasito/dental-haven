@@ -565,3 +565,40 @@ class TestFollowupDuplicates(Base):
         a.post("/staff/followups/bulk", data={"bulk": "done", "ids": [str(a1)], "outcome": "Old follow-up (demo)"})
         r = self.q("SELECT status, outcome FROM follow_ups WHERE id = ?", (a1,))
         self.assertEqual((r["status"], r["outcome"]), ("done", "Old follow-up (demo)"))
+
+
+class TestMyCommissions(Base):
+    def test_dentist_sees_own_commission_with_patient_names(self):
+        from app.util import now_str
+        mal = self.branch("malolos")
+        uid = self.q("SELECT id FROM users WHERE email LIKE 'dentist.malolos@%'")["id"]
+        eid = self.q("SELECT id FROM employees WHERE user_id = ?", (uid,))["id"]
+        pt = self.q("SELECT * FROM patients WHERE preferred_branch_id = ? LIMIT 1", (mal,))
+        inv = self.conn.insert("invoices", {"branch_id": mal, "patient_id": pt["id"], "status": "issued", "number": "MYC-1", "issued_at": "2026-10-20",
+                                            "subtotal_cents": 100000, "discount_cents": 0, "tax_cents": 0, "total_cents": 100000, "created_at": now_str()})
+        self.conn.insert("dentist_commissions", {"employee_id": eid, "earned_on": "2026-10-20", "invoice_id": inv, "amount_cents": 35000,
+                                                 "base_cents": 100000, "rate_bp": 3500, "description": "Filling (demo)", "status": "valid",
+                                                 "created_at": "2026-10-20 14:35:00"})
+        d = self.login("dentist.malolos")
+        page = d.get("/staff/commissions/mine?month=2026-10&half=2").data.decode()
+        self.assertIn("My commissions", page)
+        self.assertIn(f"{pt['last_name']}, {pt['first_name']}", page)
+        self.assertIn("14:35", page)
+        self.assertIn("₱350.00", page)
+        self.assertEqual(d.get("/staff/commissions/").status_code, 403)                  # not everyone's
+        self.assertEqual(self.login("reception.malolos").get("/staff/commissions/mine").status_code, 404)
+
+    def test_followups_grouped_per_branch(self):
+        from app.util import now_str
+        mal, boc = self.branch("malolos"), self.branch("bocaue")
+        for b, t in ((mal, "Grouped task Malolos (demo)"), (boc, "Grouped task Bocaue (demo)")):
+            pid = self.q("SELECT id FROM patients LIMIT 1")["id"]
+            self.conn.insert("follow_ups", {"branch_id": b, "patient_id": pid, "kind": "other", "title": t, "due_at": "2026-10-05 10:00",
+                                            "status": "open", "created_at": now_str()})
+        a = self.login("admin")
+        page = a.get("/staff/followups").data.decode()
+        self.assertIn('id="fu-b1"', page)
+        self.assertIn("Jump to branch", page)
+        one = a.get(f"/staff/followups?branch={boc}").data.decode()
+        self.assertIn("Grouped task Bocaue (demo)", one)
+        self.assertNotIn("Grouped task Malolos (demo)", one)

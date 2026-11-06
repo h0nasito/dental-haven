@@ -14,7 +14,7 @@ from datetime import date
 from flask import Blueprint, Response, abort, g, render_template, request
 
 from .. import audit
-from ..auth import require
+from ..auth import login_required, require
 from ..db import get_db
 from ..payroll import commission_items, dentist_rates, per_procedure
 from ..util import parse_date, peso, to_int, today
@@ -55,9 +55,11 @@ def build(conn, start: date, end: date, branch_ids: list[int], branch_id=None, d
                 if it["branch_id"] not in allowed or not it["commission_cents"]:
                     continue
                 rows.append({"date": it["done_on"], "branch": it["branch"], "bill": it["invoice_number"] or "draft", "chart": it["chart_no"],
+                             "patient": f"{it['p_last']}, {it['p_first']}", "patient_id": it["patient_id"], "time": "",
                              "what": (it["description"] or "").split(" · ")[0] + (f" #{it['tooth']}" if it.get("tooth") else ""),
                              "base": it["base_cents"], "rate_bp": it["rate_bp"], "amount": it["commission_cents"], "kind": "Procedure"})
-        for m in conn.all("SELECT c.*, i.number AS bill, p.chart_no, COALESCE(pb.name, ib.name) AS branch, COALESCE(pay.branch_id, i.branch_id) AS bid, "
+        for m in conn.all("SELECT c.*, i.number AS bill, p.chart_no, p.id AS pid, p.first_name AS p_first, p.last_name AS p_last, "
+                          "COALESCE(pay.created_at, c.created_at) AS at, COALESCE(pb.name, ib.name) AS branch, COALESCE(pay.branch_id, i.branch_id) AS bid, "
                           "pay.method, (SELECT group_concat(description, ', ') FROM invoice_items WHERE invoice_id = c.invoice_id) AS items "
                           "FROM dentist_commissions c LEFT JOIN invoices i ON i.id = c.invoice_id LEFT JOIN patients p ON p.id = i.patient_id "
                           "LEFT JOIN payments pay ON pay.id = c.payment_id LEFT JOIN branches pb ON pb.id = pay.branch_id "
@@ -71,17 +73,63 @@ def build(conn, start: date, end: date, branch_ids: list[int], branch_id=None, d
             what = m["description"] or ""
             if m["items"] and (not what or what.startswith("Payment on")):
                 what = m["items"]
+            at = m["at"] or ""
             rows.append({"date": m["earned_on"], "branch": m["branch"] or "—", "bill": m["bill"] or "—", "chart": m["chart_no"] or "—",
+                         "patient": f"{m['p_last']}, {m['p_first']}" if m["pid"] else "—", "patient_id": m["pid"],
+                         "time": at[11:16] if len(at) >= 16 and at[:10] == (m["earned_on"] or "") else "",
                          "what": what[:160], "base": m["base_cents"], "rate_bp": m["rate_bp"], "amount": m["amount_cents"],
                          "kind": "Payment" if m["payment_id"] else "Manual"})
         if rows:
-            rows.sort(key=lambda r: (r["date"] or "", r["bill"] or ""))
+            rows.sort(key=lambda r: (r["date"] or "", r["time"] or "", r["bill"] or ""))
             by_branch: dict[str, int] = {}
             for r in rows:
                 by_branch[r["branch"]] = by_branch.get(r["branch"], 0) + r["amount"]
             out.append({"dentist": d["name"], "user_id": d["uid"], "rows": rows, "n": len(rows), "commission": sum(r["amount"] for r in rows),
                         "base": sum(r["base"] or 0 for r in rows), "by_branch": sorted(by_branch.items())})
     return out
+
+
+def _period_args():
+    m = request.args.get("month") or ""
+    try:
+        y, mo = (int(x) for x in m.split("-"))
+        month = date(y, mo, 1)
+    except (ValueError, TypeError):
+        month = None
+    cm, ch = current_cutoff()
+    month = month or cm
+    half = to_int(request.args.get("half")) or (ch if month == cm else 1)
+    half = half if half in (1, 2, 3) else 1
+    if half == 3:
+        start = parse_date(request.args.get("from")) or month
+        end = parse_date(request.args.get("to")) or cutoff(month, 2)[1]
+        if start > end:
+            start, end = end, start
+    else:
+        start, end = cutoff(month, half)
+    months = []
+    t = today().replace(day=1)
+    for i in range(12):
+        mm = (t.month - i - 1) % 12 + 1
+        yy = t.year + ((t.month - i - 1) // 12)
+        months.append(date(yy, mm, 1))
+    return month, half, start, end, months
+
+
+@bp.route("/mine")
+@login_required
+def mine():
+    """A dentist's own commission per cutoff: each case with the patient's name, date and time (their own patients)."""
+    if g.user.role != "dentist":
+        abort(404)
+    conn = get_db()
+    month, half, start, end, months = _period_args()
+    every = [r["id"] for r in conn.all("SELECT id FROM branches")]
+    data = build(conn, start, end, every, None, g.user.id)
+    d = data[0] if data else None
+    audit.record("own_commission_viewed", "report", None, f"Own commission {start.isoformat()}–{end.isoformat()}")
+    return render_template("staff/commissions/mine.html", d=d, start=start, end=end, month=month, half=half, months=months, peso=peso,
+                           basis="per procedure (bill lines)" if per_procedure(conn) else "per payment (recorded by the cashier)")
 
 
 @bp.route("/")

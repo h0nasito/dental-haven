@@ -1,0 +1,24 @@
+{% extends "staff/layout.html" %}
+{% block page_title %}My commissions{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>My commissions</h1>
+<p>{{ start|date }} – {{ end|date }} · counted {{ basis }}, the same way as payroll. Only your own commission is shown.</p></div>
+<div class="row"><button type="button" class="btn btn-secondary btn-sm" data-print>Print</button></div></div>
+<form class="toolbar" method="get">
+<div class="field"><label for="cm">Month</label><select id="cm" name="month">{% for m in months %}<option value="{{ m.strftime('%Y-%m') }}" {{ 'selected' if m == month }}>{{ m.strftime('%B %Y') }}</option>{% endfor %}</select></div>
+<div class="field"><label for="ch">Cutoff</label><select id="ch" name="half"><option value="1" {{ 'selected' if half == 1 }}>1st – 15th</option><option value="2" {{ 'selected' if half == 2 }}>16th – end of month</option><option value="3" {{ 'selected' if half == 3 }}>Custom dates</option></select></div>
+{% if half == 3 %}<div class="field"><label for="cf">From</label><input id="cf" type="date" name="from" value="{{ start.isoformat() }}"></div>
+<div class="field"><label for="ct">To</label><input id="ct" type="date" name="to" value="{{ end.isoformat() }}"></div>{% endif %}
+<button class="btn btn-secondary">Show</button></form>
+<div class="grid grid-3" style="margin-bottom:1rem">
+<div class="stat"><div class="label">My commission</div><div class="value">{{ peso(d.commission if d else 0) }}</div><div class="sub">{{ start|date }} – {{ end|date }}</div></div>
+<div class="stat"><div class="label">Cases / entries</div><div class="value">{{ d.n if d else 0 }}</div></div>
+<div class="stat"><div class="label">By branch</div><div class="value" style="font-size:1rem">{% if d %}{% for b, amt in d.by_branch %}{{ b }} {{ peso(amt) }}{% if not loop.last %}<br>{% endif %}{% endfor %}{% else %}—{% endif %}</div></div></div>
+{% if d %}<div class="card"><div class="table-wrap"><table><thead><tr><th>Date &amp; time</th><th>Branch</th><th>Bill</th><th>Patient</th><th>Procedure / for</th><th class="num">Base</th><th class="num">%</th><th class="num">Commission</th></tr></thead><tbody>
+{% for r in d.rows %}<tr><td>{{ r.date|date }}{% if r.time %}<br><small class="muted">{{ r.time }}</small>{% endif %}</td><td>{{ r.branch }}</td><td>{{ r.bill }}</td>
+<td>{% if r.patient_id %}<a href="{{ url_for('patients.detail', patient_id=r.patient_id) }}">{{ r.patient }}</a>{% else %}{{ r.patient }}{% endif %}</td><td>{{ r.what }} <small class="muted">· {{ r.kind }}</small></td>
+<td class="num">{{ peso(r.base) if r.base is not none else '—' }}</td><td class="num">{{ ((r.rate_bp / 100)|round(2)|string|replace('.0', '')) ~ '%' if r.rate_bp is not none else '—' }}</td><td class="num">{{ peso(r.amount) }}</td></tr>{% endfor %}</tbody>
+<tfoot><tr><th colspan="7">Total · {{ d.n }} entr{{ 'y' if d.n == 1 else 'ies' }}</th><th class="num">{{ peso(d.commission) }}</th></tr></tfoot></table></div></div>
+{% else %}<div class="card"><p class="muted mb-0">No commission recorded for you in this cutoff yet.</p></div>{% endif %}
+<p class="hint">Payment = recorded by the cashier with the patient's payment (time = when it was recorded); Manual = added on the bill; Procedure = from bill lines. Something wrong? Ask the clinic administrator or HR to check it.</p>
+{% endblock %}

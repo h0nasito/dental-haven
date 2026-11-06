@@ -283,7 +283,12 @@ def followups():
     if request.args.get("mine"):
         where.append("f.assignee_id = ?")
         args.append(g.user.id)
-    order = "f.completed_at DESC" if view == "done" else "f.due_at"
+    branch = to_int(request.args.get("branch"))
+    if branch:
+        where.append("f.branch_id = ?")
+        args.append(branch)
+    # grouped by branch (in branch order), then by due date
+    order = ("COALESCE(b.sort_order, 9999), b.name, " + ("f.completed_at DESC" if view == "done" else "f.due_at"))
     rows = conn.all("SELECT f.*, p.first_name, p.last_name, p.alert_flag, l.full_name AS lead_name, u.name AS assignee, b.name AS branch "
                     "FROM follow_ups f LEFT JOIN patients p ON p.id = f.patient_id LEFT JOIN leads l ON l.id = f.lead_id "
                     "LEFT JOIN users u ON u.id = f.assignee_id LEFT JOIN branches b ON b.id = f.branch_id "
@@ -294,7 +299,15 @@ def followups():
                              [*fp, now_str(), tomorrow]),
     }
     counts["duplicates"] = len(duplicate_followup_ids(conn)) if g.user.can("followups.manage") else 0
-    return render_template("staff/leads/followups.html", rows=rows, view=view, counts=counts, now_s=now_str())
+    groups: list[dict] = []
+    for r in rows:
+        if not groups or groups[-1]["name"] != (r["branch"] or "No branch"):
+            groups.append({"name": r["branch"] or "No branch", "rows": [], "overdue": 0})
+        groups[-1]["rows"].append(r)
+        if r["status"] == "open" and r["due_at"] < now_str():
+            groups[-1]["overdue"] += 1
+    return render_template("staff/leads/followups.html", rows=rows, groups=groups, view=view, counts=counts, now_s=now_str(),
+                           branch=branch, branch_opts=[b for b in branches_for_user(g.user)])
 
 
 def _dup_key(r) -> tuple:

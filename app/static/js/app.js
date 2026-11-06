@@ -1743,3 +1743,13 @@ document.querySelectorAll('[data-suggest]').forEach(function (input) {
     ['pointerdown', 'touchstart', 'mousedown'].forEach(function (ev) { pad.addEventListener(ev, function () { comm.open = false; }, { passive: true }); });
   });
 })();
+
+/* Lists split into groups (e.g. follow-ups per branch): the header box ticks every row of its own table. */
+(function () {
+  document.querySelectorAll('[data-check-group]').forEach(function (all) {
+    var table = all.closest('table');
+    all.addEventListener('change', function () {
+      table.querySelectorAll('[data-check]').forEach(function (b) { b.checked = all.checked; b.dispatchEvent(new Event('change', { bubbles: true })); });
+    });
+  });
+})();

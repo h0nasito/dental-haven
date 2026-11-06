@@ -77,7 +77,8 @@ def commission_items(conn, user_id: int, start: str, end: str, branch_id=None, d
         where.append("i.branch_id = ?")
         args.append(branch_id)
     rows = conn.all("SELECT ii.*, i.number AS invoice_number, i.branch_id, i.discount_cents AS inv_discount, i.subtotal_cents AS inv_subtotal, "
-                    "p.chart_no, b.name AS branch, s.name AS service FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id "
+                    "p.chart_no, i.patient_id, p.first_name AS p_first, p.last_name AS p_last, i.created_at AS bill_created, "
+                    "b.name AS branch, s.name AS service FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id "
                     "JOIN patients p ON p.id = i.patient_id JOIN branches b ON b.id = i.branch_id LEFT JOIN services s ON s.id = ii.service_id "
                     f"WHERE {' AND '.join(where)} ORDER BY ii.done_on, ii.id", args)
     out = []
