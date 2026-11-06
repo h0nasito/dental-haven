@@ -1005,8 +1005,18 @@ document.addEventListener('change', function (e) {
 
 /* Patient search: suggest names while typing (sent by POST, so names stay out of web addresses) */
 (function () {
-  var input = document.querySelector('input[data-suggest]');
-  if (!input) return;
+  document.querySelectorAll('input[data-suggest]').forEach(function (input) { wire(input); });
+  function wire(input) {
+  // data-suggest-pick="<hidden input id>": picking a name fills this field and the hidden patient id (no page change)
+  var pickEl = input.dataset.suggestPick ? document.getElementById(input.dataset.suggestPick) : null;
+  var chartEl = input.dataset.suggestChart ? document.getElementById(input.dataset.suggestChart) : null;
+  function choose(a) {
+    if (!pickEl) { window.location = a.href; return; }
+    input.value = a.dataset.name; pickEl.value = a.dataset.id;
+    if (chartEl) chartEl.value = a.dataset.chart || '';
+    hide();
+  }
+  if (pickEl) input.addEventListener('input', function () { pickEl.value = ''; if (chartEl) chartEl.value = ''; });
   var box = document.getElementById(input.getAttribute('aria-controls'));
   var form = input.form;
   var token = form && form.querySelector('[name=csrf_token]') ? form.querySelector('[name=csrf_token]').value : '';
@@ -1024,6 +1034,8 @@ document.addEventListener('change', function (e) {
     }
     results.forEach(function (r) {
       var a = document.createElement('a'); a.href = r.url; a.setAttribute('role', 'option');
+      a.dataset.id = r.id; a.dataset.name = r.name; a.dataset.chart = r.chart_no || '';
+      if (pickEl) a.addEventListener('mousedown', function (e) { e.preventDefault(); choose(a); });
       var n = document.createElement('span'); n.textContent = r.name; a.appendChild(n);
       var m = document.createElement('small'); m.textContent = [r.chart_no, r.branch].filter(Boolean).join(' · '); a.appendChild(m);
       box.appendChild(a); links.push(a);
@@ -1046,10 +1058,11 @@ document.addEventListener('change', function (e) {
     if (box.hidden) return;
     if (e.key === 'ArrowDown') { e.preventDefault(); if (links.length) mark((active + 1) % links.length); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); if (links.length) mark((active - 1 + links.length) % links.length); }
-    else if (e.key === 'Enter' && active >= 0) { e.preventDefault(); window.location = links[active].href; }
+    else if (e.key === 'Enter' && active >= 0) { e.preventDefault(); choose(links[active]); }
     else if (e.key === 'Escape') { hide(); }
   });
   input.addEventListener('blur', function () { setTimeout(hide, 150); });
+  }
 })();
 
 /* Dental chart: tap the surfaces of the big tooth; they colour in the chosen finding's colour */

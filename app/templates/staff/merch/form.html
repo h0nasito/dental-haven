@@ -11,7 +11,10 @@
 {% if patient %}<p><strong>{{ patient.last_name }}, {{ patient.first_name }}</strong> <small class="muted">{{ patient.chart_no }}</small></p>
 {% else %}<div class="form-grid">
 <div class="field"><label for="cn">Clinic patient: chart no.</label><input id="cn" name="chart_no" value="{{ v.chart_no }}" placeholder="optional"></div>
-<div class="field"><label for="bn">Or buyer's name</label><input id="bn" name="buyer_name" value="{{ v.buyer_name }}" maxlength="120" placeholder="optional (walk-in)"></div>
+<div class="field"><label for="bn">Or buyer's name</label><div class="suggest-wrap"><input id="bn" name="buyer_name" value="{{ v.buyer_name }}" maxlength="120" placeholder="Type a patient's name, or a walk-in's name" autocomplete="off"
+ data-suggest="{{ url_for('patients.suggest') }}" data-suggest-pick="bpid" data-suggest-chart="cn" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="bn-list">
+<div id="bn-list" class="suggest-box" role="listbox" hidden></div></div><input type="hidden" id="bpid" name="buyer_patient_id" value="{{ v.buyer_patient_id or '' }}">
+<span class="hint">Pick a patient from the list to link the sale to their record. A name not in the list is saved as a walk-in.</span></div>
 </div>{% endif %}
 <h2>Products</h2>
 <div class="table-wrap"><table><thead><tr><th>Product</th><th class="num">Qty</th><th class="num">Price each (₱)</th></tr></thead><tbody>
@@ -29,6 +32,12 @@
 <div class="field"><label for="pm">Paid with</label><select id="pm" name="pay_method">{% for val, lab in pay_opts %}<option value="{{ val }}">{{ lab }}</option>{% endfor %}</select></div>
 <div class="field"><label for="rf">Reference / OR no.</label><input id="rf" name="reference" maxlength="80"></div>
 </div>
+<details class="pay-box" {{ 'open' if request.form.get('pay_amount_2') }}><summary>+ Split payment (e.g. part cash, part GCash)</summary>
+<div class="form-grid mt-1">
+<div class="field"><label for="pa2">Second amount (₱)</label><input id="pa2" name="pay_amount_2" inputmode="decimal" value="{{ request.form.get('pay_amount_2', '') }}" placeholder="e.g. 50"><span class="hint">With a second amount, an empty first amount is the rest of the total.</span></div>
+<div class="field"><label for="pm2">Paid with</label><select id="pm2" name="pay_method_2">{% for val, lab in pay_opts %}<option value="{{ val }}" {{ 'selected' if request.form.get('pay_method_2') == val or (not request.form.get('pay_method_2') and val == 'gcash') }}>{{ lab }}</option>{% endfor %}</select></div>
+<div class="field"><label for="rf2">Reference no.</label><input id="rf2" name="reference_2" maxlength="80" value="{{ request.form.get('reference_2', '') }}" placeholder="e.g. GCash ref."></div>
+</div></details>
 <div class="field"><label for="nt">Notes</label><input id="nt" name="notes" value="{{ v.notes }}" maxlength="500"></div>
 <button class="btn">Save sale</button></form>
 {% endblock %}

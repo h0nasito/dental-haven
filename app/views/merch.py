@@ -153,9 +153,14 @@ def new():
     if request.method == "POST":
         f = request.form
         v = {"chart_no": clean(f.get("chart_no"), 40), "buyer_name": clean(f.get("buyer_name"), 120), "discount": f.get("discount") or "",
+             "buyer_patient_id": to_int(f.get("buyer_patient_id")),
              "notes": clean(f.get("notes"), 500), "lines": []}
         pmap = {p["id"]: p for p in products(conn, active_only=False)}
         patient_id = pid
+        if not patient_id and v["buyer_patient_id"]:          # picked from the name suggestions
+            if conn.one("SELECT 1 AS x FROM patients WHERE id = ? AND deleted_at IS NULL", (v["buyer_patient_id"],)) \
+                    and can_see_patient(conn, g.user, v["buyer_patient_id"]):
+                patient_id = v["buyer_patient_id"]
         if not patient_id and v["chart_no"]:
             p = conn.one("SELECT id FROM patients WHERE lower(chart_no) = lower(?) AND deleted_at IS NULL", (v["chart_no"],))
             if not p:
@@ -200,11 +205,20 @@ def new():
             errors.append("The discount must be between 0 and the total.")
             discount = 0
         total = subtotal - discount
+        # mixed payment: a second line (e.g. ₱50 cash + ₱50 GCash); an empty first amount is then the rest of the total
+        raw2 = (f.get("pay_amount_2") or "").strip()
+        pay2_amt = parse_money(raw2) if raw2 else 0
+        pay2 = parse_pay(f.get("pay_method_2"), conn)
+        if pay2_amt is None or pay2_amt < 0:
+            errors.append("Enter the second payment as an amount, e.g. 50.")
+            pay2_amt = 0
+        elif pay2_amt and not pay2:
+            errors.append("Choose how the second payment was made.")
         raw_pay = (f.get("pay_amount") or "").strip()
-        pay_amt = parse_money(raw_pay) if raw_pay else total
+        pay_amt = parse_money(raw_pay) if raw_pay else max(0, total - pay2_amt)
         pay = parse_pay(f.get("pay_method"), conn)
-        if pay_amt is None or pay_amt < 0 or pay_amt > total:
-            errors.append("The payment can't be more than the total.")
+        if pay_amt is None or pay_amt < 0 or pay_amt + pay2_amt > total:
+            errors.append("The payments can't be more than the total.")
         elif pay_amt and not pay:
             errors.append("Choose how the payment was made.")
         if branch_id not in mine:
@@ -220,12 +234,13 @@ def new():
                 for ln in lines:
                     conn.insert("merch_sale_items", {"sale_id": sid, **ln})
                     move(conn, ln["product_id"], branch_id, "sale", -ln["qty"], sale_id=sid)
-                if pay_amt:
-                    conn.insert("merch_payments", {"sale_id": sid, "branch_id": branch_id, "amount_cents": pay_amt, "method": pay[0],
-                                                   "account": pay[1], "reference": clean(f.get("reference"), 80), "received_at": now_str(),
-                                                   "received_by": g.user.id, "created_at": now_str()})
+                for amt, pm, ref in ((pay_amt, pay, f.get("reference")), (pay2_amt, pay2, f.get("reference_2"))):
+                    if amt:
+                        conn.insert("merch_payments", {"sale_id": sid, "branch_id": branch_id, "amount_cents": amt, "method": pm[0],
+                                                       "account": pm[1], "reference": clean(ref, 80), "received_at": now_str(),
+                                                       "received_by": g.user.id, "created_at": now_str()})
             audit.record("merch_sale", "merch_sale", sid, f"Merchandise sale {number}", {"items": len(lines), "total": total}, branch_id)
-            flash(f"Sale {number} saved." + (" Payment recorded." if pay_amt else ""), "success")
+            flash(f"Sale {number} saved." + (" Payments recorded." if pay_amt and pay2_amt else " Payment recorded." if pay_amt or pay2_amt else ""), "success")
             return redirect(url_for("merch.detail", sale_id=sid))
     return render_template("staff/merch/form.html", v=v, errors=errors, patient=patient, prods=prods, stock=stock,
                            branches=_branches(conn, mine), branch_id=branch_id, pay_opts=pay_options(conn), max_lines=MAX_LINES)

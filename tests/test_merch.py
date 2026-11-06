@@ -71,3 +71,28 @@ class TestMerch(Base):
         s = self.login("staff.malolos")
         self.assertEqual(s.get("/staff/merch/products").status_code, 403)
         self.assertEqual(s.post("/staff/merch/stock", data={"branch_id": self.b, "action": "in", "product_id": self.amox["id"], "qty": "1"}).status_code, 403)
+
+    def test_buyer_picked_from_name_suggestions(self):
+        a = self.login("admin")
+        page = a.get(f"/staff/merch/new?branch_id={self.b}").data.decode()
+        self.assertIn('data-suggest-pick="bpid"', page)
+        a.post("/staff/merch/stock", data={"branch_id": self.b, "action": "in", "product_id": self.paste, "qty": "5", "unit_cost": "175"})
+        pt = self.q("SELECT * FROM patients WHERE preferred_branch_id = ? LIMIT 1", (self.b,))
+        r = a.post("/staff/merch/new", data={"branch_id": self.b, "buyer_name": f"{pt['last_name']}, {pt['first_name']}", "buyer_patient_id": pt["id"],
+                                             "product_0": self.paste, "qty_0": "1", "price_0": "250", "pay_method": "cash"})
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(self.q("SELECT patient_id FROM merch_sales ORDER BY id DESC LIMIT 1")["patient_id"], pt["id"])
+
+    def test_split_payment_cash_and_gcash(self):
+        a = self.login("admin")
+        a.post("/staff/merch/stock", data={"branch_id": self.b, "action": "in", "product_id": self.paste, "qty": "5", "unit_cost": "175"})
+        r = a.post("/staff/merch/new", data={"branch_id": self.b, "buyer_name": "Walk-in Split", "product_0": self.paste, "qty_0": "1",
+                                             "price_0": "100", "pay_method": "cash", "pay_amount_2": "50", "pay_method_2": "gcash"})
+        self.assertEqual(r.status_code, 302)
+        sale = self.q("SELECT * FROM merch_sales ORDER BY id DESC LIMIT 1")
+        pays = sorted((p["method"], p["amount_cents"]) for p in self.conn.all("SELECT * FROM merch_payments WHERE sale_id = ?", (sale["id"],)))
+        self.assertEqual(pays, [("cash", 5000), ("gcash", 5000)])
+        # more than the total is refused
+        self.assertIn("be more than the total", a.post("/staff/merch/new", data={
+            "branch_id": self.b, "product_0": self.paste, "qty_0": "1", "price_0": "100", "pay_amount": "80", "pay_method": "cash",
+            "pay_amount_2": "50", "pay_method_2": "gcash"}).data.decode())
