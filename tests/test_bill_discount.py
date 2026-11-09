@@ -602,3 +602,21 @@ class TestMyCommissions(Base):
         one = a.get(f"/staff/followups?branch={boc}").data.decode()
         self.assertIn("Grouped task Bocaue (demo)", one)
         self.assertNotIn("Grouped task Malolos (demo)", one)
+
+
+class TestDeleteDraftFromProgressNote(Base):
+    def test_draft_linked_to_note_and_procedure_can_be_deleted(self):
+        from app.util import now_str
+        mal = self.branch("malolos")
+        pid = self.q("SELECT id FROM patients WHERE preferred_branch_id = ? LIMIT 1", (mal,))["id"]
+        inv = self.conn.insert("invoices", {"branch_id": mal, "patient_id": pid, "status": "draft", "subtotal_cents": 0, "discount_cents": 0,
+                                            "tax_cents": 0, "total_cents": 0, "created_at": now_str()})
+        vn = self.conn.insert("visit_notes", {"patient_id": pid, "branch_id": mal, "visit_date": "2026-11-09", "status": "saved", "invoice_id": inv,
+                                              "created_at": now_str()})
+        pr = self.conn.insert("procedures", {"patient_id": pid, "branch_id": mal, "description": "Consultation (demo)", "status": "completed",
+                                             "invoice_id": inv, "created_at": now_str()})
+        r = self.login("admin").post(f"/staff/invoices/{inv}/edit", data={"action": "delete"})
+        self.assertEqual(r.status_code, 302)
+        self.assertIsNone(self.q("SELECT id FROM invoices WHERE id = ?", (inv,)))
+        self.assertIsNone(self.q("SELECT invoice_id FROM procedures WHERE id = ?", (pr,))["invoice_id"])
+        self.assertIsNone(self.q("SELECT invoice_id FROM visit_notes WHERE id = ?", (vn,))["invoice_id"])

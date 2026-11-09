@@ -524,8 +524,16 @@ def invoice_edit(invoice_id):
                 flash(f"Invoice {number} issued.", "success")
                 return redirect(url_for("billing.invoice", invoice_id=invoice_id))
         elif action == "delete":
-            conn.execute("DELETE FROM invoice_items WHERE invoice_id = ?", (invoice_id,))
-            conn.execute("DELETE FROM invoices WHERE id = ? AND status = 'draft'", (invoice_id,))
+            if inv["status"] != "draft" or conn.scalar("SELECT COUNT(*) FROM payments WHERE invoice_id = ?", (invoice_id,)):
+                flash("Only an unpaid draft can be deleted.", "error")
+                return redirect(url_for("billing.invoice", invoice_id=invoice_id))
+            with conn.transaction():
+                # the progress note, its procedures (they wait for a bill again), quotes and old bills no longer point to it
+                for table in ("procedures", "visit_notes", "quotations", "legacy_bills", "dentist_commissions", "patient_credits"):
+                    conn.execute(f"UPDATE {table} SET invoice_id = NULL WHERE invoice_id = ?", (invoice_id,))
+                for table in ("payment_signatures", "payment_proofs", "invoice_items"):
+                    conn.execute(f"DELETE FROM {table} WHERE invoice_id = ?", (invoice_id,))
+                conn.execute("DELETE FROM invoices WHERE id = ? AND status = 'draft'", (invoice_id,))
             audit.record("invoice_draft_deleted", "invoice", invoice_id, "Deleted draft", branch_id=inv["branch_id"])
             flash("Draft deleted.", "success")
             return redirect(url_for("patients.detail", patient_id=inv["patient_id"]))
