@@ -1,0 +1,2 @@
+-- Progress notes saved by billing staff with services but no price were neither billed nor listed as waiting for a bill.
+UPDATE visit_notes SET create_bill = 1 WHERE status = 'saved' AND create_bill = 0 AND invoice_id IS NULL AND bill_skipped_at IS NULL AND cancelled_at IS NULL AND visit_date >= date('now', '-60 days') AND json_valid(lines_json) AND json_array_length(lines_json) > 0 AND NOT EXISTS (SELECT 1 FROM json_each(visit_notes.lines_json) WHERE CAST(COALESCE(json_extract(value, '$.price'), '0') AS REAL) > 0 OR json_extract(value, '$.xray_id') IS NOT NULL)

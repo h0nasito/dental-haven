@@ -14,7 +14,7 @@ JPG = b"\xff\xd8\xff\xe0" + b"0" * 200
 
 class TestVisitNote(Base):
     def setUp(self):
-        super().setUp()
+        Base.setUp(self)
         self.doc = self.q("SELECT id FROM users WHERE email = 'dentist.sjdm@demo.dentalhaven.test'")["id"]
         self.pid = self.q("SELECT patient_id AS id FROM patient_assignments WHERE dentist_id = ? LIMIT 1", (self.doc,))["id"]
         self.sjdm = self.branch("sjdm")
@@ -350,3 +350,21 @@ class TestProgressNotePrice(Base):
             cases = [c for c in build_cases(self.conn, self.doc) if c["patient_id"] == self.pid]
         self.assertFalse(any(t.isoformat() in (c.get("last") or "") and c["category"] == "General / other" and c["n"] == 1 and not c.get("billed")
                              for c in cases))
+
+
+class TestUnpricedNoteWaitsForBill(Base):
+    setUp = TestVisitNote.setUp
+    _post = TestVisitNote._post
+
+    def test_billing_staff_note_without_price_waits_for_bill(self):
+        from app.util import today
+        from app.views.patients import notes_to_bill
+        admin = self.login("admin")
+        self._post(admin, visit_date=today().isoformat(), recall_date="", line_service_id=[""], line_desc=["Braces removal upper and lower (demo)"],
+                   line_tooth=[""], line_qty=[""], line_price=[""], line_disc=[""], bill_disc="")
+        v = self.q("SELECT * FROM visit_notes WHERE patient_id = ? AND status = 'saved' ORDER BY id DESC", (self.pid,))
+        self.assertIsNone(v["invoice_id"])
+        self.assertEqual(v["create_bill"], 1)
+        with self.app.app_context():
+            waiting = notes_to_bill(self.conn, [self.sjdm], self.pid)
+        self.assertTrue(any(w.get("id") == v["id"] and w["kind"] == "note" for w in waiting))

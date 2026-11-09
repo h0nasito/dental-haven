@@ -1580,8 +1580,9 @@ def visit_note(patient_id):
     all_lines, lines = lines, [ln for ln, t in zip(lines, xtypes) if not t]
     priced = any(l["unit"] > 0 for l in lines)
     make_bill = bool(v["create_bill"]) and g.user.can("billing.manage") and priced
-    # Someone without billing rights (a dentist): the bill is left for the cashier, who is notified.
-    needs_bill = bool(lines) and not g.user.can("billing.manage")
+    # Someone without billing rights (a dentist): the bill is left for the cashier, who is notified. Services saved
+    # without a price by someone who can bill are left the same way (they wait in "To bill" until priced).
+    needs_bill = bool(lines) and (not g.user.can("billing.manage") or (bool(v["create_bill"]) and not priced))
     files = [f for f in request.files.getlist("files") if f and f.filename]
     if files and not g.user.can("documents.upload"):
         abort(403)
