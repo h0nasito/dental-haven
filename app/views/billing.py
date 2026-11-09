@@ -1040,8 +1040,42 @@ def _outstanding(conn, ids):
     return out
 
 
+@bp.route("/reports/collections-day")
+@require("collections.daily", "reports.sales", any_of=True)
+def collections_day():
+    """One day's collections for the cashier's daily audit: each payment with patient, procedure, dentist, method, proof,
+    and the totals per method. No sales totals, balances or collections by dentist (those need the full report)."""
+    conn = get_db()
+    d = parse_date(request.args.get("date")) or today()
+    d = min(d, today())
+    ids = _report_branches(conn)
+    rows = collection_list(conn, ids, d, d)
+    method = request.args.get("method") or ""
+    methods: dict[str, dict] = {}
+    for r in rows:
+        m = methods.setdefault(r["method"], {"method": r["method"], "n": 0, "amount": 0})
+        m["n"] += 1
+        m["amount"] += r["amount"]
+    shown = [r for r in rows if not method or r["method"] == method]
+    if request.args.get("format") == "csv":
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["Date", "Patient", "Bill", "Branch", "Procedure", "Dentist", "Payment method", "Proof", "Collected (PHP)"])
+        for r in shown:
+            w.writerow([r["date"], r["patient"], r["bill"] or "", r["branch"], r["procedure"], "" if r["dentist"] == "—" else r["dentist"],
+                        r["method"], "yes" if r.get("proof_id") else ("missing" if r.get("needs_proof") else ""), r["amount"] / 100])
+        w.writerow(["", "", "", "", "", "", "", "Total", sum(r["amount"] for r in shown) / 100])
+        audit.record("report_exported", "report", None, f"Daily collections {d.isoformat()}")
+        return Response(buf.getvalue(), mimetype="text/csv",
+                        headers={"Content-Disposition": f"attachment; filename=collections-{d.isoformat()}.csv"})
+    return render_template("staff/billing/collections_day.html", d=d, rows=shown, all_total=sum(r["amount"] for r in rows), n_all=len(rows),
+                           total=sum(r["amount"] for r in shown), methods=sorted(methods.values(), key=lambda m: -m["amount"]), method=method,
+                           branches=branches_for_user(g.user), branch=to_int(request.args.get("branch")),
+                           missing_proof=sum(1 for r in rows if r.get("needs_proof") and not r.get("proof_id")))
+
+
 @bp.route("/reports/daily-collection", methods=["GET", "POST"])
-@require("reports.sales")
+@require("reports.sales", "collections.daily", any_of=True)
 def daily_collection():
     """The daily collection report (the same as the automatic email), for any day; super admins can send it now."""
     from .. import daily_report, settings as _settings

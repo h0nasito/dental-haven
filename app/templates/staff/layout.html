@@ -79,6 +79,8 @@
       {% endcall %}
     {% endcall %}
     {% call group('Reports', 'reports') %}
+      {% if current_user.can('collections.daily') or current_user.can('reports.sales') %}{{ nav('billing.collections_day', 'Daily collections', 'billing.collections_day') }}{% endif %}
+      {% if current_user.can('collections.daily') and not current_user.can('reports.sales') %}{{ nav('billing.daily_collection', 'Daily collection report', 'billing.daily_collection') }}{% endif %}
       {% if current_user.can('reports.sales') %}{{ nav('billing.sales', 'Sales & collections', 'billing.sales') }}{{ nav('billing.daily_collection', 'Daily collection report', 'billing.daily_collection') }}{{ nav('billing.financial', 'Financial report', 'billing.financial') }}{{ nav('billing.business', 'Monthly business report', 'billing.business') }}{% endif %}
       {% if current_user.can('reports.operations') %}{{ nav('billing.operations', 'Operations report', 'billing.operations') }}{% endif %}
     {% endcall %}

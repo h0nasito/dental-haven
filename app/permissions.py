@@ -152,6 +152,7 @@ CATALOG: list[Perm] = [
     Perm("templates.manage", "Edit message and response templates", "Leads & reminders"),
     # Reports
     Perm("reports.sales", "View sales, collections and balances reports", "Reports"),
+    Perm("collections.daily", "View the daily collections list and daily collection report (one day at a time, for cashier auditing)", "Reports"),
     Perm("reports.operations", "View appointment, lead and visit reports", "Reports"),
     Perm("reports.export", "Export authorised reports to CSV", "Reports"),
     # People
@@ -223,7 +224,7 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
     },
     "cashier": {
         "dashboard.view", "dashboard.balances", "appointments.view", "calendar.associates", "patients.view", "patients.contact",
-        "billing.view", "billing.manage", "bills.edit", "payments.add", "credit.apply", "commission.record", "quotes.view", "reports.sales",
+        "billing.view", "billing.manage", "bills.edit", "payments.add", "credit.apply", "commission.record", "quotes.view", "collections.daily",
         "expenses.view", "expenses.add", "attendance.clock", "leave.request", "reimburse.request", "deposits.view", "deposits.manage",
         "xray.view", "xray.manage", "merch.view", "merch.sell",
     },

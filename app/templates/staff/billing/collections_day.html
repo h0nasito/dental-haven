@@ -1,0 +1,21 @@
+{% extends "staff/layout.html" %}
+{% block page_title %}Daily collections{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Daily collections</h1><p>{{ d|date }} · every payment received that day, for checking against the cash, GCash and bank records. X-ray and merchandise payments are in their own sections.</p></div>
+{% if current_user.can('reports.export') or current_user.can('collections.daily') %}<a class="btn btn-secondary btn-sm" href="{{ url_for('billing.collections_day', date=d.isoformat(), branch=branch or None, method=method or None, format='csv') }}">CSV</a>{% endif %}</div>
+<form class="toolbar" method="get">
+<div class="field"><label for="cd-d">Day</label><input id="cd-d" type="date" name="date" value="{{ d.isoformat() }}"></div>
+<div class="field"><label for="cd-b">Branch</label><select id="cd-b" name="branch"><option value="">{{ 'Selected branch' if current_user.active_branch_id else 'All my branches' }}</option>{% for b in branches %}<option value="{{ b.id }}" {{ 'selected' if branch == b.id }}>{{ b.name }}</option>{% endfor %}</select></div>
+<div class="field"><label for="cd-m">Payment method</label><select id="cd-m" name="method"><option value="">All methods</option>{% for m in methods %}<option value="{{ m.method }}" {{ 'selected' if method == m.method }}>{{ m.method }}</option>{% endfor %}</select></div>
+<button class="btn btn-secondary">Show</button></form>
+<div class="grid grid-4" style="margin-bottom:1rem">
+<div class="stat"{% if not method %} style="border:2px solid var(--navy)"{% endif %}><div class="label"><a href="{{ url_for('billing.collections_day', date=d.isoformat(), branch=branch or None) }}">Total, all methods</a></div><div class="value">{{ all_total|peso }}</div><div class="sub">{{ n_all }} payment{{ 's' if n_all != 1 }}</div></div>
+{% for m in methods %}<div class="stat"{% if method == m.method %} style="border:2px solid var(--navy)"{% endif %}><div class="label"><a href="{{ url_for('billing.collections_day', date=d.isoformat(), branch=branch or None, method=m.method) }}">{{ m.method }}</a></div><div class="value">{{ m.amount|peso }}</div><div class="sub">{{ m.n }} payment{{ 's' if m.n != 1 }}</div></div>{% endfor %}
+</div>
+{% if missing_proof %}<p class="notice">{{ missing_proof }} GCash / bank / card payment{{ 's have' if missing_proof != 1 else ' has' }} no proof of payment yet. Open the bill and use <strong>Add proof</strong>.</p>{% endif %}
+<div class="card"><div class="table-wrap"><table><thead><tr><th>Patient</th><th>Procedure</th><th>Dentist</th><th>Payment method</th><th>Branch</th><th class="num">Collected</th></tr></thead><tbody>
+{% for r in rows %}<tr><td><a href="{{ url_for('patients.detail', patient_id=r.patient_id) }}">{{ r.patient }}</a>{% if r.bill %}<br><small><a class="muted" href="{{ url_for('billing.invoice', invoice_id=r.invoice_id) }}">{{ r.bill }}</a></small>{% endif %}</td>
+<td>{{ r.procedure }}</td><td>{{ r.dentist }}</td><td>{{ r.method }}{% if r.proof_id %}<br><small><a href="{{ url_for('billing.proof_file', invoice_id=r.invoice_id, proof_id=r.proof_id) }}" target="_blank" rel="noopener">Proof</a></small>{% elif r.needs_proof %}<br><span class="badge badge-amber">No proof</span>{% endif %}</td><td>{{ r.branch }}</td><td class="num">{{ r.amount|peso }}</td></tr>
+{% else %}<tr><td colspan="6" class="empty">No payments on {{ d|date }}{% if method %} by {{ method }}{% endif %}.</td></tr>{% endfor %}</tbody>
+{% if rows %}<tfoot><tr><td colspan="5">Total{% if method %} ({{ method }}){% endif %} · {{ rows|length }} payment{{ 's' if rows|length != 1 }}</td><td class="num">{{ total|peso }}</td></tr></tfoot>{% endif %}</table></div></div>
+{% endblock %}

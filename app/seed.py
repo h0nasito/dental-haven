@@ -426,6 +426,14 @@ def seed_base(conn):
         if not _settings2.get("deposits.since", conn):
             from datetime import date as _dd
             _settings2.put("deposits.since", _dd.today().isoformat(), None, conn)
+        # Once: cashiers audit one day's collections (Daily collections) instead of the full sales report
+        # (sales totals, collections by dentist, balances stay with the owner, HR and managers).
+        if not _settings2.get("seed.cashier_daily_v1", conn):
+            if conn.scalar("SELECT COUNT(*) FROM role_permissions"):
+                conn.execute("DELETE FROM role_permissions WHERE role = 'cashier' AND permission = 'reports.sales'")
+                if not conn.one("SELECT 1 AS x FROM role_permissions WHERE role = 'cashier' AND permission = 'collections.daily'"):
+                    conn.execute("INSERT INTO role_permissions (role, permission) VALUES ('cashier', 'collections.daily')")
+            _settings2.put("seed.cashier_daily_v1", True, None, conn)
         # Once: dentists, receptionists and supervisors can follow the lab workload of every branch (view only).
         if not _settings2.get("seed.lab_workload_v1", conn):
             if conn.scalar("SELECT COUNT(*) FROM role_permissions"):

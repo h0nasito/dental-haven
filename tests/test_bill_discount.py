@@ -620,3 +620,31 @@ class TestDeleteDraftFromProgressNote(Base):
         self.assertIsNone(self.q("SELECT id FROM invoices WHERE id = ?", (inv,)))
         self.assertIsNone(self.q("SELECT invoice_id FROM procedures WHERE id = ?", (pr,))["invoice_id"])
         self.assertIsNone(self.q("SELECT invoice_id FROM visit_notes WHERE id = ?", (vn,))["invoice_id"])
+
+
+class TestCashierDailyCollections(Base):
+    def test_cashier_sees_one_day_list_not_full_sales_report(self):
+        from app.util import now_str
+        bid = self.branch("bocaue")
+        self.conn.execute("UPDATE users SET role = 'staff', access_role = 'cashier' WHERE email LIKE 'reception.bocaue@%'")
+        self.conn.execute("DELETE FROM role_permissions WHERE role = 'cashier'")
+        from app.permissions import ROLE_DEFAULTS
+        for p in ROLE_DEFAULTS["cashier"]:
+            self.conn.execute("INSERT INTO role_permissions (role, permission) VALUES ('cashier', ?)", (p,))
+        pid = self.q("SELECT id FROM patients WHERE preferred_branch_id = ? LIMIT 1", (bid,))["id"]
+        inv = self.conn.insert("invoices", {"branch_id": bid, "patient_id": pid, "status": "issued", "number": "CD-1", "issued_at": "2026-11-02",
+                                            "subtotal_cents": 90000, "discount_cents": 0, "tax_cents": 0, "total_cents": 90000, "created_at": now_str()})
+        self.conn.insert("invoice_items", {"invoice_id": inv, "description": "Cleaning (demo day)", "qty": 1, "unit_price_cents": 90000,
+                                           "discount_cents": 0, "amount_cents": 90000})
+        self.conn.insert("payments", {"invoice_id": inv, "branch_id": bid, "kind": "payment", "amount_cents": 90000, "method": "gcash",
+                                      "received_at": "2026-11-02", "status": "valid", "created_at": now_str()})
+        c = self.login("reception.bocaue")
+        page = c.get(f"/staff/reports/collections-day?date=2026-11-02&branch={bid}").data.decode()
+        self.assertIn("Cleaning (demo day)", page)
+        self.assertIn("No proof", page)
+        self.assertIn("Daily collections", page)
+        self.assertNotIn("Sales &amp; collections", page)                        # not in the menu
+        self.assertEqual(c.get("/staff/reports/sales").status_code, 403)
+        self.assertEqual(c.get("/staff/reports/daily-collection?date=2026-11-02").status_code, 200)
+        csv = c.get(f"/staff/reports/collections-day?date=2026-11-02&branch={bid}&format=csv").data.decode()
+        self.assertIn("Cleaning (demo day)", csv)
