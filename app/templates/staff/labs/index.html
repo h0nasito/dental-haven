@@ -9,6 +9,8 @@
 <nav class="tabs" aria-label="Status">
   <a href="{{ url_for('labs.index', status='open', branch=branch or '', q=q, view=view or '') }}" class="{{ 'active' if status == 'open' else '' }}">Open</a>
   {% for k, l in statuses.items() if counts.get(k) or status == k or k == 'delivered' %}<a href="{{ url_for('labs.index', status=k, branch=branch or '', q=q, view=view or '') }}" class="{{ 'active' if status == k else '' }}">{{ l }}{% if counts.get(k) %} ({{ counts[k] }}){% endif %}</a>{% endfor %}
+  <a href="{{ url_for('labs.index', status='to_install', branch=branch or '', q=q, view=view or '') }}" class="{{ 'active' if status == 'to_install' else '' }}">Not installed yet{% if counts.to_install %} ({{ counts.to_install }}){% endif %}</a>
+  <a href="{{ url_for('labs.index', status='installed', branch=branch or '', q=q, view=view or '') }}" class="{{ 'active' if status == 'installed' else '' }}">Installed (can be paid){% if counts.installed %} ({{ counts.installed }}){% endif %}</a>
   <a href="{{ url_for('labs.index', status='all', branch=branch or '', q=q, view=view or '') }}" class="{{ 'active' if status == 'all' else '' }}">All</a>
 </nav>
 <form class="toolbar" method="get"><input type="hidden" name="status" value="{{ status }}">{% if view %}<input type="hidden" name="view" value="{{ view }}">{% endif %}
@@ -24,7 +26,7 @@
 <td>{{ c.branch }}<br><small class="muted">{{ c.dentist or '—' }}</small></td>
 <td>{% if c.units and c.units > 1 and ' × ' not in c.case_type and ' + ' not in c.case_type %}{{ c.units }} × {% endif %}{{ c.case_type }}{% if c.material and ' + ' not in c.case_type and '(' not in c.case_type %} ({{ c.material }}){% endif %}{% if c.teeth or c.shade %}<br><small class="muted">{{ c.teeth }}{% if c.teeth and c.shade %} · {% endif %}{% if c.shade %}Shade {{ c.shade }}{% endif %}</small>{% endif %}</td>
 <td class="num">{{ c.units or 1 }}</td><td>{{ c.lab }}</td><td>{{ c.sent_on|date }}</td><td>{{ c.completed_on|date if c.completed_on else '—' }}</td>
-<td><span class="badge {{ lab_badge(c.status) }}">{{ c.status|lab_status }}</span>{% if c.invoice_number %}<br><small class="muted">{{ c.invoice_number }}</small>{% endif %}</td></tr>
+<td><span class="badge {{ lab_badge(c.status) }}">{{ c.status|lab_status }}</span>{% if c.installed_on %}<br><span class="badge badge-green">Installed {{ c.installed_on|date }}</span>{% elif c.status in ('ready', 'delivered', 'try_in') %}<br><a class="badge badge-amber" href="{{ url_for('labs.case', case_id=c.id) }}#installed">Not installed</a>{% endif %}{% if c.invoice_number %}<br><small class="muted">{{ c.invoice_number }}</small>{% endif %}</td></tr>
 {% else %}<tr><td colspan="9">{{ empty('No lab cases here') }}</td></tr>{% endfor %}</tbody></table></div></div>
 {% if workload %}<div class="card"><div class="card-head"><h2>Lab workload{% if branch %} · {% for b in branch_list if b.id == branch %}{{ b.name }}{% endfor %}{% elif all_view %} · all branches{% endif %}</h2></div>
 <div class="table-wrap"><table><thead><tr><th>Laboratory</th>{% for k in workload_cols %}<th title="{{ LAB_HELP[k] }}">{{ statuses[k] }}</th>{% endfor %}<th>Overdue</th><th>Due in 7 days</th><th>Open total</th></tr></thead><tbody>

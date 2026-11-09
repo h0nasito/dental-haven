@@ -138,6 +138,17 @@ class TestLabPaymentProof(TestLabCaseBilling):
     def test_payment_with_proof(self):
         import io
         iid = self._issued_invoice()
+        # the lab is paid only for installed cases: refused until the branch marks the case installed
+        self.t.post(f"/staff/lab/invoices/{iid}", data={"action": "pay", "amount": "1000", "method": "cash"})
+        self.assertIsNone(self.q("SELECT id FROM lab_payments WHERE invoice_id = ?", (iid,)))
+        self.assertIn("Not installed", self.t.get(f"/staff/lab/invoices/{iid}").data.decode())
+        self.assertEqual(self.t.post(f"/staff/lab/{self.case}/installed", data={}).status_code, 403)     # not the lab's to say
+        d = self.login("dentist.malolos")
+        self.assertIn("Mark as installed", d.get(f"/staff/lab/{self.case}").data.decode())
+        d.post(f"/staff/lab/{self.case}/installed", data={"installed_on": date.today().isoformat()})
+        c = self.q("SELECT * FROM lab_cases WHERE id = ?", (self.case,))
+        self.assertEqual((c["installed_on"], c["status"]), (date.today().isoformat(), "delivered"))
+        self.assertIn("Installed", self.t.get("/staff/lab/?status=installed").data.decode())
         r = self.t.post(f"/staff/lab/invoices/{iid}", data={"action": "pay", "amount": "1000", "method": "gcash", "reference": "GC123",
                                                              "received_on": "", "proof": [(self._jpg(), "gcash.jpg")]},
                         content_type="multipart/form-data")

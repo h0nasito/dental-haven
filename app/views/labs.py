@@ -298,6 +298,10 @@ def index():
         branch = None
     if status == "open":
         where.append(f"c.status IN {sql_list(OPEN)}")
+    elif status == "to_install":            # delivered or ready, not yet installed: the lab can't be paid for these yet
+        where.append("c.installed_on IS NULL AND c.status IN ('ready', 'delivered', 'try_in')")
+    elif status == "installed":             # installed in the patient: the lab can be paid
+        where.append("c.installed_on IS NOT NULL")
     elif status in STATUSES:
         where.append("c.status = ?")
         args.append(status)
@@ -315,6 +319,9 @@ def index():
                     "LEFT JOIN lab_invoices li ON li.id = c.invoice_id "
                     f"WHERE {' AND '.join(where)} ORDER BY CASE WHEN c.due_on IS NULL THEN 1 ELSE 0 END, c.due_on, c.id DESC LIMIT 300", args)
     counts = {r["status"]: r["n"] for r in conn.all(f"SELECT c.status, COUNT(*) AS n FROM lab_cases c WHERE {frag} GROUP BY c.status", params)}
+    counts["to_install"] = conn.scalar(f"SELECT COUNT(*) FROM lab_cases c WHERE {frag} AND c.installed_on IS NULL "
+                                       "AND c.status IN ('ready', 'delivered', 'try_in')", params) or 0
+    counts["installed"] = conn.scalar(f"SELECT COUNT(*) FROM lab_cases c WHERE {frag} AND c.installed_on IS NOT NULL", params) or 0
     t = today()
     workload_cols = [k for k in OPEN if k != "ready"] + ["ready"]
     sums = ", ".join(f"SUM(c.status = '{k}') AS {k}" for k in workload_cols)
@@ -564,7 +571,8 @@ def case(case_id):
                            patient_link=can_see_patient(conn, g.user, c["patient_id"]), fittings=fittings,
                            can_fit=_can_record_fitting(conn, c), fit_results=FIT_RESULTS, fit_checks=FIT_CHECKS,
                            agreement=agreement_text(conn, c), today=today().isoformat(),
-                           fit_dentists=dentists([c["branch_id"]]))
+                           fit_dentists=dentists([c["branch_id"]]),
+                           installed_by_name=conn.scalar("SELECT name FROM users WHERE id = ?", (c["installed_by"],)) if c["installed_by"] else None)
 
 
 @bp.route("/<int:case_id>/edit", methods=["GET", "POST"])
@@ -776,6 +784,53 @@ def _can_record_fitting(conn, c) -> bool:
     if g.user.is_super_admin:
         return True
     return g.user.in_branch(c["branch_id"]) and (g.user.role == "dentist" or g.user.can("lab.manage"))
+
+
+@bp.route("/<int:case_id>/installed", methods=["POST"])
+@login_required
+def installed(case_id):
+    """The branch confirms the case was installed in the patient (the lab is paid only for installed cases), or undoes it."""
+    if not _can_access():
+        abort(403)
+    conn = get_db()
+    c = _load(case_id)
+    if not _can_record_fitting(conn, c):
+        abort(403)
+    back = redirect(request.referrer if (request.referrer or "").startswith(request.host_url) else url_for("labs.case", case_id=case_id))
+    if request.form.get("action") == "undo":
+        paid = conn.scalar("SELECT paid_cents FROM lab_invoices WHERE id = ?", (c["invoice_id"],)) if c["invoice_id"] else 0
+        if not c["installed_on"]:
+            return back
+        if paid and not g.user.is_super_admin:
+            flash("The lab has already been paid on this case's bill. Ask the super admin to undo it.", "error")
+            return back
+        with conn.transaction():
+            conn.update("lab_cases", case_id, {"installed_on": None, "installed_by": None, "updated_at": now_str()})
+            conn.insert("lab_case_events", {"case_id": case_id, "user_id": g.user.id, "status": c["status"],
+                                            "note": "Installation undone (marked by mistake)", "created_at": now_str()})
+            audit.record("lab_case_installed_undone", "patient", c["patient_id"], f"Lab case #{case_id}: installation undone", None, c["branch_id"])
+        flash("Installation undone.", "success")
+        return back
+    if c["status"] == "cancelled":
+        flash("This case is cancelled.", "error")
+        return back
+    on = parse_date(request.form.get("installed_on")) or today()
+    if on > today():
+        flash("The installation date can't be in the future.", "error")
+        return back
+    upd = {"installed_on": on.isoformat(), "installed_by": g.user.id, "updated_at": now_str()}
+    if c["status"] != "delivered":                 # installed means it reached the clinic too
+        upd.update({"status": "delivered", "completed_on": c["completed_on"] or on.isoformat()})
+    with conn.transaction():
+        conn.update("lab_cases", case_id, upd)
+        conn.insert("lab_case_events", {"case_id": case_id, "user_id": g.user.id, "status": upd.get("status", c["status"]),
+                                        "note": f"Installed in the patient on {on.isoformat()}: the lab can be paid for this case",
+                                        "created_at": now_str()})
+        notify(conn, set(lab_staff(conn, c["lab_id"])), "lab_case_installed", f"Lab case #{case_id} was installed",
+               f"{c['case_type']} · {c['branch']}: can now be paid", f"/staff/lab/{case_id}", exclude=g.user.id)
+        audit.record("lab_case_installed", "patient", c["patient_id"], f"Lab case #{case_id} installed on {on.isoformat()}", None, c["branch_id"])
+    flash("Marked as installed. The lab has been told it can be paid for this case.", "success")
+    return back
 
 
 @bp.route("/<int:case_id>/fitting", methods=["POST"])

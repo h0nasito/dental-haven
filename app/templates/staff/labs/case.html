@@ -72,6 +72,14 @@
 <div class="field mb-0"><label for="cpc">Caption <span class="hint">optional</span></label><input id="cpc" name="caption" maxlength="200" placeholder="e.g. Shade A2, upper arch"></div>
 <button class="btn btn-secondary">Upload</button></form>{% endif %}
 </div>
+<div class="card" id="installed"><div class="card-head"><h2>Installation</h2>{% if c.installed_on %}<span class="badge badge-green">Installed {{ c.installed_on|date }}</span>{% elif c.status != 'cancelled' %}<span class="badge badge-amber">Not installed yet</span>{% endif %}</div>
+<p class="hint">The lab is paid only for cases installed in the patient. The branch confirms it here; the lab is notified.</p>
+{% if c.installed_on %}<p class="mb-0">Installed on <strong>{{ c.installed_on|date }}</strong>{% if installed_by_name %} · marked by {{ installed_by_name }}{% endif %}.</p>
+{% if can_fit %}<form method="post" action="{{ url_for('labs.installed', case_id=c.id) }}" class="mt-1" data-confirm="Undo the installation? The lab won't be paid for this case until it's marked again.">{{ csrf() }}<input type="hidden" name="action" value="undo"><button class="btn btn-ghost btn-sm">Undo (marked by mistake)</button></form>{% endif %}
+{% elif can_fit and c.status != 'cancelled' %}<form method="post" action="{{ url_for('labs.installed', case_id=c.id) }}" class="row" style="gap:.5rem;align-items:end;flex-wrap:wrap" data-confirm="Confirm that this case was installed in the patient? The lab will be told it can be paid.">{{ csrf() }}
+<div class="field mb-0"><label for="inst-on">Installed on</label><input id="inst-on" type="date" name="installed_on" value="{{ today }}" max="{{ today }}"></div>
+<button class="btn">Mark as installed</button></form>
+{% elif not c.installed_on %}<p class="muted mb-0">The branch marks it as installed once it's in the patient.</p>{% endif %}</div>
 <div class="card" id="fitting"><div class="card-head"><h2>Trial fitting agreement</h2></div>
 <p class="hint">After the try-in, the patient and the dentist sign that the case may go on to final processing. The lab is notified right away.</p>
 {% for ft in fittings %}

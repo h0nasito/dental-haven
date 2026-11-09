@@ -125,7 +125,7 @@ def item_groups(conn, items) -> list[dict]:
     for it in items:
         key = ("c", it["case_id"]) if it["case_id"] else (("w", it["work_id"]) if it["work_id"] else None)
         if key not in groups:
-            c = conn.one("SELECT c.id, c.case_type, c.teeth, p.chart_no, p.first_name, p.last_name, u.name AS dentist "
+            c = conn.one("SELECT c.id, c.case_type, c.teeth, c.installed_on, c.status, p.chart_no, p.first_name, p.last_name, u.name AS dentist "
                          "FROM lab_cases c JOIN patients p ON p.id = c.patient_id "
                          "LEFT JOIN users u ON u.id = c.dentist_id WHERE c.id = ?", (key[1],)) if key and key[0] == "c" else None
             w = conn.one("SELECT id, number, case_type, teeth, patient_ref, doctor FROM lab_works WHERE id = ?", (key[1],)) \
@@ -1504,7 +1504,14 @@ def _invoice_post(conn, inv, action, draft):
                 method, account = pm or ("", "")
                 rec = parse_date(request.form.get("received_on")) or today()
                 balance = inv["total_cents"] - inv["paid_cents"]
-                if amt is None or amt <= 0 or amt > balance:
+                # branch cases are paid only once installed in the patient (the branch marks them)
+                waiting = conn.all("SELECT c.id, SUM(it.amount_cents) AS amt FROM lab_invoice_items it JOIN lab_cases c ON c.id = it.case_id "
+                                   "WHERE it.invoice_id = ? AND c.installed_on IS NULL AND c.status != 'cancelled' GROUP BY c.id", (inv["id"],))
+                payable = max(0, balance - sum(w_["amt"] or 0 for w_ in waiting))
+                if amt is not None and 0 < amt <= balance and amt > payable:
+                    flash(f"Only ₱{payable / 100:,.2f} can be paid now: case{'s' if len(waiting) != 1 else ''} "
+                          + ", ".join(f"#{w_['id']}" for w_ in waiting) + " not installed yet. The branch marks a case as installed on the case page.", "error")
+                elif amt is None or amt <= 0 or amt > balance:
                     flash(f"Enter an amount between ₱0.01 and the balance of ₱{balance / 100:,.2f}.", "error")
                 elif not pm:
                     flash("Choose how it was paid (and the bank, for a bank transfer).", "error")
