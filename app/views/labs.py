@@ -786,6 +786,72 @@ def _can_record_fitting(conn, c) -> bool:
     return g.user.in_branch(c["branch_id"]) and (g.user.role == "dentist" or g.user.can("lab.manage"))
 
 
+@bp.route("/installed-report")
+@login_required
+def installed_report():
+    """Installed branch cases per payroll-style cutoff (1st–15th, 16th–end): what the branches owe the lab. Each case with
+    branch, dentist, patient, case, date installed and price (the lab invoice amount, or the case price if not billed yet)."""
+    import csv
+    import io
+    from flask import Response
+    from .commissions import _period_args
+    from .lab_works import case_billed_total
+    lab_billing = bool(_my_labs()) and g.user.can("lab.billing")
+    if not (g.user.is_super_admin or lab_billing or g.user.can("lab.manage")):
+        abort(403)
+    conn = get_db()
+    month, half, start, end, months = _period_args()
+    frag, params = _scope("c")
+    branch_list = conn.all("SELECT id, name FROM branches WHERE active = 1 ORDER BY sort_order, name")
+    branch = to_int(request.args.get("branch"))
+    extra, eargs = ("", [])
+    if branch:
+        extra, eargs = " AND c.branch_id = ?", [branch]
+    rows = []
+    for c in conn.all("SELECT c.*, b.name AS branch, u.name AS dentist, p.first_name, p.last_name, p.chart_no, l.name AS lab, "
+                      "li.number AS invoice_number, li.status AS invoice_status, li.total_cents AS inv_total, li.paid_cents AS inv_paid "
+                      "FROM lab_cases c JOIN branches b ON b.id = c.branch_id JOIN patients p ON p.id = c.patient_id "
+                      "JOIN laboratories l ON l.id = c.lab_id LEFT JOIN users u ON u.id = c.dentist_id LEFT JOIN lab_invoices li ON li.id = c.invoice_id "
+                      f"WHERE {frag}{extra} AND c.installed_on BETWEEN ? AND ? AND c.status != 'cancelled' "
+                      "ORDER BY b.sort_order, c.installed_on, c.id", [*params, *eargs, start.isoformat(), end.isoformat()]):
+        billed = case_billed_total(conn, c) if c["invoice_id"] and c["invoice_status"] not in ("draft", "void") else None
+        price = billed if billed is not None else case_total(conn, c["id"])
+        if price is None:
+            price = c["lab_fee_cents"]        # older cases priced on the case itself
+        paid = "paid" if c["invoice_id"] and c["invoice_status"] == "issued" and (c["inv_paid"] or 0) >= (c["inv_total"] or 0) > 0 else \
+               ("billed" if billed is not None else "not billed")
+        n_units = c["units"] if "units" in c.keys() else 1
+        rows.append({"id": c["id"], "installed_on": c["installed_on"], "branch": c["branch"], "dentist": c["dentist"] or "—",
+                     "patient": f"{c['last_name']}, {c['first_name']}", "patient_id": c["patient_id"], "chart_no": c["chart_no"],
+                     "case": (f"{n_units} × " if (n_units or 1) > 1 and " × " not in c["case_type"] and " + " not in c["case_type"] else "")
+                             + c["case_type"] + (f" · {c['teeth']}" if c["teeth"] else ""), "units": n_units or 1,
+                     "price": price, "lab": c["lab"], "invoice": c["invoice_number"], "pay": paid})
+    total = sum(r["price"] or 0 for r in rows)
+    by_branch: dict[str, dict] = {}
+    by_dentist: dict[str, dict] = {}
+    for r in rows:
+        for key, bucket in ((r["branch"], by_branch), (r["dentist"], by_dentist)):
+            x = bucket.setdefault(key, {"name": key, "n": 0, "amount": 0})
+            x["n"] += 1
+            x["amount"] += r["price"] or 0
+    if request.args.get("format") == "csv":
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow([f"Installed lab cases {start.isoformat()} to {end.isoformat()}"])
+        w.writerow(["Date installed", "Branch", "Dentist", "Patient", "Chart no.", "Case", "Lab", "Lab invoice", "Billing", "Price (PHP)"])
+        for r in rows:
+            w.writerow([r["installed_on"], r["branch"], r["dentist"], r["patient"], r["chart_no"], r["case"], r["lab"], r["invoice"] or "",
+                        r["pay"], (r["price"] or 0) / 100])
+        w.writerow(["", "", "", "", "", "", "", "", "Total", total / 100])
+        audit.record("report_exported", "report", None, f"Installed lab cases {start.isoformat()}–{end.isoformat()}")
+        return Response(buf.getvalue(), mimetype="text/csv",
+                        headers={"Content-Disposition": f"attachment; filename=installed-lab-cases-{start.isoformat()}-{end.isoformat()}.csv"})
+    return render_template("staff/labs/installed_report.html", rows=rows, total=total, start=start, end=end, month=month, half=half,
+                           months=months, branch_list=branch_list, branch=branch, by_branch=sorted(by_branch.values(), key=lambda x: x["name"]),
+                           by_dentist=sorted(by_dentist.values(), key=lambda x: -x["amount"]),
+                           unpriced=sum(1 for r in rows if r["price"] is None))
+
+
 @bp.route("/<int:case_id>/installed", methods=["POST"])
 @login_required
 def installed(case_id):

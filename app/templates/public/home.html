@@ -69,7 +69,7 @@
       <div class="lp-lead">{{ hero.body|richtext }}</div>
       <div class="lp-cta-row">
         <a class="lp-btn lp-btn-gold" href="{{ url_for('public.book') }}">{{ txt('hero.btn_book') }}</a>
-        {% if shown('specialty') %}<a class="lp-btn lp-btn-glass" href="#specialty">{{ txt('hero.btn_second') }}</a>{% endif %}
+        {% if shown('beforeafter') %}<a class="lp-btn lp-btn-glass" href="#before-after">{{ txt('hero.btn_second') }}</a>{% elif shown('specialty') %}<a class="lp-btn lp-btn-glass" href="#specialty">{{ txt('hero.btn_second') }}</a>{% endif %}
       </div>
       <ul class="lp-branch-chips" aria-label="Branches">
         {% for b in site_branches %}<li><a href="#branches">{{ b.name.split(' (')[0] }}</a></li>{% endfor %}
@@ -179,6 +179,36 @@
     {% if ba_cases|length > 1 %}
     <div class="lp-aes-more">
       {% for w in ba_cases[1:4] %}<figure class="lp-aes-thumb reveal">{{ ba_slider(w) }}<figcaption>{{ w.title }}</figcaption></figure>{% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+{# ---------------------------------------------------------------- BEFORE & AFTER: every case with a before photo #}
+{% if shown('beforeafter') %}
+<section class="lp-section lp-ba-section" id="before-after">
+  <div class="wrap">
+    <header class="lp-head reveal">
+      <span class="lp-eyebrow">{{ txt('beforeafter.eyebrow') }}</span>
+      <h2>{{ txt_em('beforeafter.title') }}</h2>
+      <p>{{ txt('beforeafter.intro') }}</p>
+    </header>
+    {% if ba_all %}
+    <div class="lp-ba-grid{% if ba_all|length < 3 %} count-{{ ba_all|length }}{% endif %}">
+      {% for w in ba_all %}
+      <figure class="lp-ba-card reveal">{{ ba_slider(w) }}
+        <figcaption>{% if w.category %}<span class="lp-case-cat">{{ category_labels.get(w.category, '') }}</span>{% endif %}<strong>{{ w.title }}</strong>{% if w.caption %}<span>{{ w.caption }}</span>{% endif %}</figcaption>
+      </figure>
+      {% endfor %}
+    </div>
+    <p class="lp-center reveal"><a class="lp-link" href="{{ url_for('public.gallery') }}">{{ txt('beforeafter.link') }}</a></p>
+    {% else %}
+    <div class="lp-aes-empty lp-ba-empty reveal" role="img" aria-label="{{ txt('beforeafter.empty') }}">
+      <div class="half before"><span class="ba-label l">Before</span></div>
+      <div class="half after"><span class="ba-label r">After</span></div>
+      <span class="ba-handle" aria-hidden="true" style="left:50%"></span>
+      <p>{{ txt('beforeafter.empty') }}</p>
     </div>
     {% endif %}
   </div>

@@ -204,7 +204,7 @@ def home():
     about_team, about_acts = about_data(conn, limit_activities=3)
     return render_template("public/home.html", guides=guides, testimonials=testimonials, works=works, filters=filters,
                            about_team=about_team, about_acts=about_acts,
-                           featured=featured, ba_cases=ba_cases,
+                           featured=featured, ba_cases=ba_cases, ba_all=ba_all[:6], ba_more=len(ba_all) > 6,
                            **_booking_defaults(conn),
                            category_labels=dict(PORTFOLIO_CATEGORIES))
 

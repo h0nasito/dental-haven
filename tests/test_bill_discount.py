@@ -648,3 +648,21 @@ class TestCashierDailyCollections(Base):
         self.assertEqual(c.get("/staff/reports/daily-collection?date=2026-11-02").status_code, 200)
         csv = c.get(f"/staff/reports/collections-day?date=2026-11-02&branch={bid}&format=csv").data.decode()
         self.assertIn("Cleaning (demo day)", csv)
+
+
+class TestBeforeAfterSection(Base):
+    def test_home_shows_before_after_cases(self):
+        from app.util import now_str
+        c = self.app.test_client()
+        page = c.get("/").data.decode()
+        self.assertIn('id="before-after"', page)
+        self.assertIn("coming soon", page)
+        for i in range(2):
+            self.conn.insert("gallery_items", {"title": f"Veneers case {i} (demo)", "caption": "", "image_path": "img/demo-after.jpg",
+                                               "before_image_path": "img/demo-before.jpg", "category": "", "authorization_note": "Consent (demo)",
+                                               "authorized": 1, "published": 1, "created_at": now_str()})
+        page = c.get("/").data.decode()
+        section = page.split('id="before-after"')[1].split("</section>")[0]
+        self.assertIn("Veneers case 0 (demo)", section)
+        self.assertIn("Veneers case 1 (demo)", section)
+        self.assertIn('href="#before-after"', page)

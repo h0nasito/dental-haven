@@ -1,0 +1,28 @@
+{% extends "staff/layout.html" %}
+{% block page_title %}Installed lab cases{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Installed lab cases</h1>
+<p>{{ start|date }} – {{ end|date }} · branch cases installed in the patient in this cutoff: what the branches pay the laboratory. Price = the amount on the lab invoice, or the case price if not billed yet.</p></div>
+<div class="row" style="gap:.5rem"><a class="btn btn-secondary btn-sm" href="{{ url_for('labs.installed_report', month=month.strftime('%Y-%m'), half=half, branch=branch or None, format='csv', **({'from': start.isoformat(), 'to': end.isoformat()} if half == 3 else {})) }}">CSV</a><button type="button" class="btn btn-secondary btn-sm" data-print>Print</button></div></div>
+{% if nav_lab_works or nav_lab_billing %}{% set active = 'installed' %}{% include "staff/lab_works/_nav.html" %}{% endif %}
+<form class="toolbar" method="get">
+<div class="field"><label for="im">Month</label><select id="im" name="month">{% for m in months %}<option value="{{ m.strftime('%Y-%m') }}" {{ 'selected' if m == month }}>{{ m.strftime('%B %Y') }}</option>{% endfor %}</select></div>
+<div class="field"><label for="ih">Cutoff</label><select id="ih" name="half"><option value="1" {{ 'selected' if half == 1 }}>1st – 15th</option><option value="2" {{ 'selected' if half == 2 }}>16th – end of month</option><option value="3" {{ 'selected' if half == 3 }}>Custom dates</option></select></div>
+{% if half == 3 %}<div class="field"><label for="if">From</label><input id="if" type="date" name="from" value="{{ start.isoformat() }}"></div><div class="field"><label for="it">To</label><input id="it" type="date" name="to" value="{{ end.isoformat() }}"></div>{% endif %}
+<div class="field"><label for="ib">Branch</label><select id="ib" name="branch"><option value="">All branches</option>{% for b in branch_list %}<option value="{{ b.id }}" {{ 'selected' if branch == b.id }}>{{ b.name }}</option>{% endfor %}</select></div>
+<button class="btn btn-secondary">Show</button></form>
+<div class="grid grid-3" style="margin-bottom:1rem">
+<div class="stat"><div class="label">Total for the cutoff</div><div class="value">{{ total|peso }}</div><div class="sub">{{ rows|length }} installed case{{ 's' if rows|length != 1 }}{% if unpriced %} · {{ unpriced }} without a price yet{% endif %}</div></div>
+<div class="stat"><div class="label">By branch</div><div class="value" style="font-size:1rem">{% for b in by_branch %}{{ b.name }}: {{ b.amount|peso }} ({{ b.n }})<br>{% else %}—{% endfor %}</div></div>
+<div class="stat"><div class="label">By dentist</div><div class="value" style="font-size:1rem">{% for d in by_dentist %}{{ d.name }}: {{ d.amount|peso }} ({{ d.n }})<br>{% else %}—{% endfor %}</div></div></div>
+{% for bname, items in rows|groupby('branch') %}
+<div class="card"><div class="card-head"><h2>{{ bname }}</h2><strong>{{ items|rejectattr('price', 'none')|sum(attribute='price')|peso }}</strong></div>
+<div class="table-wrap"><table><thead><tr><th>Date installed</th><th>Dentist</th><th>Patient</th><th>Case</th><th>Lab invoice</th><th class="num">Price</th></tr></thead><tbody>
+{% for r in items %}<tr><td>{{ r.installed_on|date }}</td><td>{{ r.dentist }}</td><td>{{ r.patient }}<br><small class="muted">{{ r.chart_no }}</small></td>
+<td><a href="{{ url_for('labs.case', case_id=r.id) }}">#{{ r.id }}</a> · {{ r.case }}</td>
+<td>{{ r.invoice or '—' }}<br><small class="{{ 'muted' if r.pay != 'not billed' else '' }}">{{ {'paid': 'Paid', 'billed': 'Billed, unpaid', 'not billed': 'Not billed yet'}[r.pay] }}</small></td>
+<td class="num">{{ r.price|peso if r.price is not none else 'No price' }}</td></tr>{% endfor %}</tbody>
+<tfoot><tr><th colspan="5">{{ bname }} · {{ items|length }} case{{ 's' if items|length != 1 }}</th><th class="num">{{ items|rejectattr('price', 'none')|sum(attribute='price')|peso }}</th></tr></tfoot></table></div></div>
+{% else %}<div class="card"><p class="muted mb-0">No cases were marked installed in this cutoff.</p></div>{% endfor %}
+{% if rows %}<div class="card"><div class="row between"><strong>Total · {{ rows|length }} installed case{{ 's' if rows|length != 1 }}</strong><strong>{{ total|peso }}</strong></div></div>{% endif %}
+{% endblock %}

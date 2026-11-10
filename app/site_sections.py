@@ -56,6 +56,17 @@ SECTIONS = [
          ("specialty.btn_book", "Main button", "Book a consultation", "line"),
          ("specialty.btn_work", "Second button", "See all our work", "line"),
      ]},
+    {"id": "beforeafter", "label": "Before & after", "anchor": "before-after", "photos": [],
+     "note": "Every published gallery case that has a before photo, side by side with a slider (up to 6; the rest are in the full gallery). "
+             "Add cases in Website content → Gallery with both a before and an after photo and the patient's written consent.",
+     "fields": [
+         ("beforeafter.show", "Show this section", "1", "show"),
+         ("beforeafter.eyebrow", "Small label", "Before & after", "line"),
+         ("beforeafter.title", "Heading", "See the *difference*", "line"),
+         ("beforeafter.intro", "Intro text", "Real Dental Haven patients, shared with their consent. Drag the slider on each photo to compare before and after.", "text"),
+         ("beforeafter.empty", "Text while there are no cases yet", "Before & after photos of our patients are coming soon.", "text"),
+         ("beforeafter.link", "Link to the full gallery", "See more in our gallery →", "line"),
+     ]},
     {"id": "work", "label": "Our work (gallery)", "anchor": "work", "photos": [],
      "note": "The photos come from the Gallery (Website content → Gallery).",
      "fields": [

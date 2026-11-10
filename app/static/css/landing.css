@@ -443,3 +443,18 @@ html { scroll-behavior: smooth; }
 .ab-more a { color: var(--navy); font-weight: 600; }
 .ab-more span { color: var(--slate); font-size: .85rem; margin-left: .4rem; }
 @media (max-width: 860px) { .ab-intro.has-photo { grid-template-columns: 1fr; } }
+
+/* Before & after section: every case with a before photo, each with its own slider */
+.lp-ba-section { background: #fff; }
+.lp-ba-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; margin-top: 28px; }
+.lp-ba-grid.count-1 { grid-template-columns: minmax(0, 720px); justify-content: center; }
+.lp-ba-grid.count-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.lp-ba-card { margin: 0; }
+.lp-ba-card .ba { position: relative; inset: auto; aspect-ratio: 4 / 3; border-radius: 20px; overflow: hidden; box-shadow: 0 24px 50px -30px rgba(16, 37, 66, .5); }
+.lp-ba-card .ba > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.lp-ba-card figcaption { display: flex; flex-direction: column; gap: 2px; padding: 12px 4px 0; }
+.lp-ba-card figcaption strong { font-family: var(--display); color: var(--navy); font-size: 1.15rem; font-weight: 500; }
+.lp-ba-card figcaption span:not(.lp-case-cat) { color: var(--slate); font-size: .92rem; }
+.lp-ba-empty { max-width: 720px; margin: 28px auto 0; }
+@media (max-width: 900px) { .lp-ba-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .lp-ba-grid, .lp-ba-grid.count-2 { grid-template-columns: 1fr; } }

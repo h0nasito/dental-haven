@@ -173,3 +173,18 @@ class TestLabPaymentProof(TestLabCaseBilling):
         self.assertEqual(self.q("SELECT COUNT(*) AS n FROM lab_payments WHERE invoice_id = ?", (iid,))["n"], n)
         # a dentist (no lab billing) can't open it
         self.assertEqual(self.login("dentist.malolos").get(f"/staff/lab/invoices/{iid}/proof/{ph['id']}").status_code, 403)
+
+    def test_installed_cases_report_per_cutoff(self):
+        d = self.login("dentist.malolos")
+        self.t.post(f"/staff/lab/{self.case}", data={"status": "accepted", "lab_fee": "3500", "note": ""})
+        d.post(f"/staff/lab/{self.case}/installed", data={"installed_on": "2026-11-03"})
+        page = self.t.get("/staff/lab/installed-report?month=2026-11&half=1").data.decode()
+        self.assertIn("Installed lab cases", page)
+        self.assertIn("₱3,500.00", page)
+        self.assertIn("Not billed yet", page)
+        name = self.q("SELECT p.last_name FROM patients p JOIN lab_cases c ON c.patient_id = p.id WHERE c.id = ?", (self.case,))["last_name"]
+        self.assertIn(name, page)
+        self.assertNotIn("₱3,500.00", self.t.get("/staff/lab/installed-report?month=2026-11&half=2").data.decode())   # other cutoff
+        csv = self.t.get("/staff/lab/installed-report?month=2026-11&half=1&format=csv").data.decode()
+        self.assertIn("3500.0", csv)
+        self.assertEqual(self.login("reception.malolos").get("/staff/lab/installed-report").status_code in (200, 403), True)

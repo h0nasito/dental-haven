@@ -3,7 +3,8 @@
 {% block page_title %}{{ 'My lab cases' if view == 'mine' else 'Branch cases' }}{% endblock %}
 {% block content %}
 <div class="page-head"><div><h1>{{ 'My lab cases' if view == 'mine' else 'Branch cases' }}</h1><p>{% if lab_user %}Cases sent to your laboratory by the branches.{% elif all_view %}Crowns, bridges, dentures and other work the branches send to the laboratory. You can update your own branches' cases; other branches' cases are view only.{% else %}Crowns, bridges, dentures and other work sent to the laboratory.{% endif %}</p></div>
-{% if current_user.can('lab.manage') %}<a class="btn" href="{{ url_for('labs.new') }}">+ New lab case</a>{% endif %}</div>
+<div class="row" style="gap:.5rem">{% if current_user.can('lab.manage') or nav_lab_billing %}<a class="btn btn-secondary" href="{{ url_for('labs.installed_report') }}">Installed cases per cutoff</a>{% endif %}
+{% if current_user.can('lab.manage') %}<a class="btn" href="{{ url_for('labs.new') }}">+ New lab case</a>{% endif %}</div></div>
 {% if nav_lab_works or nav_lab_billing %}{% set active = 'cases' %}{% include "staff/lab_works/_nav.html" %}{% endif %}
 {% if view %}<nav class="pills" aria-label="Whose cases"><a href="{{ url_for('labs.index', view='mine', status=status, q=q) }}" class="{{ 'active' if view == 'mine' else '' }}">My cases</a><a href="{{ url_for('labs.index', view='branch', status=status, branch=branch or '', q=q) }}" class="{{ 'active' if view == 'branch' else '' }}">Branch cases</a></nav>{% endif %}
 <nav class="tabs" aria-label="Status">
