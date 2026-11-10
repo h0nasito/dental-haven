@@ -368,3 +368,23 @@ class TestUnpricedNoteWaitsForBill(Base):
         with self.app.app_context():
             waiting = notes_to_bill(self.conn, [self.sjdm], self.pid)
         self.assertTrue(any(w.get("id") == v["id"] and w["kind"] == "note" for w in waiting))
+
+
+class TestVisitNotePesoDiscount(Base):
+    setUp = TestVisitNote.setUp
+    _post = TestVisitNote._post
+
+    def test_bill_discount_as_peso_amount(self):
+        admin = self.login("admin")
+        self.assertEqual(self._post(admin, bill_disc="500", bill_disc_kind="peso").status_code, 302)
+        v = self.q("SELECT * FROM visit_notes WHERE patient_id = ? AND status = 'saved' ORDER BY id DESC", (self.pid,))
+        self.assertEqual((v["bill_discount_bp"], v["bill_discount_cents"]), (0, 50000))
+        inv = self.q("SELECT * FROM invoices WHERE id = ?", (v["invoice_id"],))
+        # 810 + 1,000 = 1,810 less ₱500 = 1,310
+        self.assertEqual((inv["subtotal_cents"], inv["discount_cents"], inv["total_cents"]), (181000, 50000, 131000))
+
+    def test_peso_discount_never_above_the_total(self):
+        admin = self.login("admin")
+        self._post(admin, bill_disc="99999", bill_disc_kind="peso")
+        v = self.q("SELECT * FROM visit_notes WHERE patient_id = ? AND status = 'saved' ORDER BY id DESC", (self.pid,))
+        self.assertEqual(self.q("SELECT total_cents FROM invoices WHERE id = ?", (v["invoice_id"],))["total_cents"], 0)

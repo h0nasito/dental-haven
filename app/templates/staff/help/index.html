@@ -1,0 +1,15 @@
+{% extends "staff/layout.html" %}
+{% block page_title %}Help{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Help</h1><p>Type what you want to do, e.g. “add bill”, “new patient” or “send to lab”.</p></div></div>
+<form method="get" class="help-search" role="search"><label for="help-q" class="sr-only">Search help</label>
+<input id="help-q" type="search" name="q" value="{{ q }}" placeholder="How do I…?" autocomplete="off" autofocus data-help-search>
+<button class="btn" data-help-btn>Search</button></form>
+<p class="empty" data-help-none {% if found is none or found %}hidden{% endif %}><strong>No guide found.</strong>Try another word, like “bill”, “payment”, “lab” or “patient”, or ask the clinic administrator.</p>
+{% if found is not none %}<div class="card" data-help-results><h2>Results for “{{ q }}”</h2><ul class="help-list">{% for a in found %}<li><a href="{{ url_for('help.article', slug=a.slug) }}">{{ a.title }}</a> <small class="muted">{{ a.cat }}</small></li>{% endfor %}</ul></div>{% endif %}
+<div class="help-grid">
+{% for cat, arts in by_cat %}<div class="card" data-help-cat><h2>{{ cat }}</h2><ul class="help-list">
+{% for a in arts %}<li data-help-item data-text="{{ plain(a) }}" data-title="{{ (a.title ~ ' ' ~ a['keys'])|lower }}"><a href="{{ url_for('help.article', slug=a.slug) }}">{{ a.title }}</a></li>{% endfor %}
+</ul></div>{% endfor %}
+</div>
+{% endblock %}

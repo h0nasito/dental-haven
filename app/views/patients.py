@@ -1313,7 +1313,22 @@ def _visit_form():
     return {"visit_date": clean(f.get("visit_date"), 10), "recall_date": clean(f.get("recall_date"), 10),
             "recall_reason": clean(f.get("recall_reason"), 200), "body": clean(f.get("body"), 8000),
             "dentist_id": to_int(f.get("dentist_id")), "branch_id": to_int(f.get("branch_id")),
-            "bill_disc": clean(f.get("bill_disc"), 8), "create_bill": 1 if f.get("create_bill") else 0, "lines": lines}
+            "bill_disc": clean(f.get("bill_disc"), 12), "bill_disc_kind": "peso" if f.get("bill_disc_kind") == "peso" else "pct", "create_bill": 1 if f.get("create_bill") else 0, "lines": lines}
+
+
+def _bill_disc(v) -> tuple[int, int] | None:
+    """The bill discount typed on a progress note: (percent in basis points, peso amount in cents); one of them is 0.
+    None when it can't be read."""
+    if v.get("bill_disc_kind") == "peso":
+        amt = parse_money(v.get("bill_disc")) if (v.get("bill_disc") or "").strip() else 0
+        return None if amt is None or amt < 0 else (0, amt)
+    bp = _pct_bp(v.get("bill_disc"))
+    return None if bp is None else (bp, 0)
+
+
+def bill_discount_cents(total: int, bp: int, cents: int | None) -> int:
+    """The bill-level discount on a total: a peso amount (never more than the total) or a percent."""
+    return min(total, cents) if cents else round(total * (bp or 0) / 10000)
 
 
 def visit_lines(conn, raw_lines) -> tuple[list[dict], str]:
@@ -1335,7 +1350,7 @@ def visit_lines(conn, raw_lines) -> tuple[list[dict], str]:
 
 
 def create_visit_bill(conn, vid: int | None, patient_id: int, branch_id: int, dentist_id: int, visit_date: str, lines: list[dict], bill_bp: int,
-                      proc_ids: list[int] | None = None) -> int:
+                      proc_ids: list[int] | None = None, bill_cents: int = 0) -> int:
     """The bill for a progress note's services, linked to the note (or to the recorded procedures). Issued and numbered,
     unless a service has no price yet: then it stays a draft for the cashier to set the price and issue it."""
     from ..billing import compute_totals, line_amount, next_invoice_number
@@ -1348,7 +1363,7 @@ def create_visit_bill(conn, vid: int | None, patient_id: int, branch_id: int, de
                                       "dentist_id": dentist_id, "done_on": visit_date})
     items = conn.all("SELECT * FROM invoice_items WHERE invoice_id = ?", (inv,))
     sub = sum(i["amount_cents"] for i in items)
-    conn.update("invoices", inv, compute_totals(items, round(sub * bill_bp / 10000), conn))
+    conn.update("invoices", inv, compute_totals(items, bill_discount_cents(sub, bill_bp, bill_cents), conn))
     if vid:
         conn.execute("UPDATE visit_notes SET invoice_id = ? WHERE id = ?", (inv, vid))
     for pid_ in proc_ids or []:
@@ -1419,7 +1434,8 @@ def notes_to_bill(conn, branch_ids: list[int], patient_id: int | None = None) ->
                 ln["sub"] = ln["qty"] * ln["unit"]
         total = sum(l["sub"] - l["disc_cents"] for l in lines)
         out.append({**dict(v), "kind": "note", "lines": lines, "unpriced": any(l["unit"] <= 0 for l in lines),
-                    "estimate": total - round(total * (v["bill_discount_bp"] or 0) / 10000), "bill_discount_bp": v["bill_discount_bp"] or 0,
+                    "estimate": total - bill_discount_cents(total, v["bill_discount_bp"], v["bill_discount_cents"]), "bill_discount_bp": v["bill_discount_bp"] or 0,
+                    "bill_discount_cents": v["bill_discount_cents"] or 0,
                     "services": ", ".join(l["desc"] for l in lines)})
     groups: dict[tuple, dict] = {}
     for r in conn.all("SELECT x.*, p.first_name, p.last_name, b.name AS branch, u.name AS dentist FROM procedures x "
@@ -1508,7 +1524,8 @@ def visit_note_bill(patient_id, vid):
         if conn.scalar("SELECT invoice_id FROM visit_notes WHERE id = ?", (vid,)):
             flash("This progress note already has a bill.", "info")
             return redirect(back)
-        inv = create_visit_bill(conn, vid, patient_id, v["branch_id"], v["dentist_id"], v["visit_date"], lines, v["bill_discount_bp"] or 0)
+        inv = create_visit_bill(conn, vid, patient_id, v["branch_id"], v["dentist_id"], v["visit_date"], lines, v["bill_discount_bp"] or 0,
+                                bill_cents=v["bill_discount_cents"] or 0)
     unpriced = any(ln["unit"] <= 0 for ln in lines)
     flash("Bill created from the progress note." + (" Set the price of the services that have none, then issue it." if unpriced
                                                     else " Add the payment now."), "success")
@@ -1520,7 +1537,8 @@ def _store_draft(conn, patient_id, v, draft_id=None):
     row = {"patient_id": patient_id, "branch_id": v["branch_id"], "dentist_id": v["dentist_id"],
            "visit_date": v["visit_date"] or today().isoformat(), "recall_date": v["recall_date"] or None,
            "recall_reason": v["recall_reason"], "body": v["body"], "lines_json": json.dumps(v["lines"]),
-           "bill_discount_bp": _pct_bp(v["bill_disc"]) or 0, "create_bill": v["create_bill"], "status": "draft",
+           "bill_discount_bp": (_bill_disc(v) or (0, 0))[0], "bill_discount_cents": (_bill_disc(v) or (0, 0))[1],
+           "create_bill": v["create_bill"], "status": "draft",
            "updated_at": now_str()}
     if draft_id:
         conn.update("visit_notes", draft_id, row)
@@ -1570,9 +1588,10 @@ def visit_note(patient_id):
         return back_to_draft(lerr)
     if not lines and not v["body"]:
         return back_to_draft("Add at least one service, or write the notes.")
-    bill_bp = _pct_bp(v["bill_disc"])
-    if bill_bp is None:
-        return back_to_draft("Enter the bill discount as a percent, e.g. 10.")
+    disc = _bill_disc(v)
+    if disc is None:
+        return back_to_draft("Enter the bill discount as a percent (e.g. 10) or a peso amount (e.g. 500).")
+    bill_bp, bill_cents = disc
     # X-rays (panoramic, cephalometric, CBCT...) stay in the progress note, but are paid in the X-ray section
     from .xray import type_for
     xtypes = [type_for(conn, ln["desc"]) for ln in lines]
@@ -1610,7 +1629,7 @@ def visit_note(patient_id):
                     raw["xray_id"] = xray[0]
         row = {"patient_id": patient_id, "branch_id": branch_id, "dentist_id": dentist_id, "visit_date": visit.isoformat(),
                "recall_date": recall.isoformat() if recall else None, "recall_reason": v["recall_reason"], "body": v["body"],
-               "lines_json": json.dumps(v["lines"]), "bill_discount_bp": bill_bp, "create_bill": 1 if (make_bill or needs_bill) else 0,
+               "lines_json": json.dumps(v["lines"]), "bill_discount_bp": bill_bp, "bill_discount_cents": bill_cents, "create_bill": 1 if (make_bill or needs_bill) else 0,
                "status": "saved", "signature_name": sig_name, "updated_at": now_str()}
         if draft_id:
             conn.update("visit_notes", draft_id, row)
@@ -1644,7 +1663,7 @@ def visit_note(patient_id):
                                               "stored_name": stored, "mime": mime, "size_bytes": size, "uploaded_by": g.user.id,
                                               "uploaded_at": now_str(), "visit_note_id": vid})
         if make_bill:
-            upd["invoice_id"] = create_visit_bill(conn, vid, patient_id, branch_id, dentist_id, visit.isoformat(), lines, bill_bp)
+            upd["invoice_id"] = create_visit_bill(conn, vid, patient_id, branch_id, dentist_id, visit.isoformat(), lines, bill_bp, bill_cents=bill_cents)
         elif needs_bill:
             from ..approvals import approvers
             from ..notices import notify

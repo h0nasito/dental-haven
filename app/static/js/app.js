@@ -420,9 +420,11 @@ document.addEventListener('DOMContentLoaded', function () {
       row.querySelector('[data-pn-net]').textContent = money(net);
       total += net;
     });
-    var billPct = Math.min(100, parseFloat(form.querySelector('[data-pn-billdisc]').value) || 0);
+    var bd = form.querySelector('[data-pn-billdisc]'), kind = form.querySelector('[data-pn-billkind]');
+    var off = kind && kind.value === 'peso' ? Math.min(total, cents(bd.value))
+                                             : Math.round(total * Math.min(100, parseFloat(bd.value) || 0) / 100);
     form.querySelector('[data-pn-subtotal]').textContent = '\u20B1' + money(total);
-    form.querySelector('[data-pn-total]').textContent = '\u20B1' + money(total - Math.round(total * billPct / 100));
+    form.querySelector('[data-pn-total]').textContent = '\u20B1' + money(total - off);
   }
   form.addEventListener('input', function (e) {
     var row = e.target.closest('[data-pn-line]');
@@ -1812,4 +1814,35 @@ document.querySelectorAll('[data-suggest]').forEach(function (input) {
     form.addEventListener('input', update);
     update();
   });
+})();
+
+/* Help: filter the guides while typing (every word must appear; title matches first) */
+(function () {
+  var input = document.querySelector('[data-help-search]');
+  if (!input) return;
+  var items = Array.prototype.slice.call(document.querySelectorAll('[data-help-item]'));
+  var none = document.querySelector('[data-help-none]');
+  var results = document.querySelector('[data-help-results]'), btn = document.querySelector('[data-help-btn]');
+  if (results) results.hidden = true;
+  if (btn) btn.hidden = true;
+  var skip = { how: 1, to: 1, 'do': 1, i: 1, a: 1, the: 1, paano: 1, mag: 1 };
+  function run() {
+    var words = input.value.toLowerCase().trim().split(/\s+/).filter(function (w) { return w && !skip[w]; });
+    var shown = 0;
+    items.forEach(function (li) {
+      var t = li.getAttribute('data-text');
+      var ok = words.every(function (w) { return t.indexOf(w) !== -1; });
+      li.hidden = !ok; if (ok) shown++;
+    });
+    document.querySelectorAll('[data-help-cat]').forEach(function (c) {
+      c.hidden = !c.querySelector('[data-help-item]:not([hidden])');
+    });
+    if (none) none.hidden = shown > 0;
+  }
+  input.addEventListener('input', run);
+  input.form.addEventListener('submit', function (e) {
+    var first = document.querySelector('[data-help-item]:not([hidden]) a');
+    if (first && input.value.trim()) { e.preventDefault(); window.location = first.href; }
+  });
+  run();
 })();

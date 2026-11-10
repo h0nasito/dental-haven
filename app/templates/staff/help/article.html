@@ -1,0 +1,10 @@
+{% extends "staff/layout.html" %}
+{% block page_title %}{{ a.title }} · Help{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('help.index') }}">← Help</a></p>
+<div class="page-head"><div><small class="muted">{{ a.cat }}</small><h1>{{ a.title }}</h1></div>
+{% if a.link %}<div class="row"><a class="btn" href="{{ url_for(a.link[0]) }}">Open {{ a.link[1] }} →</a></div>{% endif %}</div>
+<div class="card help-article"><ol class="help-steps">{% for s in a.steps %}<li>{{ bold(s) }}</li>{% endfor %}</ol>
+{% if a.tips %}<div class="notice mt-1">{% for t in a.tips %}<p class="mb-0">💡 {{ bold(t) }}</p>{% endfor %}</div>{% endif %}</div>
+{% if related %}<div class="card"><h2>More about {{ a.cat|lower }}</h2><ul class="help-list">{% for r in related %}<li><a href="{{ url_for('help.article', slug=r.slug) }}">{{ r.title }}</a></li>{% endfor %}</ul></div>{% endif %}
+{% endblock %}

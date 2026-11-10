@@ -48,6 +48,7 @@
       {% if nav_lab_queue or current_user.can('bookings.manage') or current_user.can('bookings.view') or current_user.can('leads.view') or current_user.can('followups.view') %}
         {{ nav('dash.queue', 'Work queue', count=nav_counts.queue) }}
       {% endif %}
+      {{ nav('help.index', '❓ Help', 'help.') }}
     </div>
     {% call group('Scheduling', 'calendar') %}{% if current_user.can('appointments.view') %}
       {{ nav('sched.calendar', 'Calendar', 'sched.calendar') }}
@@ -184,6 +185,7 @@
           <a role="menuitem" href="{{ url_for('profile.account') }}">👤 Profile settings</a>
           <a role="menuitem" href="{{ url_for('auth.change_password') }}">🔑 Change password</a>
           {% if current_user.can('attendance.clock') %}<a role="menuitem" href="{{ url_for('timeclock.clock') }}">⏱ Time in / out</a>{% endif %}
+          <a role="menuitem" href="{{ url_for('help.index') }}">❓ Help</a>
           <form method="post" action="{{ url_for('auth.logout') }}">{{ csrf() }}<button type="submit" role="menuitem" class="me-out">↪ Sign out</button></form>
         </div>
       </details>
