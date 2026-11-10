@@ -704,3 +704,36 @@ class TestSplitCommission(Base):
                                                          "not_signed_reason": "test", "comm_split": "1"})
         got = {r["employee_id"]: r["amount_cents"] for r in self.conn.all("SELECT * FROM dentist_commissions WHERE invoice_id = ?", (inv2,))}
         self.assertEqual(got, {e1: 20000, e2: 5000})
+
+
+class TestFollowupPatientPicker(Base):
+    def test_new_followup_from_list_picks_a_patient(self):
+        mal = self.branch("malolos")
+        pid = self.q("SELECT id FROM patients WHERE preferred_branch_id = ? LIMIT 1", (mal,))["id"]
+        a = self.login("admin")
+        self.assertIn("Patient to follow up", a.get("/staff/followups/new").data.decode())
+        a.post("/staff/followups/new", data={"kind": "post_treatment", "title": "Check picker (demo)", "due_at": "2026-12-01T10:00",
+                                              "branch_id": mal, "patient_id": pid})
+        self.assertEqual(self.q("SELECT patient_id FROM follow_ups WHERE title = 'Check picker (demo)'")["patient_id"], pid)
+
+    def test_free_line_with_fixed_commission_still_earns(self):
+        from app.util import now_str
+        mal = self.branch("malolos")
+        d1 = self.q("SELECT id FROM users WHERE email LIKE 'dentist.malolos@%'")["id"]
+        d2 = self.q("SELECT u.id FROM users u JOIN employees e ON e.user_id = u.id WHERE u.role = 'dentist' AND u.id != ? LIMIT 1", (d1,))["id"]
+        e2 = self.q("SELECT id FROM employees WHERE user_id = ?", (d2,))["id"]
+        pid = self.q("SELECT id FROM patients WHERE preferred_branch_id = ? LIMIT 1", (mal,))["id"]
+        inv = self.conn.insert("invoices", {"branch_id": mal, "patient_id": pid, "status": "issued", "number": "SPL-3", "issued_at": "2026-11-10",
+                                            "subtotal_cents": 155000, "discount_cents": 0, "tax_cents": 0, "total_cents": 155000, "created_at": now_str()})
+        self.conn.insert("invoice_items", {"invoice_id": inv, "description": "Braces adjustment (demo)", "qty": 1, "unit_price_cents": 155000,
+                                           "discount_cents": 0, "amount_cents": 155000, "dentist_id": d1, "done_on": "2026-11-10",
+                                           "commission_mode": "amount", "commission_cents": 10000})
+        self.conn.insert("invoice_items", {"invoice_id": inv, "description": "Oral prophylaxis free (demo)", "qty": 1, "unit_price_cents": 0,
+                                           "discount_cents": 0, "amount_cents": 0, "dentist_id": d2, "done_on": "2026-11-10",
+                                           "commission_mode": "amount", "commission_cents": 10000})
+        a = self.login("admin")
+        a.post(f"/staff/invoices/{inv}/payments", data={"action": "multi", "method": "cash", "amount": "1550", "received_at": "2026-11-10",
+                                                        "not_signed_reason": "test", "comm_split": "1"})
+        got = {r["employee_id"]: r["amount_cents"] for r in self.conn.all("SELECT * FROM dentist_commissions WHERE invoice_id = ?", (inv,))}
+        self.assertEqual(got.get(e2), 10000)
+        self.assertEqual(len(got), 2)

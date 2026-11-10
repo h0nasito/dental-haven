@@ -6,11 +6,15 @@
 {% if patient %}<p>For patient {{ patient.last_name }}, {{ patient.first_name }}</p>{% elif lead %}<p>For lead {{ lead.full_name }}</p>{% endif %}</div></div>
 <form method="post" class="card" style="max-width:760px">{{ csrf() }}
 {% if patient %}<input type="hidden" name="patient_id" value="{{ patient.id }}">{% endif %}{% if lead %}<input type="hidden" name="lead_id" value="{{ lead.id }}">{% endif %}
+{% if not patient and not lead %}<div class="field"><label for="fu-pt">Patient to follow up</label><div class="suggest-wrap"><input id="fu-pt" placeholder="Type the patient's name or chart no." autocomplete="off"
+ data-suggest="{{ url_for('patients.suggest') }}" data-suggest-pick="fu-pid" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="fu-pt-list">
+<div id="fu-pt-list" class="suggest-box" role="listbox" hidden></div></div><input type="hidden" id="fu-pid" name="patient_id" value="">
+<span class="hint">Pick the patient from the list. Leave empty for a task not about a patient. Tip: you can also add a follow-up from the patient's page.</span></div>{% endif %}
 <div class="form-grid">
 {{ select('kind', 'Type', FOLLOWUP_KINDS.items()|list, v.kind, errors=errors) }}
 {{ field('title', 'Task', v.title, errors=errors, required=True) }}
 {{ field('due_at', 'Due', v.due_at|replace(' ', 'T'), type='datetime-local', errors=errors, required=True) }}
-{{ select('assignee_id', 'Assign to', staff|opts, v.assignee_id, blank='Unassigned') }}
+{{ select('assignee_id', 'Assign to (staff who will call or follow up)', staff|opts, v.assignee_id, blank='Unassigned') }}
 {{ select('branch_id', 'Branch', branches|opts, v.branch_id, errors=errors, required=True) }}
 </div>
 {{ textarea('notes', 'Notes', v.notes, rows=3) }}

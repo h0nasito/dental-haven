@@ -203,13 +203,15 @@ def split_commission(conn, inv, pay_cents: int) -> list[dict]:
     rates: dict[int, tuple] = {}
     for l in lines:
         amt = max(0, l["amount_cents"])
-        if not l["dentist_id"] or not amt or l["xray"] == 1:
+        mode = l["commission_mode"] or "auto"
+        fixed = mode == "amount" and l["commission_cents"] is not None
+        # a free line (₱0, e.g. a cleaning included in braces) still earns a fixed amount typed on it
+        if not l["dentist_id"] or l["xray"] == 1 or (not amt and not fixed):
             continue
         share = pay_cents * amt / tot
-        lab = min(share, share * (l["lab_fee_cents"] or 0) / amt) if l["lab_fee_cents"] else 0
+        lab = min(share, share * (l["lab_fee_cents"] or 0) / amt) if l["lab_fee_cents"] and amt else 0
         base = share - lab
-        mode = l["commission_mode"] or "auto"
-        if mode == "amount" and l["commission_cents"] is not None:
+        if fixed:
             bp, comm = None, l["commission_cents"] * frac_bill
         else:
             if mode == "percent" and l["commission_bp"] is not None:
