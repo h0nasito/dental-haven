@@ -54,6 +54,8 @@ DEFAULTS: dict[str, object] = {
                               "case as fitted today, including the changes written on this form (if any).\n\n"
                               "I understand that changes I ask for after signing may need extra time, and possibly an additional fee, "
                               "which my dentist will discuss with me before any work is done."),
+    # Security: staff choose their own idle sign-out in My profile, up to this maximum
+    "security.max_idle_minutes": 240,
     # Privacy
     "privacy.retention_note": "Retention period to be confirmed by the clinic (see docs/PRIVACY_CHECKLIST.md).",
 }
@@ -92,6 +94,7 @@ LABELS = {
     "report.tithe_percent": "Tithe (% of the month's net profit)",
     "report.tithe_day": "Send the tithe email on this day of the next month (1–28)",
     "lab.fitting_agreement": "Trial fitting agreement (patient and dentist sign it on the lab case)",
+    "security.max_idle_minutes": "Longest idle sign-out staff can choose (minutes; 15 to 240). Staff choose theirs in My profile.",
     "privacy.retention_note": "Record retention note",
 }
 

@@ -1202,6 +1202,8 @@ def system():
             errors["report.daily_recipients"] = "Add at least one email address."
         if new.get("report.daily_enabled") and not (new.get("report.daily_recipients") or "").strip():
             errors["report.daily_recipients"] = "Add at least one email address."
+        if not errors.get("security.max_idle_minutes") and not 15 <= (new.get("security.max_idle_minutes") or 0) <= 240:
+            errors["security.max_idle_minutes"] = "Enter 15 to 240 minutes."
         if new.get("payroll.dentist_commission_basis") not in ("payment", "procedure"):
             errors["payroll.dentist_commission_basis"] = "Choose how dentist commission is counted."
         if new.get("messaging.provider") != "manual":

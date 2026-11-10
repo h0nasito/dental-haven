@@ -16,7 +16,32 @@ def account():
     conn = get_db()
     me = conn.one("SELECT u.*, e.position FROM users u LEFT JOIN employees e ON e.user_id = u.id WHERE u.id = ?", (g.user.id,))
     approver = any(g.user.can(p) for p in APPROVAL_PERMS)
-    return render_template("staff/profile/account.html", me=me, approver=approver)
+    from ..auth import IDLE_CHOICES, idle_minutes, max_idle
+    top = max_idle(conn)
+    return render_template("staff/profile/account.html", me=me, approver=approver, idle_now=idle_minutes(conn, me["idle_minutes"]),
+                           idle_choices=[m for m in IDLE_CHOICES if m <= top])
+
+
+@bp.route("/staff/account/idle", methods=["POST"])
+@login_required
+def set_idle():
+    """Choose how long the system waits with no activity before signing you out (up to the clinic's maximum)."""
+    from ..auth import IDLE_CHOICES, max_idle
+    from ..util import to_int
+    conn = get_db()
+    m = to_int(request.form.get("idle_minutes"))
+    if m not in IDLE_CHOICES or m > max_idle(conn):
+        flash("Choose one of the times in the list.", "error")
+        return redirect(url_for("profile.account"))
+    with conn.transaction():
+        conn.execute("UPDATE users SET idle_minutes = ? WHERE id = ?", (m, g.user.id))
+        audit.record("idle_signout_changed", "user", g.user.id, f"Idle sign-out set to {m} minutes")
+    flash(f"You'll be signed out after {_idle_label(m)} with no activity.", "success")
+    return redirect(url_for("profile.account"))
+
+
+def _idle_label(m: int) -> str:
+    return f"{m} minutes" if m < 60 else (f"{m // 60} hour" + ("s" if m >= 120 else ""))
 
 
 APPROVAL_PERMS = ("leave.approve", "reimburse.approve", "attendance.manage", "overtime.approve", "payroll.approve")

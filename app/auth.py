@@ -86,6 +86,23 @@ class CurrentUser:
 PASSIVE_ENDPOINTS = {"sched.requests_pulse", "labs.pulse"}
 
 
+IDLE_CHOICES = (15, 30, 60, 120, 240)
+
+
+def max_idle(conn) -> int:
+    from . import settings
+    try:
+        m = int(settings.get("security.max_idle_minutes", conn) or 240)
+    except (TypeError, ValueError):
+        m = 240
+    return max(15, min(240, m))
+
+
+def idle_minutes(conn, chosen) -> int:
+    """The user's own idle sign-out (My profile), else the clinic default, never above the maximum in System settings."""
+    return max(5, min(chosen or current_app.config["SESSION_IDLE_MINUTES"], max_idle(conn)))
+
+
 def load_user():
     g.user = None
     sid = session.get(SESSION_KEY)
@@ -97,7 +114,7 @@ def load_user():
         session.pop(SESSION_KEY, None)
         return
     current = now()
-    idle = timedelta(minutes=current_app.config["SESSION_IDLE_MINUTES"])
+    idle = timedelta(minutes=idle_minutes(conn, conn.scalar("SELECT idle_minutes FROM users WHERE id = ?", (s["user_id"],))))
     if parse_dt(s["expires_at"]) < current or parse_dt(s["last_seen_at"]) + idle < current:
         conn.execute("DELETE FROM sessions WHERE id_hash = ?", (s["id_hash"],))
         session.pop(SESSION_KEY, None)

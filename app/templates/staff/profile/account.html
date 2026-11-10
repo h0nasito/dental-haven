@@ -17,5 +17,12 @@
 <label class="check"><input type="checkbox" name="notify_approvals" value="1" {% if me.notify_approvals %}checked{% endif %} data-autosubmit> Email me approval reminders</label>
 <p class="hint">One email in the morning, only on days when leave forms, reimbursements, field work, overtime or payroll are waiting for your approval. Sent to {{ me.email }}. You still get the bell notifications either way.</p>
 <button class="btn btn-secondary btn-sm js-hide">Save</button></form></div>{% endif %}
+<div class="card" style="max-width:560px"><h2>Sign out when idle</h2>
+<form method="post" action="{{ url_for('profile.set_idle') }}">{{ csrf() }}
+<div class="field"><label for="idle">Sign me out after no activity for</label><select id="idle" name="idle_minutes" data-autosubmit>
+{% for m in idle_choices %}<option value="{{ m }}" {% if m == idle_now %}selected{% endif %}>{{ '%d minutes'|format(m) if m < 60 else ('%d hour'|format(m // 60) ~ ('s' if m >= 120 else '')) }}</option>{% endfor %}
+{% if idle_now not in idle_choices %}<option value="" selected disabled>{{ idle_now }} minutes (clinic default)</option>{% endif %}</select>
+<small class="muted">On a computer other people use, keep this short and always sign out when you leave. You're also signed out 12 hours after signing in.</small></div>
+<button class="btn btn-secondary btn-sm js-hide">Save</button></form></div>
 <div class="card" style="max-width:560px"><h2>Password</h2><p class="mb-0"><a class="btn btn-secondary" href="{{ url_for('auth.change_password') }}">Change password</a></p></div>
 {% endblock %}
