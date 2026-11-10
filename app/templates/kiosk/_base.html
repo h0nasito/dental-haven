@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf, flashes %}
+{% block title %}Welcome to Dental Haven{% endblock %}
+{% block body_class %}kiosk{% endblock %}
+{% block body %}
+<header class="kiosk-head"><img src="{{ url_for('static', filename='img/logo-white.png') }}" alt="" width="48" height="32"><strong>Dental Haven</strong>{% block head_right %}{% endblock %}</header>
+<main id="main" class="kiosk-main" data-kiosk-ping="{{ url_for('kiosk.ping') }}">
+{{ flashes() }}
+{% block kiosk %}{% endblock %}
+</main>
+{% endblock %}

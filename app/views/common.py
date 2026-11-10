@@ -66,6 +66,8 @@ def register_context(app):
             counts["queue"] = lab_n if lab_queue.is_lab_only(conn, user) else (counts["queue"] or 0) + lab_n
         from .chat import unread as chat_unread
         counts["chat"] = chat_unread(conn, user.id)
+        if user.can("patients.manage"):
+            counts["kiosk"] = conn.scalar(f"SELECT COUNT(*) FROM kiosk_registrations WHERE status = 'pending' AND {bf}", bp) or 0
         from ..notices import unread_count
         return {"nav_branches": nav_branches, "nav_counts": counts, "nav_lab": nav_lab or nav_lab_works, "nav_lab_works": nav_lab_works,
                 "nav_lab_billing": nav_lab_billing, "nav_lab_queue": nav_lab_queue,

@@ -1056,3 +1056,25 @@ section[id] { scroll-margin-top: 72px; }
 .top-search { flex: 1 1 260px; max-width: 360px; margin: 0 .5rem; }
 .top-search input { width: 100%; }
 @media (max-width: 760px) { .topbar { flex-wrap: wrap; } .top-search { order: 10; flex: 1 1 100%; width: 100%; max-width: none; margin: .4rem 0 0; } }
+
+/* New-patient kiosk (tablet): large, simple, no staff menu */
+body.kiosk { background: #f6f2e7; }
+.kiosk-head { display: flex; align-items: center; gap: .75rem; padding: .9rem 1.4rem; background: #102542; color: #fff; font-size: 1.2rem; }
+.kiosk-head .muted { margin-left: auto; color: #dcc28f; font-size: 1rem; }
+.kiosk-main { max-width: 860px; margin: 0 auto; padding: 1.5rem 1.2rem 3rem; font-size: 1.08rem; }
+.kiosk-main h1 { font-size: 1.8rem; margin-bottom: .3rem; }
+.kiosk-main .lead { color: #5a616b; margin-bottom: 1.2rem; }
+.kiosk-form fieldset { background: #fff; border: 1px solid #e4ddcb; border-radius: 16px; padding: 1.1rem 1.2rem 1.2rem; margin-bottom: 1rem; }
+.kiosk-form legend { font-weight: 700; font-size: 1.15rem; padding: 0 .4rem; }
+.kiosk-form input, .kiosk-form select { min-height: 48px; font-size: 1.05rem; }
+.kiosk-checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: .35rem .9rem; margin: .4rem 0 .6rem; }
+.kiosk-checks .check { min-height: 40px; align-items: center; }
+.kiosk-guardian { margin-top: .6rem; padding-top: .6rem; border-top: 1px dashed #e4ddcb; }
+.kiosk-privacy summary { cursor: pointer; font-weight: 600; color: #102542; }
+.kiosk-privacy-body { max-height: 260px; overflow: auto; padding: .6rem .8rem; margin-top: .5rem; background: #faf8f2; border-radius: 10px; font-size: .95rem; }
+.kiosk-form .sigpad canvas { width: 100%; height: 200px; background: #fff; border: 2px dashed #c6a15b; border-radius: 12px; touch-action: none; }
+.kiosk-submit { width: 100%; min-height: 56px; font-size: 1.2rem; }
+.kiosk-staff { text-align: right; margin-top: 2rem; font-size: .85rem; }
+.kiosk-staff a { color: #9aa1ab; }
+.kiosk-done { text-align: center; padding: 4rem 1rem; }
+.kiosk-done h1 { font-size: 2.4rem; }

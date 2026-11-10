@@ -57,6 +57,7 @@
     {% endif %}{% endcall %}
     {% call group('Patients', 'patients') %}{% if current_user.can('patients.view') %}
       {{ nav('patients.index', 'Patients', 'patients.') }}
+      {% if current_user.can('patients.manage') %}{{ nav('kiosk.registrations', 'New registrations', 'kiosk.', count=nav_counts.kiosk) }}{% endif %}
       {% if current_user.role == 'dentist' or current_user.is_super_admin %}{{ nav('cases.index', 'My cases', 'cases.') }}{% endif %}
       {% if current_user.role == 'dentist' %}{{ nav('commissions.mine', 'My commissions', 'commissions.mine') }}{% endif %}
       {% if current_user.can('reportcards.generate') or current_user.can('reportcards.review') %}{{ nav('reportcards.index', 'Report cards', 'reportcards.', nav_counts.reviews) }}{% endif %}

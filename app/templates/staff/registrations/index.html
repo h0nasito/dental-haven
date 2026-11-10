@@ -1,0 +1,17 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}New patient registrations{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>New patient registrations</h1><p>Filled in by new patients on the clinic tablet (kiosk). Check each one, then create the patient record or link it to an existing patient.</p></div></div>
+<div class="card"><div class="card-head"><h2>Start the kiosk on this tablet</h2></div>
+<p class="hint">Use this on the clinic tablet or iPad, logged in with a staff account. The tablet will only show the registration form, clear it after each patient, and need this account's password to leave kiosk mode.</p>
+<form method="post" action="{{ url_for('kiosk.start') }}" class="toolbar">{{ csrf() }}
+<div class="field"><label for="ks-b">Branch</label><select id="ks-b" name="branch_id">{% for b in branches %}<option value="{{ b.id }}" {{ 'selected' if b.id == current_user.active_branch_id }}>{{ b.name }}</option>{% endfor %}</select></div>
+<button class="btn">Start kiosk</button></form></div>
+<div class="tabs" role="tablist"><a class="{{ 'active' if view == 'pending' }}" href="{{ url_for('kiosk.registrations') }}">To review{% if pending %} ({{ pending }}){% endif %}</a><a class="{{ 'active' if view != 'pending' }}" href="{{ url_for('kiosk.registrations', view='done') }}">Done</a></div>
+<div class="card"><div class="table-wrap"><table><thead><tr><th>Received</th><th>Name</th><th>Branch</th><th>Status</th><th></th></tr></thead><tbody>
+{% for r in rows %}<tr><td>{{ r.created_at|dt }}</td><td><strong>{{ r.last_name }}, {{ r.first_name }}</strong></td><td>{{ r.branch }}</td>
+<td>{% if r.status == 'pending' %}<span class="badge badge-amber">To review</span>{% elif r.status == 'accepted' %}<span class="badge badge-green">Patient {{ r.chart_no }}</span>{% else %}<span class="badge">Discarded</span>{% if r.review_note %}<br><small class="muted">{{ r.review_note }}</small>{% endif %}{% endif %}</td>
+<td>{% if r.status == 'pending' %}<a class="btn btn-secondary btn-sm" href="{{ url_for('kiosk.registration', reg_id=r.id) }}">Review</a>{% elif r.patient_id %}<a class="btn btn-ghost btn-sm" href="{{ url_for('patients.detail', patient_id=r.patient_id) }}">Open patient</a>{% endif %}</td></tr>
+{% else %}<tr><td colspan="5" class="empty">{{ 'No registrations waiting.' if view == 'pending' else 'Nothing yet.' }}</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

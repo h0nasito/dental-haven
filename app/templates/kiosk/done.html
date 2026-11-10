@@ -1,0 +1,8 @@
+{% extends "kiosk/_base.html" %}
+{% block kiosk %}
+<div class="kiosk-done" data-kiosk-return="{{ url_for('kiosk.form') }}" data-seconds="15">
+<h1>Thank you! ✓</h1>
+<p class="lead">Your details were sent to our clinic team. Please return the tablet to the front desk.</p>
+<p class="muted">This screen clears itself in a few seconds.</p>
+<a class="btn" href="{{ url_for('kiosk.form') }}">Next patient</a></div>
+{% endblock %}

@@ -1,0 +1,52 @@
+{% extends "kiosk/_base.html" %}
+{% macro field(name, label, type='text', req=False, ph='', auto='', mode='') -%}
+<div class="field {% if errors[name] %}error{% endif %}"><label for="k-{{ name }}">{{ label }}{% if req %} <span aria-hidden="true">*</span>{% endif %}</label>
+<input id="k-{{ name }}" name="{{ name }}" type="{{ type }}" value="{{ v[name] }}" {% if req %}required{% endif %} {% if ph %}placeholder="{{ ph }}"{% endif %} {% if auto %}autocomplete="{{ auto }}"{% else %}autocomplete="off"{% endif %} {% if mode %}inputmode="{{ mode }}"{% endif %}>
+{% if errors[name] %}<span class="field-error">{{ errors[name] }}</span>{% endif %}</div>
+{%- endmacro %}
+{% block head_right %}<span class="muted">{{ branch.name }}</span>{% endblock %}
+{% block kiosk %}
+<h1>Welcome! Please tell us about yourself</h1>
+<p class="lead">This takes about 5 minutes. Fields marked * are needed. Your details go straight to our clinic team and are kept private.</p>
+{% if errors %}<p class="notice error-notice" role="alert">Please check the fields marked in red below.</p>{% endif %}
+<form method="post" enctype="multipart/form-data" class="kiosk-form" data-kiosk-form autocomplete="off">{{ csrf() }}
+<fieldset><legend>1. About you</legend>
+<div class="form-grid">{{ field('first_name', 'First name', req=True) }}{{ field('middle_name', 'Middle name') }}{{ field('last_name', 'Last name', req=True) }}
+{{ field('birth_date', 'Date of birth', 'date', req=True) }}
+<div class="field"><label for="k-sex">Sex</label><select id="k-sex" name="sex"><option value=""></option>{% for s in ['Female', 'Male'] %}<option {{ 'selected' if v.sex == s }}>{{ s }}</option>{% endfor %}</select></div>
+<div class="field"><label for="k-civil">Civil status</label><select id="k-civil" name="civil_status"><option value=""></option>{% for s in ['Single', 'Married', 'Widowed', 'Separated'] %}<option {{ 'selected' if v.civil_status == s }}>{{ s }}</option>{% endfor %}</select></div>
+{{ field('occupation', 'Occupation / school') }}</div></fieldset>
+<fieldset><legend>2. How we can reach you</legend>
+<div class="form-grid">{{ field('phone', 'Mobile number', 'tel', req=True, ph='09XX XXX XXXX', mode='tel') }}{{ field('email', 'Email', 'email', mode='email') }}</div>
+{{ field('address', 'Home address') }}</fieldset>
+<fieldset><legend>3. Emergency contact</legend>
+<div class="form-grid">{{ field('emergency_contact', 'Name') }}{{ field('emergency_relation', 'Relationship', ph='e.g. Mother, Spouse') }}{{ field('emergency_phone', 'Mobile number', 'tel', mode='tel') }}</div>
+<div class="kiosk-guardian" data-guardian-box>
+<p class="hint">For patients under 18: the parent or guardian fills this in and signs below.</p>
+<div class="form-grid">{{ field('guardian_name', 'Parent / guardian name') }}{{ field('guardian_relation', 'Relationship to the patient') }}</div></div></fieldset>
+<fieldset><legend>4. Health history</legend>
+<p class="hint">This helps your dentist treat you safely. Tick any that apply.</p>
+<div class="kiosk-checks">{% for c in conditions %}<label class="check"><input type="checkbox" name="conditions" value="{{ c }}" {{ 'checked' if c in v.conditions }}> {{ c }}</label>{% endfor %}</div>
+{{ field('conditions_other', 'Other conditions or operations') }}
+<p class="mt-1 mb-0"><strong>Allergies</strong></p>
+<div class="kiosk-checks">{% for a in allergy_list %}<label class="check"><input type="checkbox" name="allergies" value="{{ a }}" {{ 'checked' if a in v.allergies }}> {{ a }}</label>{% endfor %}</div>
+{{ field('allergies_other', 'Other allergies') }}
+{{ field('medications', 'Medicines you take regularly') }}
+<div class="form-grid"><div class="field"><label for="k-preg">Pregnant or breastfeeding?</label><select id="k-preg" name="pregnant"><option value=""></option>{% for s in ['No', 'Pregnant', 'Breastfeeding', 'Not applicable'] %}<option {{ 'selected' if v.pregnant == s }}>{{ s }}</option>{% endfor %}</select></div>
+{{ field('last_visit', 'Last dental visit', ph='e.g. 1 year ago') }}</div>
+{{ field('reason', 'Why are you visiting today?', ph='e.g. Toothache, cleaning, braces') }}</fieldset>
+<fieldset><legend>5. Your photo (optional)</legend>
+<p class="hint">Helps our staff recognise you at your next visit. Only clinic staff can see it.</p>
+<div class="field {% if errors.photo %}error{% endif %}"><label for="k-photo">Take a photo</label><input id="k-photo" type="file" name="photo" accept="image/*" capture="user">{% if errors.photo %}<span class="field-error">{{ errors.photo }}</span>{% endif %}</div></fieldset>
+<fieldset><legend>6. Privacy and signature</legend>
+<details class="kiosk-privacy"><summary>Read our privacy notice</summary><div class="kiosk-privacy-body">{% if privacy.body %}{{ privacy.body|richtext }}{% else %}We collect your details to register you as a patient, contact you about your care, and keep your dental records as the law requires. Only authorised clinic staff can see them. You can ask to see or correct your information at any time.{% endif %}</div></details>
+<label class="check mt-1 {% if errors.consent_privacy %}error{% endif %}"><input type="checkbox" name="consent_privacy" value="1" {{ 'checked' if v.consent_privacy }}> I have read the privacy notice and agree that Dental Haven may keep and use my information for my dental care. *</label>
+{% if errors.consent_privacy %}<span class="field-error">{{ errors.consent_privacy }}</span>{% endif %}
+<label class="check"><input type="checkbox" name="consent_marketing" value="1" {{ 'checked' if v.consent_marketing }}> Send me promos and clinic news (optional).</label>
+<div class="sigpad mt-1"><canvas data-sigpad width="700" height="200" aria-label="Signature pad: sign here with your finger"></canvas><input type="hidden" name="signature" data-sig-out></div>
+<div class="row between"><small class="muted">Sign above with your finger (parent or guardian for patients under 18). *</small><button type="button" class="btn btn-ghost btn-sm" data-sig-clear>Clear</button></div>
+{% if errors.signature %}<span class="field-error">{{ errors.signature }}</span>{% endif %}</fieldset>
+<button class="btn kiosk-submit">Submit my details</button>
+</form>
+<p class="kiosk-staff"><a href="{{ url_for('kiosk.exit') }}">Staff</a></p>
+{% endblock %}

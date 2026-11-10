@@ -1753,3 +1753,33 @@ document.querySelectorAll('[data-suggest]').forEach(function (input) {
     });
   });
 })();
+
+/* New-patient kiosk: keep the tablet's staff login alive, show the guardian part for under-18s, need a signature,
+   and after "Thank you" go back to an empty form for the next patient. */
+(function () {
+  var main = document.querySelector('[data-kiosk-ping]');
+  if (main) {
+    var token = document.querySelector('input[name=csrf_token]');
+    setInterval(function () {
+      var fd = new FormData(); if (token) fd.append('csrf_token', token.value);
+      fetch(main.dataset.kioskPing, { method: 'POST', body: fd, credentials: 'same-origin' }).catch(function () {});
+    }, 10 * 60 * 1000);
+  }
+  var done = document.querySelector('[data-kiosk-return]');
+  if (done) setTimeout(function () { window.location.replace(done.dataset.kioskReturn); }, (parseInt(done.dataset.seconds, 10) || 15) * 1000);
+  var form = document.querySelector('form[data-kiosk-form]');
+  if (!form) return;
+  var bd = form.querySelector('[name=birth_date]'), box = form.querySelector('[data-guardian-box]');
+  function guardian() {
+    if (!box || !bd) return;
+    var d = bd.value ? new Date(bd.value + 'T00:00:00') : null, minor = false;
+    if (d && !isNaN(d)) { var t = new Date(), age = t.getFullYear() - d.getFullYear(); if (t < new Date(t.getFullYear(), d.getMonth(), d.getDate())) age--; minor = age < 18; }
+    box.hidden = !minor && !box.querySelector('[name=guardian_name]').value;
+  }
+  if (bd) bd.addEventListener('change', guardian);
+  guardian();
+  form.addEventListener('submit', function (e) {
+    var pad = form.querySelector('[data-sigpad]');
+    if (pad && pad.dataset.drawn !== '1') { e.preventDefault(); alert('Please sign in the box before submitting.'); }
+  });
+})();
