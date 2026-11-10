@@ -174,7 +174,65 @@ def invoice_commission_info(conn, inv) -> dict:
         a = conn.one("SELECT dentist_id FROM appointments WHERE id = ?", (inv["appointment_id"],))
         dentist = a["dentist_id"] if a else None
     lab = conn.scalar("SELECT COALESCE(SUM(lab_fee_cents), 0) FROM invoice_items WHERE invoice_id = ?", (inv["id"],)) or 0
-    return {"dentist_id": dentist, "lab_fee_cents": int(lab)}
+    # Bill lines with a dentist (and maybe a commission set on the line): the payment's commission follows the lines, so the
+    # cashier doesn't enter it again; several dentists are split. Preview for the whole bill, scaled to the amount paid.
+    n_dent = conn.scalar("SELECT COUNT(DISTINCT dentist_id) FROM invoice_items WHERE invoice_id = ? AND dentist_id IS NOT NULL", (inv["id"],)) or 0
+    custom = conn.scalar("SELECT COUNT(*) FROM invoice_items WHERE invoice_id = ? AND dentist_id IS NOT NULL "
+                         "AND commission_mode IN ('percent', 'amount')", (inv["id"],)) or 0
+    split = split_commission(conn, inv, inv["total_cents"]) if (n_dent or custom) and inv["total_cents"] else []
+    no_dentist = conn.scalar("SELECT COUNT(*) FROM invoice_items WHERE invoice_id = ? AND dentist_id IS NULL AND COALESCE(xray, 0) = 0 "
+                             "AND amount_cents > 0", (inv["id"],)) or 0
+    return {"dentist_id": dentist, "lab_fee_cents": int(lab), "split": split, "split_no_dentist": no_dentist}
+
+
+def split_commission(conn, inv, pay_cents: int) -> list[dict]:
+    """A payment's dentist commission split by bill line: each line's dentist earns on that line's share of the payment
+    (after its lab fee share), at the % or amount set on the line, else the dentist's rate for that service, else their
+    usual rate. A fixed amount on a line is earned in proportion to how much of the bill this payment covers.
+    X-ray lines (own section) and lines without a dentist earn nothing here. One row per dentist."""
+    from .payroll import dentist_rates
+    from .util import today
+    mark_xray_lines(conn)
+    lines = conn.all("SELECT ii.*, u.name AS dentist_name, e.id AS emp_id FROM invoice_items ii LEFT JOIN users u ON u.id = ii.dentist_id "
+                     "LEFT JOIN employees e ON e.user_id = ii.dentist_id WHERE ii.invoice_id = ? ORDER BY ii.id", (inv["id"],))
+    tot = sum(max(0, l["amount_cents"]) for l in lines)
+    if not tot or pay_cents <= 0:
+        return []
+    frac_bill = min(1.0, pay_cents / inv["total_cents"]) if inv["total_cents"] else 0
+    out: dict[int, dict] = {}
+    rates: dict[int, tuple] = {}
+    for l in lines:
+        amt = max(0, l["amount_cents"])
+        if not l["dentist_id"] or not amt or l["xray"] == 1:
+            continue
+        share = pay_cents * amt / tot
+        lab = min(share, share * (l["lab_fee_cents"] or 0) / amt) if l["lab_fee_cents"] else 0
+        base = share - lab
+        mode = l["commission_mode"] or "auto"
+        if mode == "amount" and l["commission_cents"] is not None:
+            bp, comm = None, l["commission_cents"] * frac_bill
+        else:
+            if mode == "percent" and l["commission_bp"] is not None:
+                bp = l["commission_bp"]
+            else:
+                if l["emp_id"] and l["emp_id"] not in rates:
+                    r = dentist_rates(conn, l["emp_id"], today().isoformat())
+                    svc = {x["service_id"]: x["commission_bp"] for x in conn.all("SELECT * FROM dentist_service_rates WHERE employee_id = ?", (l["emp_id"],))}
+                    rates[l["emp_id"]] = ((r["commission_bp"] or 0) if r else 0, svc)
+                default, svc = rates.get(l["emp_id"], (0, {}))
+                bp = svc.get(l["service_id"], default)
+            comm = base * bp / 10000
+        row = out.setdefault(l["dentist_id"], {"user_id": l["dentist_id"], "name": l["dentist_name"], "emp_id": l["emp_id"], "lines": [],
+                                               "base": 0.0, "amount": 0.0, "bps": set()})
+        row["lines"].append((l["description"] or "").split(" · ")[0] + (f" #{l['tooth']}" if l["tooth"] else ""))
+        row["base"] += base
+        row["amount"] += comm
+        row["bps"].add(bp)
+    res = []
+    for row in out.values():
+        bps = row.pop("bps")
+        res.append({**row, "base": round(row["base"]), "amount": round(row["amount"]), "bp": next(iter(bps)) if len(bps) == 1 else None})
+    return sorted(res, key=lambda r: r["name"] or "")
 
 
 def lab_share(payment_cents: int, lab_fee_cents: int, total_cents: int) -> int:

@@ -1078,3 +1078,7 @@ body.kiosk { background: #f6f2e7; }
 .kiosk-staff a { color: #9aa1ab; }
 .kiosk-done { text-align: center; padding: 4rem 1rem; }
 .kiosk-done h1 { font-size: 2.4rem; }
+.comm-split-list { list-style: none; margin: .4rem 0; padding: 0; font-size: .92rem; }
+.comm-split-list li { padding: .4rem 0; border-bottom: 1px solid var(--line, #e5e7eb); }
+.comm-split-list li .row { gap: .5rem; }
+.comm-split .check { align-items: flex-start; }

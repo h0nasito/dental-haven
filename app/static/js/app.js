@@ -1783,3 +1783,29 @@ document.querySelectorAll('[data-suggest]').forEach(function (input) {
     if (pad && pad.dataset.drawn !== '1') { e.preventDefault(); alert('Please sign in the box before submitting.'); }
   });
 })();
+
+/* Payment form: dentist commission taken from the bill lines (split per dentist), or entered by hand for this payment. */
+(function () {
+  document.querySelectorAll('[data-comm-split]').forEach(function (box) {
+    var form = box.closest('form'), comm = box.closest('details[data-comm]');
+    var single = comm.querySelector('[data-comm-single]'), calc = comm.querySelector('[data-comm-calc]');
+    var bill = parseInt(box.dataset.bill, 10) || 0, sum = comm.querySelector('[data-comm-sum]');
+    function peso(c) { return '₱' + (c / 100).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+    function paying() {
+      var t = 0; form.querySelectorAll('[name=amount]').forEach(function (i) { t += Math.round((parseFloat(i.value) || 0) * 100); }); return t;
+    }
+    function update() {
+      var on = box.querySelector('[data-comm-split-on]').checked, pay = paying(), parts = [];
+      if (single) single.hidden = on;
+      if (calc) calc.hidden = on;
+      box.querySelectorAll('[data-split-full]').forEach(function (td) {
+        var full = parseInt(td.dataset.splitFull, 10) || 0, v = bill ? Math.round(full * Math.min(1, pay / bill)) : 0;
+        td.textContent = peso(v); parts.push(td.closest('li').querySelector('strong').textContent);
+      });
+      if (sum && on) sum.textContent = 'From the bill lines: ' + parts.join(', ') + ' (open to check or change)';
+    }
+    box.addEventListener('change', update);
+    form.addEventListener('input', update);
+    update();
+  });
+})();

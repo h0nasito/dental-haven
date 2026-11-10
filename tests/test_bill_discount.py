@@ -666,3 +666,41 @@ class TestBeforeAfterSection(Base):
         self.assertIn("Veneers case 0 (demo)", section)
         self.assertIn("Veneers case 1 (demo)", section)
         self.assertIn('href="#before-after"', page)
+
+
+class TestSplitCommission(Base):
+    def test_payment_commission_follows_bill_lines_per_dentist(self):
+        from app.util import now_str
+        mal = self.branch("malolos")
+        d1 = self.q("SELECT id FROM users WHERE email LIKE 'dentist.malolos@%'")["id"]
+        d2 = self.q("SELECT u.id FROM users u JOIN employees e ON e.user_id = u.id WHERE u.role = 'dentist' AND u.id != ? LIMIT 1", (d1,))["id"]
+        e1 = self.q("SELECT id FROM employees WHERE user_id = ?", (d1,))["id"]
+        e2 = self.q("SELECT id FROM employees WHERE user_id = ?", (d2,))["id"]
+        for e in (e1, e2):
+            self.conn.execute("DELETE FROM dentist_pay_rates WHERE employee_id = ?", (e,))
+            self.conn.insert("dentist_pay_rates", {"employee_id": e, "daily_rate_cents": 0, "commission_bp": 4000, "effective_from": "2020-01-01",
+                                                   "notes": "demo", "created_at": now_str()})
+        pid = self.q("SELECT id FROM patients WHERE preferred_branch_id = ? LIMIT 1", (mal,))["id"]
+        inv = self.conn.insert("invoices", {"branch_id": mal, "patient_id": pid, "status": "issued", "number": "SPL-1", "issued_at": "2026-11-10",
+                                            "subtotal_cents": 255000, "discount_cents": 0, "tax_cents": 0, "total_cents": 255000, "created_at": now_str()})
+        self.conn.insert("invoice_items", {"invoice_id": inv, "description": "Cleaning (demo)", "qty": 1, "unit_price_cents": 100000, "discount_cents": 0,
+                                           "amount_cents": 100000, "dentist_id": d1, "done_on": "2026-11-10"})
+        self.conn.insert("invoice_items", {"invoice_id": inv, "description": "Braces adjustment (demo)", "qty": 1, "unit_price_cents": 155000,
+                                           "discount_cents": 0, "amount_cents": 155000, "dentist_id": d2, "done_on": "2026-11-10",
+                                           "commission_mode": "amount", "commission_cents": 10000})
+        a = self.login("admin")
+        page = a.get(f"/staff/invoices/{inv}").data.decode()
+        self.assertIn("From the bill lines", page)
+        a.post(f"/staff/invoices/{inv}/payments", data={"action": "multi", "method": "cash", "amount": "2550", "received_at": "2026-11-10",
+                                                        "not_signed_reason": "test", "comm_split": "1"})
+        got = {r["employee_id"]: r["amount_cents"] for r in self.conn.all("SELECT * FROM dentist_commissions WHERE invoice_id = ?", (inv,))}
+        self.assertEqual(got, {e1: 40000, e2: 10000})          # 40% of the ₱1,000 cleaning; the ₱100 set on the braces line
+        # half the bill paid: half of each
+        inv2 = self.conn.insert("invoices", {"branch_id": mal, "patient_id": pid, "status": "issued", "number": "SPL-2", "issued_at": "2026-11-10",
+                                             "subtotal_cents": 255000, "discount_cents": 0, "tax_cents": 0, "total_cents": 255000, "created_at": now_str()})
+        for it in self.conn.all("SELECT * FROM invoice_items WHERE invoice_id = ?", (inv,)):
+            self.conn.insert("invoice_items", {k: it[k] for k in it.keys() if k not in ("id", "invoice_id", "xray")} | {"invoice_id": inv2})
+        a.post(f"/staff/invoices/{inv2}/payments", data={"action": "multi", "method": "cash", "amount": "1275", "received_at": "2026-11-10",
+                                                         "not_signed_reason": "test", "comm_split": "1"})
+        got = {r["employee_id"]: r["amount_cents"] for r in self.conn.all("SELECT * FROM dentist_commissions WHERE invoice_id = ?", (inv2,))}
+        self.assertEqual(got, {e1: 20000, e2: 5000})

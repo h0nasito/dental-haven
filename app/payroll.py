@@ -226,7 +226,7 @@ def parse_time(value: str | None) -> str | None:
 
 
 def add_manual_commission(conn, dentist_user_id: int | None, employee_id: int | None, earned_on, base_cents, rate_bp, amount_cents,
-                          by_user_id: int, invoice_id=None, payment_id=None, description: str = ""):
+                          by_user_id: int, invoice_id=None, payment_id=None, description: str = "", fill_lines: bool = True):
     """Record a manual dentist commission. Give either amount_cents, or base_cents + rate_bp (amount = base x rate).
     Returns (id, error)."""
     if not employee_id and dentist_user_id:
@@ -249,7 +249,7 @@ def add_manual_commission(conn, dentist_user_id: int | None, employee_id: int | 
     # The dentist who earns the commission did the work: bill lines with no dentist yet get this dentist, so the case shows
     # in their My cases (and the patient is assigned to them). Only when commission is counted per payment, so the lines
     # don't add a second, per-procedure commission.
-    if invoice_id and not per_procedure(conn):
+    if fill_lines and invoice_id and not per_procedure(conn):
         uid = conn.scalar("SELECT e.user_id FROM employees e JOIN users u ON u.id = e.user_id WHERE e.id = ? AND u.role = 'dentist'", (employee_id,))
         if uid:
             conn.execute("UPDATE invoice_items SET dentist_id = ?, legacy_dentist = 0, done_on = COALESCE(done_on, "

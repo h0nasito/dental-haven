@@ -727,7 +727,8 @@ def _multi_payment(conn, inv, paid):
     elif not reason:
         return "Ask the patient to sign, or tick 'Patient can't sign' and give the reason."
     comm = None
-    comm_dentist = to_int(request.form.get("comm_dentist_id"))
+    comm_split = request.form.get("comm_split") == "1" and (g.user.can("commission.record") or g.user.can("bills.edit"))
+    comm_dentist = None if comm_split else to_int(request.form.get("comm_dentist_id"))
     if comm_dentist:
         if not (g.user.can("commission.record") or g.user.can("bills.edit")):
             abort(403)
@@ -768,7 +769,22 @@ def _multi_payment(conn, inv, paid):
                 conn.insert("payment_proofs", {"invoice_id": inv["id"], "payment_id": pid, "stored_name": n, "uploaded_by": g.user.id,
                                                "created_at": now_str()})
     comm_note = ""
-    if comm:
+    if comm_split:                       # each dentist on the bill earns on their own lines' share of this payment
+        from ..billing import split_commission
+        from ..payroll import add_manual_commission
+        done, missing = [], []
+        for row in split_commission(conn, inv, total):
+            if not row["emp_id"]:
+                missing.append(row["name"])
+                continue
+            _cid, err = add_manual_commission(conn, None, row["emp_id"], received, row["base"], row["bp"], row["amount"], g.user.id,
+                                              invoice_id=inv["id"], payment_id=pid, fill_lines=False,
+                                              description=(f"Payment on {inv['number']}: " + ", ".join(row["lines"]))[:200])
+            if not err:
+                done.append(f"{row['name']} {peso(row['amount'])}")
+        comm_note = (" Dentist commission split: " + "; ".join(done) + "." if done else "") + \
+                    (f" No employee record (no commission): {', '.join(missing)}." if missing else "")
+    elif comm:
         from ..payroll import add_manual_commission
         _cid, err = add_manual_commission(conn, None, comm["employee_id"], received, comm["base"], comm["bp"], comm["amount"], g.user.id,
                                           invoice_id=inv["id"], payment_id=pid,
