@@ -585,6 +585,10 @@ class TestMyCommissions(Base):
         self.assertIn(f"{pt['last_name']}, {pt['first_name']}", page)
         self.assertIn("14:35", page)
         self.assertIn("₱350.00", page)
+        self.assertIn("Full price", page)
+        self.conn.execute("INSERT INTO invoice_items (invoice_id, description, qty, unit_price_cents, amount_cents, dentist_id) "
+                          "VALUES (?, 'Braces (demo)', 1, 4500000, 4500000, ?)", (inv, uid))
+        self.assertIn("₱45,000.00", d.get("/staff/commissions/mine?month=2026-10&half=2").data.decode())   # whole price of their lines
         self.assertEqual(d.get("/staff/commissions/").status_code, 403)                  # not everyone's
         self.assertEqual(self.login("reception.malolos").get("/staff/commissions/mine").status_code, 404)
 

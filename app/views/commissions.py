@@ -57,15 +57,16 @@ def build(conn, start: date, end: date, branch_ids: list[int], branch_id=None, d
                 rows.append({"date": it["done_on"], "branch": it["branch"], "bill": it["invoice_number"] or "draft", "chart": it["chart_no"],
                              "patient": f"{it['p_last']}, {it['p_first']}", "patient_id": it["patient_id"], "time": "",
                              "what": (it["description"] or "").split(" · ")[0] + (f" #{it['tooth']}" if it.get("tooth") else ""),
-                             "base": it["base_cents"], "rate_bp": it["rate_bp"], "amount": it["commission_cents"], "kind": "Procedure"})
+                             "price": it["amount_cents"], "base": it["base_cents"], "rate_bp": it["rate_bp"], "amount": it["commission_cents"], "kind": "Procedure"})
         for m in conn.all("SELECT c.*, i.number AS bill, p.chart_no, p.id AS pid, p.first_name AS p_first, p.last_name AS p_last, "
                           "COALESCE(pay.created_at, c.created_at) AS at, COALESCE(pb.name, ib.name) AS branch, COALESCE(pay.branch_id, i.branch_id) AS bid, "
-                          "pay.method, (SELECT group_concat(description, ', ') FROM invoice_items WHERE invoice_id = c.invoice_id) AS items "
+                          "pay.method, (SELECT group_concat(description, ', ') FROM invoice_items WHERE invoice_id = c.invoice_id) AS items, i.total_cents AS bill_total, "
+                          "(SELECT SUM(amount_cents) FROM invoice_items WHERE invoice_id = c.invoice_id AND dentist_id = ? AND COALESCE(xray, 0) != 1) AS own_lines "
                           "FROM dentist_commissions c LEFT JOIN invoices i ON i.id = c.invoice_id LEFT JOIN patients p ON p.id = i.patient_id "
                           "LEFT JOIN payments pay ON pay.id = c.payment_id LEFT JOIN branches pb ON pb.id = pay.branch_id "
                           "LEFT JOIN branches ib ON ib.id = i.branch_id WHERE c.employee_id = ? AND c.status = 'valid' AND c.amount_cents != 0 "
                           "AND c.earned_on BETWEEN ? AND ? "
-                          "ORDER BY c.earned_on, c.id", (d["eid"], s, e)):
+                          "ORDER BY c.earned_on, c.id", (d["uid"], d["eid"], s, e)):
             if m["bid"] is not None and m["bid"] not in allowed:
                 continue
             if m["bid"] is None and branch_id:
@@ -77,7 +78,7 @@ def build(conn, start: date, end: date, branch_ids: list[int], branch_id=None, d
             rows.append({"date": m["earned_on"], "branch": m["branch"] or "—", "bill": m["bill"] or "—", "chart": m["chart_no"] or "—",
                          "patient": f"{m['p_last']}, {m['p_first']}" if m["pid"] else "—", "patient_id": m["pid"],
                          "time": at[11:16] if len(at) >= 16 and at[:10] == (m["earned_on"] or "") else "",
-                         "what": what[:160], "base": m["base_cents"], "rate_bp": m["rate_bp"], "amount": m["amount_cents"],
+                         "what": what[:160], "price": m["own_lines"] if m["own_lines"] else m["bill_total"], "base": m["base_cents"], "rate_bp": m["rate_bp"], "amount": m["amount_cents"],
                          "kind": "Payment" if m["payment_id"] else "Manual"})
         if rows:
             rows.sort(key=lambda r: (r["date"] or "", r["time"] or "", r["bill"] or ""))
@@ -165,14 +166,14 @@ def index():
         buf = io.StringIO()
         w = csv.writer(buf)
         w.writerow([f"Dentist commissions {start.isoformat()} to {end.isoformat()}"])
-        w.writerow(["Dentist", "Date", "Branch", "Bill", "Chart no.", "Procedure / for", "Type", "Base (PHP)", "Rate %", "Commission (PHP)"])
+        w.writerow(["Dentist", "Date", "Branch", "Bill", "Chart no.", "Procedure / for", "Type", "Full price (PHP)", "Base (PHP)", "Rate %", "Commission (PHP)"])
         for d in data:
             for r in d["rows"]:
-                w.writerow([d["dentist"], r["date"], r["branch"], r["bill"], r["chart"], r["what"], r["kind"],
+                w.writerow([d["dentist"], r["date"], r["branch"], r["bill"], r["chart"], r["what"], r["kind"], r["price"] / 100 if r["price"] is not None else "",
                             (r["base"] or 0) / 100 if r["base"] is not None else "", (r["rate_bp"] or 0) / 100 if r["rate_bp"] is not None else "",
                             r["amount"] / 100])
-            w.writerow([d["dentist"], "", "", "", "", "Total", "", "", "", d["commission"] / 100])
-        w.writerow(["All dentists", "", "", "", "", "Total", "", "", "", total / 100])
+            w.writerow([d["dentist"], "", "", "", "", "Total", "", "", "", "", d["commission"] / 100])
+        w.writerow(["All dentists", "", "", "", "", "Total", "", "", "", "", total / 100])
         audit.record("commission_report_exported", "report", None, f"Dentist commissions {start.isoformat()}–{end.isoformat()}")
         return Response(buf.getvalue(), mimetype="text/csv",
                         headers={"Content-Disposition": f"attachment; filename=dentist-commissions-{start.isoformat()}-{end.isoformat()}.csv"})

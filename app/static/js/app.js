@@ -1035,7 +1035,10 @@ document.addEventListener('change', function (e) {
     results.forEach(function (r) {
       var a = document.createElement('a'); a.href = r.url; a.setAttribute('role', 'option');
       a.dataset.id = r.id; a.dataset.name = r.name; a.dataset.chart = r.chart_no || '';
-      if (pickEl) a.addEventListener('mousedown', function (e) { e.preventDefault(); choose(a); });
+      if (pickEl) {
+        a.addEventListener('mousedown', function (e) { e.preventDefault(); choose(a); });
+        a.addEventListener('click', function (e) { e.preventDefault(); choose(a); });
+      }
       var n = document.createElement('span'); n.textContent = r.name; a.appendChild(n);
       var m = document.createElement('small'); m.textContent = [r.chart_no, r.branch].filter(Boolean).join(' · '); a.appendChild(m);
       box.appendChild(a); links.push(a);
@@ -1593,6 +1596,7 @@ document.addEventListener('change', function (e) {
 
 // Live patient suggestions while typing (top bar search, New appointment → Find the patient)
 document.querySelectorAll('[data-suggest]').forEach(function (input) {
+  if (input.dataset.suggestPick) return;          // pick-in-place boxes are handled above (no page change)
   var list = document.getElementById(input.getAttribute('aria-controls'));
   if (!list) return;
   var form = input.closest('form');

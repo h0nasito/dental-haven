@@ -21,10 +21,10 @@
 {% for d in data %}<tr><td><a href="#d{{ d.user_id }}">{{ d.dentist }}</a></td><td><small>{% for b, amt in d.by_branch %}{{ b }} {{ peso(amt) }}{{ ' · ' if not loop.last }}{% endfor %}</small></td><td class="num">{{ d.n }}</td><td class="num"><strong>{{ peso(d.commission) }}</strong></td></tr>{% endfor %}</tbody>
 <tfoot><tr><th colspan="3">Total</th><th class="num">{{ peso(total) }}</th></tr></tfoot></table></div></div>
 {% for d in data %}<div class="card" id="d{{ d.user_id }}"><div class="card-head"><h2>{{ d.dentist }}</h2><strong>{{ peso(d.commission) }}</strong></div>
-<div class="table-wrap"><table><thead><tr><th>Date</th><th>Branch</th><th>Bill</th><th>Chart no.</th><th>Procedure / for</th><th class="num">Base</th><th class="num">%</th><th class="num">Commission</th></tr></thead><tbody>
+<div class="table-wrap"><table><thead><tr><th>Date</th><th>Branch</th><th>Bill</th><th>Chart no.</th><th>Procedure / for</th><th class="num" title="The whole price of the procedure(s) on the bill">Full price</th><th class="num">Base</th><th class="num">%</th><th class="num">Commission</th></tr></thead><tbody>
 {% for r in d.rows %}<tr><td>{{ r.date|date }}</td><td>{{ r.branch }}</td><td>{{ r.bill }}</td><td>{{ r.chart }}</td><td>{{ r.what }} <small class="muted">· {{ r.kind }}</small></td>
-<td class="num">{{ peso(r.base) if r.base is not none else '—' }}</td><td class="num">{{ ((r.rate_bp / 100)|round(2)|string|replace('.0', '')) ~ '%' if r.rate_bp is not none else '—' }}</td><td class="num">{{ peso(r.amount) }}</td></tr>{% endfor %}</tbody>
-<tfoot><tr><th colspan="7">Total · {{ d.n }} entr{{ 'y' if d.n == 1 else 'ies' }}</th><th class="num">{{ peso(d.commission) }}</th></tr></tfoot></table></div></div>{% endfor %}
+<td class="num">{{ peso(r.price) if r.price is not none else '—' }}</td><td class="num">{{ peso(r.base) if r.base is not none else '—' }}</td><td class="num">{{ ((r.rate_bp / 100)|round(2)|string|replace('.0', '')) ~ '%' if r.rate_bp is not none else '—' }}</td><td class="num">{{ peso(r.amount) }}</td></tr>{% endfor %}</tbody>
+<tfoot><tr><th colspan="8">Total · {{ d.n }} entr{{ 'y' if d.n == 1 else 'ies' }}</th><th class="num">{{ peso(d.commission) }}</th></tr></tfoot></table></div></div>{% endfor %}
 {% else %}<div class="card"><p class="muted mb-0">No dentist commission in this cutoff{% if branch_id or dentist_id %} for the chosen filters{% endif %}.</p></div>{% endif %}
 <p class="hint">Payment = recorded by the cashier on a payment; Manual = added on the bill; Procedure = from bill lines (when commission is counted per procedure). Changes: System settings → Payroll.</p>
 {% endblock %}

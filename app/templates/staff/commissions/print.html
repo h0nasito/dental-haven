@@ -9,9 +9,9 @@
 {% for d in data %}<tr><td>{{ d.dentist }}</td><td class="num">{{ d.n }}</td><td class="num">{{ peso(d.commission) }}</td></tr>{% endfor %}</tbody>
 <tfoot><tr><th colspan="2">Total</th><th class="num">{{ peso(total) }}</th></tr></tfoot></table>
 {% for d in data %}<h2 style="font-size:1.05rem;margin-top:1.4rem;break-before:auto">{{ d.dentist }} — {{ peso(d.commission) }}</h2>
-<table><thead><tr><th>Date</th><th>Branch</th><th>Bill</th><th>Chart</th><th>Procedure / for</th><th class="num">Base</th><th class="num">%</th><th class="num">Commission</th></tr></thead><tbody>
-{% for r in d.rows %}<tr><td>{{ r.date|date }}</td><td>{{ r.branch }}</td><td>{{ r.bill }}</td><td>{{ r.chart }}</td><td>{{ r.what }}</td><td class="num">{{ peso(r.base) if r.base is not none else '' }}</td><td class="num">{{ (r.rate_bp / 100) ~ '%' if r.rate_bp is not none else '' }}</td><td class="num">{{ peso(r.amount) }}</td></tr>{% endfor %}</tbody>
-<tfoot><tr><th colspan="7">Total</th><th class="num">{{ peso(d.commission) }}</th></tr></tfoot></table>{% endfor %}
+<table><thead><tr><th>Date</th><th>Branch</th><th>Bill</th><th>Chart</th><th>Procedure / for</th><th class="num">Full price</th><th class="num">Base</th><th class="num">%</th><th class="num">Commission</th></tr></thead><tbody>
+{% for r in d.rows %}<tr><td>{{ r.date|date }}</td><td>{{ r.branch }}</td><td>{{ r.bill }}</td><td>{{ r.chart }}</td><td>{{ r.what }}</td><td class="num">{{ peso(r.price) if r.price is not none else '' }}</td><td class="num">{{ peso(r.base) if r.base is not none else '' }}</td><td class="num">{{ (r.rate_bp / 100) ~ '%' if r.rate_bp is not none else '' }}</td><td class="num">{{ peso(r.amount) }}</td></tr>{% endfor %}</tbody>
+<tfoot><tr><th colspan="8">Total</th><th class="num">{{ peso(d.commission) }}</th></tr></tfoot></table>{% endfor %}
 <div class="signature" style="margin-top:2.5rem"><div class="sig-line"></div>Prepared by</div>
 </main>
 {% endblock %}
