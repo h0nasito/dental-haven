@@ -707,7 +707,12 @@ class TestSplitCommission(Base):
         a.post(f"/staff/invoices/{inv2}/payments", data={"action": "multi", "method": "cash", "amount": "1275", "received_at": "2026-11-10",
                                                          "not_signed_reason": "test", "comm_split": "1"})
         got = {r["employee_id"]: r["amount_cents"] for r in self.conn.all("SELECT * FROM dentist_commissions WHERE invoice_id = ?", (inv2,))}
-        self.assertEqual(got, {e1: 20000, e2: 5000})
+        self.assertEqual(got, {e1: 20000, e2: 10000})         # half of the %; the fixed ₱100 in full on the first payment
+        # the second payment: the % part again, nothing more for the fixed line
+        a.post(f"/staff/invoices/{inv2}/payments", data={"action": "multi", "method": "cash", "amount": "1275", "received_at": "2026-11-10",
+                                                         "not_signed_reason": "test", "comm_split": "1"})
+        rows = self.conn.all("SELECT employee_id, SUM(amount_cents) AS t FROM dentist_commissions WHERE invoice_id = ? GROUP BY employee_id", (inv2,))
+        self.assertEqual({r["employee_id"]: r["t"] for r in rows}, {e1: 40000, e2: 10000})
 
 
 class TestFollowupPatientPicker(Base):

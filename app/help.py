@@ -183,7 +183,7 @@ ARTICLES: list[dict] = [
      "perms": ["billing.manage", "commission.view", "commission.record"], "link": ("billing.invoices", "Bills & invoices"),
      "steps": ["Each bill line has a dentist. When a payment is saved, each dentist earns on their own lines, at the % or amount set on the line, else their usual rate.",
                "The lab fee is taken out first: on the bill, open **Dentist, lab fee & commission** on the line to enter it (or link the lab case).",
-               "A free (₱0) line with a fixed amount typed on it still earns that amount.",
+               "A fixed amount typed on a line (e.g. ₱100) is earned in full with the bill's first payment, even on a free (₱0) line.",
                "To add a commission by hand, open the bill → **Dentist commission (manual)** → **Add commission**."],
      "tips": ["Enter the lab fee before taking the payment so the commission is right the first time."]},
     {"slug": "move-to-xray", "cat": "Bills & payments", "title": "Move an X-ray from a bill to the X-ray records",

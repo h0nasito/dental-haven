@@ -758,6 +758,7 @@ def _multi_payment(conn, inv, paid):
                                                 "created_at": now_str()})
     ref, note = clean(request.form.get("reference"), 80), clean(request.form.get("notes"), 300)
     at_branch = _received_branch(inv)
+    first_pay = not conn.scalar("SELECT 1 FROM payments WHERE invoice_id = ? AND status = 'valid' AND kind = 'payment' LIMIT 1", (inv["id"],))
     for (m, account), amt in lines:
         pid = conn.insert("payments", {"invoice_id": inv["id"], "branch_id": at_branch, "kind": "payment", "amount_cents": amt,
                                        "method": m, "account": account, "reference": ref, "received_at": received.isoformat(), "received_by": g.user.id,
@@ -773,7 +774,9 @@ def _multi_payment(conn, inv, paid):
         from ..billing import split_commission
         from ..payroll import add_manual_commission
         done, missing = [], []
-        for row in split_commission(conn, inv, total):
+        for row in split_commission(conn, inv, total, first=first_pay):
+            if not row["amount"]:
+                continue
             if not row["emp_id"]:
                 missing.append(row["name"])
                 continue

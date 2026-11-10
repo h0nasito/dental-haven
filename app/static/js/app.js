@@ -1806,6 +1806,7 @@ document.querySelectorAll('[data-suggest]').forEach(function (input) {
       if (calc) calc.hidden = on;
       box.querySelectorAll('[data-split-full]').forEach(function (td) {
         var full = parseInt(td.dataset.splitFull, 10) || 0, v = bill ? Math.round(full * Math.min(1, pay / bill)) : 0;
+        if (pay > 0) v += parseInt(td.dataset.splitFixed, 10) || 0;      // a fixed amount on a line: in full on the first payment
         td.textContent = peso(v); parts.push(td.closest('li').querySelector('strong').textContent);
       });
       if (sum && on) sum.textContent = 'From the bill lines: ' + parts.join(', ') + ' (open to check or change)';

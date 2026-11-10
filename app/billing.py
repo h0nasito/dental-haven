@@ -185,10 +185,11 @@ def invoice_commission_info(conn, inv) -> dict:
     return {"dentist_id": dentist, "lab_fee_cents": int(lab), "split": split, "split_no_dentist": no_dentist}
 
 
-def split_commission(conn, inv, pay_cents: int) -> list[dict]:
+def split_commission(conn, inv, pay_cents: int, first: bool | None = None) -> list[dict]:
     """A payment's dentist commission split by bill line: each line's dentist earns on that line's share of the payment
     (after its lab fee share), at the % or amount set on the line, else the dentist's rate for that service, else their
-    usual rate. A fixed amount on a line is earned in proportion to how much of the bill this payment covers.
+    usual rate. A fixed amount on a line is earned in full on the bill's first payment (first=None: no valid payment yet),
+    and not again on later payments. Each row's "fixed" is that part; the rest follows the amount paid.
     X-ray lines (own section) and lines without a dentist earn nothing here. One row per dentist."""
     from .payroll import dentist_rates
     from .util import today
@@ -198,7 +199,8 @@ def split_commission(conn, inv, pay_cents: int) -> list[dict]:
     tot = sum(max(0, l["amount_cents"]) for l in lines)
     if not tot or pay_cents <= 0:
         return []
-    frac_bill = min(1.0, pay_cents / inv["total_cents"]) if inv["total_cents"] else 0
+    if first is None:
+        first = not conn.scalar("SELECT 1 FROM payments WHERE invoice_id = ? AND status = 'valid' AND kind = 'payment' LIMIT 1", (inv["id"],))
     out: dict[int, dict] = {}
     rates: dict[int, tuple] = {}
     for l in lines:
@@ -212,7 +214,8 @@ def split_commission(conn, inv, pay_cents: int) -> list[dict]:
         lab = min(share, share * (l["lab_fee_cents"] or 0) / amt) if l["lab_fee_cents"] and amt else 0
         base = share - lab
         if fixed:
-            bp, comm = None, l["commission_cents"] * frac_bill
+            bp, comm = None, 0.0
+            fixed_c = l["commission_cents"] if first else 0
         else:
             if mode == "percent" and l["commission_bp"] is not None:
                 bp = l["commission_bp"]
@@ -225,10 +228,11 @@ def split_commission(conn, inv, pay_cents: int) -> list[dict]:
                 bp = svc.get(l["service_id"], default)
             comm = base * bp / 10000
         row = out.setdefault(l["dentist_id"], {"user_id": l["dentist_id"], "name": l["dentist_name"], "emp_id": l["emp_id"], "lines": [],
-                                               "base": 0.0, "amount": 0.0, "bps": set()})
+                                               "base": 0.0, "amount": 0.0, "fixed": 0, "bps": set()})
         row["lines"].append((l["description"] or "").split(" · ")[0] + (f" #{l['tooth']}" if l["tooth"] else ""))
         row["base"] += base
-        row["amount"] += comm
+        row["amount"] += comm + (fixed_c if fixed else 0)
+        row["fixed"] += fixed_c if fixed else 0
         row["bps"].add(bp)
     res = []
     for row in out.values():
