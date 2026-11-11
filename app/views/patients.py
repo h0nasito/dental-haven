@@ -1022,6 +1022,7 @@ def _set_proc_price(conn, pr, price: int) -> str:
             for r in raw:
                 if (r.get("desc") or "").strip().lower() == first and (r.get("tooth") or "") == (pr["tooth"] or ""):
                     r["price"] = f"{price / 100:.2f}"
+                    r["price_set"] = True          # set on purpose (₱0 = free), not just "no price yet"
                     break
             conn.execute("UPDATE visit_notes SET lines_json = ? WHERE id = ?", (json.dumps(raw), pr["visit_note_id"]))
     return ""
@@ -1345,7 +1346,12 @@ def visit_lines(conn, raw_lines) -> tuple[list[dict], str]:
         if unit is None or not 1 <= qty <= 32 or disc_bp is None:
             return [], f"Check the price, quantity and discount % on “{ln['desc']}”."
         sub = qty * unit
-        lines.append({**ln, "unit": unit, "qty": qty, "sub": sub, "disc_cents": round(sub * disc_bp / 10000)})
+        row = {**ln, "unit": unit, "qty": qty, "sub": sub, "disc_cents": round(sub * disc_bp / 10000)}
+        # ₱0 typed over a service that has a price in the fee schedule: free on purpose (e.g. braces removal in the package),
+        # not "no price yet" (an unpriced service fills 0.00 too, but has no list price to fall back to)
+        if unit == 0 and str(ln.get("price") or "").strip() and fee_price(conn, ln["desc"], ln.get("service_id")) > 0:
+            row["price_set"] = True
+        lines.append(row)
     return lines, ""
 
 
@@ -1368,7 +1374,7 @@ def create_visit_bill(conn, vid: int | None, patient_id: int, branch_id: int, de
         conn.execute("UPDATE visit_notes SET invoice_id = ? WHERE id = ?", (inv, vid))
     for pid_ in proc_ids or []:
         conn.execute("UPDATE procedures SET invoice_id = ? WHERE id = ?", (inv, pid_))
-    if any(ln["unit"] <= 0 for ln in lines):
+    if any(unpriced_line(ln) for ln in lines):
         audit.record("invoice_created", "invoice", inv, "Draft bill from a progress note (prices to set)", branch_id=branch_id)
         return inv
     number = next_invoice_number(conn, branch_id)
@@ -1385,6 +1391,22 @@ def _cannot_bill(conn) -> set[int]:
     from ..permissions import load_user_permissions
     return {u["id"] for u in conn.all("SELECT id, role, access_role FROM users")
             if u["role"] != "super_admin" and "billing.manage" not in load_user_permissions(conn, u["id"], u["access_role"] or u["role"])}
+
+
+def mark_set_prices(conn, vid, lines: list[dict]) -> None:
+    """Lines whose price was changed on the progress note (Edit → Price) count as priced, even at ₱0. The edit also stores
+    the price on the note's procedure, which covers prices changed before lines carried the flag."""
+    set_ = {((r["description"] or "").split("\n", 1)[0].strip().lower(), r["tooth"] or "")
+            for r in conn.all("SELECT description, tooth FROM procedures WHERE visit_note_id = ? AND price_cents IS NOT NULL", (vid,))}
+    for ln in lines:
+        if ((ln.get("desc") or "").strip().lower(), ln.get("tooth") or "") in set_:
+            ln["price_set"] = True
+
+
+def unpriced_line(ln) -> bool:
+    """A ₱0 line with no price chosen yet (filled from the fee schedule / left for the cashier). A price set to ₱0 on
+    purpose (Edit → Price on the progress note) is free, not unpriced."""
+    return ln["unit"] <= 0 and not ln.get("price_set")
 
 
 def fee_price(conn, desc: str, service_id=None) -> int:
@@ -1428,12 +1450,13 @@ def notes_to_bill(conn, branch_ids: list[int], patient_id: int | None = None) ->
         lines, err = visit_lines(conn, raw)
         if err or not lines:
             continue
+        mark_set_prices(conn, v["id"], lines)
         for ln in lines:
-            if ln["unit"] <= 0:
+            if unpriced_line(ln):
                 ln["unit"] = fee_price(conn, ln["desc"], ln.get("service_id"))
                 ln["sub"] = ln["qty"] * ln["unit"]
         total = sum(l["sub"] - l["disc_cents"] for l in lines)
-        out.append({**dict(v), "kind": "note", "lines": lines, "unpriced": any(l["unit"] <= 0 for l in lines),
+        out.append({**dict(v), "kind": "note", "lines": lines, "unpriced": any(unpriced_line(l) for l in lines),
                     "estimate": total - bill_discount_cents(total, v["bill_discount_bp"], v["bill_discount_cents"]), "bill_discount_bp": v["bill_discount_bp"] or 0,
                     "bill_discount_cents": v["bill_discount_cents"] or 0,
                     "services": ", ".join(l["desc"] for l in lines)})
@@ -1451,11 +1474,11 @@ def notes_to_bill(conn, branch_ids: list[int], patient_id: int | None = None) ->
             "bill_discount_bp": 0, "lines": [], "proc_ids": [], "made_by": r["dentist"]})
         unit = r["price_cents"] if r["price_cents"] is not None else fee_price(conn, r["description"], r["service_id"])
         g_["lines"].append({"service_id": r["service_id"], "desc": r["description"], "tooth": r["tooth"] or "", "qty": 1, "unit": unit,
-                            "sub": unit, "disc_cents": 0})
+                            "sub": unit, "disc_cents": 0, "price_set": r["price_cents"] is not None})
         g_["proc_ids"].append(r["id"])
     for g_ in groups.values():
         g_["estimate"] = sum(l["sub"] for l in g_["lines"])
-        g_["unpriced"] = any(l["unit"] <= 0 for l in g_["lines"])
+        g_["unpriced"] = any(unpriced_line(l) for l in g_["lines"])
         g_["services"] = ", ".join(l["desc"] for l in g_["lines"])
         out.append(g_)
     out.sort(key=lambda x: (x["visit_date"] or "", x["id"]), reverse=True)
@@ -1516,8 +1539,9 @@ def visit_note_bill(patient_id, vid):
     if err or not lines:
         flash(err or "This progress note has no services to bill (X-rays are paid in the X-ray section).", "error")
         return redirect(back)
+    mark_set_prices(conn, vid, lines)
     for ln in lines:
-        if ln["unit"] <= 0:
+        if unpriced_line(ln):
             ln["unit"] = fee_price(conn, ln["desc"], ln.get("service_id"))
             ln["sub"] = ln["qty"] * ln["unit"]
     with conn.transaction(immediate=True):
@@ -1526,7 +1550,7 @@ def visit_note_bill(patient_id, vid):
             return redirect(back)
         inv = create_visit_bill(conn, vid, patient_id, v["branch_id"], v["dentist_id"], v["visit_date"], lines, v["bill_discount_bp"] or 0,
                                 bill_cents=v["bill_discount_cents"] or 0, cashier_note=v["cashier_note"] or "")
-    unpriced = any(ln["unit"] <= 0 for ln in lines)
+    unpriced = any(unpriced_line(ln) for ln in lines)
     flash("Bill created from the progress note." + (" Set the price of the services that have none, then issue it." if unpriced
                                                     else " Add the payment now."), "success")
     return redirect(url_for("billing.invoice", invoice_id=inv))
