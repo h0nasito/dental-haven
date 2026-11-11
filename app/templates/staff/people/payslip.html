@@ -2,7 +2,7 @@
 {% block title %}Payslip · {{ p.name }}{% endblock %}
 {% block body %}
 <main id="main">
-<div class="no-print row between print-sheet" style="margin-bottom:1rem"><a href="{{ url_for('people.payroll_period', period_id=p.id) }}">← Back to payroll</a><span class="muted">Use your browser's Print command{% if lines|length > 1 %} · one payslip per page{% endif %}</span></div>
+<div class="no-print row between print-sheet" style="margin-bottom:1rem"><a href="{{ back_url or url_for('people.payroll_period', period_id=p.id) }}">{{ '← My payslips' if back_url else '← Back to payroll' }}</a><span class="muted">Use your browser's Print command{% if lines|length > 1 %} · one payslip per page{% endif %}</span></div>
 {% for l in lines %}{% set it = items.get(l.employee_id, {}) %}{% set net = net_pay(l, it) %}
 <section class="print-sheet payslip">
 {% if p.status != 'approved' %}<div class="watermark">DRAFT, NOT FINAL</div>{% endif %}

@@ -1004,7 +1004,17 @@ def payroll_period(period_id):
     return render_template("staff/people/payroll_period.html", p=p, lines=lines, history=history, rules_confirmed=rules_confirmed,
                            items=items, net_pay=net_pay, add_types=ADDITION_TYPES, ded_types=DEDUCTION_TYPES,
                            late_rate=settings.get("payroll.late_peso_per_minute", conn), pay_unworked=settings.get("payroll.pay_unworked_regular_holiday", conn),
-                           show_money=g.user.can("compensation.manage"))
+                           show_money=g.user.can("compensation.manage"), **_payslip_mail_ctx(conn, p))
+
+
+def _payslip_mail_ctx(conn, p) -> dict:
+    from .. import dentist_mail, payslip_mail
+    if p["status"] != "approved" or not _can_send_payslips():
+        return {"ps_mail": None}
+    last = payslip_mail.latest(conn, p["id"])
+    rows = [{**r, "last": last.get(r["employee_id"])} for r in payslip_mail.recipients(conn, p["id"])]
+    return {"ps_mail": rows, "ps_mail_state": dentist_mail.state(conn), "ps_labels": payslip_mail.STATUS_LABELS,
+            "ps_pending": any(r["last"] and r["last"]["status"] == "pending" for r in rows)}
 
 
 @bp.route("/payroll/<int:period_id>/items", methods=["POST"])
@@ -1070,6 +1080,75 @@ def payslips(period_id, emp_id=None):
     audit.record("payslip_printed", "payroll_period", period_id, "Opened payslip" + ("" if emp_id else "s for everyone"),
                  {"employee_id": emp_id} if emp_id else None)
     return render_template("staff/people/payslip.html", p=p, lines=lines, items=period_items(conn, period_id), net_pay=net_pay,
+                           late_rate=settings.get("payroll.late_peso_per_minute", conn), BASIS_LABELS=BASIS_LABELS)
+
+
+def _can_send_payslips() -> bool:
+    return g.user.can("compensation.manage") and (g.user.can("payroll.approve") or g.user.can("payroll.prepare"))
+
+
+@bp.route("/payroll/<int:period_id>/payslips/email", methods=["POST"])
+@login_required
+def payslips_email(period_id):
+    """Queue “your payslip is ready” emails for an approved period; the page then sends them a few at a time."""
+    from .. import payslip_mail
+    if not _can_send_payslips():
+        abort(403)
+    conn = get_db()
+    p = _load_period(period_id)
+    if p["status"] != "approved":
+        flash("Payslips can be emailed once the payroll summary is approved.", "error")
+        return redirect(url_for("people.payroll_period", period_id=period_id))
+    with conn.transaction():
+        n = payslip_mail.queue(conn, period_id, g.user.id, again=request.form.get("again") == "1")
+        audit.record("payslips_emailed", "payroll_period", period_id, f"Payslip emails queued for {n} employee{'s' if n != 1 else ''}")
+    flash(f"Sending {n} payslip email{'s' if n != 1 else ''}… keep this page open until it says done." if n else
+          "Everyone with a login has already been emailed for this period.", "success" if n else "info")
+    return redirect(url_for("people.payroll_period", period_id=period_id, send=1 if n else None) + "#payslip-mail")
+
+
+@bp.route("/payroll/<int:period_id>/payslips/email/next", methods=["POST"])
+@login_required
+def payslips_email_next(period_id):
+    from flask import jsonify
+    from .. import payslip_mail
+    if not _can_send_payslips():
+        abort(403)
+    conn = get_db()
+    _load_period(period_id)
+    with conn.transaction():
+        left = payslip_mail.deliver(conn, period_id)
+    counts = {r["status"]: r["n"] for r in conn.all(
+        "SELECT status, COUNT(*) AS n FROM payslip_emails q WHERE period_id = ? AND id = (SELECT MAX(id) FROM payslip_emails "
+        "WHERE period_id = q.period_id AND employee_id = q.employee_id) GROUP BY status", (period_id,))}
+    return jsonify({"left": left, "counts": counts})
+
+
+@bp.route("/my-payslips")
+@login_required
+def my_payslips():
+    """An employee's own payslips (approved payroll periods only)."""
+    conn = get_db()
+    rows = conn.all("SELECT p.id, p.name, p.start_date, p.end_date, p.approved_at FROM payroll_lines l JOIN payroll_periods p ON p.id = l.period_id "
+                    "JOIN employees e ON e.id = l.employee_id WHERE e.user_id = ? AND p.status = 'approved' ORDER BY p.end_date DESC", (g.user.id,))
+    return render_template("staff/people/my_payslips.html", rows=rows)
+
+
+@bp.route("/my-payslips/<int:period_id>")
+@login_required
+def my_payslip(period_id):
+    from ..payroll import net_pay, period_items
+    conn = get_db()
+    p = conn.one("SELECT p.*, b.name AS branch FROM payroll_periods p LEFT JOIN branches b ON b.id = p.branch_id "
+                 "WHERE p.id = ? AND p.status = 'approved'", (period_id,))
+    lines = conn.all("SELECT l.*, e.full_name, e.position, COALESCE(b.name, lab.name) AS branch FROM payroll_lines l JOIN employees e ON e.id = l.employee_id "
+                     "LEFT JOIN branches b ON b.id = e.primary_branch_id LEFT JOIN laboratories lab ON lab.id = e.lab_id "
+                     "WHERE l.period_id = ? AND e.user_id = ?", (period_id, g.user.id)) if p else []
+    if not lines:
+        abort(404)
+    audit.record("own_payslip_viewed", "payroll_period", period_id, "Viewed own payslip")
+    items = {k: v for k, v in period_items(conn, period_id).items() if k == lines[0]["employee_id"]}
+    return render_template("staff/people/payslip.html", p=p, lines=lines, items=items, net_pay=net_pay, back_url=url_for("people.my_payslips"),
                            late_rate=settings.get("payroll.late_peso_per_minute", conn), BASIS_LABELS=BASIS_LABELS)
 
 

@@ -1,0 +1,11 @@
+{% extends "staff/layout.html" %}
+{% block page_title %}My payslips{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>My payslips</h1><p>Your payslips from approved payroll. Only you (and payroll staff) can see them.</p></div></div>
+<div class="card"><div class="table-wrap"><table><thead><tr><th>Period</th><th>Dates</th><th>Approved</th><th></th></tr></thead><tbody>
+{% for r in rows %}<tr><td><strong>{{ r.name }}</strong></td><td>{{ r.start_date|date }} – {{ r.end_date|date }}</td><td>{{ r.approved_at|dt if r.approved_at else '—' }}</td>
+<td><a class="btn btn-secondary btn-sm" href="{{ url_for('people.my_payslip', period_id=r.id) }}">View payslip</a></td></tr>
+{% else %}<tr><td colspan="4" class="empty">No payslips yet. They appear here once a payroll is approved.</td></tr>{% endfor %}
+</tbody></table></div></div>
+<p class="hint">Something wrong on your payslip? Talk to HR or your supervisor.</p>
+{% endblock %}

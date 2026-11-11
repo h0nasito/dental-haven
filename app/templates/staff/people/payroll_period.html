@@ -86,4 +86,17 @@
 <p class="hint mt-1">To approve, the pay rules must be confirmed, every attendance exception resolved, and the approver must be someone other than the person who submitted.</p></div>
 <div class="card"><h2>History</h2><ul class="list-plain">{% for h in history %}<li>{{ h.summary }}<br><small class="muted">{{ h.at|dt }} · {{ h.actor }}</small></li>{% endfor %}</ul></div>
 </div>
+{% if ps_mail is not none %}<div class="card" id="payslip-mail"><h2>Email payslips</h2>
+<p class="hint">Each employee gets an email saying their payslip is ready, with a link. They sign in to see it, so the email itself shows no pay. It goes to the email on their login.</p>
+{% if ps_mail_state == 'off' %}<p class="notice">Email isn't set up on the server yet, so nothing can be sent. The emails will show as “Not sent (email not set up)”.</p>
+{% elif ps_mail_state == 'demo' %}<p class="notice">This is the demo site: emails are never sent.</p>{% endif %}
+<form method="post" action="{{ url_for('people.payslips_email', period_id=p.id) }}" class="row" data-confirm="Email every employee in this payroll that their payslip is ready?">{{ csrf() }}
+<button class="btn">✉ Send payslips by email</button>
+<label class="check"><input type="checkbox" name="again" value="1"> Send again to people already emailed</label></form>
+<p class="muted mt-1" data-ps-progress data-next="{{ url_for('people.payslips_email_next', period_id=p.id) }}" {{ 'data-autostart' if ps_pending }} {{ 'hidden' if not ps_pending }}>Sending… keep this page open.</p>
+<div class="table-wrap mt-1"><table><thead><tr><th>Employee</th><th>Email</th><th>Status</th></tr></thead><tbody>
+{% for r in ps_mail %}<tr><td>{{ r.full_name }}</td><td>{{ r.email or '—' }}</td>
+<td>{% if r.last %}{{ ps_labels.get(r.last.status, r.last.status) }}{% if r.last.sent_at %} <small class="muted">{{ r.last.sent_at|dt }}</small>{% endif %}{% if r.last.error %}<br><small class="muted">{{ r.last.error }}</small>{% endif %}
+{% elif r.why_not %}<span class="muted">{{ r.why_not }}: create a login to email them</span>{% else %}<span class="muted">Not sent yet</span>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div></div>{% endif %}
 {% endblock %}

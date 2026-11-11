@@ -1856,3 +1856,23 @@ document.querySelectorAll('[data-suggest]').forEach(function (input) {
     ['pointerdown', 'touchstart', 'mousedown'].forEach(function (ev) { pad.addEventListener(ev, function () { note.open = false; }, { passive: true }); });
   });
 })();
+
+/* Payroll: send the queued payslip emails a few at a time, then reload to show each status. */
+(function () {
+  var el = document.querySelector('[data-ps-progress][data-autostart]');
+  if (!el) return;
+  var tokenEl = document.querySelector('[name=csrf_token]');
+  var token = tokenEl ? tokenEl.value : '';
+  el.hidden = false;
+  function step() {
+    var fd = new FormData(); fd.append('csrf_token', token);
+    fetch(el.dataset.next, { method: 'POST', body: fd, headers: { 'Accept': 'application/json', 'X-CSRF-Token': token }, credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.left > 0) { el.textContent = 'Sending… ' + d.left + ' left. Keep this page open.'; step(); }
+        else { el.textContent = 'Done.'; window.location.replace(window.location.pathname + '#payslip-mail'); window.location.reload(); }
+      })
+      .catch(function () { el.textContent = 'Sending stopped (connection problem). Reload the page to continue.'; });
+  }
+  step();
+})();

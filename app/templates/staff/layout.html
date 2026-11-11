@@ -184,7 +184,7 @@
           <div class="me-head">{{ avatar(current_user.id, current_user.name, current_user.avatar, 40) }}<div><strong>{{ current_user.name }}</strong><br><small class="muted">{{ ROLES[current_user.access_role] }}</small></div></div>
           <a role="menuitem" href="{{ url_for('profile.account') }}">👤 Profile settings</a>
           <a role="menuitem" href="{{ url_for('auth.change_password') }}">🔑 Change password</a>
-          {% if current_user.can('attendance.clock') %}<a role="menuitem" href="{{ url_for('timeclock.clock') }}">⏱ Time in / out</a><a role="menuitem" href="{{ url_for('people.attendance') }}">📋 My time records</a>{% endif %}
+          {% if current_user.can('attendance.clock') %}<a role="menuitem" href="{{ url_for('timeclock.clock') }}">⏱ Time in / out</a><a role="menuitem" href="{{ url_for('people.attendance') }}">📋 My time records</a><a role="menuitem" href="{{ url_for('people.my_payslips') }}">🧾 My payslips</a>{% endif %}
           <a role="menuitem" href="{{ url_for('help.index') }}">❓ Help</a>
           <form method="post" action="{{ url_for('auth.logout') }}">{{ csrf() }}<button type="submit" role="menuitem" class="me-out">↪ Sign out</button></form>
         </div>
