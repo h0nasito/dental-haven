@@ -109,6 +109,27 @@
 <strong>Account credit available: {{ credit|peso }}</strong>
 <div class="row mt-1"><label class="sr-only" for="ac">Amount</label><input id="ac" name="amount" value="{{ '%.2f'|format(([credit, balance]|min) / 100) }}" style="max-width:160px"><button class="btn btn-secondary btn-sm">Apply Account Credit</button></div></form>
 {% endif %}
+{% if free_sig %}<div class="notice mt-1">✅ <strong>Visit confirmed (no charge)</strong> · {{ free_sig.created_at|dt }}{% if free_sig.by_name %} · {{ free_sig.by_name }}{% endif %}
+{% if free_sig.stored_name %} · <a href="{{ url_for('billing.signature', invoice_id=inv.id, sig_id=free_sig.id) }}" target="_blank" rel="noopener">Patient signature</a>{% else %} · not signed: {{ free_sig.not_signed_reason }}{% endif %}</div>
+{% elif free_split is not none and current_user.can('payments.add') %}
+<h3 class="mt-1">Confirm visit (no charge)</h3>
+<form method="post" action="{{ url_for('billing.confirm_free', invoice_id=inv.id) }}" data-free-confirm>{{ csrf() }}
+<p class="hint">This bill is ₱0 (e.g. a braces adjustment already paid in the package). The patient signs to confirm the visit; no payment is recorded.</p>
+{% if current_user.can('commission.record') or current_user.can('bills.edit') %}<details class="pay-box comm-fold" data-staff-note open><summary><strong>Dentist commission</strong> <span class="badge">Staff only</span></summary>
+{% set fs = free_split|selectattr('amount')|list %}
+{% if fs %}<label class="check mt-1"><input type="radio" name="comm" value="lines" checked> From the bill lines (paid by the clinic)</label>
+<ul class="comm-split-list">{% for r in fs %}<li><div class="row between"><strong>{{ r.name }}</strong><strong>{{ r.amount|round|int|peso }}</strong></div><small class="muted">{{ r.lines|join(', ') }}</small></li>{% endfor %}</ul>
+<label class="check"><input type="radio" name="comm" value="none"> No commission</label>
+{% else %}<p class="muted mt-1">No fixed commission on the lines. To pay the dentist for this visit, open <strong>Dentist, lab fee &amp; commission</strong> on the line, choose <strong>Manual amount (₱)</strong> and save first.</p><input type="hidden" name="comm" value="none">{% endif %}
+</details>{% endif %}
+<fieldset class="pay-box"><legend>Patient signature</legend>
+<div class="sigpad"><canvas data-sigpad width="600" height="180" aria-label="Signature pad: the patient signs here with a finger, stylus or mouse"></canvas>
+<input type="hidden" name="signature" data-sig-out></div>
+<div class="row between"><small class="muted">Patient signs above to confirm today's visit.</small><button type="button" class="btn btn-ghost btn-sm" data-sig-clear>Clear</button></div>
+<details class="mt-1"><summary><small>Patient can't sign</small></summary><div class="field mt-1"><label>Reason</label><input name="not_signed_reason" aria-label="Reason the patient can't sign" maxlength="200" placeholder="e.g. Minor, parent not present"></div></details>
+</fieldset>
+<button class="btn mt-1">Confirm visit</button></form>
+{% endif %}
 {% if inv.status == 'issued' and current_user.can('payments.add') and balance > 0 %}
 <h3 class="mt-1">Add payment</h3>{{ pay_form(inv, balance, paid, today, inv.first_name ~ ' ' ~ inv.last_name, '', comm_dentists, comm_info) }}{% endif %}
 {% if inv.status != 'void' and current_user.can('bills.edit') and not (payments|selectattr('status', 'equalto', 'valid')|list) and my_pay_branches()|length > 1 %}

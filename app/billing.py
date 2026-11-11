@@ -221,8 +221,8 @@ def split_commission(conn, inv, pay_cents: int, first: bool | None = None) -> li
     lines = conn.all("SELECT ii.*, u.name AS dentist_name, e.id AS emp_id FROM invoice_items ii LEFT JOIN users u ON u.id = ii.dentist_id "
                      "LEFT JOIN employees e ON e.user_id = ii.dentist_id WHERE ii.invoice_id = ? ORDER BY ii.id", (inv["id"],))
     tot = sum(max(0, l["amount_cents"]) for l in lines)
-    if not tot or pay_cents <= 0:
-        return []
+    if pay_cents < 0 or (pay_cents > 0 and not tot):
+        return []                                  # pay_cents 0: only the fixed amounts (e.g. confirming a ₱0 visit)
     import json
     credited: dict[int, int] = {}
     already: dict[int, int] = {}
@@ -245,7 +245,7 @@ def split_commission(conn, inv, pay_cents: int, first: bool | None = None) -> li
         # a free line (₱0, e.g. a cleaning included in braces) still earns a fixed amount typed on it
         if not l["dentist_id"] or l["xray"] == 1 or (not amt and not fixed) or line_no_commission(l, free_names):
             continue
-        share = pay_cents * amt / tot
+        share = pay_cents * amt / tot if tot else 0
         lab = min(share, share * (l["lab_fee_cents"] or 0) / amt) if l["lab_fee_cents"] and amt else 0
         base = share - lab
         wait = False

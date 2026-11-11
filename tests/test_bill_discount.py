@@ -842,3 +842,49 @@ class TestNoCommissionItems(Base):
                                                         "not_signed_reason": "test", "comm_split": "0", "comm_dentist_id": str(d1),
                                                         "comm_mode": "percent", "comm_pct": "40"})
         self.assertEqual(self.conn.scalar("SELECT amount_cents FROM dentist_commissions WHERE invoice_id = ?", (inv,)), 60000)
+
+
+class TestManualCommissionAbovePayment(Base):
+    setUp = Base.setUp
+
+    def test_fixed_commission_can_exceed_a_small_payment(self):
+        from app.util import now_str
+        mal = self.branch("malolos")
+        d1 = self.q("SELECT id FROM users WHERE email LIKE 'dentist.malolos@%'")["id"]
+        pid = self.q("SELECT id FROM patients WHERE preferred_branch_id = ? LIMIT 1", (mal,))["id"]
+        inv = self.conn.insert("invoices", {"branch_id": mal, "patient_id": pid, "status": "issued", "number": "ELA-1", "issued_at": "2026-11-07",
+                                            "subtotal_cents": 10000, "discount_cents": 0, "tax_cents": 0, "total_cents": 10000, "created_at": now_str()})
+        for desc, amt in (("Braces adjustment (demo)", 0), ("Elastics (demo)", 10000)):
+            self.conn.insert("invoice_items", {"invoice_id": inv, "description": desc, "qty": 1, "unit_price_cents": amt, "discount_cents": 0,
+                                               "amount_cents": amt, "dentist_id": d1, "done_on": "2026-11-07"})
+        a = self.login("admin")
+        a.post(f"/staff/invoices/{inv}/payments", data={"action": "multi", "method": "cash", "amount": "100", "received_at": "2026-11-07",
+                                                        "not_signed_reason": "test", "comm_split": "0", "comm_dentist_id": str(d1),
+                                                        "comm_mode": "amount", "comm_amount": "500"})
+        self.assertEqual(self.conn.scalar("SELECT amount_cents FROM dentist_commissions WHERE invoice_id = ?", (inv,)), 50000)
+
+
+class TestFreeVisitConfirm(Base):
+    setUp = Base.setUp
+
+    def test_zero_bill_signed_and_commission_recorded_once(self):
+        from app.util import now_str
+        mal = self.branch("malolos")
+        d1 = self.q("SELECT id FROM users WHERE email LIKE 'dentist.malolos@%'")["id"]
+        pid = self.q("SELECT id FROM patients WHERE preferred_branch_id = ? LIMIT 1", (mal,))["id"]
+        inv = self.conn.insert("invoices", {"branch_id": mal, "patient_id": pid, "status": "issued", "number": "ADJ-1", "issued_at": "2026-11-11",
+                                            "subtotal_cents": 0, "discount_cents": 0, "tax_cents": 0, "total_cents": 0, "created_at": now_str()})
+        for desc, comm in (("Braces adjustment (demo)", 20000), ("Asepsis fee (demo)", None)):
+            self.conn.insert("invoice_items", {"invoice_id": inv, "description": desc, "qty": 1, "unit_price_cents": 0, "discount_cents": 0,
+                                               "amount_cents": 0, "dentist_id": d1, "done_on": "2026-11-07",
+                                               "commission_mode": "amount" if comm else "auto", "commission_cents": comm})
+        a = self.login("admin")
+        page = a.get(f"/staff/invoices/{inv}").data.decode()
+        self.assertIn("Confirm visit (no charge)", page)
+        self.assertIn("₱200.00", page)
+        a.post(f"/staff/invoices/{inv}/confirm-free", data={"not_signed_reason": "test (demo)"})
+        tot = self.conn.scalar("SELECT COALESCE(SUM(amount_cents), 0) FROM dentist_commissions WHERE invoice_id = ? AND status = 'valid'", (inv,))
+        self.assertEqual(tot, 20000)
+        self.assertIn("Visit confirmed (no charge)", a.get(f"/staff/invoices/{inv}").data.decode())
+        a.post(f"/staff/invoices/{inv}/confirm-free", data={"not_signed_reason": "again"})            # not twice
+        self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM dentist_commissions WHERE invoice_id = ?", (inv,)), 1)

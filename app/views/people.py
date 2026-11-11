@@ -341,7 +341,7 @@ def _delete_employees(conn):
 @login_required
 def employee_merge(emp_id):
     """Merge a duplicate employee into the right one: everything moves over, then the duplicate is deleted."""
-    from ..employee_merge import conflicts, merge
+    from ..employee_merge import conflicts, draft_payroll_overlap, merge
     if not _can_remove_employees():
         abort(403)
     conn = get_db()
@@ -356,13 +356,17 @@ def employee_merge(emp_id):
         return redirect(url_for("people.employee", emp_id=emp_id))
     clash = conflicts(conn, src["id"], dst["id"])
     if clash:
-        flash("Both records have " + "; ".join(clash) + ". Correct or remove one of them first, then merge.", "error")
+        flash("Both records have " + "; ".join(clash) + ". A payroll that is already submitted or approved has to be returned or "
+              "cancelled first; other items must be corrected on one record. Then merge.", "error")
         return redirect(url_for("people.employee", emp_id=emp_id))
+    redo = draft_payroll_overlap(conn, src["id"], dst["id"])
     with conn.transaction():
         merge(conn, src["id"], dst["id"])
         audit.record("employee_merged", "employee", dst["id"], f"Merged employee record #{src['id']} into #{dst['id']}",
                      {"from": dict(src)}, dst["primary_branch_id"])
-    flash(f"Merged into {dst['full_name']}: all records moved and the duplicate was deleted.", "success")
+    flash(f"Merged into {dst['full_name']}: all records moved and the duplicate was deleted."
+          + (f" Open draft payroll period{'s' if len(redo) > 1 else ''} #{', #'.join(map(str, redo))} and press Recalculate from DTR."
+             if redo else ""), "success")
     return redirect(url_for("people.employee", emp_id=dst["id"]))
 
 

@@ -9,7 +9,7 @@ from flask import Blueprint, Response, abort, flash, g, redirect, render_templat
 
 from .. import audit, settings
 from ..auth import require
-from ..billing import (CREDIT_METHOD, MAX_PROOFS, clinic_share, PAYMENT_METHODS, PROOF_METHODS, parse_pay, pay_label, collections, commission_dentists, compute_totals, credit_balance,
+from ..billing import (CREDIT_METHOD, MAX_PROOFS, clinic_share, split_commission, PAYMENT_METHODS, PROOF_METHODS, parse_pay, pay_label, collections, commission_dentists, compute_totals, credit_balance,
                        invoice_commission_info, lab_share, line_amount, next_invoice_number, paid_amount, payment_state)
 from ..db import get_db
 from ..fee_schedule import picker_options
@@ -382,6 +382,9 @@ def invoice(invoice_id):
     return render_template("staff/billing/invoice.html", inv=inv, items=items, payments=payments, paid=paid, inv_dentists=inv_dentists,
                            proofs=proofs, PROOF_METHODS=PROOF_METHODS, MAX_PROOFS=MAX_PROOFS,
                            manual_comm=manual_comm, comm_dentists=commission_dentists(conn), comm_info=invoice_commission_info(conn, inv),
+                           free_split=split_commission(conn, inv, 0) if inv["total_cents"] == 0 and inv["status"] == "issued" else None,
+                           free_sig=conn.one("SELECT s.*, u.name AS by_name FROM payment_signatures s LEFT JOIN users u ON u.id = s.captured_by "
+                                             "WHERE s.id = ?", (inv["confirmed_signature_id"],)) if inv["confirmed_signature_id"] else None,
                            fee_options=picker_options(conn) if inv["status"] == "draft" else [],
                            lab_cases=lab_cases, dentist_names=dentist_names, default_dentist=appt["dentist_id"] if appt else None,
                            default_done=(appt["start_at"][:10] if appt else today().isoformat()),
@@ -766,8 +769,7 @@ def _multi_payment(conn, inv, paid):
             amt = parse_money(request.form.get("comm_amount")) if (request.form.get("comm_amount") or "").strip() else None
             if amt is None or amt < 0:
                 return "Enter the dentist's commission amount, e.g. 600 or 600.00, or choose “No commission”."
-            if amt > total:
-                return "The commission can't be more than the payment."
+            # may be more than this payment: e.g. a ₱0 braces adjustment paid as a fixed commission on a ₱100 elastics payment
             comm = {"employee_id": emp["id"], "amount": amt, "bp": None, "base": base}
         else:
             bp = pct_to_bp(request.form.get("comm_pct"))
@@ -876,6 +878,51 @@ def dentist_commission(invoice_id):
                      {"commission_id": cid}, inv["branch_id"])
         flash(f"Commission of {peso(c['amount_cents'])} recorded. It counts in the payroll cutoff that includes {earned.isoformat()}.", "success")
     return redirect(url_for("billing.invoice", invoice_id=invoice_id) + "#dentist-commission")
+
+
+@bp.route("/invoices/<int:invoice_id>/confirm-free", methods=["POST"])
+@require("payments.add")
+def confirm_free(invoice_id):
+    """A ₱0 bill (e.g. a braces adjustment already paid in the package): the patient signs to confirm the visit and the
+    dentist's fixed commission on the lines is recorded (the clinic pays it). No payment is made."""
+    from ..payroll import add_manual_commission
+    from ..uploads import save_signature
+    conn = get_db()
+    inv = _load_invoice(invoice_id)
+    if inv["status"] != "issued" or inv["total_cents"] != 0 or inv["confirmed_at"]:
+        flash("Only an issued ₱0 bill that isn't confirmed yet can be confirmed here.", "error")
+        return redirect(url_for("billing.invoice", invoice_id=invoice_id))
+    reason = clean(request.form.get("not_signed_reason"), 200)
+    stored = ""
+    if request.form.get("signature"):
+        stored, err = save_signature(request.form.get("signature"))
+        if err:
+            flash(err, "error")
+            return redirect(url_for("billing.invoice", invoice_id=invoice_id))
+    elif not reason:
+        flash("Ask the patient to sign, or tick 'Patient can't sign' and give the reason.", "error")
+        return redirect(url_for("billing.invoice", invoice_id=invoice_id))
+    with_comm = request.form.get("comm") != "none" and (g.user.can("commission.record") or g.user.can("bills.edit"))
+    recorded = 0
+    with conn.transaction():
+        sig = conn.insert("payment_signatures", {"invoice_id": invoice_id, "patient_id": inv["patient_id"], "stored_name": stored,
+                                                 "not_signed_reason": "" if stored else reason, "captured_by": g.user.id, "created_at": now_str()})
+        conn.execute("UPDATE invoices SET confirmed_signature_id = ?, confirmed_at = ?, confirmed_by = ? WHERE id = ?",
+                     (sig, now_str(), g.user.id, invoice_id))
+        if with_comm:
+            done = {r["dentist_id"]: r["done_on"] for r in conn.all("SELECT dentist_id, MAX(done_on) AS done_on FROM invoice_items "
+                                                                     "WHERE invoice_id = ? GROUP BY dentist_id", (invoice_id,))}
+            for row in split_commission(conn, inv, 0):
+                if row["amount"] > 0 and row["emp_id"]:
+                    add_manual_commission(conn, None, row["emp_id"], parse_date(done.get(row["user_id"])) or today(), 0, None,
+                                          round(row["amount"]), g.user.id, invoice_id=invoice_id, fill_lines=False,
+                                          fixed_items=row["fixed_items"],
+                                          description=(f"Visit on {inv['number']} (no charge): " + ", ".join(row["lines"]))[:200])
+                    recorded += round(row["amount"])
+        audit.record("invoice_free_confirmed", "invoice", invoice_id, "₱0 visit confirmed" + (" with the patient's signature" if stored else f" (not signed: {reason})")
+                     + (f"; dentist commission {peso(recorded)}" if recorded else ""), branch_id=inv["branch_id"])
+    flash("Visit confirmed." + (f" Dentist commission recorded: {peso(recorded)}." if recorded else ""), "success")
+    return redirect(url_for("billing.invoice", invoice_id=invoice_id))
 
 
 @bp.route("/invoices/<int:invoice_id>/signatures/<int:sig_id>")

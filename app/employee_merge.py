@@ -41,11 +41,26 @@ def record_count(conn, emp_id: int) -> int:
     return sum(conn.scalar(f"SELECT COUNT(*) FROM {t} WHERE {c} = ?", (emp_id,)) or 0 for t, c in refs(conn))
 
 
+def draft_payroll_overlap(conn, src: int, dst: int) -> list[int]:
+    """Draft (or cancelled) payroll periods where both records have a line and the duplicate's line has no manual
+    adjustment: that line is just recalculated, so the merge can drop it."""
+    return [r["period_id"] for r in conn.all(
+        "SELECT a.period_id FROM payroll_lines a JOIN payroll_lines b ON b.period_id = a.period_id "
+        "JOIN payroll_periods p ON p.id = a.period_id WHERE a.employee_id = ? AND b.employee_id = ? "
+        "AND p.status IN ('draft', 'cancelled') AND COALESCE(a.adjustment_cents, 0) = 0", (src, dst))]
+
+
 def conflicts(conn, src: int, dst: int) -> list[str]:
     """Rows both employees have that can exist only once (e.g. a time record on the same day)."""
     out = []
+    droppable = set(draft_payroll_overlap(conn, src, dst))
     for table, (key, label) in UNIQUE_KEYS.items():
         if (table, "employee_id") not in refs(conn):
+            continue
+        if table == "payroll_lines":
+            rows = conn.all("SELECT a.period_id AS k, p.status FROM payroll_lines a JOIN payroll_lines b ON b.period_id = a.period_id "
+                            "JOIN payroll_periods p ON p.id = a.period_id WHERE a.employee_id = ? AND b.employee_id = ?", (src, dst))
+            out += [f"a line in payroll period #{r['k']} ({r['status']})" for r in rows if r["k"] not in droppable][:5]
             continue
         both = conn.all(f"SELECT a.{key} AS k FROM {table} a JOIN {table} b ON b.{key} = a.{key} "
                         f"WHERE a.employee_id = ? AND b.employee_id = ?" + (" AND a.branch_id = b.branch_id" if table == "duty_assignments" else ""),
@@ -58,6 +73,8 @@ def merge(conn, src: int, dst: int) -> None:
     """Move everything from employee src to dst, then delete src. Check conflicts() first."""
     s = conn.one("SELECT * FROM employees WHERE id = ?", (src,))
     d = conn.one("SELECT * FROM employees WHERE id = ?", (dst,))
+    for pid in draft_payroll_overlap(conn, src, dst):      # the draft is recalculated with the merged record
+        conn.execute("DELETE FROM payroll_lines WHERE period_id = ? AND employee_id = ?", (pid, src))
     for t, c in refs(conn):
         conn.execute(f"UPDATE {t} SET {c} = ? WHERE {c} = ?", (dst, src))
     if s["user_id"] and not d["user_id"]:

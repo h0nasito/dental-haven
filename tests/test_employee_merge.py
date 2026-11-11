@@ -51,3 +51,29 @@ class TestEmployeeDuplicates(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestMergeDraftPayroll(Base):
+    _emp = TestEmployeeDuplicates._emp
+
+    def test_draft_payroll_line_of_the_duplicate_is_dropped(self):
+        from app.util import now_str
+        a1, a2 = self._emp("Demo Payroll Twin"), self._emp("Demo Payroll Twin")
+        per = self.conn.insert("payroll_periods", {"name": "Demo period", "start_date": "2026-11-01", "end_date": "2026-11-15", "status": "draft",
+                                                   "created_at": now_str()})
+        for e in (a1, a2):
+            self.conn.insert("payroll_lines", {"period_id": per, "employee_id": e})
+        r = self.login("admin").post(f"/staff/employees/{a1}/merge", data={"into": str(a2)}, follow_redirects=True)
+        self.assertIn("Recalculate from DTR", r.data.decode())
+        self.assertIsNone(self.q("SELECT id FROM employees WHERE id = ?", (a1,)))
+        self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM payroll_lines WHERE period_id = ?", (per,)), 1)
+
+    def test_approved_payroll_still_blocks(self):
+        from app.util import now_str
+        a1, a2 = self._emp("Demo Approved Twin"), self._emp("Demo Approved Twin")
+        per = self.conn.insert("payroll_periods", {"name": "Demo period", "start_date": "2026-10-16", "end_date": "2026-10-31", "status": "approved",
+                                                   "created_at": now_str()})
+        for e in (a1, a2):
+            self.conn.insert("payroll_lines", {"period_id": per, "employee_id": e})
+        self.login("admin").post(f"/staff/employees/{a1}/merge", data={"into": str(a2)})
+        self.assertIsNotNone(self.q("SELECT id FROM employees WHERE id = ?", (a1,)))
