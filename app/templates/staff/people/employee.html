@@ -81,5 +81,11 @@
 <div class="field"><label for="ddr">Reference <span class="hint">Optional, e.g. loan no.</span></label><input id="ddr" name="reference" maxlength="60"></div></div>
 <button class="btn btn-secondary">Add deduction</button></form></div>
 {% endif %}
+{% if merge_into %}<div class="card"><details><summary><strong>Duplicate record? Merge or delete</strong></summary>
+<p class="mt-1">If this person was added twice, move everything from <strong>this</strong> record ({{ merge_records }} attendance, pay and other records{{ ', and its login' if e.user_id }}) into the record you keep. This record is then deleted.</p>
+<form method="post" action="{{ url_for('people.employee_merge', emp_id=e.id) }}" class="row" data-confirm="Merge this record into the chosen employee and delete this one? This can't be undone.">{{ csrf() }}
+<select name="into" aria-label="Employee to keep" required><option value="">Keep this employee…</option>{% for o in merge_into %}<option value="{{ o.id }}">{{ o.full_name }} · {{ o.position }}{{ ' · has login' if o.user_id }}{{ ' · inactive' if not o.active }}</option>{% endfor %}</select>
+<button class="btn btn-danger btn-sm">Merge into this employee</button></form>
+<p class="hint">Records with nothing in them can also be deleted from the Employees list: tick them and press <strong>Delete ticked</strong>.</p></details></div>{% endif %}
 </div>
 {% endblock %}

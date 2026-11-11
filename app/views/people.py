@@ -11,7 +11,7 @@ from datetime import date as date_cls, timedelta
 from flask import Blueprint, Response, abort, flash, g, redirect, render_template, request, url_for
 
 from .. import audit, settings
-from ..auth import require
+from ..auth import login_required, require
 from ..db import get_db
 from ..attendance_rules import refresh_record
 from ..payroll import BASIS_LABELS, build_lines, current_compensation, evaluate_record, parse_time, worked_minutes
@@ -52,6 +52,8 @@ def _employee_scope(alias="e"):
 @require("attendance.manage", "compensation.manage", any_of=True)
 def employees():
     conn = get_db()
+    if request.method == "POST" and request.form.get("action") == "delete_selected":
+        return _delete_employees(conn)
     if request.method == "POST":
         if not g.user.can("attendance.manage"):
             abort(403)
@@ -82,7 +84,7 @@ def employees():
         for r in rows:
             r["comp"] = current_compensation(conn, r["id"], today().isoformat())
     from ..workplace import labs_for
-    return render_template("staff/people/employees.html", rows=rows, branches=branches_for_user(g.user), labs=labs_for(conn, g.user),
+    return render_template("staff/people/employees.html", can_remove=_can_remove_employees(), rows=rows, branches=branches_for_user(g.user), labs=labs_for(conn, g.user),
                            q=q, no_login=no_login)
 
 
@@ -302,6 +304,68 @@ def _deduction_choices():
     return {"regular_deductions": REGULAR_DEDUCTIONS, "deduction_schedules": DEDUCTION_SCHEDULES}
 
 
+def _can_remove_employees() -> bool:
+    return g.user.is_super_admin or (g.user.can("attendance.manage") and g.user.can("compensation.manage"))
+
+
+def _delete_employees(conn):
+    """Delete the ticked employees that have no records yet (duplicates, typos). Ones with records are kept: merge them."""
+    from ..employee_merge import record_count
+    if not _can_remove_employees():
+        abort(403)
+    scope, params = _employee_scope()
+    ids = [i for i in (to_int(x) for x in request.form.getlist("emp")) if i]
+    gone, kept = [], []
+    for eid in ids:
+        e = conn.one(f"SELECT e.* FROM employees e WHERE e.id = ? AND {scope}", [eid, *params])
+        if not e:
+            continue
+        if record_count(conn, eid):
+            kept.append(e["full_name"])
+            continue
+        with conn.transaction():
+            conn.execute("DELETE FROM employees WHERE id = ?", (eid,))
+            audit.record("employee_deleted", "employee", eid, "Deleted an employee record with no records", branch_id=e["primary_branch_id"])
+        gone.append(e["full_name"])
+    if gone:
+        flash(f"Deleted {len(gone)} employee record{'s' if len(gone) != 1 else ''}.", "success")
+    if kept:
+        flash(f"Not deleted (they have attendance, pay or other records): {', '.join(kept)}. Open the duplicate and use "
+              "“Merge into another employee”, or set it inactive.", "error")
+    if not ids:
+        flash("Tick the employees to delete.", "error")
+    return redirect(url_for("people.employees", q=request.form.get("q") or None))
+
+
+@bp.route("/employees/<int:emp_id>/merge", methods=["POST"])
+@login_required
+def employee_merge(emp_id):
+    """Merge a duplicate employee into the right one: everything moves over, then the duplicate is deleted."""
+    from ..employee_merge import conflicts, merge
+    if not _can_remove_employees():
+        abort(403)
+    conn = get_db()
+    scope, params = _employee_scope()
+    src = conn.one(f"SELECT e.* FROM employees e WHERE e.id = ? AND {scope}", [emp_id, *params])
+    dst = conn.one(f"SELECT e.* FROM employees e WHERE e.id = ? AND {scope}", [to_int(request.form.get("into")) or 0, *params])
+    if not src or not dst or src["id"] == dst["id"]:
+        flash("Choose the employee to keep.", "error")
+        return redirect(url_for("people.employee", emp_id=emp_id))
+    if src["user_id"] and dst["user_id"]:
+        flash("Both records have a login. Remove one login first (Administration → User accounts), then merge.", "error")
+        return redirect(url_for("people.employee", emp_id=emp_id))
+    clash = conflicts(conn, src["id"], dst["id"])
+    if clash:
+        flash("Both records have " + "; ".join(clash) + ". Correct or remove one of them first, then merge.", "error")
+        return redirect(url_for("people.employee", emp_id=emp_id))
+    with conn.transaction():
+        merge(conn, src["id"], dst["id"])
+        audit.record("employee_merged", "employee", dst["id"], f"Merged employee record #{src['id']} into #{dst['id']}",
+                     {"from": dict(src)}, dst["primary_branch_id"])
+    flash(f"Merged into {dst['full_name']}: all records moved and the duplicate was deleted.", "success")
+    return redirect(url_for("people.employee", emp_id=dst["id"]))
+
+
 @bp.route("/employees/<int:emp_id>", methods=["GET", "POST"])
 @require("attendance.manage", "compensation.manage", any_of=True)
 def employee(emp_id):
@@ -476,7 +540,20 @@ def employee(emp_id):
                            dpay=dpay, svc_rates=svc_rates, all_services=conn.all("SELECT id, name FROM services WHERE active = 1 ORDER BY sort_order"),
                            today=today().isoformat(),
                            allowances=conn.all("SELECT * FROM employee_allowances WHERE employee_id = ? AND active = 1 ORDER BY id", (emp_id,)),
-                           deductions=_emp_deductions(conn, emp_id), **_deduction_choices())
+                           deductions=_emp_deductions(conn, emp_id), **_deduction_choices(), **_merge_choices(conn, e))
+
+
+def _merge_choices(conn, e) -> dict:
+    """For “Merge into another employee”: the other employees (same name first) and what this record holds."""
+    from ..employee_merge import record_count
+    if not _can_remove_employees():
+        return {"merge_into": None}
+    scope, params = _employee_scope()
+    others = conn.all(f"SELECT e.id, e.full_name, e.position, e.user_id, e.active FROM employees e WHERE e.id != ? AND {scope} "
+                      "ORDER BY e.full_name", [e["id"], *params])
+    name = (e["full_name"] or "").strip().lower()
+    others.sort(key=lambda o: ((o["full_name"] or "").strip().lower() != name, not o["active"], o["full_name"] or ""))
+    return {"merge_into": others, "merge_records": record_count(conn, e["id"])}
 
 
 # ---------------------------------------------------------------------------

@@ -9,15 +9,17 @@
 <div class="field"><label for="eq">Search employees</label><input id="eq" type="search" name="q" value="{{ q }}" placeholder="Name, position, branch or email" autofocus></div>
 <button class="btn btn-secondary">Search</button>{% if q %}<a class="btn btn-ghost" href="{{ url_for('people.employees') }}">Clear</a>{% endif %}
 <span class="muted" style="align-self:center">{{ rows|length }} employee{{ 's' if rows|length != 1 }}{% if q %} found{% endif %}</span></form>
+{% if can_remove %}<form method="post" id="emp-bulk" data-confirm="Delete the ticked employees? Only records with no attendance, pay or other records are deleted.">{{ csrf() }}<input type="hidden" name="action" value="delete_selected"><input type="hidden" name="q" value="{{ q }}"></form>{% endif %}
 <div class="card"><div class="table-wrap"><table>
-<thead><tr><th>Name</th><th>Position</th><th>Branch</th><th>Type</th><th>Login</th>{% if current_user.can('compensation.manage') %}<th>Current pay basis</th>{% endif %}<th>Status</th><th></th></tr></thead><tbody>
-{% for e in rows %}<tr><td><strong>{{ e.full_name }}</strong></td><td>{{ e.position }}</td><td>{{ e.branch or '—' }}</td><td>{{ e.employment_type|label }}</td>
+<thead><tr>{% if can_remove %}<th><span class="sr-only">Select</span></th>{% endif %}<th>Name</th><th>Position</th><th>Branch</th><th>Type</th><th>Login</th>{% if current_user.can('compensation.manage') %}<th>Current pay basis</th>{% endif %}<th>Status</th><th></th></tr></thead><tbody>
+{% for e in rows %}<tr>{% if can_remove %}<td><input type="checkbox" name="emp" value="{{ e.id }}" form="emp-bulk" aria-label="Select {{ e.full_name }}"></td>{% endif %}<td><strong>{{ e.full_name }}</strong></td><td>{{ e.position }}</td><td>{{ e.branch or '—' }}</td><td>{{ e.employment_type|label }}</td>
 <td>{% if e.login_email %}{{ ROLES[e.access_role or e.role] }}{% elif current_user.can('users.manage') and e.active %}<a href="{{ url_for('admin.users_from_employees', employee=e.id) }}">Create login</a>{% else %}<span class="muted">No login</span>{% endif %}</td>
 {% if current_user.can('compensation.manage') %}<td>{% if e.comp %}{{ BASIS_LABELS[e.comp.basis] }}{% if e.comp.rate_cents is not none %} · {{ e.comp.rate_cents|peso }}{% endif %}{% if e.comp.percentage_bp %} · {{ e.comp.percentage_bp / 100 }}%{% endif %}{% else %}<span class="badge badge-amber">Not set</span>{% endif %}<br><small class="muted">{{ 'Holiday pay' if e.holiday_pay else 'No holiday pay' }}</small></td>{% endif %}
 <td>{% if e.active %}<span class="badge badge-green">Active</span>{% else %}<span class="badge">Inactive</span>{% endif %}</td>
 <td><a class="btn btn-secondary btn-sm" href="{{ url_for('people.employee', emp_id=e.id) }}">Open</a></td></tr>
 {% else %}<tr><td colspan="8" class="empty">{% if q %}No employees match “{{ q }}”.{% else %}No employees yet.{% endif %}</td></tr>{% endfor %}
-</tbody></table></div></div>
+</tbody></table></div>
+{% if can_remove and rows %}<div class="row mt-1"><button class="btn btn-danger btn-sm" form="emp-bulk">Delete ticked</button><small class="muted">Only records with nothing in them (no attendance, pay, leave or commission) are deleted. For a duplicate that has records, open it and use <strong>Merge</strong>.</small></div>{% endif %}</div>
 {% if current_user.can('attendance.manage') %}
 <div class="card" style="max-width:760px"><h2>Add employee (no login)</h2>
 <form method="post" class="form-grid">{{ csrf() }}
