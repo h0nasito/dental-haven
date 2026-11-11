@@ -713,6 +713,13 @@ def proof_file(invoice_id, proof_id):
     return resp
 
 
+def _free_share(conn, inv, pay_cents: int) -> int:
+    """The part of a payment that falls on lines with no dentist commission (e.g. asepsis fee), in proportion to the bill."""
+    from ..billing import commission_free_cents
+    free = commission_free_cents(conn, inv["id"])
+    return min(pay_cents, round(pay_cents * free / inv["total_cents"])) if free and inv["total_cents"] else 0
+
+
 def _multi_payment(conn, inv, paid):
     """Several payment lines (e.g. part cash, part GCash) saved together with the patient's signature."""
     from ..uploads import save_signature
@@ -754,7 +761,7 @@ def _multi_payment(conn, inv, paid):
             return "That dentist has no employee record yet (Staff & payroll → Employees), so commission can't be recorded."
         mode = request.form.get("comm_mode") or ("amount" if (request.form.get("comm_amount") or "").strip() else "percent")
         info = invoice_commission_info(conn, inv)
-        base = total - lab_share(total, info["lab_fee_cents"], inv["total_cents"])
+        base = total - lab_share(total, info["lab_fee_cents"], inv["total_cents"]) - _free_share(conn, inv, total)
         if mode == "amount":
             amt = parse_money(request.form.get("comm_amount")) if (request.form.get("comm_amount") or "").strip() else None
             if amt is None or amt < 0:
@@ -775,7 +782,6 @@ def _multi_payment(conn, inv, paid):
                                                 "created_at": now_str()})
     ref, note = clean(request.form.get("reference"), 80), clean(request.form.get("notes"), 300)
     at_branch = _received_branch(inv)
-    first_pay = not conn.scalar("SELECT 1 FROM payments WHERE invoice_id = ? AND status = 'valid' AND kind = 'payment' LIMIT 1", (inv["id"],))
     for (m, account), amt in lines:
         pid = conn.insert("payments", {"invoice_id": inv["id"], "branch_id": at_branch, "kind": "payment", "amount_cents": amt,
                                        "method": m, "account": account, "reference": ref, "received_at": received.isoformat(), "received_by": g.user.id,
@@ -791,14 +797,14 @@ def _multi_payment(conn, inv, paid):
         from ..billing import split_commission
         from ..payroll import add_manual_commission
         done, missing = [], []
-        for row in split_commission(conn, inv, total, first=first_pay):
+        for row in split_commission(conn, inv, total):
             if not row["amount"]:
                 continue
             if not row["emp_id"]:
                 missing.append(row["name"])
                 continue
             _cid, err = add_manual_commission(conn, None, row["emp_id"], received, row["base"], row["bp"], row["amount"], g.user.id,
-                                              invoice_id=inv["id"], payment_id=pid, fill_lines=False,
+                                              invoice_id=inv["id"], payment_id=pid, fill_lines=False, fixed_items=row["fixed_items"],
                                               description=(f"Payment on {inv['number']}: " + ", ".join(row["lines"]))[:200])
             if not err:
                 done.append(f"{row['name']} {peso(row['amount'])}")
@@ -848,7 +854,8 @@ def dentist_commission(invoice_id):
             return redirect(url_for("billing.invoice", invoice_id=invoice_id))
         earned = parse_date(pay["received_at"])
         info = invoice_commission_info(conn, inv)
-        base_txt = "%.2f" % ((pay["amount_cents"] - lab_share(pay["amount_cents"], info["lab_fee_cents"], inv["total_cents"])) / 100)
+        base_txt = "%.2f" % ((pay["amount_cents"] - lab_share(pay["amount_cents"], info["lab_fee_cents"], inv["total_cents"])
+                              - _free_share(conn, inv, pay["amount_cents"])) / 100)
         if not amt_txt and not pct_txt:
             flash("Enter a % of the payment or an amount.", "error")
             return redirect(url_for("billing.invoice", invoice_id=invoice_id))

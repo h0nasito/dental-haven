@@ -1,6 +1,8 @@
 """Employees, compensation settings (restricted), daily time records and draft payroll review."""
 from __future__ import annotations
 
+import calendar
+
 import csv
 import io
 import re
@@ -482,8 +484,9 @@ def employee(emp_id):
 # ---------------------------------------------------------------------------
 
 @bp.route("/attendance", methods=["GET"])
-@require("attendance.view")
+@require("attendance.view", "attendance.clock", any_of=True)
 def attendance():
+    """Managers: everyone's DTR in their branches. Everyone else who uses the time clock: their own time in / out only."""
     conn = get_db()
     end = parse_date(request.args.get("to")) or today()
     start = parse_date(request.args.get("from")) or (end - timedelta(days=13))
@@ -516,6 +519,16 @@ def attendance():
                     f"WHERE {' AND '.join(where)} ORDER BY t.work_date DESC, e.full_name LIMIT 500", args)
     for r in rows:
         r["minutes"] = worked_minutes(r)
+    mine = None
+    if not manage:
+        mine = {"days": sum(1 for r in rows if r["time_in"]), "minutes": sum(r["minutes"] or 0 for r in rows),
+                "lates": sum(1 for r in rows if r["late_minutes"]), "late_minutes": sum(r["late_minutes"] or 0 for r in rows),
+                "ot": sum(r["ot_minutes"] or 0 for r in rows)}
+    t = today()
+    last = calendar.monthrange(t.year, t.month)[1]
+    cur = (t.replace(day=1), t.replace(day=15)) if t.day <= 15 else (t.replace(day=16), t.replace(day=last))
+    prev_end = cur[0] - timedelta(days=1)
+    prev = (prev_end.replace(day=16), prev_end) if prev_end.day > 15 else (prev_end.replace(day=1), prev_end.replace(day=15))
     scope, params = _employee_scope()
     emps = conn.all(f"SELECT e.id, e.full_name, e.primary_branch_id FROM employees e WHERE e.active = 1 AND {scope} ORDER BY e.full_name", params) if manage else []
     warnings = []
@@ -525,7 +538,8 @@ def attendance():
                             "ORDER BY w.id DESC LIMIT 20", wp)
     return render_template("staff/people/attendance.html", rows=rows, start=start, end=end, status=status, emps=emps, emp=emp,
                            warnings=warnings, can_ot=g.user.can("overtime.approve"), own_emp=_own_employee_id(),
-                           manage=manage, branches=branches_for_user(g.user), today=today().isoformat())
+                           manage=manage, branches=branches_for_user(g.user), today=today().isoformat(), mine=mine,
+                           cutoffs=[("This cutoff", cur), ("Last cutoff", prev)])
 
 
 def _save_record(conn, emp_id, branch_id, work_date, time_in, time_out, source="manual"):

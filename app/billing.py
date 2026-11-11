@@ -185,11 +185,35 @@ def invoice_commission_info(conn, inv) -> dict:
     return {"dentist_id": dentist, "lab_fee_cents": int(lab), "split": split, "split_no_dentist": no_dentist}
 
 
+def no_commission_names(conn) -> set[str]:
+    """Upper-case names of price-list items marked "No dentist commission" (e.g. ASEPSIS FEE)."""
+    return {r["name"].strip().upper() for r in conn.all("SELECT name FROM fee_schedule WHERE no_commission = 1")}
+
+
+def line_no_commission(line, names: set[str]) -> bool:
+    """A bill line earns no commission when it's a "no commission" price-list item and the line itself doesn't set one."""
+    if (line["commission_mode"] or "auto") != "auto" or not names:
+        return False
+    return (line["description"] or "").split(" · ")[0].strip().upper() in names
+
+
+def commission_free_cents(conn, invoice_id: int) -> int:
+    """The bill's amount on lines that earn no commission (e.g. asepsis fee), for the single-dentist % of a payment."""
+    names = no_commission_names(conn)
+    if not names:
+        return 0
+    return sum(max(0, l["amount_cents"]) for l in conn.all("SELECT description, amount_cents, commission_mode FROM invoice_items WHERE invoice_id = ?",
+                                                           (invoice_id,)) if line_no_commission(l, names))
+
+
 def split_commission(conn, inv, pay_cents: int, first: bool | None = None) -> list[dict]:
     """A payment's dentist commission split by bill line: each line's dentist earns on that line's share of the payment
     (after its lab fee share), at the % or amount set on the line, else the dentist's rate for that service, else their
-    usual rate. A fixed amount on a line is earned in full on the bill's first payment (first=None: no valid payment yet),
-    and not again on later payments. Each row's "fixed" is that part; the rest follows the amount paid.
+    usual rate. A fixed amount on a line is paid once, in full, with the first payment that records the split commission
+    (later payments add nothing for it); on a line linked to a lab case it waits until the case is installed.
+    Each row's "fixed" is that part, "fixed_items" which lines it pays, "waiting" lines held for installation, and
+    "already" the commission already recorded for that dentist on this bill. The rest follows the amount paid.
+    (first is no longer used.)
     X-ray lines (own section) and lines without a dentist earn nothing here. One row per dentist."""
     from .payroll import dentist_rates
     from .util import today
@@ -199,8 +223,19 @@ def split_commission(conn, inv, pay_cents: int, first: bool | None = None) -> li
     tot = sum(max(0, l["amount_cents"]) for l in lines)
     if not tot or pay_cents <= 0:
         return []
-    if first is None:
-        first = not conn.scalar("SELECT 1 FROM payments WHERE invoice_id = ? AND status = 'valid' AND kind = 'payment' LIMIT 1", (inv["id"],))
+    import json
+    credited: dict[int, int] = {}
+    already: dict[int, int] = {}
+    for c in conn.all("SELECT employee_id, amount_cents, fixed_items FROM dentist_commissions WHERE invoice_id = ? AND status = 'valid'", (inv["id"],)):
+        already[c["employee_id"]] = already.get(c["employee_id"], 0) + (c["amount_cents"] or 0)
+        try:
+            for k, v in (json.loads(c["fixed_items"]) if c["fixed_items"] else {}).items():
+                credited[int(k)] = credited.get(int(k), 0) + int(v)
+        except (ValueError, TypeError, AttributeError):
+            pass
+    free_names = no_commission_names(conn)
+    installed = {r["id"]: bool(r["installed_on"]) for r in conn.all(
+        "SELECT lc.id, lc.installed_on FROM lab_cases lc JOIN invoice_items ii ON ii.lab_case_id = lc.id WHERE ii.invoice_id = ?", (inv["id"],))}
     out: dict[int, dict] = {}
     rates: dict[int, tuple] = {}
     for l in lines:
@@ -208,14 +243,17 @@ def split_commission(conn, inv, pay_cents: int, first: bool | None = None) -> li
         mode = l["commission_mode"] or "auto"
         fixed = mode == "amount" and l["commission_cents"] is not None
         # a free line (₱0, e.g. a cleaning included in braces) still earns a fixed amount typed on it
-        if not l["dentist_id"] or l["xray"] == 1 or (not amt and not fixed):
+        if not l["dentist_id"] or l["xray"] == 1 or (not amt and not fixed) or line_no_commission(l, free_names):
             continue
         share = pay_cents * amt / tot
         lab = min(share, share * (l["lab_fee_cents"] or 0) / amt) if l["lab_fee_cents"] and amt else 0
         base = share - lab
+        wait = False
         if fixed:
             bp, comm = None, 0.0
-            fixed_c = l["commission_cents"] if first else 0
+            fixed_c = max(0, l["commission_cents"] - credited.get(l["id"], 0))
+            if fixed_c and l["lab_case_id"] and not installed.get(l["lab_case_id"], True):
+                fixed_c, wait = 0, True
         else:
             if mode == "percent" and l["commission_bp"] is not None:
                 bp = l["commission_bp"]
@@ -228,11 +266,16 @@ def split_commission(conn, inv, pay_cents: int, first: bool | None = None) -> li
                 bp = svc.get(l["service_id"], default)
             comm = base * bp / 10000
         row = out.setdefault(l["dentist_id"], {"user_id": l["dentist_id"], "name": l["dentist_name"], "emp_id": l["emp_id"], "lines": [],
-                                               "base": 0.0, "amount": 0.0, "fixed": 0, "bps": set()})
+                                               "base": 0.0, "amount": 0.0, "fixed": 0, "fixed_items": {}, "waiting": [],
+                                               "already": already.get(l["emp_id"], 0), "bps": set()})
         row["lines"].append((l["description"] or "").split(" · ")[0] + (f" #{l['tooth']}" if l["tooth"] else ""))
         row["base"] += base
         row["amount"] += comm + (fixed_c if fixed else 0)
         row["fixed"] += fixed_c if fixed else 0
+        if fixed and fixed_c:
+            row["fixed_items"][str(l["id"])] = fixed_c
+        if wait:
+            row["waiting"].append(row["lines"][-1])
         row["bps"].add(bp)
     res = []
     for row in out.values():

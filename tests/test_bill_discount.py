@@ -746,3 +746,99 @@ class TestFollowupPatientPicker(Base):
         got = {r["employee_id"]: r["amount_cents"] for r in self.conn.all("SELECT * FROM dentist_commissions WHERE invoice_id = ?", (inv,))}
         self.assertEqual(got.get(e2), 10000)
         self.assertEqual(len(got), 2)
+
+
+class TestFixedCommissionOnce(Base):
+    def _bill(self):
+        from app.util import now_str
+        mal = self.branch("malolos")
+        d1 = self.q("SELECT id FROM users WHERE email LIKE 'dentist.malolos@%'")["id"]
+        self.e1 = self.q("SELECT id FROM employees WHERE user_id = ?", (d1,))["id"]
+        pid = self.q("SELECT id FROM patients WHERE preferred_branch_id = ? LIMIT 1", (mal,))["id"]
+        inv = self.conn.insert("invoices", {"branch_id": mal, "patient_id": pid, "status": "issued", "number": "FIX-" + self.id().rsplit(".", 1)[-1][-20:],
+                                            "issued_at": "2026-10-26", "subtotal_cents": 1150000, "discount_cents": 0, "tax_cents": 0,
+                                            "total_cents": 1150000, "created_at": now_str()})
+        self.conn.insert("invoice_items", {"invoice_id": inv, "description": "Restoration (demo)", "qty": 1, "unit_price_cents": 250000,
+                                           "discount_cents": 0, "amount_cents": 250000, "dentist_id": d1, "done_on": "2026-10-26",
+                                           "commission_mode": "amount", "commission_cents": 87500})
+        self.onlay = self.conn.insert("invoice_items", {"invoice_id": inv, "description": "Onlay (demo)", "qty": 1, "unit_price_cents": 900000,
+                                                        "discount_cents": 0, "amount_cents": 900000, "dentist_id": d1, "done_on": "2026-10-26",
+                                                        "lab_fee_cents": 350000, "commission_mode": "amount", "commission_cents": 192500})
+        return inv
+
+    def _pay(self, a, inv, amount, split=True):
+        data = {"action": "multi", "method": "cash", "amount": amount, "received_at": "2026-11-11", "not_signed_reason": "test"}
+        if split:
+            data["comm_split"] = "1"
+        else:
+            data.update(comm_split="0", comm_dentist_id="")
+        a.post(f"/staff/invoices/{inv}/payments", data=data)
+
+    def total(self, inv):
+        return self.conn.scalar("SELECT COALESCE(SUM(amount_cents), 0) FROM dentist_commissions WHERE invoice_id = ? AND status = 'valid'", (inv,))
+
+    def test_downpayment_without_commission_then_full_fixed_amount_once(self):
+        inv = self._bill()
+        a = self.login("admin")
+        self._pay(a, inv, "5000", split=False)                     # initial payment: no commission yet
+        self.assertEqual(self.total(inv), 0)
+        self.assertIn("₱2,800.00", a.get(f"/staff/invoices/{inv}").data.decode())   # shown in full for the next payment
+        self._pay(a, inv, "3000")                                  # after installation
+        self.assertEqual(self.total(inv), 280000)
+        self._pay(a, inv, "3500")                                  # the rest: nothing more for the fixed lines
+        self.assertEqual(self.total(inv), 280000)
+
+    def test_void_payment_frees_the_fixed_amount_again(self):
+        inv = self._bill()
+        a = self.login("admin")
+        self._pay(a, inv, "3000")
+        self.assertEqual(self.total(inv), 280000)
+        self.conn.execute("UPDATE dentist_commissions SET status = 'void' WHERE invoice_id = ?", (inv,))
+        self._pay(a, inv, "3000")
+        self.assertEqual(self.total(inv), 280000)
+
+    def test_lab_case_line_waits_until_installed(self):
+        from app.billing import split_commission
+        inv = self._bill()
+        lc = self.q("SELECT id FROM lab_cases LIMIT 1")
+        if not lc:
+            self.skipTest("no demo lab case")
+        self.conn.execute("UPDATE lab_cases SET installed_on = NULL WHERE id = ?", (lc["id"],))
+        self.conn.execute("UPDATE invoice_items SET lab_case_id = ? WHERE id = ?", (lc["id"], self.onlay))
+        row = split_commission(self.conn, self.q("SELECT * FROM invoices WHERE id = ?", (inv,)), 300000)[0]
+        self.assertEqual(row["fixed"], 87500)                      # the restoration only
+        self.assertEqual(row["waiting"], ["Onlay (demo)"])
+        self.conn.execute("UPDATE lab_cases SET installed_on = '2026-11-11' WHERE id = ?", (lc["id"],))
+        row = split_commission(self.conn, self.q("SELECT * FROM invoices WHERE id = ?", (inv,)), 300000)[0]
+        self.assertEqual((row["fixed"], row["waiting"]), (280000, []))
+
+
+class TestNoCommissionItems(Base):
+    def test_asepsis_fee_earns_no_commission(self):
+        from app.billing import split_commission
+        from app.util import now_str
+        mal = self.branch("malolos")
+        d1 = self.q("SELECT id FROM users WHERE email LIKE 'dentist.malolos@%'")["id"]
+        e1 = self.q("SELECT id FROM employees WHERE user_id = ?", (d1,))["id"]
+        self.conn.execute("DELETE FROM dentist_pay_rates WHERE employee_id = ?", (e1,))
+        self.conn.insert("dentist_pay_rates", {"employee_id": e1, "daily_rate_cents": 0, "commission_bp": 4000, "effective_from": "2020-01-01",
+                                               "notes": "demo", "created_at": now_str()})
+        fid = self.conn.insert("fee_schedule", {"name": "ASEPSIS FEE (DEMO)", "unit": "", "price_cents": 30000, "category": "Other", "active": 1})
+        a = self.login("admin")
+        a.post("/staff/admin/fees/", data={"action": "save", "id": fid, "name": "ASEPSIS FEE (DEMO)", "unit": "", "price": "300", "category": "Other",
+                                     "active": "1", "no_commission": "1"})
+        self.assertEqual(self.q("SELECT no_commission FROM fee_schedule WHERE id = ?", (fid,))["no_commission"], 1)
+        pid = self.q("SELECT id FROM patients WHERE preferred_branch_id = ? LIMIT 1", (mal,))["id"]
+        inv = self.conn.insert("invoices", {"branch_id": mal, "patient_id": pid, "status": "issued", "number": "NOC-1", "issued_at": "2026-11-11",
+                                            "subtotal_cents": 180000, "discount_cents": 0, "tax_cents": 0, "total_cents": 180000, "created_at": now_str()})
+        for desc, amt in (("Braces adjustment (demo)", 150000), ("Asepsis fee (demo)", 30000)):
+            self.conn.insert("invoice_items", {"invoice_id": inv, "description": desc, "qty": 1, "unit_price_cents": amt, "discount_cents": 0,
+                                               "amount_cents": amt, "dentist_id": d1, "done_on": "2026-11-11"})
+        row = split_commission(self.conn, self.q("SELECT * FROM invoices WHERE id = ?", (inv,)), 180000)[0]
+        self.assertEqual(row["amount"], 60000)                # 40% of ₱1,500 only
+        self.assertEqual(row["lines"], ["Braces adjustment (demo)"])
+        # one dentist, 40% of the payment: the asepsis share is left out too
+        a.post(f"/staff/invoices/{inv}/payments", data={"action": "multi", "method": "cash", "amount": "1800", "received_at": "2026-11-11",
+                                                        "not_signed_reason": "test", "comm_split": "0", "comm_dentist_id": str(d1),
+                                                        "comm_mode": "percent", "comm_pct": "40"})
+        self.assertEqual(self.conn.scalar("SELECT amount_cents FROM dentist_commissions WHERE invoice_id = ?", (inv,)), 60000)

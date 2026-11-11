@@ -47,7 +47,7 @@
 <button class="btn btn-secondary btn-sm">{{ 'Change reason' if rec.ot_reason else 'Save reason' }}</button></form>{% endif %}<p class="muted">If a time is wrong, ask your manager to correct it in Attendance.</p>
 {% endif %}
 </div>
-<div class="card"><h2>Today</h2>
+<div class="card"><div class="row" style="justify-content:space-between"><h2>Today</h2><a class="btn btn-ghost btn-sm" href="{{ url_for('people.attendance') }}">📋 My time records</a></div>
 {% if rec %}<dl class="dl"><dt>Time in</dt><dd>{{ rec.time_in or '—' }}</dd><dt>Time out</dt><dd>{{ rec.time_out or '—' }}</dd>
 {% if rec.field_status %}<dt>Field work</dt><dd>{% if rec.field_status == 'pending' %}<span class="badge badge-amber">Waiting for approval</span>{% elif rec.field_status == 'approved' %}<span class="badge badge-green">Approved</span>{% else %}<span class="badge badge-red">Declined</span>{% endif %}{% if rec.field_review_note %}<br><small class="muted">{{ rec.field_review_note }}</small>{% endif %}</dd>{% endif %}
 <dt>Status</dt><dd>{% if rec.status == 'ok' %}<span class="badge badge-green">OK</span>{% else %}<span class="badge badge-amber">{{ rec.status|label }}</span>{% endif %}{% if rec.exception_note %}<br><small class="muted">{{ rec.exception_note }}</small>{% endif %}</dd></dl>

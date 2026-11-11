@@ -17,7 +17,7 @@
 <div class="card fee-group"><h2>{{ category }} <small class="muted">({{ items|length }})</small></h2>
 <div class="table-wrap"><table><thead><tr><th>Service / procedure</th><th>Unit</th><th class="num">Price</th><th></th></tr></thead><tbody>
 {% for f in items %}<tr {% if not f.active %}class="row-muted"{% endif %}>
-<td><strong>{{ f.name }}</strong>{% if not f.active %} <span class="badge">Hidden</span>{% endif %}</td><td>{{ f.unit or '—' }}</td>
+<td><strong>{{ f.name }}</strong>{% if not f.active %} <span class="badge">Hidden</span>{% endif %}{% if f.no_commission %} <span class="badge badge-amber">No commission</span>{% endif %}</td><td>{{ f.unit or '—' }}</td>
 <td class="num">{{ f.price_cents|peso if f.price_cents else '₱0.00' }}</td>
 <td><details class="fee-edit"><summary>Edit</summary>
 <form method="post" class="form-grid mt-1">{{ csrf() }}<input type="hidden" name="action" value="save"><input type="hidden" name="id" value="{{ f.id }}"><input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="cat" value="{{ cat }}">
@@ -26,6 +26,7 @@
 <div class="field"><label for="fp{{ f.id }}">Price (₱)</label><input id="fp{{ f.id }}" name="price" inputmode="decimal" value="{{ '%.2f' % (f.price_cents / 100) }}" required></div>
 <div class="field"><label for="fk{{ f.id }}">Category</label><select id="fk{{ f.id }}" name="category">{% for c in categories %}<option {% if f.category == c %}selected{% endif %}>{{ c }}</option>{% endfor %}</select></div>
 <label class="check"><input type="checkbox" name="active" value="1" {% if f.active %}checked{% endif %}> Show in pickers</label>
+<label class="check"><input type="checkbox" name="no_commission" value="1" {% if f.no_commission %}checked{% endif %}> No dentist commission (e.g. asepsis fee)</label>
 <button class="btn btn-secondary btn-sm">Save</button>
 {% if f.updated_by %}<small class="muted">Last changed by {{ f.by_name }} · {{ f.updated_at|dt }}</small>{% endif %}</form></details></td></tr>{% endfor %}
 </tbody></table></div></div>

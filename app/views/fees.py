@@ -40,7 +40,7 @@ def index():
                 flash("Enter a name, a category and a price like 1500 or 1500.00.", "error")
             else:
                 new = {"name": name, "unit": clean(request.form.get("unit"), 80), "price_cents": price, "category": cat,
-                       "active": 1 if request.form.get("active") else 0}
+                       "active": 1 if request.form.get("active") else 0, "no_commission": 1 if request.form.get("no_commission") else 0}
                 changes = {k: [row[k], v] for k, v in new.items() if row[k] != v}
                 if changes:
                     conn.update("fee_schedule", fid, {**new, "updated_at": now_str(), "updated_by": g.user.id})

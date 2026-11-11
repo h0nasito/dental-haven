@@ -11,6 +11,8 @@ Nothing here pays anyone or produces final payroll.
 """
 from __future__ import annotations
 
+import json
+
 from datetime import datetime
 
 from . import settings
@@ -71,6 +73,8 @@ def commission_items(conn, user_id: int, start: str, end: str, branch_id=None, d
 
     base = line amount - its share of the invoice-level discount - lab fee (never below zero); commission = base x rate.
     """
+    from .billing import line_no_commission, no_commission_names
+    free_names = no_commission_names(conn)
     service_bp = service_bp or {}
     where, args = ["ii.dentist_id = ?", "i.status = 'issued'", "ii.done_on BETWEEN ? AND ?"], [user_id, start, end]
     if branch_id:
@@ -88,6 +92,10 @@ def commission_items(conn, user_id: int, start: str, end: str, branch_id=None, d
         r["discount_share_cents"] = share
         r["base_cents"] = max(0, r["amount_cents"] - share - (r["lab_fee_cents"] or 0))
         mode = r.get("commission_mode") or "auto"
+        if line_no_commission(r, free_names):          # e.g. asepsis fee: no commission
+            r["rate_bp"], r["commission_cents"], r["commission_mode"] = 0, 0, "auto"
+            out.append(r)
+            continue
         if mode == "amount" and r.get("commission_cents") is not None:
             r["rate_bp"] = None                      # fixed amount typed on the bill line
         else:
@@ -226,7 +234,8 @@ def parse_time(value: str | None) -> str | None:
 
 
 def add_manual_commission(conn, dentist_user_id: int | None, employee_id: int | None, earned_on, base_cents, rate_bp, amount_cents,
-                          by_user_id: int, invoice_id=None, payment_id=None, description: str = "", fill_lines: bool = True):
+                          by_user_id: int, invoice_id=None, payment_id=None, description: str = "", fill_lines: bool = True,
+                          fixed_items: dict | None = None):
     """Record a manual dentist commission. Give either amount_cents, or base_cents + rate_bp (amount = base x rate).
     Returns (id, error)."""
     if not employee_id and dentist_user_id:
@@ -245,7 +254,7 @@ def add_manual_commission(conn, dentist_user_id: int | None, employee_id: int | 
     cid = conn.insert("dentist_commissions", {"employee_id": employee_id, "earned_on": earned_on.isoformat(), "invoice_id": invoice_id,
                                               "payment_id": payment_id, "description": description[:200], "base_cents": base_cents,
                                               "rate_bp": rate_bp, "amount_cents": amount_cents, "created_by": by_user_id,
-                                              "created_at": now_str()})
+                                              "created_at": now_str(), "fixed_items": json.dumps(fixed_items) if fixed_items else ""})
     # The dentist who earns the commission did the work: bill lines with no dentist yet get this dentist, so the case shows
     # in their My cases (and the patient is assigned to them). Only when commission is counted per payment, so the lines
     # don't add a second, per-procedure commission.

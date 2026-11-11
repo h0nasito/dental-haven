@@ -227,3 +227,28 @@ class TestUndoTimeOut(Base):
         self.assertNotIn("Undo time out", c.get("/staff/clock").data.decode())
         c.post("/staff/clock/undo-out")
         self.assertIsNotNone(self.q("SELECT time_out FROM time_records WHERE id = ?", (rec["id"],))["time_out"])
+
+
+class TestMyTimeRecords(Base):
+    def test_clock_users_see_only_their_own_days(self):
+        from app.util import now_str, today
+        mal = self.branch("malolos")
+        def emp(login):
+            uid = self.q("SELECT id FROM users WHERE email LIKE ?", (login + "@%",))["id"]
+            e = self.q("SELECT id FROM employees WHERE user_id = ?", (uid,))
+            return e["id"] if e else self.conn.insert("employees", {"full_name": "Demo " + login, "position": "Staff", "employment_type": "regular",
+                                                                   "user_id": uid, "active": 1, "created_at": now_str()})
+        d = today().isoformat()
+        for eid, tin in ((emp("dentist.malolos"), "08:07"), (emp("reception.malolos"), "09:41")):
+            self.conn.execute("DELETE FROM time_records WHERE employee_id = ? AND work_date = ?", (eid, d))
+            self.conn.insert("time_records", {"employee_id": eid, "branch_id": mal, "work_date": d, "time_in": tin, "time_out": "17:00",
+                                              "created_at": now_str()})
+        c = self.login("dentist.malolos")
+        r = c.get("/staff/attendance")
+        self.assertEqual(r.status_code, 200)
+        page = r.data.decode()
+        self.assertIn("My attendance", page)
+        self.assertIn("08:07", page)
+        self.assertNotIn("09:41", page)
+        self.assertIn("This cutoff", page)
+        self.assertIn("My time records", c.get("/staff/clock").data.decode())
