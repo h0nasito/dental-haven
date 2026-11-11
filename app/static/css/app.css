@@ -1096,3 +1096,6 @@ body.kiosk { background: #f6f2e7; }
 .help-article { max-width: 820px; }
 .pn-disc { display: inline-flex; gap: .35rem; align-items: center; justify-content: flex-end; }
 .pn-disc select { width: auto; min-width: 3.5em; }
+
+.cashier-note { background: var(--amber-100); border: 1px solid #e4c56d; border-radius: var(--radius-sm); padding: .4em .7em; color: var(--amber-700); font-size: .95em; }
+td .cashier-note { margin-bottom: .3em; }

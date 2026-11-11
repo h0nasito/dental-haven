@@ -1847,3 +1847,12 @@ document.querySelectorAll('[data-suggest]').forEach(function (input) {
   });
   run();
 })();
+
+/* Payment form: the note for the cashier is staff-only and folds as soon as the patient starts signing. */
+(function () {
+  document.querySelectorAll('details[data-staff-note]').forEach(function (note) {
+    var pad = note.closest('form') && note.closest('form').querySelector('canvas[data-sigpad]');
+    if (!pad) return;
+    ['pointerdown', 'touchstart', 'mousedown'].forEach(function (ev) { pad.addEventListener(ev, function () { note.open = false; }, { passive: true }); });
+  });
+})();

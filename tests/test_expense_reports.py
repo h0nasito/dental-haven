@@ -29,9 +29,10 @@ class TestExpenseReports(Base):
         g = rows["TEST Gloves (box)"]
         self.assertEqual((g["amount_cents"], g["qty"], g["unit_price_cents"], g["expense_time"], g["spent_by"], g["payee"]),
                          (75000, 3.0, 25000, "10:15", "Test Person", "Supplier A"))
-        self.assertTrue(g["receipt_stored"])
+        rid = self.conn.scalar("SELECT id FROM expense_receipts WHERE expense_id = ?", (g["id"],))
+        self.assertTrue(rid)
         self.assertEqual(rows["TEST Lunch"]["amount_cents"], 60000)
-        self.assertEqual(admin.get(f"/staff/expenses/{g['id']}/receipt").status_code, 200)
+        self.assertEqual(admin.get(f"/staff/expenses/receipts/{rid}").status_code, 200)
         # post all but the April one
         for name in ("TEST Gloves (box)", "TEST Meralco bill", "TEST Lunch"):
             admin.post(f"/staff/expenses/{rows[name]['id']}/post")
@@ -65,4 +66,25 @@ class TestExpenseReports(Base):
         self.assertIsNone(self.q("SELECT id FROM expenses WHERE item = 'TEST No price'"))
         # a dentist without expense access can't see reports
         self.assertEqual(self.login("dentist.sjdm").get("/staff/expenses/report").status_code, 403)
+        self.conn.execute("DELETE FROM expense_receipts WHERE expense_id IN (SELECT id FROM expenses WHERE item LIKE 'TEST %')")
         self.conn.execute("DELETE FROM expenses WHERE item LIKE 'TEST %'")
+
+
+class TestExpenseReceipts(Base):
+    _add = TestExpenseReports._add
+
+    def test_several_receipt_photos_and_add_more_later(self):
+        admin = self.login("admin")
+        mal = self.branch("malolos")
+        self._add(admin, mal, "2025-03-04", "TEST Groceries", "1", "1250", cat="Dental supplies",
+                  receipt=[(io.BytesIO(PNG), "r1.png"), (io.BytesIO(PNG), "r2.png"), (io.BytesIO(PNG), "r3.png")])
+        e = self.q("SELECT * FROM expenses WHERE item = 'TEST Groceries'")
+        rc = self.conn.all("SELECT * FROM expense_receipts WHERE expense_id = ? ORDER BY id", (e["id"],))
+        self.assertEqual(len(rc), 3)
+        page = admin.get("/staff/expenses/?from=2025-03-01&to=2025-03-31").data.decode()
+        self.assertIn("Receipt 3", page)
+        self.assertEqual(admin.get(f"/staff/expenses/receipts/{rc[0]['id']}").data, PNG)
+        admin.post(f"/staff/expenses/{e['id']}/receipts", data={"receipt": [(io.BytesIO(PNG), "r4.png")]}, content_type="multipart/form-data")
+        self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM expense_receipts WHERE expense_id = ?", (e["id"],)), 4)
+        admin.post(f"/staff/expenses/{e['id']}/delete", data={})
+        self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM expense_receipts WHERE expense_id = ?", (e["id"],)), 0)

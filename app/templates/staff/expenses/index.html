@@ -23,7 +23,10 @@
 <td><strong>{{ e.item or e.description or '—' }}</strong> <span class="badge">{{ e.category }}</span>{% if e.item and e.description %}<br>{{ e.description }}{% endif %}
 {% if e.unit_price_cents is not none and e.qty != 1 %}<br><small class="muted">{{ e.qty|round(2)|string|replace('.0','') }} × {{ e.unit_price_cents|peso }}</small>{% endif %}
 <br><small class="muted">{% if e.spent_by %}Spent by {{ e.spent_by }} · {% endif %}{% if e.payee %}Paid to {{ e.payee }} · {% endif %}{{ PAYMENT_METHODS.get(e.method, e.method) }}{% if e.reference %} · OR {{ e.reference }}{% endif %} · entered by {{ e.by_name }}</small>
-{% if e.notes %}<br><small>{{ e.notes }}</small>{% endif %}{% if e.receipt_stored %}<br><a href="{{ url_for('expenses.receipt', expense_id=e.id) }}" target="_blank" rel="noopener"><small>📎 Receipt</small></a>{% endif %}
+{% if e.notes %}<br><small>{{ e.notes }}</small>{% endif %}{% set rc = receipts.get(e.id, []) %}{% if rc %}<br><small>📎 {% for rid in rc %}<a href="{{ url_for('expenses.receipt_file', receipt_id=rid) }}" target="_blank" rel="noopener">Receipt{{ ' ' ~ loop.index if rc|length > 1 }}</a>{{ ' · ' if not loop.last }}{% endfor %}</small>{% endif %}
+{% if e.status != 'void' and current_user.can('expenses.add') and (e.created_by == current_user.id or current_user.can('expenses.post')) and rc|length < max_receipts %}<details><summary><small>+ Add receipt photos</small></summary>
+<form method="post" action="{{ url_for('expenses.receipts_add', expense_id=e.id) }}" enctype="multipart/form-data" class="row mt-1">{{ csrf() }}<input type="hidden" name="next" value="{{ request.full_path }}">
+<input type="file" name="receipt" multiple accept="image/jpeg,image/png,image/webp,application/pdf" required><button class="btn btn-secondary btn-sm">Add</button></form></details>{% endif %}
 {% if e.void_reason %}<br><small class="muted">Void: {{ e.void_reason }}</small>{% endif %}</td>
 <td class="num">{{ e.amount_cents|peso }}</td><td>{{ status_badge('pending' if e.status == 'draft' else ('approved' if e.status == 'posted' else 'void')) }}</td>
 <td class="row">{% if e.status == 'draft' and current_user.can('expenses.post') %}<form method="post" action="{{ url_for('expenses.post', expense_id=e.id) }}">{{ csrf() }}<button class="btn btn-sm">Post</button></form>{% endif %}
@@ -51,7 +54,8 @@
 <div class="field"><label for="em">Payment method</label><select id="em" name="method">{% for k, l in PAYMENT_METHODS.items() %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></div>
 <div class="field"><label for="er">OR / receipt no.</label><input id="er" name="reference" maxlength="80"></div></div>
 <div class="field"><label for="en">Notes</label><input id="en" name="notes" maxlength="500"></div>
-<div class="field"><label for="erc">Receipt photo (optional)</label><input id="erc" type="file" name="receipt" accept="image/jpeg,image/png,image/webp,application/pdf" capture="environment"></div>
+<div class="field"><label for="erc">Receipt photos (optional, up to {{ max_receipts }})</label><input id="erc" type="file" name="receipt" multiple accept="image/jpeg,image/png,image/webp,application/pdf">
+<span class="hint">Grocery or a long receipt? Enter one expense with the total (e.g. “Groceries”) and add pictures of the receipt instead of typing each item.</span></div>
 <button class="btn">Add expense</button></form></div>
 {% endif %}
 <div class="card"><h2>Posted by category</h2>{% if by_cat %}<ul class="list-plain">{% for c, amt in by_cat %}<li class="row between"><span>{{ c }}</span><strong>{{ amt|peso }}</strong></li>{% endfor %}</ul>{% else %}<p class="muted">Nothing posted in this range.</p>{% endif %}</div>

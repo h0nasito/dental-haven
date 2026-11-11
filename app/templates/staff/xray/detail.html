@@ -2,9 +2,10 @@
 {% from "macros.html" import csrf %}
 {% block page_title %}{{ x.number }}{% endblock %}
 {% block content %}
-<div class="page-head"><div><a href="{{ url_for('xray.index') }}">← X-ray</a><h1>{{ x.number }} {% if x.status == 'void' %}<span class="badge badge-red">Voided</span>{% elif balance <= 0 %}<span class="badge badge-green">Paid</span>{% endif %}</h1>
+{% set money = current_user.can('xray.manage') or current_user.can('billing.view') %}
+<div class="page-head"><div><a href="{{ url_for('xray.index') }}">← X-ray</a><h1>{{ x.number }} {% if x.status == 'void' %}<span class="badge badge-red">Voided</span>{% elif balance <= 0 and money %}<span class="badge badge-green">Paid</span>{% endif %}</h1>
 <p>{{ x.taken_on|date }} · {{ x.branch }}</p></div>
-<div class="row"><a class="btn btn-secondary btn-sm" href="{{ url_for('xray.receipt', xray_id=x.id) }}" target="_blank">Print receipt</a>
+<div class="row">{% if money %}<a class="btn btn-secondary btn-sm" href="{{ url_for('xray.receipt', xray_id=x.id) }}" target="_blank">Print receipt</a>{% endif %}
 {% if x.status == 'ok' and current_user.can('xray.manage') %}<a class="btn btn-secondary btn-sm" href="{{ url_for('xray.edit', xray_id=x.id) }}">Edit</a>{% endif %}</div></div>
 {% if x.status == 'void' %}<p class="notice">Voided: {{ x.void_reason }}</p>{% endif %}
 <div class="grid" style="grid-template-columns:minmax(0,3fr) minmax(260px,2fr)">
@@ -19,8 +20,8 @@
 {% for it in items %}<tr><td>{{ it.description }}</td><td>{{ it.tooth or '' }}</td><td class="num">{{ it.price_cents|peso }}</td></tr>{% endfor %}</tbody>
 <tfoot>{% if x.discount_cents %}<tr><td colspan="2">Discount</td><td class="num">−{{ x.discount_cents|peso }}</td></tr>{% endif %}
 <tr><td colspan="2"><strong>Total</strong></td><td class="num"><strong>{{ x.total_cents|peso }}</strong></td></tr>
-<tr><td colspan="2">Paid</td><td class="num">{{ paid|peso }}</td></tr>
-<tr><td colspan="2"><strong>Balance</strong></td><td class="num"><strong>{{ balance|peso }}</strong></td></tr></tfoot></table></div>
+{% if money %}<tr><td colspan="2">Paid</td><td class="num">{{ paid|peso }}</td></tr>
+<tr><td colspan="2"><strong>Balance</strong></td><td class="num"><strong>{{ balance|peso }}</strong></td></tr>{% endif %}</tfoot></table></div>
 {% if x.referrer_id %}<p class="mt-1">Referral fee / rebate for {{ x.referrer_name }}: <strong>{{ x.rebate_cents|peso }}</strong>
 {% if payout %}<span class="badge badge-green">Paid out {{ payout.paid_on|date }}</span>{% elif x.rebate_cents %}<span class="badge">Not paid out yet</span>{% endif %}</p>{% endif %}
 </div>
@@ -33,7 +34,7 @@
 <label class="sr-only" for="fl">Images</label><input id="fl" type="file" name="files" accept="image/png,image/jpeg,image/webp,application/pdf" multiple required><button class="btn btn-secondary btn-sm">Upload</button></form>{% endif %}</div>
 </div>
 <div>
-<div class="card"><h2>Payments</h2>
+{% if money %}<div class="card"><h2>Payments</h2>
 <ul class="list-plain">{% for p in pays %}<li {% if p.status == 'void' %}style="opacity:.6"{% endif %}><div class="row between"><strong>{{ p.amount_cents|peso }}</strong><small class="muted">{{ p.received_at|date }}</small></div>
 <small>{{ pay_label(p.method, p.account) }}{% if p.reference %} · Ref {{ p.reference }}{% endif %} · {{ p.received_name or '—' }}</small>
 {% if p.signature_name %}<br><a href="{{ url_for('xray.pay_signature', xray_id=x.id, pay_id=p.id) }}" target="_blank" rel="noopener"><small>Signature</small></a>{% elif p.not_signed_reason %}<br><small class="muted">Not signed: {{ p.not_signed_reason }}</small>{% endif %}
@@ -53,7 +54,7 @@
 <div class="row between"><small class="muted">Patient signs above to acknowledge the payment.</small><button type="button" class="btn btn-ghost btn-sm" data-sig-clear>Clear</button></div>
 <details class="mt-1"><summary><small>Patient can't sign</small></summary><div class="field mt-1"><label for="nsrp">Reason</label><input id="nsrp" name="not_signed_reason" maxlength="200" placeholder="e.g. Paid by parent via GCash, not in clinic"></div></details></fieldset>
 <button class="btn">Record payment</button></form>{% endif %}</div>
-{% if x.status == 'ok' and current_user.can('xray.void') %}<div class="card"><details><summary>Void this X-ray</summary>
+{% endif %}{% if x.status == 'ok' and current_user.can('xray.void') %}<div class="card"><details><summary>Void this X-ray</summary>
 <form method="post" action="{{ url_for('xray.void', xray_id=x.id) }}" class="mt-1">{{ csrf() }}<p class="hint">Void its payments first. The record stays, marked voided.</p><label class="sr-only" for="vx">Reason</label><input id="vx" name="reason" placeholder="Reason" required><button class="btn btn-danger btn-sm mt-1">Void X-ray</button></form></details></div>{% endif %}
 </div></div>
 {% endblock %}

@@ -142,3 +142,25 @@ class TestXray(Base):
         page = c.get(f"/staff/xray/{x['id']}").data.decode()
         self.assertIn(f"/payments/{pays[0]['id']}/signature", page)
         self.assertEqual(c.get(f"/staff/xray/{x['id']}/payments/{pays[0]['id']}/signature").status_code, 200)
+
+
+class TestXrayDentistView(Base):
+    setUp = TestXray.setUp
+    new = TestXray.new
+    last = TestXray.last
+
+    def test_dentist_sees_xray_and_price_but_not_payments(self):
+        c = self.login("admin")
+        self.new(c, patient_id=str(self.pid), price_0="1000")
+        x = self.last()
+        c.post(f"/staff/xray/{x['id']}/pay", data={"amount": "400", "method": "cash", "not_signed_reason": "test"})
+        self.assertIn("₱600.00", c.get(f"/staff/xray/{x["id"]}").data.decode())     # balance, for cashiers
+        d = self.login("dentist.malolos")
+        page = d.get(f"/staff/xray/{x['id']}").data.decode()
+        self.assertEqual(d.get(f"/staff/xray/{x['id']}").status_code, 200)
+        self.assertIn("₱1,000.00", page)                       # the price stays
+        for hidden in ("<h2>Payments</h2>", "Balance", "₱600.00", "Print receipt"):
+            self.assertNotIn(hidden, page)
+        self.assertNotIn("₱600.00", d.get("/staff/xray/").data.decode())
+        self.assertNotIn("₱600.00", d.get(f"/staff/patients/{self.pid}?tab=xray").data.decode())
+        self.assertEqual(d.get(f"/staff/xray/{x['id']}/receipt").status_code, 403)

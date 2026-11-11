@@ -549,6 +549,23 @@ PAYMENT_ACTION_PERMS = {"payment": "payments.add", "multi": "payments.add", "ref
                         "apply_credit": "credit.apply"}
 
 
+@bp.route("/invoices/<int:invoice_id>/cashier-note", methods=["POST"])
+@require("billing.manage", "payments.add", any_of=True)
+def cashier_note(invoice_id):
+    """A short note for whoever takes the payment (e.g. "patient pays the rest on the 20th")."""
+    conn = get_db()
+    inv = _load_invoice(invoice_id)
+    if inv["status"] == "void":
+        abort(400)
+    note = clean(request.form.get("cashier_note"), 300)
+    with conn.transaction():
+        conn.execute("UPDATE invoices SET cashier_note = ? WHERE id = ?", (note, invoice_id))
+        audit.record("invoice_cashier_note", "invoice", invoice_id, "Note for the cashier " + ("updated" if note else "removed"),
+                     branch_id=inv["branch_id"])
+    flash("Note for the cashier saved." if note else "Note for the cashier removed.", "success")
+    return redirect(url_for("billing.invoice", invoice_id=invoice_id))
+
+
 @bp.route("/invoices/<int:invoice_id>/payments", methods=["POST"])
 @require("billing.view")
 def payment(invoice_id):

@@ -22,6 +22,8 @@ class TestDeposits(Base):
         inv = self.q("SELECT id FROM invoices LIMIT 1")
         self.days = ("2026-02-02", "2026-02-03")
         self.conn.execute("DELETE FROM payments WHERE branch_id = ? AND substr(received_at, 1, 7) = '2026-02'", (self.bid,))
+        self.conn.execute("DELETE FROM expense_receipts WHERE expense_id IN (SELECT id FROM expenses WHERE branch_id = ? "
+                          "AND substr(expense_date, 1, 7) = '2026-02')", (self.bid,))
         self.conn.execute("DELETE FROM expenses WHERE branch_id = ? AND substr(expense_date, 1, 7) = '2026-02'", (self.bid,))
         for d, amt, method in ((self.days[0], 500000, "cash"), (self.days[0], 200000, "gcash"), (self.days[1], 300000, "cash")):
             self.conn.execute("INSERT INTO payments (invoice_id, branch_id, kind, amount_cents, method, received_at, status, created_at) "

@@ -465,6 +465,8 @@ def _signature() -> tuple[str, str, str | None]:
 @bp.route("/<int:xray_id>/payments/<int:pay_id>/signature")
 @require("xray.view")
 def pay_signature(xray_id, pay_id):
+    if not (g.user.can("xray.manage") or g.user.can("billing.view")):      # payments: staff who take payments only
+        abort(403)
     from flask import send_file
     from ..uploads import document_path
     _load(xray_id)
@@ -575,6 +577,8 @@ def file_delete(file_id):
 @bp.route("/<int:xray_id>/receipt")
 @require("xray.view")
 def receipt(xray_id):
+    if not (g.user.can("xray.manage") or g.user.can("billing.view")):      # payments: staff who take payments only
+        abort(403)
     conn = get_db()
     x = _load(xray_id)
     items = conn.all("SELECT * FROM xray_items WHERE xray_id = ? ORDER BY id", (xray_id,))

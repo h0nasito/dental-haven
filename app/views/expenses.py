@@ -22,6 +22,7 @@ from ..util import clean, now, now_str, parse_date, parse_money, peso, to_int, t
 from .common import branches_for_user, date_range_args
 
 bp = Blueprint("expenses", __name__, url_prefix="/staff/expenses")
+MAX_RECEIPTS = 10
 
 CATEGORIES = ["Dental supplies", "Laboratory fees", "Rent", "Electricity", "Water", "Internet & phone", "Salaries & wages",
               "Equipment & maintenance", "Marketing & advertising", "Professional fees", "Taxes, permits & licenses",
@@ -60,7 +61,7 @@ def index():
         amount = parse_money(request.form.get("amount")) if (request.form.get("amount") or "").strip() else None
         if amount is None and unit is not None and qty > 0:
             amount = round(unit * qty)
-        receipt = request.files.get("receipt")
+        receipts = [f for f in request.files.getlist("receipt") if f and f.filename]
         if not branch_id or not g.user.in_branch(branch_id):
             flash("Choose one of your branches.", "error")
         elif not item and not clean(request.form.get("description"), 300):
@@ -69,19 +70,24 @@ def index():
             flash("Enter a category, the price (or quantity and unit price), a payment method and a date that isn't in the future.", "error")
         elif tm and not (len(tm) == 5 and tm[2] == ":" and tm[:2].isdigit() and tm[3:].isdigit() and int(tm[:2]) < 24 and int(tm[3:]) < 60):
             flash("Enter the time like 14:30.", "error")
+        elif len(receipts) > MAX_RECEIPTS:
+            flash(f"Add up to {MAX_RECEIPTS} receipt photos at a time.", "error")
         else:
-            stored = ""
-            if receipt and receipt.filename:
-                stored, _mime, _size, _orig, err = save_document(receipt)
+            stored_all = []
+            for f in receipts:
+                stored, _mime, _size, _orig, err = save_document(f)
                 if err:
                     flash(f"Receipt: {err}", "error")
                     return redirect(url_for("expenses.index"))
+                stored_all.append(stored)
             eid = conn.insert("expenses", {"branch_id": branch_id, "expense_date": d.isoformat(), "expense_time": tm or now().strftime("%H:%M"),
                                            "category": category, "item": item, "description": clean(request.form.get("description"), 300),
                                            "qty": qty, "unit_price_cents": unit, "spent_by": clean(request.form.get("spent_by"), 120) or g.user.name,
                                            "payee": clean(request.form.get("payee"), 150), "amount_cents": amount, "method": method,
                                            "reference": clean(request.form.get("reference"), 80), "notes": clean(request.form.get("notes"), 500),
-                                           "receipt_stored": stored or "", "status": "draft", "created_by": g.user.id, "created_at": now_str()})
+                                           "receipt_stored": "", "status": "draft", "created_by": g.user.id, "created_at": now_str()})
+            for n in stored_all:
+                conn.insert("expense_receipts", {"expense_id": eid, "stored_name": n, "uploaded_by": g.user.id, "created_at": now_str()})
             audit.record("expense_added", "expense", eid, f"Added expense {peso(amount)} ({category}: {item or 'no item name'})", branch_id=branch_id)
             flash(f"Expense of {peso(amount)} added. It counts in reports once it's posted.", "success")
         return redirect(url_for("expenses.index"))
@@ -108,7 +114,12 @@ def index():
         if r["status"] == "posted":
             by_cat[r["category"]] = by_cat.get(r["category"], 0) + r["amount_cents"]
     totals = {s: sum(r["amount_cents"] for r in rows if r["status"] == s) for s in ("draft", "posted")}
-    return render_template("staff/expenses/index.html", rows=rows, start=start, end=end, status=status, category=category, branch=branch,
+    receipts: dict[int, list[int]] = {}
+    if rows:
+        ids = [r["id"] for r in rows]
+        for x in conn.all(f"SELECT id, expense_id FROM expense_receipts WHERE expense_id IN ({','.join('?' * len(ids))}) ORDER BY id", ids):
+            receipts.setdefault(x["expense_id"], []).append(x["id"])
+    return render_template("staff/expenses/index.html", rows=rows, receipts=receipts, max_receipts=MAX_RECEIPTS, start=start, end=end, status=status, category=category, branch=branch,
                            categories=CATEGORIES, by_cat=sorted(by_cat.items(), key=lambda x: -x[1]), totals=totals,
                            branches=branches_for_user(g.user), today=today().isoformat(), now_hm=now().strftime("%H:%M"))
 
@@ -161,6 +172,7 @@ def delete_draft(expense_id):
     e = _load(expense_id)
     if e["status"] != "draft" or (e["created_by"] != g.user.id and not g.user.can("expenses.post")):
         abort(403)
+    conn.execute("DELETE FROM expense_receipts WHERE expense_id = ?", (expense_id,))
     conn.execute("DELETE FROM expenses WHERE id = ?", (expense_id,))
     audit.record("expense_draft_deleted", "expense", expense_id, f"Deleted draft expense {peso(e['amount_cents'])}", dict(e), e["branch_id"])
     flash("Draft expense deleted.", "success")
@@ -189,6 +201,46 @@ def export():
     return Response("﻿" + buf.getvalue(), mimetype="text/csv",
                     headers={"Content-Disposition": f'attachment; filename="dental-haven-expenses-{start}-to-{end}.csv"',
                              "Cache-Control": "no-store"})
+
+
+@bp.route("/receipts/<int:receipt_id>")
+@require("expenses.view", "expenses.add", any_of=True)
+def receipt_file(receipt_id):
+    x = get_db().one("SELECT * FROM expense_receipts WHERE id = ?", (receipt_id,))
+    if not x:
+        abort(404)
+    e = _load(x["expense_id"])
+    if not (g.user.can("expenses.view") or e["created_by"] == g.user.id):
+        abort(404)
+    resp = send_file(document_path(x["stored_name"]), max_age=0)
+    resp.headers["Cache-Control"] = "private, no-store"
+    return resp
+
+
+@bp.route("/<int:expense_id>/receipts", methods=["POST"])
+@require("expenses.add")
+def receipts_add(expense_id):
+    """Add more receipt photos to an expense (e.g. a long grocery receipt in several pictures)."""
+    conn = get_db()
+    e = _load(expense_id)
+    if e["status"] == "void" or not (e["created_by"] == g.user.id or g.user.can("expenses.post")):
+        abort(403)
+    files = [f for f in request.files.getlist("receipt") if f and f.filename]
+    have = conn.scalar("SELECT COUNT(*) FROM expense_receipts WHERE expense_id = ?", (expense_id,))
+    if not files:
+        flash("Choose the receipt photos to add.", "error")
+    elif have + len(files) > MAX_RECEIPTS:
+        flash(f"An expense can have up to {MAX_RECEIPTS} receipt photos.", "error")
+    else:
+        for f in files:
+            stored, _mime, _size, _orig, err = save_document(f)
+            if err:
+                flash(f"Receipt: {err}", "error")
+                return redirect(_back())
+            conn.insert("expense_receipts", {"expense_id": expense_id, "stored_name": stored, "uploaded_by": g.user.id, "created_at": now_str()})
+        audit.record("expense_receipts_added", "expense", expense_id, f"Added {len(files)} receipt photo(s)", branch_id=e["branch_id"])
+        flash(f"{len(files)} receipt photo{'s' if len(files) != 1 else ''} added.", "success")
+    return redirect(_back())
 
 
 @bp.route("/<int:expense_id>/receipt")

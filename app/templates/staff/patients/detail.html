@@ -207,7 +207,8 @@
 <datalist id="pn-services">{% for o in price_options %}<option value="{{ o.name }}" data-sid="{{ o.service_id or '' }}" data-price="{{ '%.2f'|format(o.price / 100) if o.price else '0.00' }}" data-percount="{{ 1 if o.per_count else 0 }}">{{ o.category }}{% if o.unit %} · {{ o.unit }}{% endif %} · ₱{{ '{:,.2f}'.format((o.price or 0) / 100) }}</option>{% endfor %}</datalist></div>
 <div class="pay-grid">
 <div>
-<div class="pay-box"><label for="pn-body" class="pay-lbl">Remarks / notes</label><textarea id="pn-body" name="body" rows="7" placeholder="Insert remarks here…">{{ draft.body if draft else '' }}</textarea></div>
+<div class="pay-box"><label for="pn-body" class="pay-lbl">Remarks / notes</label><textarea id="pn-body" name="body" rows="7" placeholder="Insert remarks here…">{{ draft.body if draft else '' }}</textarea>
+<label for="pn-cnote" class="pay-lbl mt-1">📌 Note for the cashier <small class="muted">(optional, staff only)</small></label><input id="pn-cnote" name="cashier_note" maxlength="300" value="{{ draft.cashier_note if draft else '' }}" placeholder="e.g. Collect the balance from last visit · Patient pays the rest next week"></div>
 {% if current_user.can('documents.upload') %}<div class="pay-box"><label for="pn-files" class="pay-lbl">Attachments</label>
 <label class="dropzone" for="pn-files"><span>☁ <strong>Click to upload</strong> or drag and drop</span><small class="muted">Photos, X-rays or PDFs, up to 10 files{% if draft %}. Files aren't kept in drafts; attach them when you save the note.{% endif %}</small>
 <input id="pn-files" type="file" name="files" multiple accept="application/pdf,image/jpeg,image/png,image/webp" data-pn-files></label><ul class="list-plain" data-pn-filelist></ul></div>{% endif %}
@@ -365,7 +366,7 @@
 {% if invoices is defined %}
 {% if to_bill %}<div class="card notice-card" id="to-bill"><h2>Progress notes waiting for a bill</h2>
 <div class="table-wrap"><table><thead><tr><th>Visit</th><th>Services</th><th>Dentist</th><th class="num">Amount</th><th></th></tr></thead><tbody>
-{% for v in to_bill %}<tr><td>{{ v.visit_date|date }}<br><small class="muted">{{ v.branch }}</small></td><td>{{ v.services }}{% if v.kind == 'proc' %} <span class="badge">Recorded procedure</span>{% endif %}{% if v.made_by and v.made_by != v.dentist %}<br><small class="muted">Entered by {{ v.made_by }}</small>{% endif %}</td><td>{{ v.dentist or '—' }}</td><td class="num">{{ v.estimate|peso }}{% if v.unpriced %}<br><small class="text-danger">price to set</small>{% endif %}{% if v.bill_discount_cents %}<br><small class="muted">after {{ peso(v.bill_discount_cents) }} discount</small>{% elif v.bill_discount_bp %}<br><small class="muted">after {{ v.bill_discount_bp / 100 }}% discount</small>{% endif %}</td>
+{% for v in to_bill %}<tr><td>{{ v.visit_date|date }}<br><small class="muted">{{ v.branch }}</small></td><td>{% if v.cashier_note %}<div class="cashier-note">📌 {{ v.cashier_note }}</div>{% endif %}{{ v.services }}{% if v.kind == 'proc' %} <span class="badge">Recorded procedure</span>{% endif %}{% if v.made_by and v.made_by != v.dentist %}<br><small class="muted">Entered by {{ v.made_by }}</small>{% endif %}</td><td>{{ v.dentist or '—' }}</td><td class="num">{{ v.estimate|peso }}{% if v.unpriced %}<br><small class="text-danger">price to set</small>{% endif %}{% if v.bill_discount_cents %}<br><small class="muted">after {{ peso(v.bill_discount_cents) }} discount</small>{% elif v.bill_discount_bp %}<br><small class="muted">after {{ v.bill_discount_bp / 100 }}% discount</small>{% endif %}</td>
 <td>{% if current_user.can('billing.manage') %}<div class="row">{% set act = url_for('patients.visit_note_bill', patient_id=p.id, vid=v.id) if v.kind == 'note' else url_for('patients.procedures_bill', patient_id=p.id) %}
 <form method="post" action="{{ act }}">{{ csrf() }}{% if v.kind == 'proc' %}<input type="hidden" name="ids" value="{{ v.proc_ids|join(',') }}">{% endif %}<button class="btn btn-sm">Create bill</button></form>
 <form method="post" action="{{ act }}" data-confirm="Mark this as not needing a bill (e.g. already billed by hand, or free)?">{{ csrf() }}{% if v.kind == 'proc' %}<input type="hidden" name="ids" value="{{ v.proc_ids|join(',') }}">{% endif %}<input type="hidden" name="action" value="skip"><button class="btn btn-ghost btn-sm">No bill needed</button></form></div>{% else %}<small class="muted">Waiting for the cashier</small>{% endif %}</td></tr>{% endfor %}
@@ -378,7 +379,7 @@
 <td><a href="{{ url_for('billing.invoice', invoice_id=i.id) }}"><strong>{{ (i.issued_at or i.created_at)|date }}</strong></a>
 {% if i.status == 'issued' and bal <= 0 %}<br><span class="tag-paid">PAID</span>{% elif i.status == 'issued' and i.paid > 0 %}<br><span class="tag-part">PARTIAL</span>{% elif i.status != 'issued' %}<br>{{ status_badge(i.status) }}{% endif %}</td>
 <td>{{ i.lines or '—' }}<br><small class="muted">{{ i.number or 'Draft' }} · {{ i.branch }}</small></td>
-<td>{{ i.created_by_name or '—' }}</td><td class="num">{{ i.total_cents|peso }}</td><td class="num">{{ i.paid|peso }}</td><td>{{ i.notes or '' }}</td>
+<td>{{ i.created_by_name or '—' }}</td><td class="num">{{ i.total_cents|peso }}</td><td class="num">{{ i.paid|peso }}</td><td>{% if i.cashier_note %}<div class="cashier-note">📌 {{ i.cashier_note }}</div>{% endif %}{{ i.notes or '' }}</td>
 <td><details class="kebab"><summary aria-label="Actions">⋯</summary><div class="kebab-menu">
 {% if i.status == 'issued' and bal > 0 and current_user.can('payments.add') %}<p class="kebab-h">Payment</p><button type="button" class="linkish" data-open="pay-{{ i.id }}">Add payment</button>{% endif %}
 <p class="kebab-h">Record</p><a href="{{ url_for('billing.invoice', invoice_id=i.id) }}">{{ 'Edit' if i.status == 'draft' and current_user.can('billing.manage') else 'Open' }}</a>
@@ -443,13 +444,13 @@
 {% else %}<li class="muted">No certificates.</li>{% endfor %}</ul></div>
 {% endif %}
 
-{% if tab == 'xray' %}
+{% if tab == 'xray' %}{% set xray_money = current_user.can('xray.manage') or current_user.can('billing.view') %}
 <div class="card"><div class="card-head"><h2>X-rays</h2>{% if current_user.can('xray.manage') %}<a class="btn btn-secondary btn-sm" href="{{ url_for('xray.new', patient_id=p.id) }}">+ New X-ray</a>{% endif %}</div>
 <p class="hint">X-rays have their own receipts and payments; they are not in the progress notes or the patient's bills.</p>
-{% if xrays %}<div class="table-wrap"><table><thead><tr><th>Date</th><th>X-ray</th><th>Requested by</th><th class="num">Amount</th><th class="num">Balance</th></tr></thead><tbody>
+{% if xrays %}<div class="table-wrap"><table><thead><tr><th>Date</th><th>X-ray</th><th>Requested by</th><th class="num">Amount</th>{% if xray_money %}<th class="num">Balance</th>{% endif %}</tr></thead><tbody>
 {% for x in xrays %}<tr {% if x.status == 'void' %}style="opacity:.6"{% endif %}><td>{{ x.taken_on|date }}<br><small class="muted">{{ x.branch }}</small></td>
 <td><a href="{{ url_for('xray.detail', xray_id=x.id) }}"><strong>{{ x.number }}</strong></a>{% if x.status == 'void' %} <span class="badge badge-red">Voided</span>{% endif %}<br>{{ x.what or '' }}{% if x.files %} <small class="muted">· 🖼 {{ x.files }}</small>{% endif %}</td>
-<td>{{ x.requested or '—' }}</td><td class="num">{{ x.total_cents|peso }}</td><td class="num">{% if x.balance > 0 %}<strong>{{ x.balance|peso }}</strong>{% elif x.status == 'ok' %}<span class="badge badge-green">Paid</span>{% endif %}</td></tr>{% endfor %}
+<td>{{ x.requested or '—' }}</td><td class="num">{{ x.total_cents|peso }}</td>{% if xray_money %}<td class="num">{% if x.balance > 0 %}<strong>{{ x.balance|peso }}</strong>{% elif x.status == 'ok' %}<span class="badge badge-green">Paid</span>{% endif %}</td>{% endif %}</tr>{% endfor %}
 </tbody></table></div>{% else %}<p class="muted">No X-rays.</p>{% endif %}</div>
 {% endif %}
 

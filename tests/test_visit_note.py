@@ -388,3 +388,21 @@ class TestVisitNotePesoDiscount(Base):
         self._post(admin, bill_disc="99999", bill_disc_kind="peso")
         v = self.q("SELECT * FROM visit_notes WHERE patient_id = ? AND status = 'saved' ORDER BY id DESC", (self.pid,))
         self.assertEqual(self.q("SELECT total_cents FROM invoices WHERE id = ?", (v["invoice_id"],))["total_cents"], 0)
+
+
+class TestCashierNote(Base):
+    setUp = TestVisitNote.setUp
+    _post = TestVisitNote._post
+
+    def test_note_from_progress_note_reaches_the_bill_and_payment(self):
+        admin = self.login("admin")
+        self._post(admin, cashier_note="Patient pays the rest on Nov 20 (demo)")
+        v = self.q("SELECT * FROM visit_notes WHERE patient_id = ? AND status = 'saved' ORDER BY id DESC", (self.pid,))
+        inv = v["invoice_id"]
+        self.assertEqual(self.q("SELECT cashier_note FROM invoices WHERE id = ?", (inv,))["cashier_note"], "Patient pays the rest on Nov 20 (demo)")
+        page = admin.get(f"/staff/patients/{self.pid}?tab=billing").data.decode()
+        self.assertIn("📌 Patient pays the rest on Nov 20 (demo)", page)
+        self.assertIn("data-staff-note", page)                       # in the payment dialog, staff-only fold
+        admin.post(f"/staff/invoices/{inv}/cashier-note", data={"cashier_note": "Check senior ID (demo)"})
+        self.assertIn("Check senior ID (demo)", admin.get(f"/staff/invoices/{inv}").data.decode())
+        self.assertEqual(self.login("dentist.malolos").post(f"/staff/invoices/{inv}/cashier-note", data={"cashier_note": "x"}).status_code, 403)

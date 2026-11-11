@@ -3,6 +3,7 @@
 <form method="post" action="{{ url_for('billing.payment', invoice_id=inv.id) }}" enctype="multipart/form-data" class="payform" data-payform data-proof-methods="gcash maya card bank_transfer check hmo other" data-total="{{ inv.total_cents }}" data-paid="{{ paid }}">
 {{ csrf() }}<input type="hidden" name="action" value="multi">{% if return_to %}<input type="hidden" name="return_to" value="{{ return_to }}">{% endif %}
 <div class="pay-top"><div><span class="pay-lbl">Patient</span><div>{{ patient_name }}</div></div><div><span class="pay-lbl">Bill date</span><div>{{ (inv.issued_at or inv.created_at)|date }} · {{ inv.number or 'Draft' }}</div></div></div>
+{% if inv.cashier_note %}<details class="pay-box cashier-note" data-staff-note open><summary><strong>📌 Note for the cashier</strong> <span class="badge">Staff only</span></summary><p class="mb-0">{{ inv.cashier_note }}</p></details>{% endif %}
 <fieldset class="pay-box"><legend>Payment lines</legend>
 <div class="pay-lines" data-pay-lines>
 <div class="pay-line" data-pay-line><div class="field"><label>Payment type</label><select name="method" aria-label="Payment type">{% for k, l in pay_options() %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></div>

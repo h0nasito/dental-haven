@@ -6,6 +6,10 @@
 <div class="page-head"><div><a href="{{ url_for('patients.detail', patient_id=inv.patient_id) }}">← {{ inv.last_name }}, {{ inv.first_name }}</a>
 <h1>{{ inv.number or 'Draft invoice' }}</h1><p>{{ inv.branch }}{% if inv.issued_at %} · issued {{ inv.issued_at|date }}{% endif %} · created by {{ inv.created_by_name }}</p></div>
 <div class="row">{{ status_badge(state) }}{% if inv.status != 'draft' %}<a class="btn btn-secondary" href="{{ url_for('billing.invoice_print', invoice_id=inv.id) }}" target="_blank">Print</a>{% endif %}</div></div>
+{% if inv.cashier_note %}<div class="cashier-note mb-1">📌 <strong>Note for the cashier:</strong> {{ inv.cashier_note }}</div>{% endif %}
+{% if inv.status != 'void' and (current_user.can('billing.manage') or current_user.can('payments.add')) %}<details class="mb-1"><summary>{{ 'Edit' if inv.cashier_note else '+ Add' }} note for the cashier</summary>
+<form method="post" action="{{ url_for('billing.cashier_note', invoice_id=inv.id) }}" class="row mt-1">{{ csrf() }}<input name="cashier_note" maxlength="300" value="{{ inv.cashier_note }}" placeholder="e.g. Patient pays the rest on Nov 20 · Senior ID to check" style="flex:1"><button class="btn btn-secondary btn-sm">Save note</button></form>
+<p class="hint">Shown on the patient's bills list and when taking a payment (hidden while the patient signs). Leave it empty and save to remove it.</p></details>{% endif %}
 {% if inv.status == 'void' %}<div class="flash flash-error">Voided {{ inv.voided_at|dt }}: {{ inv.void_reason }}</div>{% endif %}
 <div class="grid grid-2">
 <div>
