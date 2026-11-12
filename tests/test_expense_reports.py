@@ -88,3 +88,20 @@ class TestExpenseReceipts(Base):
         self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM expense_receipts WHERE expense_id = ?", (e["id"],)), 4)
         admin.post(f"/staff/expenses/{e['id']}/delete", data={})
         self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM expense_receipts WHERE expense_id = ?", (e["id"],)), 0)
+
+
+class TestExpensePostTicked(Base):
+    _add = TestExpenseReports._add
+
+    def test_post_several_at_once(self):
+        admin = self.login("admin")
+        mal = self.branch("malolos")
+        for item, amt in (("TEST Sayote", "65"), ("TEST Liempo", "300"), ("TEST Atay", "75")):
+            self._add(admin, mal, "2025-04-03", item, "1", amt, cat="Dental supplies")
+        ids = [r["id"] for r in self.conn.all("SELECT id FROM expenses WHERE item IN ('TEST Sayote', 'TEST Liempo') ORDER BY id")]
+        page = admin.get("/staff/expenses/?from=2025-04-01&to=2025-04-30").data.decode()
+        self.assertIn("Post ticked", page)
+        admin.post("/staff/expenses/post-selected", data={"exp": [str(i) for i in ids]})
+        st = {r["item"]: r["status"] for r in self.conn.all("SELECT item, status FROM expenses WHERE item LIKE 'TEST %' AND expense_date = '2025-04-03'")}
+        self.assertEqual(st, {"TEST Sayote": "posted", "TEST Liempo": "posted", "TEST Atay": "draft"})
+        self.assertEqual(self.login("reception.malolos").post("/staff/expenses/post-selected", data={"exp": [str(ids[0])]}).status_code, 403)

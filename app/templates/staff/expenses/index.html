@@ -18,8 +18,11 @@
 <div class="field"><label for="fb">Branch</label><select id="fb" name="branch"><option value="">All my branches</option>{% for b in branches %}<option value="{{ b.id }}" {% if branch == b.id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select></div>
 <div class="field"><label for="cat">Category</label><select id="cat" name="category"><option value="">All</option>{% for c in categories %}<option {% if category == c %}selected{% endif %}>{{ c }}</option>{% endfor %}</select></div>
 <button class="btn btn-secondary">Filter</button></form>
-<div class="card"><div class="table-wrap"><table><thead><tr><th>Date &amp; time</th><th>Branch</th><th>Item / details</th><th class="num">Price</th><th>Status</th><th></th></tr></thead><tbody>
-{% for e in rows %}<tr {% if e.status == 'void' %}style="opacity:.6"{% endif %}><td>{{ e.expense_date|date }}{% if e.expense_time %}<br><small class="muted">{{ e.expense_time }}</small>{% endif %}</td><td>{{ e.branch }}</td>
+{% set can_bulk = current_user.can('expenses.post') and rows|selectattr('status', 'equalto', 'draft')|list %}
+{% if can_bulk %}<form method="post" action="{{ url_for('expenses.post_selected') }}" id="exp-bulk">{{ csrf() }}<input type="hidden" name="next" value="{{ request.full_path }}"></form>{% endif %}
+<div class="card">{% if can_bulk %}<div class="row mb-1"><button class="btn btn-sm" form="exp-bulk">Post ticked</button><small class="muted">Tick pending expenses (or the box in the header for all), then post them together.</small></div>{% endif %}
+<div class="table-wrap"><table><thead><tr>{% if can_bulk %}<th><input type="checkbox" data-check-group aria-label="Tick all pending"></th>{% endif %}<th>Date &amp; time</th><th>Branch</th><th>Item / details</th><th class="num">Price</th><th>Status</th><th></th></tr></thead><tbody>
+{% for e in rows %}<tr {% if e.status == 'void' %}style="opacity:.6"{% endif %}>{% if can_bulk %}<td>{% if e.status == 'draft' %}<input type="checkbox" name="exp" value="{{ e.id }}" form="exp-bulk" data-check aria-label="Tick {{ e.item }}">{% endif %}</td>{% endif %}<td>{{ e.expense_date|date }}{% if e.expense_time %}<br><small class="muted">{{ e.expense_time }}</small>{% endif %}</td><td>{{ e.branch }}</td>
 <td><strong>{{ e.item or e.description or '—' }}</strong> <span class="badge">{{ e.category }}</span>{% if e.item and e.description %}<br>{{ e.description }}{% endif %}
 {% if e.unit_price_cents is not none and e.qty != 1 %}<br><small class="muted">{{ e.qty|round(2)|string|replace('.0','') }} × {{ e.unit_price_cents|peso }}</small>{% endif %}
 <br><small class="muted">{% if e.spent_by %}Spent by {{ e.spent_by }} · {% endif %}{% if e.payee %}Paid to {{ e.payee }} · {% endif %}{{ PAYMENT_METHODS.get(e.method, e.method) }}{% if e.reference %} · OR {{ e.reference }}{% endif %} · entered by {{ e.by_name }}</small>
@@ -32,7 +35,7 @@
 <td class="row">{% if e.status == 'draft' and current_user.can('expenses.post') %}<form method="post" action="{{ url_for('expenses.post', expense_id=e.id) }}">{{ csrf() }}<button class="btn btn-sm">Post</button></form>{% endif %}
 {% if e.status == 'draft' and (e.created_by == current_user.id or current_user.can('expenses.post')) %}<form method="post" action="{{ url_for('expenses.delete_draft', expense_id=e.id) }}" data-confirm="Delete this draft?">{{ csrf() }}<button class="btn btn-ghost btn-sm">Delete</button></form>{% endif %}
 {% if e.status == 'posted' and current_user.can('expenses.post') %}<details><summary>Void</summary><form method="post" action="{{ url_for('expenses.void', expense_id=e.id) }}">{{ csrf() }}<label class="sr-only" for="vr{{ e.id }}">Reason</label><input id="vr{{ e.id }}" name="reason" placeholder="Reason" required><button class="btn btn-danger btn-sm mt-1">Void</button></form></details>{% endif %}</td></tr>
-{% else %}<tr><td colspan="6">{{ empty('No expenses in this range') }}</td></tr>{% endfor %}</tbody></table></div></div>
+{% else %}<tr><td colspan="7">{{ empty('No expenses in this range') }}</td></tr>{% endfor %}</tbody></table></div></div>
 </div>
 <div>
 {% if current_user.can('expenses.add') %}

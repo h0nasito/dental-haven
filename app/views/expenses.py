@@ -137,6 +137,24 @@ def _load(expense_id):
     return e
 
 
+@bp.route("/post-selected", methods=["POST"])
+@require("expenses.post")
+def post_selected():
+    """Post (approve) several draft expenses at once."""
+    conn = get_db()
+    n, total = 0, 0
+    with conn.transaction():
+        for eid in {to_int(x) for x in request.form.getlist("exp")} - {None, 0}:
+            e = conn.one("SELECT * FROM expenses WHERE id = ?", (eid,))
+            if not e or e["status"] != "draft" or not g.user.in_branch(e["branch_id"]):
+                continue
+            conn.execute("UPDATE expenses SET status = 'posted', posted_by = ?, posted_at = ? WHERE id = ?", (g.user.id, now_str(), eid))
+            audit.record("expense_posted", "expense", eid, f"Posted expense {peso(e['amount_cents'])}", branch_id=e["branch_id"])
+            n, total = n + 1, total + e["amount_cents"]
+    flash(f"Posted {n} expense{'s' if n != 1 else ''} ({peso(total)})." if n else "Tick the pending expenses to post.", "success" if n else "error")
+    return redirect(_back())
+
+
 @bp.route("/<int:expense_id>/post", methods=["POST"])
 @require("expenses.post")
 def post(expense_id):
