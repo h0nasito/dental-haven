@@ -1876,3 +1876,12 @@ document.querySelectorAll('[data-suggest]').forEach(function (input) {
   }
   step();
 })();
+
+/* Online booking: remember which common term the patient picked (e.g. "Pasta (tooth filling)") for the clinic. */
+(function () {
+  var sel = document.querySelector('[data-term-select]'), out = document.querySelector('[data-term-out]');
+  if (!sel || !out) return;
+  function sync() { var o = sel.options[sel.selectedIndex]; out.value = (o && o.dataset.term) || ''; }
+  sel.addEventListener('change', sync);
+  sync();
+})();

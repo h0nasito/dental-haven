@@ -216,7 +216,7 @@ def _booking_defaults(conn):
         "branches": conn.all("SELECT * FROM branches WHERE active = 1 ORDER BY sort_order"),
         "services": conn.all("SELECT * FROM services WHERE active = 1 AND bookable_online = 1 ORDER BY sort_order"),
         "dentists": _bookable_dentists(conn), "slots": [], "errors": {},
-        "v": {"branch_id": None, "service_id": None, "dentist_id": None, "date": "", "time": "", "full_name": "", "phone": "",
+        "v": {"branch_id": None, "service_id": None, "dentist_id": None, "date": "", "time": "", "full_name": "", "phone": "", "service_detail": "",
               "email": "", "message": "", "consent_privacy": False, "consent_contact": False},
         "min_date": today().isoformat(), "max_date": (today() + timedelta(days=max_days)).isoformat(),
         "started": int(time.time()),
@@ -331,7 +331,7 @@ def book():
     branches = conn.all("SELECT * FROM branches WHERE active = 1 ORDER BY sort_order")
     max_days = int(settings.get("booking.max_days_ahead", conn) or 60)
     v = {"branch_id": to_int(request.args.get("branch")), "service_id": to_int(request.args.get("service")),
-         "dentist_id": None, "date": "", "time": "", "full_name": "", "phone": "", "email": "", "message": "",
+         "dentist_id": None, "date": "", "time": "", "full_name": "", "phone": "", "email": "", "message": "", "service_detail": "",
          "consent_privacy": False, "consent_contact": False}
     errors: dict = {}
     slots = []
@@ -343,7 +343,7 @@ def book():
             "dentist_id": to_int(request.form.get("dentist_id")), "date": clean(request.form.get("date"), 10),
             "time": clean(request.form.get("time"), 5), "full_name": clean(request.form.get("full_name"), 120),
             "phone": clean(request.form.get("phone"), 25), "email": clean(request.form.get("email"), 200).lower(),
-            "message": clean(request.form.get("message"), 1000),
+            "message": clean(request.form.get("message"), 1000), "service_detail": clean(request.form.get("service_detail"), 80),
             "consent_privacy": bool(request.form.get("consent_privacy")),
             "consent_contact": bool(request.form.get("consent_contact")),
         }
@@ -394,6 +394,7 @@ def book():
                     "ref_code": ref, "full_name": v["full_name"], "phone": v["phone"], "email": v["email"],
                     "branch_id": v["branch_id"], "service_id": v["service_id"], "dentist_id": v["dentist_id"],
                     "preferred_start": fmt_dt(start), "message": v["message"],
+                    "service_detail": _valid_term(services, v["service_id"], v["service_detail"]),
                     "consent_privacy": 1, "consent_contact": 1 if v["consent_contact"] else 0,
                     "status": "pending", "created_at": now_str(),
                 })
@@ -654,3 +655,16 @@ def chat_message():
 @bp.route("/inquire/received")
 def inquire_received():
     return render_template("public/inquire_received.html")
+
+
+def patient_terms(service) -> list[str]:
+    """The common words patients use for a service (one per line in the service settings)."""
+    return [t.strip() for t in (service["patient_terms"] or "").splitlines() if t.strip()]
+
+
+def _valid_term(services, service_id, term: str) -> str:
+    """Keep the chosen common term only if it belongs to the chosen service."""
+    for s in services:
+        if s["id"] == service_id and term in patient_terms(s):
+            return term
+    return ""

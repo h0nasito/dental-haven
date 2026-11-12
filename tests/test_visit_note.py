@@ -413,17 +413,17 @@ class TestPriceSetToZero(Base):
     _post = TestVisitNote._post
 
     def test_price_changed_to_zero_stays_zero_when_billing(self):
-        self.conn.execute("INSERT INTO fee_schedule (name, unit, price_cents, category, active) VALUES ('BRACES REMOVAL (DEMO)', '', 450000, 'Other', 1)")
+        self.conn.execute("INSERT INTO fee_schedule (name, unit, price_cents, category, active) VALUES ('BRACES REMOVAL (DEMO)', '', 432100, 'Other', 1)")
         admin = self.login("admin")
         self._post(admin, signature="", recall_date="", line_service_id=[""], line_desc=["BRACES REMOVAL (DEMO)"], line_tooth=[""],
-                   line_qty=[""], line_price=["4500"], line_disc=[""], bill_disc="", create_bill="")
+                   line_qty=[""], line_price=["4321"], line_disc=[""], bill_disc="", create_bill="")
         v = self.q("SELECT * FROM visit_notes WHERE patient_id = ? AND status = 'saved' ORDER BY id DESC", (self.pid,))
         self.assertIsNone(v["invoice_id"])
         pr = self.q("SELECT * FROM procedures WHERE visit_note_id = ?", (v["id"],))
         admin.post(f"/staff/patients/{self.pid}/procedures/{pr['id']}", data={"action": "edit", "description": pr["description"], "tooth": "",
-                                                                             "performed_at": pr["performed_at"], "price": "0", "price_was": "4500.00"})
+                                                                             "performed_at": pr["performed_at"], "price": "0", "price_was": "4321.00"})
         page = admin.get(f"/staff/patients/{self.pid}?tab=billing").data.decode()
-        self.assertNotIn("₱4,500.00", page)
+        self.assertNotIn("₱4,321.00", page)
         admin.post(f"/staff/patients/{self.pid}/visit-note/{v['id']}/bill")
         inv = self.q("SELECT * FROM invoices WHERE id = (SELECT invoice_id FROM visit_notes WHERE id = ?)", (v["id"],))
         self.assertEqual((inv["total_cents"], inv["status"]), (0, "issued"))       # free, not a draft "price to set"
@@ -444,13 +444,13 @@ class TestZeroTypedOnNote(Base):
     _post = TestVisitNote._post
 
     def test_zero_typed_when_writing_the_note(self):
-        self.conn.execute("INSERT INTO fee_schedule (name, unit, price_cents, category, active) VALUES ('BRACES REMOVAL TYPED (DEMO)', '', 450000, 'Other', 1)")
+        self.conn.execute("INSERT INTO fee_schedule (name, unit, price_cents, category, active) VALUES ('BRACES REMOVAL TYPED (DEMO)', '', 432100, 'Other', 1)")
         self.conn.execute("INSERT INTO fee_schedule (name, unit, price_cents, category, active) VALUES ('NO PRICE YET (DEMO)', '', 0, 'Other', 1)")
         admin = self.login("admin")
         self._post(admin, signature="", recall_date="", line_service_id=[""], line_desc=["BRACES REMOVAL TYPED (DEMO)"], line_tooth=[""],
                    line_qty=[""], line_price=["0.00"], line_disc=[""], bill_disc="", create_bill="")
         v = self.q("SELECT * FROM visit_notes WHERE patient_id = ? AND status = 'saved' ORDER BY id DESC", (self.pid,))
-        self.assertNotIn("₱4,500.00", admin.get(f"/staff/patients/{self.pid}?tab=billing").data.decode())
+        self.assertNotIn("₱4,321.00", admin.get(f"/staff/patients/{self.pid}?tab=billing").data.decode())
         admin.post(f"/staff/patients/{self.pid}/visit-note/{v['id']}/bill")
         inv = self.q("SELECT * FROM invoices WHERE id = (SELECT invoice_id FROM visit_notes WHERE id = ?)", (v["id"],))
         self.assertEqual((inv["total_cents"], inv["status"]), (0, "issued"))

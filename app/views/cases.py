@@ -51,11 +51,18 @@ def _commissions(conn, dentist_id: int, lines: dict) -> dict:
     for k, x in lines.items():
         by_inv.setdefault(k[0], []).append((k, x["billed"]))
 
+    weights = _commission_weights(conn, emp["id"] if emp else None, lines)
+
     def share(inv, amount):
-        parts = by_inv.get(inv) or []
-        tot = sum(b for _, b in parts)
-        for k, b in parts:
-            out[k] = out.get(k, 0) + (round(amount * b / tot) if tot else (amount if len(parts) == 1 else 0))
+        """Split the bill's commission over the dentist's types of case by what each earns (its commission base after the
+        lab fee, or its fixed amount), not by price: a ₱16,000 retainer with a ₱1,760 lab fee and ₱3,050 of fillings
+        earning 30% get ₱4,272 and ₱915."""
+        parts = [(k, weights.get(k, 0)) for k, _ in (by_inv.get(inv) or [])]
+        if not sum(w for _, w in parts):
+            parts = [(k, b) for k, b in (by_inv.get(inv) or [])]
+        tot = sum(w for _, w in parts)
+        for k, w in parts:
+            out[k] = out.get(k, 0) + (round(amount * w / tot) if tot else (amount if len(parts) == 1 else 0))
 
     if per_procedure(conn):
         r = dentist_rates(conn, emp["id"], today().isoformat()) if emp else None
@@ -69,6 +76,35 @@ def _commissions(conn, dentist_id: int, lines: dict) -> dict:
         for m in conn.all(f"SELECT invoice_id, SUM(amount_cents) AS amt FROM dentist_commissions WHERE employee_id = ? AND status = 'valid' "
                           f"AND invoice_id IN ({marks}) GROUP BY invoice_id", [emp["id"], *by_inv]):
             share(m["invoice_id"], m["amt"] or 0)
+    return out
+
+
+def _commission_weights(conn, emp_id, lines: dict) -> dict:
+    """What each (bill, type of case) would earn: per line, its fixed commission, or (amount − lab fee) × its rate
+    (the line's own %, else the dentist's rate). X-ray and "no commission" lines earn nothing."""
+    from ..billing import line_no_commission, no_commission_names
+    from ..payroll import dentist_rates
+    ids = [lid for x in lines.values() for lid in x["line_ids"]]
+    if not ids:
+        return {}
+    r = dentist_rates(conn, emp_id, today().isoformat()) if emp_id else None
+    base_bp = (r["commission_bp"] if r else 0) or 10000
+    names = no_commission_names(conn)
+    by_id = {l["id"]: l for l in conn.all(f"SELECT * FROM invoice_items WHERE id IN ({','.join('?' * len(ids))})", ids)}
+    out = {}
+    for k, x in lines.items():
+        w = 0.0
+        for lid in x["line_ids"]:
+            l = by_id.get(lid)
+            if not l or l["xray"] == 1 or line_no_commission(l, names):
+                continue
+            mode = l["commission_mode"] or "auto"
+            if mode == "amount" and l["commission_cents"] is not None:
+                w += l["commission_cents"]
+            else:
+                bp = l["commission_bp"] if mode == "percent" and l["commission_bp"] is not None else base_bp
+                w += max(0, (l["amount_cents"] or 0) - (l["lab_fee_cents"] or 0)) * bp / 10000
+        out[k] = w
     return out
 
 

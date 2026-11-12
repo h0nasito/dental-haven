@@ -540,7 +540,8 @@ def request_detail(req_id):
     pref = parse_dt(r["preferred_start"])
     v = {"branch_id": r["branch_id"], "service_id": r["service_id"], "dentist_id": r["dentist_id"], "resource_id": None,
          "date": pref.date().isoformat(), "time": pref.strftime("%H:%M"), "duration": "", "status": "confirmed",
-         "source": "website", "internal_notes": r["message"]}
+         "source": "website",
+         "internal_notes": ((f"Patient chose: {r['service_detail']}" + ("\n" if r["message"] else "")) if r["service_detail"] else "") + (r["message"] or "")}
     if request.method == "POST" and not g.user.can("bookings.manage"):
         abort(403)
     if request.method == "POST" and r["status"] == "pending":

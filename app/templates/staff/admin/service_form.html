@@ -21,6 +21,8 @@
 <div class="field {% if errors.image %}error{% endif %}"><label for="image">{{ 'Replace photo' if v.image_path else 'Upload a photo' }} (JPG, PNG or WebP)</label><input id="image" type="file" name="image" accept="image/png,image/jpeg,image/webp">
 <span class="hint">Shown on this service's card on the home page. Use a photo you own; patient photos need written consent.</span>{% if errors.image %}<div class="field-error">{{ errors.image }}</div>{% endif %}</div>
 </fieldset>
+<div class="field"><label for="f-terms">Common words patients use (one per line)</label><textarea id="f-terms" name="patient_terms" rows="4" placeholder="Pasta (tooth filling)&#10;Restoration">{{ v.patient_terms or '' }}</textarea>
+<span class="hint">Shown under this service when patients book online, so they can pick the word they know (pasta, bunot, cleaning…). The clinic sees which one they picked.</span></div>
 <label class="check"><input type="checkbox" name="bookable_online" value="1" {% if v.bookable_online %}checked{% endif %}> Patients can request this service online</label>
 <label class="check"><input type="checkbox" name="active" value="1" {% if v.active %}checked{% endif %}> Active</label>
 <div class="form-actions mt-1"><button class="btn" type="submit">Save service</button></div>

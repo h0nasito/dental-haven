@@ -132,3 +132,27 @@ class TestCases(Base):
         page = self.login("dentist.malolos").get(f"/staff/my-cases/{pid}?type=Braces%2C Aligners %26 Orthodontics").data.decode()
         self.assertIn("3 procedures", page)
         self.assertNotIn("None", page)
+
+
+class TestCaseCommissionSplit(Base):
+    def test_bill_commission_split_by_what_each_line_earns(self):
+        from app.views.cases import _commissions
+        from app.util import now_str
+        doc = self.q("SELECT id FROM users WHERE email LIKE 'dentist.malolos@%'")["id"]
+        emp = self.q("SELECT id FROM employees WHERE user_id = ?", (doc,))["id"]
+        bid = self.branch("malolos")
+        pid = self.conn.insert("patients", {"first_name": "Splitcase", "last_name": "Demo", "chart_no": "DH-TCASE9", "preferred_branch_id": bid,
+                                            "created_at": now_str(), "updated_at": now_str()})
+        inv = self.conn.insert("invoices", {"branch_id": bid, "patient_id": pid, "status": "issued", "issued_at": now_str(), "number": "TCASE-9",
+                                            "subtotal_cents": 1905000, "total_cents": 1905000, "created_at": now_str()})
+        ret = self.conn.insert("invoice_items", {"invoice_id": inv, "description": "INVISIBLE RETAINER (demo)", "qty": 2, "unit_price_cents": 800000,
+                                                 "amount_cents": 1600000, "lab_fee_cents": 176000, "dentist_id": doc})
+        fill = self.conn.insert("invoice_items", {"invoice_id": inv, "description": "RESTORATION (demo)", "qty": 1, "unit_price_cents": 305000,
+                                                  "amount_cents": 305000, "dentist_id": doc})
+        for amt, day in ((91500, "2026-11-03"), (427200, "2026-11-07")):
+            self.conn.insert("dentist_commissions", {"employee_id": emp, "invoice_id": inv, "earned_on": day, "amount_cents": amt,
+                                                     "status": "valid", "created_at": now_str()})
+        lines = {(inv, "ortho"): {"billed": 1600000, "line_ids": [ret]}, (inv, "general"): {"billed": 305000, "line_ids": [fill]}}
+        out = _commissions(self.conn, doc, lines)
+        self.assertEqual(out[(inv, "ortho")], 427200)            # (16,000 − 1,760) × 30%
+        self.assertEqual(out[(inv, "general")], 91500)

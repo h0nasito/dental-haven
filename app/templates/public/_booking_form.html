@@ -11,7 +11,12 @@
         <select id="branch_id" name="branch_id" required><option value="">Choose a branch</option>{% for b in branches %}<option value="{{ b.id }}" {% if v.branch_id == b.id %}selected{% endif %}>{{ b.name }}</option>{% endfor %}</select>
         {% if errors.branch_id %}<div class="field-error">{{ errors.branch_id }}</div>{% endif %}</div>
       <div class="field {% if errors.service_id %}error{% endif %}"><label for="service_id">Service *</label>
-        <select id="service_id" name="service_id" required><option value="">Choose a service</option>{% for s in services %}<option value="{{ s.id }}" {% if v.service_id == s.id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}</select>
+        <select id="service_id" name="service_id" required data-term-select><option value="">Choose what you need</option>{% for s in services %}{% set terms = (s.patient_terms or '').splitlines()|map('trim')|select|list %}
+{% if terms %}<optgroup label="{{ s.name }}">{% for t in terms %}<option value="{{ s.id }}" data-term="{{ t }}" {% if v.service_id == s.id and v.service_detail == t %}selected{% endif %}>{{ t }}</option>{% endfor %}
+<option value="{{ s.id }}" data-term="" {% if v.service_id == s.id and not v.service_detail %}selected{% endif %}>Other / not sure</option></optgroup>
+{% else %}<option value="{{ s.id }}" data-term="" {% if v.service_id == s.id %}selected{% endif %}>{{ s.name }}</option>{% endif %}{% endfor %}</select>
+        <input type="hidden" name="service_detail" value="{{ v.service_detail or '' }}" data-term-out>
+        <span class="hint">Not sure what you need? Choose <strong>Check-up / consultation</strong>.</span>
         {% if errors.service_id %}<div class="field-error">{{ errors.service_id }}</div>{% endif %}</div>
       <div class="field {% if errors.dentist_id %}error{% endif %}"><label for="dentist_id">Preferred dentist (optional)</label>
         <select id="dentist_id" name="dentist_id"><option value="">No preference</option>{% for d in dentists %}<option value="{{ d.id }}" {% if v.dentist_id == d.id %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select>

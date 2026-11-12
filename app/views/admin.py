@@ -734,7 +734,8 @@ def service_edit(service_id):
         abort(404)
     errors = {}
     v = dict(s) if s else {"name": "", "slug": "", "category": "General dentistry", "summary": "", "body": "",
-                           "default_duration_min": 30, "default_price_cents": None, "bookable_online": 1, "active": 1, "sort_order": 50}
+                           "default_duration_min": 30, "default_price_cents": None, "bookable_online": 1, "active": 1, "sort_order": 50,
+                 "patient_terms": ""}
     if request.method == "POST":
         v = {
             "name": clean(request.form.get("name"), 120),
@@ -747,6 +748,7 @@ def service_edit(service_id):
             "bookable_online": 1 if request.form.get("bookable_online") else 0,
             "active": 1 if request.form.get("active") else 0,
             "sort_order": to_int(request.form.get("sort_order"), 50),
+            "patient_terms": "\n".join(t.strip()[:80] for t in (request.form.get("patient_terms") or "").splitlines() if t.strip())[:1500],
         }
         if not v["name"]:
             errors["name"] = "Name is required."
