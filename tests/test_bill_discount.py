@@ -929,3 +929,27 @@ class TestCommissionWithoutPermission(Base):
         self.assertEqual(self.total(inv), 27500)
         a.post(f"/staff/invoices/{inv}/dentist-commission", data={"payment_id": str(pay), "from_lines": "1"})   # not twice
         self.assertEqual(self.total(inv), 27500)
+
+
+class TestReceptionPaysImportedBill(Base):
+    setUp = Base.setUp
+
+    def test_receptionist_pays_bill_without_dentists(self):
+        from app.util import now_str
+        mal = self.branch("malolos")
+        pid = self.q("SELECT id FROM patients WHERE preferred_branch_id = ? LIMIT 1", (mal,))["id"]
+        inv = self.conn.insert("invoices", {"branch_id": mal, "patient_id": pid, "status": "issued", "number": "MM-RCP1", "issued_at": "2023-05-25",
+                                            "subtotal_cents": 467200, "discount_cents": 0, "tax_cents": 0, "total_cents": 467200, "legacy": 1,
+                                            "created_at": now_str()})
+        self.conn.insert("invoice_items", {"invoice_id": inv, "description": "Braces Install (demo)", "qty": 1, "unit_price_cents": 467200,
+                                           "discount_cents": 0, "amount_cents": 467200, "done_on": "2023-05-25"})
+        for perm in ("payments.add", "billing.view"):
+            self.conn.execute("INSERT OR IGNORE INTO role_permissions (role, permission) VALUES ('receptionist', ?)", (perm,))
+        self.conn.execute("DELETE FROM role_permissions WHERE role = 'receptionist' AND permission IN ('commission.record', 'bills.edit')")
+        d1 = self.q("SELECT id FROM users WHERE email LIKE 'dentist.malolos@%'")["id"]
+        r = self.login("reception.malolos")
+        resp = r.post(f"/staff/invoices/{inv}/payments", data={"action": "multi", "method": "cash", "amount": "500", "received_at": "2026-11-13",
+                                                               "not_signed_reason": "test", "comm_dentist_id": str(d1), "comm_pct": "30"})
+        self.assertNotEqual(resp.status_code, 403)
+        self.assertEqual(self.conn.scalar("SELECT SUM(amount_cents) FROM payments WHERE invoice_id = ? AND status = 'valid'", (inv,)), 50000)
+        self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM dentist_commissions WHERE invoice_id = ?", (inv,)), 0)

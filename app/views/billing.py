@@ -759,10 +759,9 @@ def _multi_payment(conn, inv, paid):
     # it from the bill lines, as set by the cashier or admin; otherwise the dentist would silently get nothing
     comm_split = request.form.get("comm_split") == "1" if may_choose else bool(conn.scalar(
         "SELECT 1 FROM invoice_items WHERE invoice_id = ? AND dentist_id IS NOT NULL LIMIT 1", (inv["id"],)))
-    comm_dentist = None if comm_split else to_int(request.form.get("comm_dentist_id"))
+    # someone who can't choose the commission never sets it by hand (a value left in the hidden box is ignored, not refused)
+    comm_dentist = None if (comm_split or not may_choose) else to_int(request.form.get("comm_dentist_id"))
     if comm_dentist:
-        if not (g.user.can("commission.record") or g.user.can("bills.edit")):
-            abort(403)
         emp = conn.one("SELECT e.id FROM employees e JOIN users u ON u.id = e.user_id WHERE u.id = ? AND u.role = 'dentist'", (comm_dentist,))
         if not emp:
             return "That dentist has no employee record yet (Staff & payroll → Employees), so commission can't be recorded."
@@ -1558,3 +1557,31 @@ def business():
     return render_template("staff/billing/business.html", cur=cur, prev=prev, label=label, plabel=plabel, notes=notes, groups=br.GROUPS,
                            month=start, months=months, mine=mine, shown=shown, bid=bid if len(shown) == 1 and len(mine) > 1 else None,
                            partial=end < br.month_bounds(m)[1], prev_range=(p0, p1), tithe_pct=tithe_rate(conn))
+
+
+@bp.route("/billing/mymeds-duplicates", methods=["GET", "POST"])
+@require("billing.void")
+def mymeds_duplicates():
+    """Bill lines entered twice in MyMedsPH: review each group and remove the extra copy (total and balance follow)."""
+    from .. import mymeds_dups
+    conn = get_db()
+    scope = None if g.user.is_super_admin else list(g.user.branch_ids)
+    if request.method == "POST":
+        item_id = to_int(request.form.get("item_id"))
+        it = conn.one("SELECT ii.description, ii.amount_cents, i.branch_id, i.id AS inv FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id "
+                      "WHERE ii.id = ?", (item_id,))
+        if not it or (scope is not None and it["branch_id"] not in scope):
+            abort(404)
+        with conn.transaction():
+            ok, err = mymeds_dups.remove_line(conn, item_id, _recalc)
+            if ok:
+                audit.record("mymeds_duplicate_removed", "invoice", it["inv"],
+                             f"Removed a duplicate MyMedsPH line: {it['description'][:80]} {peso(it['amount_cents'])}", branch_id=it["branch_id"])
+        flash(f"Removed the extra copy of {it['description'][:60]} ({peso(it['amount_cents'])})." if ok else err, "success" if ok else "error")
+        return redirect(url_for("billing.mymeds_duplicates", q=request.form.get("q") or None))
+    groups = mymeds_dups.find(conn, scope)
+    q = (request.args.get("q") or "").strip().lower()
+    if q:
+        groups = [x for x in groups if q in x["patient"].lower() or q in (x["chart"] or "").lower()]
+    return render_template("staff/billing/mymeds_duplicates.html", groups=groups, q=q,
+                           total=sum(x["amount"] * x["extra"] for x in groups))

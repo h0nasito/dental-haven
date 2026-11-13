@@ -146,7 +146,7 @@
         {% if current_user.can('audit.view') %}{{ nav('admin.audit_log', 'Audit trail', 'admin.audit') }}{% endif %}
       {% endcall %}
       {% call section('System & data') %}
-        {% if current_user.can('system.settings') %}{{ nav('admin.system', 'System settings', 'admin.system') }}{{ nav('admin.backup_page', 'Backup & download', 'admin.backup') }}{{ nav('admin.import_data', 'Import from MyMedsPH', 'admin.import') }}{% endif %}
+        {% if current_user.can('system.settings') %}{{ nav('admin.system', 'System settings', 'admin.system') }}{{ nav('admin.backup_page', 'Backup & download', 'admin.backup') }}{{ nav('admin.import_data', 'Import from MyMedsPH', 'admin.import') }}{% endif %}{% if current_user.can('billing.void') %}{{ nav('billing.mymeds_duplicates', 'MyMedsPH duplicates', 'billing.mymeds_duplicates') }}{% endif %}
       {% endcall %}
     {% endcall %}
     <div class="nav-group">

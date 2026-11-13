@@ -1,0 +1,16 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf, empty %}
+{% block page_title %}MyMedsPH duplicates{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>MyMedsPH duplicates</h1><p>Imported bill lines that appear more than once for the same patient on the same date, with the same item and price. Usually they were entered twice in MyMedsPH.</p></div></div>
+<form method="get" class="row mb-1"><label class="sr-only" for="dq">Patient</label><input id="dq" name="q" value="{{ q }}" placeholder="Patient name or chart no."><button class="btn btn-secondary">Search</button>{% if q %}<a class="btn btn-ghost" href="{{ url_for('billing.mymeds_duplicates') }}">Clear</a>{% endif %}</form>
+<div class="notice mb-1">{{ groups|length }} group{{ 's' if groups|length != 1 }} · extra copies worth <strong>{{ total|peso }}</strong>. Check each one: if the patient really had it twice, leave it. Removing a copy takes it off the bill, fixes the total and balance, and reduces a “Paid in MyMedsPH” payment made of that total.</div>
+{% for gp in groups %}<div class="card"><div class="row between"><div><strong><a href="{{ url_for('patients.detail', patient_id=gp.patient_id) }}?tab=billing">{{ gp.patient }}</a></strong> <small class="muted">{{ gp.chart }}</small><br>
+{{ gp.date|date if gp.date else '—' }} · <strong>{{ gp.description }}</strong> · {{ gp.amount|peso }} × {{ gp.lines|length }}</div>
+<span class="badge badge-amber">{{ gp.extra }} extra · {{ (gp.amount * gp.extra)|peso }}</span></div>
+<div class="table-wrap mt-1"><table><thead><tr><th>Bill</th><th>Line</th><th class="num">Amount</th><th></th></tr></thead><tbody>
+{% for ln in gp.lines %}<tr><td><a href="{{ url_for('billing.invoice', invoice_id=ln.invoice_id) }}">{{ ln.number }}</a></td><td>{{ ln.description }}</td><td class="num">{{ ln.amount_cents|peso }}</td>
+<td>{% if not loop.first %}<form method="post" data-confirm="Remove this copy of {{ ln.description }} ({{ ln.amount_cents|peso }}) from bill {{ ln.number }}?">{{ csrf() }}<input type="hidden" name="item_id" value="{{ ln.id }}"><input type="hidden" name="q" value="{{ q }}"><button class="btn btn-danger btn-sm">Remove this copy</button></form>{% else %}<small class="muted">keep</small>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% else %}<div class="card">{{ empty('No duplicate MyMedsPH bill lines found') }}</div>{% endfor %}
+{% endblock %}
