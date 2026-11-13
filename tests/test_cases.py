@@ -156,3 +156,30 @@ class TestCaseCommissionSplit(Base):
         out = _commissions(self.conn, doc, lines)
         self.assertEqual(out[(inv, "ortho")], 427200)            # (16,000 − 1,760) × 30%
         self.assertEqual(out[(inv, "general")], 91500)
+
+
+class TestCaseCommissionBreakdown(Base):
+    def test_detail_lists_each_commission_entry(self):
+        from app.util import now_str
+        doc = self.q("SELECT id FROM users WHERE email LIKE 'dentist.malolos@%'")["id"]
+        emp = self.q("SELECT id FROM employees WHERE user_id = ?", (doc,))["id"]
+        bid = self.branch("malolos")
+        pid = self.conn.insert("patients", {"first_name": "Breakdown", "last_name": "Demo", "chart_no": "DH-TCASE8", "preferred_branch_id": bid,
+                                            "created_at": now_str(), "updated_at": now_str()})
+        self.conn.execute("INSERT INTO patient_assignments (patient_id, dentist_id, created_at) VALUES (?, ?, ?)", (pid, doc, now_str()))
+        svc = self.q("SELECT id FROM services WHERE category = 'Orthodontics & TMJ' LIMIT 1")["id"]
+        for n, amt, comm, day in (("TCASE-8A", 4500000, 25000, "2025-06-01"), ("TCASE-8B", 110000, 27500, "2026-11-12")):
+            inv = self.conn.insert("invoices", {"branch_id": bid, "patient_id": pid, "status": "issued", "issued_at": day, "number": n,
+                                                "subtotal_cents": amt, "total_cents": amt, "created_at": now_str()})
+            self.conn.insert("invoice_items", {"invoice_id": inv, "service_id": svc, "description": "Braces adjustment", "qty": 1,
+                                               "unit_price_cents": amt, "amount_cents": amt, "dentist_id": doc, "done_on": day})
+            self.conn.insert("dentist_commissions", {"employee_id": emp, "invoice_id": inv, "earned_on": day, "amount_cents": comm,
+                                                     "description": f"Demo {n}", "status": "valid", "created_at": now_str()})
+        d = self.login("dentist.malolos")
+        page = d.get("/staff/my-cases/?q=breakdown").data.decode()
+        self.assertIn("commission (whole case) ₱525.00", page)
+        cat = "Braces, Aligners & Orthodontics"
+        detail = d.get(f"/staff/my-cases/{pid}", query_string={"type": cat}).data.decode()
+        self.assertIn("Where the commission comes from", detail)
+        self.assertIn("TCASE-8A", detail.split("Where the commission comes from")[1])
+        self.assertIn("₱275.00", detail)

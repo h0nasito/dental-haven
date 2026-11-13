@@ -108,6 +108,29 @@ def _commission_weights(conn, emp_id, lines: dict) -> dict:
     return out
 
 
+def _commission_breakdown(conn, dentist_id: int, cat: str, groups: dict, inv_ids: list[int]) -> list[dict]:
+    """Every commission entry behind a case's total: the bill, date, what it was for, the full entry and the part that
+    counts for this type of case (a bill with work of several types shares its commission by what each earns)."""
+    from ..payroll import per_procedure
+    emp = conn.one("SELECT id FROM employees WHERE user_id = ?", (dentist_id,))
+    if not emp or not inv_ids or per_procedure(conn):
+        return []
+    weights = _commission_weights(conn, emp["id"], groups)
+    out = []
+    for m in conn.all(f"SELECT c.*, i.number, p.amount_cents AS paid, p.method FROM dentist_commissions c JOIN invoices i ON i.id = c.invoice_id "
+                      f"LEFT JOIN payments p ON p.id = c.payment_id WHERE c.employee_id = ? AND c.status = 'valid' "
+                      f"AND c.invoice_id IN ({','.join('?' * len(inv_ids))}) ORDER BY c.earned_on, c.id", [emp["id"], *inv_ids]):
+        parts = {k: w for k, w in weights.items() if k[0] == m["invoice_id"]}
+        if not sum(parts.values()):
+            parts = {k: x["billed"] for k, x in groups.items() if k[0] == m["invoice_id"]}
+        tot = sum(parts.values())
+        mine = parts.get((m["invoice_id"], cat), 0)
+        counted = round(m["amount_cents"] * mine / tot) if tot else m["amount_cents"]
+        out.append({"date": m["earned_on"], "bill": m["number"], "invoice_id": m["invoice_id"], "for": m["description"] or "",
+                    "kind": "Payment" if m["payment_id"] else "Manual", "paid": m["paid"], "amount": m["amount_cents"], "counted": counted})
+    return out
+
+
 def build_cases(conn, dentist_id: int) -> list[dict]:
     """One case per (patient, type of case), only where both are true: the patient is assigned to the dentist (patient
     profile → assigned dentist) AND the dentist is on the bill for that type of case (bill line → dentist). Visits,
@@ -294,10 +317,17 @@ def detail(patient_id):
                 g_[k].append(x)
     visit_days = sorted(days.values(), key=lambda d: d["date"], reverse=True)
     amounts: dict[int, int] = {}
-    for r in conn.all("SELECT ii.invoice_id, ii.amount_cents, ii.description, ii.dentist_id, s.category AS scat FROM invoice_items ii "
+    groups: dict[tuple, dict] = {}            # (bill, type of case) → the dentist's lines, to split each bill's commission
+    for r in conn.all("SELECT ii.id, ii.invoice_id, ii.amount_cents, ii.description, ii.dentist_id, s.category AS scat FROM invoice_items ii "
                       "JOIN invoices i ON i.id = ii.invoice_id LEFT JOIN services s ON s.id = ii.service_id "
                       "WHERE i.patient_id = ? AND i.status = 'issued'", (patient_id,)):
-        if mine(r["dentist_id"]) and kind(r["description"], r["scat"]) == cat:
+        if not mine(r["dentist_id"]):
+            continue
+        k_ = kind(r["description"], r["scat"])
+        gx = groups.setdefault((r["invoice_id"], k_), {"billed": 0, "line_ids": []})
+        gx["billed"] += r["amount_cents"]
+        gx["line_ids"].append(r["id"])
+        if k_ == cat:
             amounts[r["invoice_id"]] = amounts.get(r["invoice_id"], 0) + r["amount_cents"]
     bills = [dict(b, case_amount=amounts[b["id"]]) for b in conn.all(
         "SELECT i.id, i.number, i.issued_at, i.total_cents, b.name AS branch, "
@@ -308,10 +338,12 @@ def detail(patient_id):
     inv_ids = [x["id"] for x in bills]
     payments = conn.all(f"SELECT p.*, i.number FROM payments p JOIN invoices i ON i.id = p.invoice_id WHERE p.status = 'valid' "
                         f"AND p.invoice_id IN ({','.join('?' * len(inv_ids)) or 'NULL'}) ORDER BY p.received_at DESC", inv_ids)
+    comm_rows = _commission_breakdown(conn, did, cat, groups, list(amounts))
     upcoming = [a for a in conn.all("SELECT a.start_at, a.status, a.dentist_id AS owner, s.name AS service, s.category AS scat, u.name AS dentist, b.name AS branch FROM appointments a "
                                     "LEFT JOIN services s ON s.id = a.service_id LEFT JOIN users u ON u.id = a.dentist_id LEFT JOIN branches b ON b.id = a.branch_id "
                                     "WHERE a.patient_id = ? AND a.status IN ('requested','confirmed') AND a.start_at >= ? ORDER BY a.start_at",
                                     (patient_id, today().isoformat()))
                 if mine(a["owner"]) and (kind(a["service"], a["scat"]) if a["service"] else GENERAL) == cat]
     return render_template("staff/cases/detail.html", c=c, visits=visit_days, bills=bills, payments=payments, upcoming=upcoming, ORTHO=ORTHO,
+                           comm_rows=comm_rows,
                            did=did if g.user.is_super_admin else None)

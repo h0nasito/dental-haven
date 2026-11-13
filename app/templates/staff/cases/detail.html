@@ -18,6 +18,12 @@
 <ul class="visit-items">{% for it in d['items'] %}<li>{{ it.name }}{% if it.tooth %} <small class="muted">(#{{ it.tooth }})</small>{% endif %}{% if it.note %}<br><small class="muted">{{ it.note }}</small>{% endif %}</li>{% endfor %}</ul>
 {% if d.dentists or d.branches %}<small class="muted">{{ (d.dentists + d.branches)|join(' · ') }}</small>{% endif %}</li>{% else %}<li class="muted">No visits recorded.</li>{% endfor %}</ul>
 {% if upcoming %}<h3 class="mt-1">Next appointments</h3><ul class="list-plain">{% for a in upcoming %}<li>{{ a.start_at|dt }} · {{ a.service }}<br><small class="muted">{{ a.dentist or '' }}{% if a.branch %} · {{ a.branch }}{% endif %} · {{ a.status|label }}</small></li>{% endfor %}</ul>{% else %}<p class="muted">No upcoming appointment for this case.</p>{% endif %}</div>
+{% if comm_rows %}<div class="card" id="case-commission"><h2>Where the commission comes from</h2>
+<div class="table-wrap"><table><thead><tr><th>Date</th><th>Bill</th><th>For</th><th class="num">Payment</th><th class="num">Commission entry</th><th class="num">Counted for this case</th></tr></thead><tbody>
+{% for r in comm_rows %}<tr><td>{{ r.date|date }}</td><td>{{ r.bill }}</td><td>{{ r.for }} <small class="muted">· {{ r.kind }}</small></td>
+<td class="num">{{ r.paid|peso if r.paid else '—' }}</td><td class="num">{{ r.amount|peso }}</td><td class="num"><strong>{{ r.counted|peso }}</strong></td></tr>{% endfor %}
+</tbody><tfoot><tr><th colspan="5">Total for this case</th><th class="num">{{ comm_rows|sum(attribute='counted')|peso }}</th></tr></tfoot></table></div>
+<p class="hint">When one bill has work of different types (e.g. braces and a filling), its commission is shared by what each line earns, so “Counted” can be less than the entry.</p></div>{% endif %}
 <div class="card"><h2>Bills &amp; payments</h2>
 <div class="table-wrap"><table><thead><tr><th>Bill</th><th class="num">This case</th><th class="num">Bill total</th><th class="num">Paid</th></tr></thead><tbody>
 {% for b in bills %}<tr><td>{{ b.number }}<br><small class="muted">{{ b.issued_at|date }}{% if b.branch %} · {{ b.branch }}{% endif %}</small></td><td class="num">{{ b.case_amount|peso }}</td><td class="num">{{ b.total_cents|peso }}</td><td class="num">{{ b.paid|peso }}</td></tr>

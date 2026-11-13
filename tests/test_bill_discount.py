@@ -82,7 +82,7 @@ class TestDentistWhoDidWorkIsAssigned(Base):
         self.conn.insert("dentist_commissions", {"employee_id": eid, "earned_on": "2026-10-31", "invoice_id": inv, "amount_cents": 72000,
                                                  "status": "valid", "created_at": now_str()})
         page = self.login("dentist.malolos").get("/staff/my-cases/?from=2026-10-01&to=2026-10-31&q=casetest").data.decode()
-        self.assertIn("commission ₱720.00", page)
+        self.assertIn("commission (whole case) ₱720.00", page)
 
 
 class TestPaymentBranch(Base):
@@ -194,7 +194,7 @@ class TestCalendarMonth(Base):
         self.assertEqual(self.q("SELECT dentist_id FROM invoice_items WHERE id = ?", (line,))["dentist_id"], uid)
         page = self.login("dentist.malolos").get("/staff/my-cases/?q=dentistline&from=2000-01-01").data.decode()
         self.assertIn("Dentistline, Noset", page)
-        self.assertIn("commission ₱200.00", page)
+        self.assertIn("commission (whole case) ₱200.00", page)
         t = today().isoformat()
         self.assertIn("Dentistline, Noset", self.login("dentist.malolos").get(f"/staff/my-cases/?q=dentistline&from={t}&to={t}").data.decode())
 
