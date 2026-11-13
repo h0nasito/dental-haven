@@ -888,3 +888,44 @@ class TestFreeVisitConfirm(Base):
         self.assertIn("Visit confirmed (no charge)", a.get(f"/staff/invoices/{inv}").data.decode())
         a.post(f"/staff/invoices/{inv}/confirm-free", data={"not_signed_reason": "again"})            # not twice
         self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM dentist_commissions WHERE invoice_id = ?", (inv,)), 1)
+
+
+class TestCommissionWithoutPermission(Base):
+    setUp = Base.setUp
+
+    def _bill(self, number):
+        from app.util import now_str
+        mal = self.branch("malolos")
+        d1 = self.q("SELECT id FROM users WHERE email LIKE 'dentist.malolos@%'")["id"]
+        pid = self.q("SELECT id FROM patients WHERE preferred_branch_id = ? LIMIT 1", (mal,))["id"]
+        inv = self.conn.insert("invoices", {"branch_id": mal, "patient_id": pid, "status": "issued", "number": number, "issued_at": "2026-11-12",
+                                            "subtotal_cents": 110000, "discount_cents": 0, "tax_cents": 0, "total_cents": 110000, "created_at": now_str()})
+        for desc, amt in (("Buccal tube (demo)", 60000), ("Bracket (demo)", 30000), ("Rebracket (demo)", 20000)):
+            self.conn.insert("invoice_items", {"invoice_id": inv, "description": desc, "qty": 1, "unit_price_cents": amt, "discount_cents": 0,
+                                               "amount_cents": amt, "dentist_id": d1, "done_on": "2026-11-12",
+                                               "commission_mode": "percent", "commission_bp": 2500})
+        return inv
+
+    def total(self, inv):
+        return self.conn.scalar("SELECT COALESCE(SUM(amount_cents), 0) FROM dentist_commissions WHERE invoice_id = ? AND status = 'valid'", (inv,))
+
+    def test_staff_who_cannot_choose_still_record_from_lines(self):
+        inv = self._bill("NOPERM-1")
+        self.conn.execute("INSERT OR IGNORE INTO role_permissions (role, permission) VALUES ('receptionist', 'payments.add')")
+        self.conn.execute("INSERT OR IGNORE INTO role_permissions (role, permission) VALUES ('receptionist', 'billing.view')")
+        self.conn.execute("DELETE FROM role_permissions WHERE role = 'receptionist' AND permission IN ('commission.record', 'bills.edit')")
+        r = self.login("reception.malolos")
+        r.post(f"/staff/invoices/{inv}/payments", data={"action": "multi", "method": "cash", "amount": "1100", "received_at": "2026-11-12",
+                                                        "not_signed_reason": "test"})
+        self.assertEqual(self.total(inv), 27500)              # 25% of ₱1,100
+
+    def test_from_the_bill_lines_on_a_saved_payment(self):
+        from app.util import now_str
+        inv = self._bill("NOPERM-2")
+        pay = self.conn.insert("payments", {"invoice_id": inv, "branch_id": self.branch("malolos"), "kind": "payment", "amount_cents": 110000,
+                                            "method": "cash", "received_at": "2026-11-12", "status": "valid", "created_at": now_str()})
+        a = self.login("admin")
+        a.post(f"/staff/invoices/{inv}/dentist-commission", data={"payment_id": str(pay), "from_lines": "1"})
+        self.assertEqual(self.total(inv), 27500)
+        a.post(f"/staff/invoices/{inv}/dentist-commission", data={"payment_id": str(pay), "from_lines": "1"})   # not twice
+        self.assertEqual(self.total(inv), 27500)

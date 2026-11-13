@@ -97,7 +97,10 @@
 {% if show_comm %}<td>{% set pc = manual_comm|selectattr('payment_id', 'equalto', p.id)|list %}
 {% for c in pc %}<strong>{{ c.amount_cents|peso }}</strong>{% if c.rate_bp is not none %} <small class="muted">({{ c.rate_bp / 100 }}%)</small>{% endif %}<br><small class="muted">{{ c.dentist }}</small><br>{% endfor %}
 {% if not pc and p.status == 'valid' and p.kind == 'payment' and inv.status == 'issued' %}<details><summary>Add</summary>
-<form method="post" action="{{ url_for('billing.dentist_commission', invoice_id=inv.id) }}" class="mt-1">{{ csrf() }}<input type="hidden" name="payment_id" value="{{ p.id }}">
+<form method="post" action="{{ url_for('billing.dentist_commission', invoice_id=inv.id) }}" class="mt-1">{{ csrf() }}<input type="hidden" name="payment_id" value="{{ p.id }}"><input type="hidden" name="from_lines" value="1">
+<button class="btn btn-sm">From the bill lines</button><br><small class="muted">Each dentist on their own lines, as set on the lines.</small></form>
+<p class="muted mt-1 mb-0"><small>Or one dentist, % or amount:</small></p>
+<form method="post" action="{{ url_for('billing.dentist_commission', invoice_id=inv.id) }}">{{ csrf() }}<input type="hidden" name="payment_id" value="{{ p.id }}">
 <label class="sr-only" for="pcd{{ p.id }}">Dentist</label><select id="pcd{{ p.id }}" name="dentist_id">{% for d in inv_dentists %}<option value="{{ d.id }}" {% if default_dentist == d.id %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select>
 <div class="row mt-1"><label class="sr-only" for="pcp{{ p.id }}">Percent of this payment</label><input id="pcp{{ p.id }}" name="pct" inputmode="decimal" placeholder="%" style="max-width:70px">
 <label class="sr-only" for="pca{{ p.id }}">Or amount</label><input id="pca{{ p.id }}" name="amount" inputmode="decimal" placeholder="or ₱" style="max-width:90px"></div>

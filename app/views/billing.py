@@ -754,7 +754,11 @@ def _multi_payment(conn, inv, paid):
     elif not reason:
         return "Ask the patient to sign, or tick 'Patient can't sign' and give the reason."
     comm = None
-    comm_split = request.form.get("comm_split") == "1" and (g.user.can("commission.record") or g.user.can("bills.edit"))
+    may_choose = g.user.can("commission.record") or g.user.can("bills.edit")
+    # staff who can't choose the commission (the box is hidden for them, e.g. a receptionist taking a payment) still record
+    # it from the bill lines, as set by the cashier or admin; otherwise the dentist would silently get nothing
+    comm_split = request.form.get("comm_split") == "1" if may_choose else bool(conn.scalar(
+        "SELECT 1 FROM invoice_items WHERE invoice_id = ? AND dentist_id IS NOT NULL LIMIT 1", (inv["id"],)))
     comm_dentist = None if comm_split else to_int(request.form.get("comm_dentist_id"))
     if comm_dentist:
         if not (g.user.can("commission.record") or g.user.can("bills.edit")):
@@ -822,6 +826,32 @@ def _multi_payment(conn, inv, paid):
     return None
 
 
+def _payment_commission_from_lines(conn, inv, pay):
+    """Record a saved payment's commission the automatic way: each dentist on their own bill lines (fixed amounts once)."""
+    from ..payroll import add_manual_commission
+    total, n = 0, 0
+    with conn.transaction():
+        for row in split_commission(conn, inv, pay["amount_cents"]):
+            amt = round(row["amount"])
+            if not amt or not row["emp_id"]:
+                continue
+            bp = row.get("bp") if not row["fixed"] else None
+            cid, err = add_manual_commission(conn, None, row["emp_id"], parse_date(pay["received_at"]) or today(), round(row["base"]), bp, amt,
+                                             g.user.id, invoice_id=inv["id"], payment_id=pay["id"], fill_lines=False,
+                                             fixed_items=row["fixed_items"],
+                                             description=(f"Payment on {inv['number']}: " + ", ".join(row["lines"]))[:200])
+            if err:
+                flash(err, "error")
+                return redirect(url_for("billing.invoice", invoice_id=inv["id"]))
+            total, n = total + amt, n + 1
+        if n:
+            audit.record("dentist_commission_added", "invoice", inv["id"], f"Commission from the bill lines on a payment: {peso(total)}",
+                         {"payment_id": pay["id"]}, inv["branch_id"])
+    flash(f"Commission recorded from the bill lines: {peso(total)}." if n else
+          "The bill lines give no commission for this payment (no dentist, or no commission set).", "success" if n else "error")
+    return redirect(url_for("billing.invoice", invoice_id=inv["id"]))
+
+
 @bp.route("/invoices/<int:invoice_id>/dentist-commission", methods=["POST"])
 @require("commission.record", "bills.edit", any_of=True)
 def dentist_commission(invoice_id):
@@ -855,6 +885,8 @@ def dentist_commission(invoice_id):
             flash("This payment already has a dentist commission. Remove it first to change it.", "error")
             return redirect(url_for("billing.invoice", invoice_id=invoice_id))
         earned = parse_date(pay["received_at"])
+        if request.form.get("from_lines"):
+            return _payment_commission_from_lines(conn, inv, pay)
         info = invoice_commission_info(conn, inv)
         base_txt = "%.2f" % ((pay["amount_cents"] - lab_share(pay["amount_cents"], info["lab_fee_cents"], inv["total_cents"])
                               - _free_share(conn, inv, pay["amount_cents"])) / 100)
