@@ -20,14 +20,16 @@ from .common import branches_for_user, date_range_args, paginate, services
 bp = Blueprint("billing", __name__, url_prefix="/staff")
 
 
-def _load_invoice(invoice_id):
+def _load_invoice(invoice_id, paying: bool = False):
+    """The bill, if the user works at its branch. paying=True: staff who take payments may also open and pay another
+    branch's bill (a patient may pay at any branch; the money counts where it's received)."""
     conn = get_db()
     inv = conn.one("SELECT i.*, p.first_name, p.last_name, p.chart_no, p.address, b.name AS branch, b.address AS branch_address, "
                    "b.phone AS branch_phone, u.name AS created_by_name FROM invoices i JOIN patients p ON p.id = i.patient_id "
                    "JOIN branches b ON b.id = i.branch_id LEFT JOIN users u ON u.id = i.created_by WHERE i.id = ?", (invoice_id,))
     if not inv:
         abort(404)
-    if not g.user.in_branch(inv["branch_id"]):
+    if not g.user.in_branch(inv["branch_id"]) and not (paying and g.user.can("payments.add")):
         abort(403)
     return inv
 
@@ -46,6 +48,8 @@ def _received_branch(inv) -> int:
     bid = to_int(request.form.get("received_branch_id"))
     if bid and g.user.in_branch(bid):
         return bid
+    if not g.user.in_branch(inv["branch_id"]) and g.user.branch_ids:      # paid at another branch: count it where received
+        return sorted(g.user.branch_ids)[0]
     return inv["branch_id"]
 
 
@@ -357,7 +361,7 @@ def mymeds_paid(invoice_id):
 @require("billing.view")
 def invoice(invoice_id):
     conn = get_db()
-    inv = _load_invoice(invoice_id)
+    inv = _load_invoice(invoice_id, paying=True)
     from ..billing import mark_xray_lines
     mark_xray_lines(conn)                 # X-ray lines get a "Move to X-ray" button
     items = conn.all("SELECT * FROM invoice_items WHERE invoice_id = ? ORDER BY id", (invoice_id,))
@@ -401,7 +405,7 @@ def invoice(invoice_id):
 @require("billing.view")
 def invoice_print(invoice_id):
     conn = get_db()
-    inv = _load_invoice(invoice_id)
+    inv = _load_invoice(invoice_id, paying=True)
     items = conn.all("SELECT * FROM invoice_items WHERE invoice_id = ? ORDER BY id", (invoice_id,))
     paid = paid_amount(conn, invoice_id)
     pays = conn.all("SELECT p.*, s.stored_name AS sig, s.not_signed_reason FROM payments p LEFT JOIN payment_signatures s ON s.id = p.signature_id "
@@ -573,8 +577,8 @@ def cashier_note(invoice_id):
 @require("billing.view")
 def payment(invoice_id):
     conn = get_db()
-    inv = _load_invoice(invoice_id)
     action = request.form.get("action", "payment")
+    inv = _load_invoice(invoice_id, paying=action in ("payment", "multi"))
     if action not in PAYMENT_ACTION_PERMS:
         abort(400)
     if not g.user.can(PAYMENT_ACTION_PERMS[action]):
@@ -679,7 +683,7 @@ def _proof_files():
 def payment_proof(invoice_id, payment_id):
     """Add proof of payment to a payment already recorded (e.g. the GCash screenshot sent later)."""
     conn = get_db()
-    inv = _load_invoice(invoice_id)
+    inv = _load_invoice(invoice_id, paying=True)
     p = conn.one("SELECT * FROM payments WHERE id = ? AND invoice_id = ? AND status = 'valid'", (payment_id, invoice_id))
     if not p:
         abort(404)
@@ -919,7 +923,7 @@ def confirm_free(invoice_id):
     from ..payroll import add_manual_commission
     from ..uploads import save_signature
     conn = get_db()
-    inv = _load_invoice(invoice_id)
+    inv = _load_invoice(invoice_id, paying=True)
     if inv["status"] != "issued" or inv["total_cents"] != 0 or inv["confirmed_at"]:
         flash("Only an issued ₱0 bill that isn't confirmed yet can be confirmed here.", "error")
         return redirect(url_for("billing.invoice", invoice_id=invoice_id))
