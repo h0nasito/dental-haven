@@ -239,7 +239,7 @@ def add_manual_commission(conn, dentist_user_id: int | None, employee_id: int | 
     """Record a manual dentist commission. Give either amount_cents, or base_cents + rate_bp (amount = base x rate).
     Returns (id, error)."""
     if not employee_id and dentist_user_id:
-        emp = conn.one("SELECT e.id FROM employees e JOIN users u ON u.id = e.user_id WHERE u.id = ? AND u.role = 'dentist'", (dentist_user_id,))
+        emp = conn.one("SELECT e.id FROM employees e JOIN users u ON u.id = e.user_id WHERE u.id = ?", (dentist_user_id,))
         if not emp:
             return None, "This dentist has no employee record yet (Staff & payroll → Employees), so commission can't be recorded."
         employee_id = emp["id"]

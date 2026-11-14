@@ -372,8 +372,11 @@ def invoice(invoice_id):
     history = conn.all("SELECT a.*, u.name AS actor FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id "
                        "WHERE a.entity_type = 'invoice' AND a.entity_id = ? ORDER BY a.id DESC", (invoice_id,))
     appt = conn.one("SELECT dentist_id, start_at FROM appointments WHERE id = ?", (inv["appointment_id"],)) if inv["appointment_id"] else None
-    inv_dentists = conn.all("SELECT u.id, u.name FROM users u JOIN user_branches ub ON ub.user_id = u.id WHERE u.role = 'dentist' AND u.active = 1 "
-                            "AND ub.branch_id = ? ORDER BY u.name", (inv["branch_id"],))
+    # every active dentist: the bill's branch first, then dentists of other branches (a patient may move branch, a
+    # dentist may cover elsewhere), marked so the cashier can tell them apart
+    inv_dentists = [{"id": d["id"], "name": d["name"] + ("" if d["here"] else " · other branch")} for d in conn.all(
+        "SELECT u.id, u.name, EXISTS (SELECT 1 FROM user_branches ub WHERE ub.user_id = u.id AND ub.branch_id = ?) AS here "
+        "FROM users u WHERE u.role = 'dentist' AND u.active = 1 ORDER BY here DESC, u.name", (inv["branch_id"],))]
     lab_cases = conn.all("SELECT id, case_type, teeth, lab_fee_cents, sent_on FROM lab_cases WHERE patient_id = ? AND status != 'cancelled' "
                          "ORDER BY id DESC LIMIT 20", (inv["patient_id"],))
     dentist_names = {d["id"]: d["name"] for d in conn.all("SELECT id, name FROM users WHERE role = 'dentist'")}
@@ -764,9 +767,11 @@ def _multi_payment(conn, inv, paid):
     comm_split = request.form.get("comm_split") == "1" if may_choose else bool(conn.scalar(
         "SELECT 1 FROM invoice_items WHERE invoice_id = ? AND dentist_id IS NOT NULL LIMIT 1", (inv["id"],)))
     # someone who can't choose the commission never sets it by hand (a value left in the hidden box is ignored, not refused)
-    comm_dentist = None if (comm_split or not may_choose) else to_int(request.form.get("comm_dentist_id"))
+    from ..billing import commission_target
+    comm_dentist = None if (comm_split or not may_choose) else (request.form.get("comm_dentist_id") or "").strip() or None
     if comm_dentist:
-        emp = conn.one("SELECT e.id FROM employees e JOIN users u ON u.id = e.user_id WHERE u.id = ? AND u.role = 'dentist'", (comm_dentist,))
+        _uid, emp_id = commission_target(conn, comm_dentist)
+        emp = {"id": emp_id} if emp_id else None
         if not emp:
             return "That dentist has no employee record yet (Staff & payroll → Employees), so commission can't be recorded."
         mode = request.form.get("comm_mode") or ("amount" if (request.form.get("comm_amount") or "").strip() else "percent")
@@ -903,7 +908,9 @@ def dentist_commission(invoice_id):
         flash("Check the date (not in the future), amounts (e.g. 1500 or 1500.00) and % (0–100).", "error")
         return redirect(url_for("billing.invoice", invoice_id=invoice_id) + "#dentist-commission")
     desc = clean(request.form.get("description"), 200) or ((pay["notes"] or f"Payment {PAYMENT_METHODS.get(pay['method'], pay['method'])}") if pay else "")
-    cid, err = add_manual_commission(conn, to_int(request.form.get("dentist_id")), None, earned, base, bp, amount, g.user.id,
+    from ..billing import commission_target
+    d_uid, d_emp = commission_target(conn, request.form.get("dentist_id"))
+    cid, err = add_manual_commission(conn, d_uid, d_emp, earned, base, bp, amount, g.user.id,
                                      invoice_id=invoice_id, payment_id=pay["id"] if pay else None, description=desc)
     if err:
         flash(err, "error")

@@ -978,3 +978,27 @@ class TestPayAtAnotherBranch(Base):
         # other actions on another branch's bill stay closed
         self.assertEqual(r.post(f"/staff/invoices/{inv}/payments", data={"action": "void_payment", "payment_id": str(pay["id"]),
                                                                           "reason": "x"}).status_code, 403)
+
+
+class TestCommissionOtherBranchDentist(Base):
+    setUp = Base.setUp
+
+    def test_dentist_of_another_branch_listed_and_recorded(self):
+        from app.util import now_str
+        mal = self.branch("malolos")
+        other = self.q("SELECT u.id, u.name FROM users u WHERE u.role = 'dentist' AND u.active = 1 AND NOT EXISTS "
+                       "(SELECT 1 FROM user_branches ub WHERE ub.user_id = u.id AND ub.branch_id = ?) LIMIT 1", (mal,))
+        if not other:
+            self.skipTest("no dentist outside Malolos in the demo data")
+        if not self.q("SELECT id FROM employees WHERE user_id = ?", (other["id"],)):
+            self.conn.insert("employees", {"full_name": other["name"], "position": "Dentist", "employment_type": "regular", "user_id": other["id"],
+                                           "active": 1, "created_at": now_str()})
+        pid = self.q("SELECT id FROM patients WHERE preferred_branch_id = ? LIMIT 1", (mal,))["id"]
+        inv = self.conn.insert("invoices", {"branch_id": mal, "patient_id": pid, "status": "issued", "number": "MM-OBD1", "issued_at": "2024-05-28",
+                                            "subtotal_cents": 390000, "discount_cents": 0, "tax_cents": 0, "total_cents": 390000, "created_at": now_str()})
+        a = self.login("admin")
+        page = a.get(f"/staff/invoices/{inv}").data.decode()
+        self.assertIn(f'{other["name"]} · other branch', page)
+        a.post(f"/staff/invoices/{inv}/dentist-commission", data={"dentist_id": str(other["id"]), "earned_on": "2026-11-14", "amount": "500",
+                                                                  "description": "Adjustment (demo)"})
+        self.assertEqual(self.conn.scalar("SELECT amount_cents FROM dentist_commissions WHERE invoice_id = ?", (inv,)), 50000)

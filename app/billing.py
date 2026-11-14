@@ -154,15 +154,39 @@ def collections(conn, branch_ids: list[int], start: str, end: str) -> dict:
 
 
 def commission_dentists(conn) -> list[dict]:
-    """Active dentists with their current usual commission % (for pre-filling the cashier's commission)."""
+    """Every dentist who can earn commission, with their usual % (to pre-fill the cashier's commission): logins with the
+    Dentist role, a super admin who is also a dentist, and active employees with a dentist position even without a login
+    (e.g. an associate covering at another branch). The option value is the login id, or "e<employee id>" without one."""
     from .payroll import dentist_rates
     from .util import today
-    out = []
-    for d in conn.all("SELECT u.id, u.name, e.id AS emp_id FROM users u LEFT JOIN employees e ON e.user_id = u.id "
-                      "WHERE u.role = 'dentist' AND u.active = 1 ORDER BY u.name"):
+    out, seen = [], set()
+    for d in conn.all("SELECT u.id, u.name, u.role, u.license_no, e.id AS emp_id, e.position FROM users u LEFT JOIN employees e ON e.user_id = u.id "
+                      "WHERE u.active = 1 AND (u.role = 'dentist' OR (u.role = 'super_admin' AND e.id IS NOT NULL AND "
+                      "(COALESCE(u.license_no, '') != '' OR LOWER(COALESCE(e.position, '')) LIKE '%dentist%'))) ORDER BY u.name"):
         r = dentist_rates(conn, d["emp_id"], today().isoformat()) if d["emp_id"] else None
         out.append({"id": d["id"], "name": d["name"], "rate_bp": r["commission_bp"] if r else None, "has_employee": bool(d["emp_id"])})
+        if d["emp_id"]:
+            seen.add(d["emp_id"])
+    for e in conn.all("SELECT e.id, e.full_name FROM employees e LEFT JOIN users u ON u.id = e.user_id WHERE e.active = 1 "
+                      "AND LOWER(COALESCE(e.position, '')) LIKE '%dentist%' AND (e.user_id IS NULL OR u.active = 0) ORDER BY e.full_name"):
+        if e["id"] in seen:
+            continue
+        r = dentist_rates(conn, e["id"], today().isoformat())
+        out.append({"id": f"e{e['id']}", "name": e["full_name"], "rate_bp": r["commission_bp"] if r else None, "has_employee": True})
+    out.sort(key=lambda d: (d["name"] or "").lower())
     return out
+
+
+def commission_target(conn, raw) -> tuple[int | None, int | None]:
+    """The dentist picked in a commission box: (login id, employee id). "e12" = employee 12 without a login."""
+    raw = (str(raw or "")).strip()
+    if raw.startswith("e") and raw[1:].isdigit():
+        e = conn.one("SELECT id, user_id FROM employees WHERE id = ?", (int(raw[1:]),))
+        return (e["user_id"], e["id"]) if e else (None, None)
+    if raw.isdigit():
+        e = conn.one("SELECT id FROM employees WHERE user_id = ?", (int(raw),))
+        return int(raw), (e["id"] if e else None)
+    return None, None
 
 
 def invoice_commission_info(conn, inv) -> dict:
