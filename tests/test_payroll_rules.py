@@ -216,3 +216,16 @@ class TestEmployeeSearch(Base):
         self.assertNotIn("Searchable Zyxwv", miss)
         self.assertIn("No employees match", miss)
         self.assertIn("Searchable Zyxwv", c.get("/staff/employees?q=assistant malolos").data.decode())
+
+
+class TestExcusedDayCounts(Base):
+    def test_excused_day_is_paid_without_late(self):
+        from app.payroll import staff_daily_pay
+        recs = [{"work_date": "2025-07-07", "time_in": "08:20", "time_out": "17:00", "status": "excused", "late_minutes": 20,
+                 "ot_approved_minutes": 0},
+                {"work_date": "2025-07-08", "time_in": "08:00", "time_out": "17:00", "status": "ok", "late_minutes": 0, "ot_approved_minutes": 0},
+                {"work_date": "2025-07-09", "time_in": None, "time_out": None, "status": "excused", "late_minutes": 0,    # e.g. on leave
+                 "ot_approved_minutes": 0}]
+        r = staff_daily_pay(self.conn, recs, 70000, "2025-07-07", "2025-07-09", holiday_pay=False)
+        self.assertEqual(r["basic_pay_cents"], 140000)          # two worked days, the excused one included
+        self.assertEqual(r["late_minutes"], 0)                  # excused lateness isn't deducted

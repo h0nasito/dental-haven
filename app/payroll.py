@@ -122,6 +122,9 @@ def manual_commissions(conn, employee_id: int, start: str, end: str):
                     "AND c.earned_on BETWEEN ? AND ? ORDER BY c.earned_on, c.id", (employee_id, start, end))
 
 
+# Days that count as worked. "Excused" = the exception on the day was accepted (e.g. clocked in away from the branch for
+# a reason, or late with permission): the day is paid in full and its late minutes are not deducted.
+COUNTED = ("ok", "corrected", "exception", "excused")
 OT_MULTIPLIER = 1.25          # clinic rule: hourly OT rate = daily rate / 8 x 1.25
 HOLIDAY_WORKED = {"regular": 2.0, "special": 1.3}   # regular holiday worked = double pay; special non-working = +30%
 
@@ -133,7 +136,7 @@ def staff_daily_pay(conn, recs, rate_cents: int, start: str, end: str, holiday_p
     basic = holiday = 0
     worked_days = set()
     for r in recs:
-        if r["time_in"] and r["time_out"] and r["status"] in ("ok", "corrected", "exception"):
+        if r["time_in"] and r["time_out"] and r["status"] in COUNTED:
             worked_days.add(r["work_date"])
             basic += rate_cents
             kind = holidays.get(r["work_date"]) if holiday_pay else None
@@ -141,7 +144,7 @@ def staff_daily_pay(conn, recs, rate_cents: int, start: str, end: str, holiday_p
                 holiday += round(rate_cents * (HOLIDAY_WORKED[kind] - 1))
     if holiday_pay and settings.get("payroll.pay_unworked_regular_holiday", conn):
         holiday += sum(rate_cents for d, k in holidays.items() if k == "regular" and d not in worked_days)
-    ot_minutes = sum(r["ot_approved_minutes"] or 0 for r in recs if r["status"] != "excused")
+    ot_minutes = sum(r["ot_approved_minutes"] or 0 for r in recs)
     ot_pay = round(ot_minutes / 60 * rate_cents / 8 * OT_MULTIPLIER)
     late_minutes = sum(r["late_minutes"] or 0 for r in recs if r["status"] != "excused")
     late = late_minutes * int(settings.get("payroll.late_peso_per_minute", conn) or 0) * 100
@@ -165,8 +168,8 @@ def build_lines(conn, period) -> list[dict]:
                             (e["id"], period["start_date"], period["end_date"]))
         # Field work counts only once approved; pending or declined field days are left out.
         recs = [r for r in all_recs if r["field_status"] in (None, "approved")]
-        days = sum(1 for r in recs if r["time_in"] and r["time_out"] and r["status"] in ("ok", "corrected", "exception"))
-        minutes = sum(worked_minutes(r) for r in recs if r["status"] != "excused")
+        days = sum(1 for r in recs if r["time_in"] and r["time_out"] and r["status"] in COUNTED)
+        minutes = sum(worked_minutes(r) for r in recs)
         late = sum(r["late_minutes"] or 0 for r in recs if r["status"] != "excused")
         undertime = 0
         for r in recs:
