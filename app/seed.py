@@ -406,6 +406,12 @@ def seed_base(conn):
                 late, ot = day_metrics(conn, dict(r))
                 conn.execute("UPDATE time_records SET late_minutes = ?, ot_minutes = ? WHERE id = ?", (0 if r["status"] == "excused" else late, ot, r["id"]))
             _settings_mod().put("seed.attendance_metrics_v1", True, None, conn)
+        if not _settings_mod().get("seed.excused_late_v1", conn):
+            # excusing used to forgive lateness too; late is late now, so excused days get their late minutes back
+            from .attendance_rules import refresh_record
+            for r in conn.all("SELECT id FROM time_records WHERE status = 'excused'"):
+                refresh_record(conn, r["id"])
+            _settings_mod().put("seed.excused_late_v1", True, None, conn)
         # Permissions added after a database was created are granted once to the roles that have them by default;
         # afterwards the super admin's choices in Role access are kept.
         from . import settings as _settings2

@@ -795,7 +795,7 @@ def attendance_correct(rec_id):
             return redirect(url_for("people.attendance_correct", rec_id=rec_id))
         before = {"time_in": r["time_in"], "time_out": r["time_out"], "status": r["status"]}
         if action == "excuse":
-            upd = {"status": "excused"}
+            upd = {"status": "excused"}           # clears the exception; late is still late (fix a wrong time with Correct)
         else:
             upd = {"time_in": parse_time(request.form.get("time_in")), "time_out": parse_time(request.form.get("time_out")), "status": "corrected"}
         upd.update({"correction_reason": reason, "corrected_by": g.user.id, "corrected_at": now_str()})

@@ -152,7 +152,7 @@ def staff_daily_pay(conn, recs, rate_cents: int, start: str, end: str, holiday_p
         holiday += sum(rate_cents for d, k in holidays.items() if k == "regular" and d not in worked_days)
     ot_minutes = sum(r["ot_approved_minutes"] or 0 for r in recs)
     ot_pay = round(ot_minutes / 60 * rate_cents / 8 * OT_MULTIPLIER)
-    late_minutes = sum(r["late_minutes"] or 0 for r in recs if r["status"] != "excused")
+    late_minutes = sum(r["late_minutes"] or 0 for r in recs)       # forgiven lateness is stored as 0
     late = late_minutes * int(settings.get("payroll.late_peso_per_minute", conn) or 0) * 100
     return {"basic_pay_cents": basic, "holiday_pay_cents": holiday, "ot_minutes": ot_minutes, "ot_pay_cents": ot_pay,
             "late_deduction_cents": late, "late_minutes": late_minutes, "estimate_cents": basic + holiday + ot_pay - late}
@@ -183,7 +183,7 @@ def staff_monthly_pay(conn, recs, monthly_cents: int, start: str, end: str, holi
     holiday = sum(round(daily * (HOLIDAY_WORKED[k] - 1)) for day, k in holidays.items() if day in worked) if holiday_pay else 0
     ot_minutes = sum(r["ot_approved_minutes"] or 0 for r in recs)
     ot_pay = round(ot_minutes / 60 * daily / 8 * OT_MULTIPLIER)
-    late_minutes = sum(r["late_minutes"] or 0 for r in recs if r["status"] != "excused")
+    late_minutes = sum(r["late_minutes"] or 0 for r in recs)       # forgiven lateness is stored as 0
     late = late_minutes * int(settings.get("payroll.late_peso_per_minute", conn) or 0) * 100
     return {"basic_pay_cents": basic, "holiday_pay_cents": holiday, "ot_minutes": ot_minutes, "ot_pay_cents": ot_pay,
             "late_deduction_cents": late, "late_minutes": late_minutes,
@@ -208,7 +208,7 @@ def build_lines(conn, period) -> list[dict]:
         recs = [r for r in all_recs if r["field_status"] in (None, "approved")]
         days = sum(1 for r in recs if r["time_in"] and r["time_out"] and r["status"] in COUNTED)
         minutes = sum(worked_minutes(r) for r in recs)
-        late = sum(r["late_minutes"] or 0 for r in recs if r["status"] != "excused")
+        late = sum(r["late_minutes"] or 0 for r in recs)
         undertime = 0
         for r in recs:
             if r["status"] == "exception" and r["exception_note"]:
@@ -225,7 +225,7 @@ def build_lines(conn, period) -> list[dict]:
             manual = manual_commissions(conn, e["id"], period["start_date"], period["end_date"])
             daily_pay = days * rates["daily_rate_cents"] if rates else None
             commission = (sum(i["commission_cents"] for i in items) + sum(m["amount_cents"] for m in manual)) if rates else None
-            late_min = sum(r["late_minutes"] or 0 for r in recs if r["status"] != "excused")
+            late_min = sum(r["late_minutes"] or 0 for r in recs)
             late_ded = late_min * int(settings.get("payroll.late_peso_per_minute", conn) or 0) * 100 \
                 if settings.get("payroll.late_applies_dentists", conn) else 0
             lines.append({"employee_id": e["id"], "days_present": days, "minutes_worked": minutes, "late_minutes": late,

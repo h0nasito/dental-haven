@@ -83,7 +83,7 @@ def refresh_record(conn, rec_id: int):
     if not rec:
         return
     late, ot = day_metrics(conn, dict(rec))
-    if rec["status"] == "excused":
+    if rec["late_forgiven"]:                 # lateness allowed (ticked when excusing); otherwise it's still deducted
         late = 0
     conn.execute("UPDATE time_records SET late_minutes = ?, ot_minutes = ?, ot_approved_minutes = MIN(ot_approved_minutes, ?) WHERE id = ?",
                  (late, ot, ot, rec_id))
@@ -94,8 +94,7 @@ def refresh_record(conn, rec_id: int):
 
 
 def check_late_warning(conn, employee_id: int, month: str):
-    count = conn.scalar("SELECT COUNT(*) FROM time_records WHERE employee_id = ? AND substr(work_date, 1, 7) = ? AND late_minutes > 0 "
-                        "AND status != 'excused'", (employee_id, month)) or 0
+    count = conn.scalar("SELECT COUNT(*) FROM time_records WHERE employee_id = ? AND substr(work_date, 1, 7) = ? AND late_minutes > 0", (employee_id, month)) or 0
     if count < 3 or conn.one("SELECT id FROM late_warnings WHERE employee_id = ? AND month = ?", (employee_id, month)):
         return
     emp = conn.one("SELECT e.*, u.email, u.id AS uid, b.slug AS branch_slug, b.name AS branch FROM employees e LEFT JOIN users u ON u.id = e.user_id "

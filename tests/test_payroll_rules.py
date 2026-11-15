@@ -219,7 +219,7 @@ class TestEmployeeSearch(Base):
 
 
 class TestExcusedDayCounts(Base):
-    def test_excused_day_is_paid_without_late(self):
+    def test_excused_day_is_paid_and_late_still_counts(self):
         from app.payroll import staff_daily_pay
         recs = [{"work_date": "2025-07-07", "time_in": "08:20", "time_out": "17:00", "status": "excused", "late_minutes": 20,
                  "ot_approved_minutes": 0},
@@ -228,7 +228,7 @@ class TestExcusedDayCounts(Base):
                  "ot_approved_minutes": 0}]
         r = staff_daily_pay(self.conn, recs, 70000, "2025-07-07", "2025-07-09", holiday_pay=False)
         self.assertEqual(r["basic_pay_cents"], 140000)          # two worked days, the excused one included
-        self.assertEqual(r["late_minutes"], 0)                  # excused lateness isn't deducted
+        self.assertEqual(r["late_minutes"], 20)                 # late is late, even on an excused day
 
 
 class TestMonthlySalary(Base):
@@ -323,3 +323,21 @@ class TestNetSalaryCsv(Base):
         self.assertTrue(body.startswith("Name,Salary"))
         self.assertIn("Demo Csv Person,10000.00", body)
         self.assertIn("TOTAL,", body)
+
+
+class TestExcusedLateStillDeducted(Base):
+    def test_excusing_keeps_late_minutes(self):
+        from app.util import now_str
+        bid = self.branch("malolos")
+        eid = self.conn.insert("employees", {"full_name": "Demo Late Excused", "position": "Staff", "employment_type": "regular",
+                                             "primary_branch_id": bid, "active": 1, "created_at": now_str()})
+        rid = self.conn.insert("time_records", {"employee_id": eid, "branch_id": bid, "work_date": "2026-11-05", "time_in": "08:18",
+                                                "time_out": "18:00", "status": "exception", "exception_note": "late 18 min vs 08:00",
+                                                "created_at": now_str()})
+        from app.attendance_rules import refresh_record
+        refresh_record(self.conn, rid)
+        before = self.q("SELECT late_minutes FROM time_records WHERE id = ?", (rid,))["late_minutes"]
+        self.assertGreater(before, 0)
+        self.login("admin").post(f"/staff/attendance/{rid}/correct", data={"action": "excuse", "reason": "Late (demo)"})
+        r = self.q("SELECT status, late_minutes FROM time_records WHERE id = ?", (rid,))
+        self.assertEqual((r["status"], r["late_minutes"]), ("excused", before))
