@@ -274,3 +274,52 @@ class TestFixedSalary(Base):
         pid = int(r.headers["Location"].rsplit("/", 1)[1])
         line = self.q("SELECT * FROM payroll_lines WHERE period_id = ? AND employee_id = ?", (pid, eid))
         self.assertEqual((line["basic_pay_cents"], line["estimate_cents"]), (1000000, 1000000))   # ₱10,000 with no time records
+
+
+class TestEmptyPaySettingSkipped(Base):
+    def test_entry_without_amount_is_ignored(self):
+        from app.payroll import current_compensation
+        from app.util import now_str
+        eid = self.conn.insert("employees", {"full_name": "Demo Rate Fix", "position": "Staff", "employment_type": "regular",
+                                             "primary_branch_id": self.branch("malolos"), "active": 1, "created_at": now_str()})
+        for rate, day in ((69000, "2026-11-07"), (None, "2026-11-11"), (60000, "2026-12-07")):
+            self.conn.insert("compensation", {"employee_id": eid, "basis": "daily", "rate_cents": rate, "effective_from": day, "created_at": now_str()})
+        self.assertEqual(current_compensation(self.conn, eid, "2026-11-15")["rate_cents"], 69000)
+        page = self.login("admin").get(f"/staff/employees/{eid}").data.decode()
+        self.assertIn("no amount · ignored", page)
+        self.assertIn("from a future date", page)
+
+
+class TestPayrollNetTotal(Base):
+    def test_total_net_shown(self):
+        from app.util import now_str
+        bid = self.branch("malolos")
+        eid = self.conn.insert("employees", {"full_name": "Demo Net Total", "position": "HR", "employment_type": "regular",
+                                             "primary_branch_id": bid, "active": 1, "fixed_pay": 1, "created_at": now_str()})
+        self.conn.insert("compensation", {"employee_id": eid, "basis": "monthly", "rate_cents": 2000000, "effective_from": "2025-01-01",
+                                          "created_at": now_str()})
+        a = self.login("admin")
+        r = a.post("/staff/payroll", data={"start_date": "2025-08-01", "end_date": "2025-08-15", "branch_id": bid, "name": "Aug 1-15 total"})
+        pid = int(r.headers["Location"].rsplit("/", 1)[1])
+        page = a.get(f"/staff/payroll/{pid}").data.decode()
+        self.assertIn("Total net pay to prepare", page)
+        self.assertIn("₱10,000.00", page)
+
+
+class TestNetSalaryCsv(Base):
+    def test_name_and_salary_csv(self):
+        from app.util import now_str
+        bid = self.branch("malolos")
+        eid = self.conn.insert("employees", {"full_name": "Demo Csv Person", "position": "HR", "employment_type": "regular",
+                                             "primary_branch_id": bid, "active": 1, "fixed_pay": 1, "created_at": now_str()})
+        self.conn.insert("compensation", {"employee_id": eid, "basis": "monthly", "rate_cents": 2000000, "effective_from": "2025-01-01",
+                                          "created_at": now_str()})
+        a = self.login("admin")
+        r = a.post("/staff/payroll", data={"start_date": "2025-09-01", "end_date": "2025-09-15", "branch_id": bid, "name": "Sep 1-15 csv"})
+        pid = int(r.headers["Location"].rsplit("/", 1)[1])
+        resp = a.get(f"/staff/payroll/{pid}/net-salaries.csv")
+        body = resp.data.decode("utf-8-sig")
+        self.assertEqual(resp.mimetype, "text/csv")
+        self.assertTrue(body.startswith("Name,Salary"))
+        self.assertIn("Demo Csv Person,10000.00", body)
+        self.assertIn("TOTAL,", body)

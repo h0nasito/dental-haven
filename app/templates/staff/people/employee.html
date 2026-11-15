@@ -60,7 +60,8 @@
 <div class="field"><label for="ef">Effective from</label><input id="ef" type="date" name="effective_from"></div></div>
 <div class="field"><label for="nt">Notes</label><input id="nt" name="notes" placeholder="e.g. Rate per signed contract dated …"></div>
 <button class="btn btn-secondary">Add setting</button></form>
-<h3 class="mt-1">History</h3><ul class="list-plain">{% for c in comps %}<li><strong>{{ BASIS_LABELS[c.basis] }}</strong>{% if c.rate_cents is not none %} · {{ c.rate_cents|peso }}{% endif %}{% if c.percentage_bp %} · {{ c.percentage_bp / 100 }}%{% endif %} · from {{ c.effective_from|date }}{% if c.rate_cents is none and c.basis in ('daily', 'hourly', 'monthly', 'daily_commission') %} <span class="badge badge-red">no amount</span>{% endif %}
+<h3 class="mt-1">History</h3><ul class="list-plain">{% for c in comps %}<li><strong>{{ BASIS_LABELS[c.basis] }}</strong>{% if c.rate_cents is not none %} · {{ c.rate_cents|peso }}{% endif %}{% if c.percentage_bp %} · {{ c.percentage_bp / 100 }}%{% endif %} · from {{ c.effective_from|date }}{% if c.rate_cents is none and c.basis in ('daily', 'hourly', 'monthly', 'daily_commission') %} <span class="badge badge-red">no amount · ignored</span>{% endif %}
+{% if c.id == comp_in_use %} <span class="badge badge-green">In use now</span>{% elif c.effective_from > today_iso %} <span class="badge">from a future date</span>{% endif %}
 <br><small class="muted">{{ c.notes }} · set by {{ c.by_name }} {{ c.created_at|dt }}</small>
 <form method="post" class="inline" data-confirm="Remove this pay setting? Payroll uses the remaining history.">{{ csrf() }}<input type="hidden" name="action" value="compensation_remove"><input type="hidden" name="comp_id" value="{{ c.id }}"><button class="btn btn-ghost btn-sm">Remove</button></form></li>{% else %}<li class="muted">No compensation settings yet.</li>{% endfor %}</ul></div>
 <div class="card" id="allowances"><h2>Regular allowances</h2>

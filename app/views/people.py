@@ -544,6 +544,9 @@ def employee(emp_id):
         return redirect(url_for("people.employee", emp_id=emp_id))
     comps = conn.all("SELECT c.*, u.name AS by_name FROM compensation c LEFT JOIN users u ON u.id = c.created_by WHERE employee_id = ? "
                      "ORDER BY effective_from DESC, id DESC", (emp_id,)) if g.user.can("compensation.manage") else []
+    from ..payroll import current_compensation as _cur_comp
+    _now = _cur_comp(conn, emp_id, today().isoformat())
+    comp_in_use = _now["id"] if _now else None
     user = conn.one("SELECT role FROM users WHERE id = ?", (e["user_id"],)) if e["user_id"] else None
     is_dentist = bool(user and user["role"] == "dentist")
     from ..lab_commission import technicians as _techs
@@ -556,7 +559,7 @@ def employee(emp_id):
                              "ORDER BY s.sort_order", (emp_id,))
     from .. import settings as _settings
     from ..workplace import labs_for
-    return render_template("staff/people/employee.html", ot_end=_fmt12(_settings.get("payroll.staff_end_time", conn) or "17:00"), pay_unworked=_settings.get("payroll.pay_unworked_regular_holiday", conn), e=e, comps=comps, branches=branches_for_user(g.user), labs=labs_for(conn, g.user), is_dentist=is_dentist, is_tech=is_tech,
+    return render_template("staff/people/employee.html", ot_end=_fmt12(_settings.get("payroll.staff_end_time", conn) or "17:00"), pay_unworked=_settings.get("payroll.pay_unworked_regular_holiday", conn), e=e, comps=comps, comp_in_use=comp_in_use, today_iso=today().isoformat(), branches=branches_for_user(g.user), labs=labs_for(conn, g.user), is_dentist=is_dentist, is_tech=is_tech,
                            dpay=dpay, svc_rates=svc_rates, all_services=conn.all("SELECT id, name FROM services WHERE active = 1 ORDER BY sort_order"),
                            today=today().isoformat(),
                            allowances=conn.all("SELECT * FROM employee_allowances WHERE employee_id = ? AND active = 1 ORDER BY id", (emp_id,)),
@@ -1017,7 +1020,17 @@ def payroll_period(period_id):
                        "WHERE entity_type = 'payroll_period' AND entity_id = ? ORDER BY a.id DESC", (period_id,))
     from ..payroll import ADDITION_TYPES, DEDUCTION_TYPES, net_pay, period_items
     items = period_items(conn, period_id)
-    return render_template("staff/people/payroll_period.html", p=p, lines=lines, history=history, rules_confirmed=rules_confirmed,
+    from ..payroll import net_pay as _net
+    _tot = {"staff": 0, "dentist": 0, "people": 0, "missing": 0}
+    for _l in lines:
+        _n = _net(_l, items.get(_l["employee_id"], {}))
+        if _n is None:
+            _tot["missing"] += 1
+            continue
+        _tot["dentist" if _l["kind"] == "dentist" else "staff"] += _n
+        _tot["people"] += 1
+    _tot["net"] = _tot["staff"] + _tot["dentist"]
+    return render_template("staff/people/payroll_period.html", pay_totals=_tot, p=p, lines=lines, history=history, rules_confirmed=rules_confirmed,
                            items=items, net_pay=net_pay, add_types=ADDITION_TYPES, ded_types=DEDUCTION_TYPES,
                            late_rate=settings.get("payroll.late_peso_per_minute", conn), pay_unworked=settings.get("payroll.pay_unworked_regular_holiday", conn),
                            show_money=g.user.can("compensation.manage"), **_payslip_mail_ctx(conn, p))
@@ -1247,6 +1260,33 @@ def payroll_tech_commission(period_id, emp_id):
         abort(404)
     items = for_period(conn, emp_id, p["start_date"], p["end_date"])
     return render_template("staff/people/payroll_tech.html", p=p, e=e, items=items, show_money=g.user.can("compensation.manage"))
+
+
+@bp.route("/payroll/<int:period_id>/net-salaries.csv")
+@require("payroll.prepare", "payroll.approve", any_of=True)
+def payroll_net_csv(period_id):
+    """Name and net salary of each employee in the period (same net as the payroll page), with the total."""
+    from ..payroll import net_pay, period_items
+    if not g.user.can("compensation.manage"):
+        abort(403)
+    conn = get_db()
+    p = _load_period(period_id)
+    lines = conn.all("SELECT l.*, e.full_name FROM payroll_lines l JOIN employees e ON e.id = l.employee_id WHERE l.period_id = ? "
+                     "ORDER BY e.full_name", (period_id,))
+    items = period_items(conn, period_id)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["Name", "Salary"])
+    total = 0
+    for l in lines:
+        n = net_pay(l, items.get(l["employee_id"], {}))
+        w.writerow([l["full_name"], f"{n / 100:.2f}" if n is not None else "needs pay rule"])
+        total += n or 0
+    w.writerow(["TOTAL", f"{total / 100:.2f}"])
+    audit.record("payroll_net_exported", "payroll_period", period_id, f"Net salaries exported: {p['name']}")
+    safe = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in (p["name"] or f"payroll-{period_id}"))[:60]
+    return Response("\ufeff" + buf.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": f"attachment; filename=net-salaries-{safe}.csv"})
 
 
 @bp.route("/payroll/<int:period_id>/export.csv")

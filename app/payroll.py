@@ -58,9 +58,15 @@ def worked_minutes(rec) -> int:
     return max(0, hm_to_min(rec["time_out"]) - hm_to_min(rec["time_in"]))
 
 
+NEEDS_AMOUNT = ("daily", "hourly", "monthly", "daily_commission")
+
+
 def current_compensation(conn, employee_id: int, as_of: str):
-    return conn.one("SELECT * FROM compensation WHERE employee_id = ? AND effective_from <= ? ORDER BY effective_from DESC, id DESC LIMIT 1",
-                    (employee_id, as_of))
+    """The pay setting in force on as_of: the newest by effective date (then the latest entered). An entry that needs an
+    amount but has none (entered by mistake) is skipped, so it can't leave someone without pay."""
+    return conn.one("SELECT * FROM compensation WHERE employee_id = ? AND effective_from <= ? "
+                    f"AND NOT (basis IN ({','.join('?' * len(NEEDS_AMOUNT))}) AND rate_cents IS NULL) "
+                    "ORDER BY effective_from DESC, id DESC LIMIT 1", (employee_id, as_of, *NEEDS_AMOUNT))
 
 
 def dentist_rates(conn, employee_id: int, as_of: str):
