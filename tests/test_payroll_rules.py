@@ -229,3 +229,48 @@ class TestExcusedDayCounts(Base):
         r = staff_daily_pay(self.conn, recs, 70000, "2025-07-07", "2025-07-09", holiday_pay=False)
         self.assertEqual(r["basic_pay_cents"], 140000)          # two worked days, the excused one included
         self.assertEqual(r["late_minutes"], 0)                  # excused lateness isn't deducted
+
+
+class TestMonthlySalary(Base):
+    def test_half_per_cutoff_less_absences(self):
+        from app.payroll import staff_monthly_pay
+        # Nov 2–7 2026 is Mon–Sat: worked Mon–Thu, absent Fri, on leave Sat (excused without times)
+        recs = [{"work_date": f"2026-11-0{d}", "time_in": "08:00", "time_out": "17:00", "status": "ok", "late_minutes": 0,
+                 "ot_approved_minutes": 0} for d in (2, 3, 4, 5)]
+        recs.append({"work_date": "2026-11-07", "time_in": None, "time_out": None, "status": "excused", "late_minutes": 0, "ot_approved_minutes": 0})
+        r = staff_monthly_pay(self.conn, recs, 2000000, "2026-11-02", "2026-11-07", holiday_pay=False)
+        daily = 2000000 * 12 / 313
+        self.assertEqual(r["absent_days"], 1)                                      # Friday only; Sunday isn't a workday
+        self.assertEqual(r["basic_pay_cents"], round(1000000 - daily))             # ₱10,000 less one day (₱766.77)
+
+    def test_compensation_without_amount_refused(self):
+        from app.util import now_str
+        eid = self.conn.insert("employees", {"full_name": "Demo Monthly", "position": "HR", "employment_type": "regular",
+                                             "primary_branch_id": self.branch("malolos"), "active": 1, "created_at": now_str()})
+        a = self.login("admin")
+        a.post(f"/staff/employees/{eid}", data={"action": "compensation", "basis": "daily", "rate": "", "effective_from": "2026-11-11"})
+        self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM compensation WHERE employee_id = ?", (eid,)), 0)
+        a.post(f"/staff/employees/{eid}", data={"action": "compensation", "basis": "daily", "rate": "690", "effective_from": "2027-05-06"})
+        self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM compensation WHERE employee_id = ?", (eid,)), 0)   # far-future date
+        a.post(f"/staff/employees/{eid}", data={"action": "compensation", "basis": "daily", "rate": "690", "effective_from": "2026-11-07"})
+        cid = self.conn.scalar("SELECT id FROM compensation WHERE employee_id = ?", (eid,))
+        a.post(f"/staff/employees/{eid}", data={"action": "compensation_remove", "comp_id": str(cid)})
+        self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM compensation WHERE employee_id = ?", (eid,)), 0)
+
+
+class TestFixedSalary(Base):
+    def test_fixed_monthly_salary_ignores_time_clock(self):
+        from app.util import now_str
+        bid = self.branch("malolos")
+        eid = self.conn.insert("employees", {"full_name": "Demo Home Based", "position": "HR", "employment_type": "regular",
+                                             "primary_branch_id": bid, "active": 1, "created_at": now_str()})
+        a = self.login("admin")
+        a.post(f"/staff/employees/{eid}", data={"action": "compensation", "basis": "monthly", "rate": "20000", "effective_from": "2025-06-01"})
+        e = self.q("SELECT * FROM employees WHERE id = ?", (eid,))
+        a.post(f"/staff/employees/{eid}", data={"action": "details", "position": "HR", "employment_type": "regular", "primary_branch_id": bid,
+                                                "active": "1", "fixed_pay": "1"})
+        self.assertEqual(self.q("SELECT fixed_pay FROM employees WHERE id = ?", (eid,))["fixed_pay"], 1)
+        r = a.post("/staff/payroll", data={"start_date": "2025-07-01", "end_date": "2025-07-15", "branch_id": bid, "name": "Jul 1-15 fixed"})
+        pid = int(r.headers["Location"].rsplit("/", 1)[1])
+        line = self.q("SELECT * FROM payroll_lines WHERE period_id = ? AND employee_id = ?", (pid, eid))
+        self.assertEqual((line["basic_pay_cents"], line["estimate_cents"]), (1000000, 1000000))   # ₱10,000 with no time records

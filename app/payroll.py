@@ -16,7 +16,7 @@ import json
 from datetime import datetime
 
 from . import settings
-from .util import hm_to_min, now_str, parse_date
+from .util import hm_to_min, now_str, parse_date, today
 
 BASIS_LABELS = {"monthly": "Monthly salary", "daily": "Daily rate", "hourly": "Hourly rate",
                 "percentage": "Percentage of production", "per_case": "Per case / procedure", "unset": "Not set",
@@ -152,6 +152,38 @@ def staff_daily_pay(conn, recs, rate_cents: int, start: str, end: str, holiday_p
             "late_deduction_cents": late, "late_minutes": late_minutes, "estimate_cents": basic + holiday + ot_pay - late}
 
 
+MONTHLY_WORK_DAYS = 313      # clinic rule: 6-day work weeks; daily equivalent of a monthly salary = monthly x 12 / 313
+
+
+def staff_monthly_pay(conn, recs, monthly_cents: int, start: str, end: str, holiday_pay: bool = True) -> dict:
+    """Monthly-salary staff, per cutoff (1st–15th / 16th–end): half the monthly salary, less unpaid absences at the daily
+    equivalent (monthly x 12 / 313). Workdays are Monday–Saturday except holidays; a day counts as present when worked
+    (ok, corrected, exception or excused with time in and out) or excused without times (approved leave). Days after
+    today aren't counted as absences yet. Approved overtime, holiday work and lates as for daily staff."""
+    from datetime import timedelta
+    daily = monthly_cents * 12 / MONTHLY_WORK_DAYS
+    holidays = {h["day"]: h["kind"] for h in conn.all("SELECT day, kind FROM holidays WHERE day BETWEEN ? AND ?", (start, end))}
+    present = {r["work_date"] for r in recs if (r["time_in"] and r["time_out"] and r["status"] in COUNTED)
+               or (r["status"] == "excused" and not r["time_in"])}
+    worked = {r["work_date"] for r in recs if r["time_in"] and r["time_out"] and r["status"] in COUNTED}
+    d, last = parse_date(start), min(parse_date(end), today())
+    absent = 0
+    while d <= last:
+        iso = d.isoformat()
+        if d.weekday() != 6 and iso not in holidays and iso not in present:
+            absent += 1
+        d += timedelta(days=1)
+    basic = max(0, round(monthly_cents / 2 - absent * daily))
+    holiday = sum(round(daily * (HOLIDAY_WORKED[k] - 1)) for day, k in holidays.items() if day in worked) if holiday_pay else 0
+    ot_minutes = sum(r["ot_approved_minutes"] or 0 for r in recs)
+    ot_pay = round(ot_minutes / 60 * daily / 8 * OT_MULTIPLIER)
+    late_minutes = sum(r["late_minutes"] or 0 for r in recs if r["status"] != "excused")
+    late = late_minutes * int(settings.get("payroll.late_peso_per_minute", conn) or 0) * 100
+    return {"basic_pay_cents": basic, "holiday_pay_cents": holiday, "ot_minutes": ot_minutes, "ot_pay_cents": ot_pay,
+            "late_deduction_cents": late, "late_minutes": late_minutes,
+            "estimate_cents": basic + holiday + ot_pay - late, "absent_days": absent}
+
+
 def build_lines(conn, period) -> list[dict]:
     where = "e.active = 1"
     params: list = []
@@ -211,6 +243,16 @@ def build_lines(conn, period) -> list[dict]:
             late = extra.pop("late_minutes")
         elif rate is not None and basis == "hourly":
             estimate = round(minutes / 60 * rate)
+        elif rate is not None and basis == "monthly" and e["fixed_pay"]:
+            # fixed salary (e.g. works from home): half the monthly salary per cutoff, the time clock doesn't change it
+            extra = {"basic_pay_cents": round(rate / 2), "holiday_pay_cents": 0, "ot_minutes": 0, "ot_pay_cents": 0, "late_deduction_cents": 0}
+            estimate, late = round(rate / 2), 0
+        elif rate is not None and basis == "monthly":
+            extra = staff_monthly_pay(conn, recs, rate, period["start_date"], period["end_date"],
+                                      holiday_pay=bool(e["holiday_pay"]) if "holiday_pay" in e.keys() else True)
+            estimate = extra.pop("estimate_cents")
+            late = extra.pop("late_minutes")
+            extra.pop("absent_days")
         lines.append({"employee_id": e["id"], "days_present": days, "minutes_worked": minutes, "late_minutes": late,
                       "undertime_minutes": undertime, "open_exceptions": open_exc, "basis": basis, "rate_cents": rate,
                       "percentage_bp": comp["percentage_bp"] if comp else None, "estimate_cents": estimate, "kind": "staff", **extra})

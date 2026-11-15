@@ -19,7 +19,9 @@
 <span class="hint">Only if this person has their own hours, e.g. an associate on 10:00 AM – 6:00 PM: late counts from the start, overtime after the end. Leave empty for the usual hours ({% if is_dentist %}their dentist schedule, or the branch opening hours{% else %}clinic staff hours{% endif %}).</span></fieldset>
 <label class="check"><input type="checkbox" name="ot_eligible" value="1" {% if e.ot_eligible %}checked{% endif %}> Eligible for overtime</label>
 <span class="hint">Untick for commission-based staff and dentists. Overtime is time after {{ ot_end }} plus a 30-minute short lunch, paid at daily rate ÷ 8 × 1.25 once a supervisor approves it.</span>
-<label class="check"><input type="checkbox" name="holiday_pay" value="1" {% if e.holiday_pay %}checked{% endif %}> Holiday pay</label>
+{% if current_user.can('compensation.manage') %}<label class="check"><input type="checkbox" name="fixed_pay" value="1" {% if e.fixed_pay %}checked{% endif %}> Fixed salary (no time clock)</label>
+<span class="hint">For monthly-salary staff who work from home or don't need to time in: paid half the monthly salary every cutoff, with no absence or late deductions and no overtime from the time clock. Extras go in as payroll adjustments.</span>
+{% endif %}<label class="check"><input type="checkbox" name="holiday_pay" value="1" {% if e.holiday_pay %}checked{% endif %}> Holiday pay</label>
 <span class="hint">Ticked: a regular holiday worked is double pay, a special non-working holiday worked is +30%{% if pay_unworked %}, and an unworked regular holiday is paid 1 day{% endif %}. Untick for commission-based staff: holidays are then paid like any working day. Dentists on daily rate + commission don't get holiday pay. Applies to payrolls you create or recalculate from now on.</span>
 <button class="btn btn-secondary mt-1">Save</button></form></div>
 {% endif %}
@@ -58,7 +60,9 @@
 <div class="field"><label for="ef">Effective from</label><input id="ef" type="date" name="effective_from"></div></div>
 <div class="field"><label for="nt">Notes</label><input id="nt" name="notes" placeholder="e.g. Rate per signed contract dated …"></div>
 <button class="btn btn-secondary">Add setting</button></form>
-<h3 class="mt-1">History</h3><ul class="list-plain">{% for c in comps %}<li><strong>{{ BASIS_LABELS[c.basis] }}</strong>{% if c.rate_cents is not none %} · {{ c.rate_cents|peso }}{% endif %}{% if c.percentage_bp %} · {{ c.percentage_bp / 100 }}%{% endif %} · from {{ c.effective_from|date }}<br><small class="muted">{{ c.notes }} · set by {{ c.by_name }} {{ c.created_at|dt }}</small></li>{% else %}<li class="muted">No compensation settings yet.</li>{% endfor %}</ul></div>
+<h3 class="mt-1">History</h3><ul class="list-plain">{% for c in comps %}<li><strong>{{ BASIS_LABELS[c.basis] }}</strong>{% if c.rate_cents is not none %} · {{ c.rate_cents|peso }}{% endif %}{% if c.percentage_bp %} · {{ c.percentage_bp / 100 }}%{% endif %} · from {{ c.effective_from|date }}{% if c.rate_cents is none and c.basis in ('daily', 'hourly', 'monthly', 'daily_commission') %} <span class="badge badge-red">no amount</span>{% endif %}
+<br><small class="muted">{{ c.notes }} · set by {{ c.by_name }} {{ c.created_at|dt }}</small>
+<form method="post" class="inline" data-confirm="Remove this pay setting? Payroll uses the remaining history.">{{ csrf() }}<input type="hidden" name="action" value="compensation_remove"><input type="hidden" name="comp_id" value="{{ c.id }}"><button class="btn btn-ghost btn-sm">Remove</button></form></li>{% else %}<li class="muted">No compensation settings yet.</li>{% endfor %}</ul></div>
 <div class="card" id="allowances"><h2>Regular allowances</h2>
 <p class="hint mt-0">Added to every draft payroll automatically, e.g. transportation allowance ₱50 per day present, or ₱500 per cutoff. One-time amounts (quota hit, incentives, bonuses) are added on the payroll period page instead.</p>
 <ul class="list-plain">{% for a in allowances %}<li class="row between"><span><strong>{{ a.name }}</strong> · {{ a.amount_cents|peso }} {{ 'per day present' if a.basis == 'per_day' else 'per cutoff' }}</span>

@@ -452,6 +452,11 @@ def employee(emp_id):
             eff = parse_date(request.form.get("effective_from")) or today()
             if basis not in BASIS_LABELS:
                 flash("Choose a pay basis.", "error")
+            elif basis in ("daily", "hourly", "monthly", "daily_commission") and not rate:
+                flash(f"Enter the {BASIS_LABELS[basis].lower()} amount. A setting without an amount would leave this person "
+                      "without pay from that date.", "error")
+            elif eff > today() + timedelta(days=62):
+                flash("The “Effective from” date is more than two months away. Check the year and month.", "error")
             else:
                 cid = conn.insert("compensation", {"employee_id": emp_id, "basis": basis, "rate_cents": rate, "percentage_bp": pct_bp,
                                                    "notes": clean(request.form.get("notes"), 500), "effective_from": eff.isoformat(),
@@ -464,6 +469,15 @@ def employee(emp_id):
                 flash("Compensation setting saved (effective-dated history is kept)."
                       + (" Commission-based, so overtime was switched off for this employee (you can turn it back on under Details)."
                          if commission and e["ot_eligible"] else ""), "success")
+        elif action == "compensation_remove":
+            if not g.user.can("compensation.manage"):
+                abort(403)
+            c = conn.one("SELECT * FROM compensation WHERE id = ? AND employee_id = ?", (to_int(request.form.get("comp_id")), emp_id))
+            if c:
+                conn.execute("DELETE FROM compensation WHERE id = ?", (c["id"],))
+                audit.record("compensation_removed", "employee", emp_id, "Compensation setting removed",
+                             {"basis": c["basis"], "rate_cents": c["rate_cents"], "effective_from": c["effective_from"]}, e["primary_branch_id"])
+                flash("Setting removed. Payroll drafts use the remaining history after Recalculate.", "success")
         elif action in ("dentist_pay", "service_rate"):
             if not g.user.can("compensation.manage"):
                 abort(403)
@@ -516,6 +530,8 @@ def employee(emp_id):
                    "primary_branch_id": branch_id, "lab_id": lab_id, "active": 1 if request.form.get("active") else 0,
                    "ot_eligible": 1 if request.form.get("ot_eligible") else 0, "work_start": ws, "work_end": we,
                    "holiday_pay": 1 if request.form.get("holiday_pay") else 0}
+            if g.user.can("compensation.manage"):
+                upd["fixed_pay"] = 1 if request.form.get("fixed_pay") else 0
             conn.update("employees", emp_id, upd)
             if upd["ot_eligible"] != e["ot_eligible"] or (ws, we) != (e["work_start"], e["work_end"]):
                 # Recount lates and overtime on this employee's records from the last 31 days.
