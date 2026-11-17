@@ -124,6 +124,12 @@ def index():
     deposits = conn.all("SELECT d.*, u.name AS by_name FROM cash_deposits d LEFT JOIN users u ON u.id = d.created_by "
                         "WHERE d.branch_id = ? AND d.fund = ? AND d.deposit_date BETWEEN ? AND ? ORDER BY d.deposit_date DESC, d.id DESC",
                         (bid, fund, start.isoformat(), end.isoformat()))
+    for d in deposits:      # the expected cash follows later corrections (a payment moved to another branch, a void, an expense)
+        if d["cash_from"] and d["status"] == "ok":
+            now_exp = net_cash(conn, bid, d["cash_from"], d["cash_to"] or d["cash_from"], fund)
+            if now_exp != d["expected_cents"]:
+                conn.execute("UPDATE cash_deposits SET expected_cents = ? WHERE id = ?", (now_exp, d["id"]))
+                d["expected_cents"] = now_exp
     photos: dict[int, list] = {}
     if deposits:
         ids = [d["id"] for d in deposits]

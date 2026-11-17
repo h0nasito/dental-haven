@@ -184,3 +184,22 @@ class TestXrayDeposits(Base):
         clinic = a.get(f"/staff/deposits/?branch={self.bid}&from=2026-02-01&to=2026-02-28").data.decode()
         self.assertNotIn("Matches", clinic)                                          # the X-ray deposit isn't listed on the clinic tab
         self.assertIn("Matches", a.get(f"/staff/deposits/?branch={self.bid}&fund=xray&from=2026-02-01&to=2026-02-28").data.decode())
+
+
+class TestDepositExpectedFollowsCorrections(Base):
+    setUp = TestDeposits.setUp
+    def test_moving_a_cash_payment_away_updates_expected(self):
+        from app.util import now_str
+        self.conn.insert("cash_deposits", {"branch_id": self.bid, "fund": "clinic", "deposit_date": "2026-02-04", "cash_from": self.days[0],
+                                           "cash_to": self.days[1], "bank": "BDO", "account": "", "slip_no": "DS-9", "amount_cents": 450000,
+                                           "expected_cents": 750000, "deposited_by": "x", "notes": "", "slip_stored": "deposits/x.jpg",
+                                           "created_by": None, "created_at": now_str()})
+        a = self.login("admin")
+        self.assertIn("Short ₱3,000.00", a.get(f"/staff/deposits/?branch={self.bid}&from=2026-02-01&to=2026-02-28").data.decode())
+        # the ₱3,000 cash of the second day was really received at another branch
+        self.conn.execute("UPDATE payments SET branch_id = ? WHERE branch_id = ? AND received_at LIKE ? AND method = 'cash'",
+                          (self.branch("malolos"), self.bid, self.days[1] + "%"))
+        page = a.get(f"/staff/deposits/?branch={self.bid}&from=2026-02-01&to=2026-02-28").data.decode()
+        self.assertIn("expected ₱4,500.00", page)
+        self.assertIn("Matches", page)
+        self.assertEqual(self.q("SELECT expected_cents FROM cash_deposits WHERE slip_no = 'DS-9'")["expected_cents"], 450000)
