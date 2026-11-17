@@ -46,7 +46,7 @@ def _received_branch(inv) -> int:
     Collections, the daily report and deposits count the payment there. Default: the cashier's selected branch, else the
     bill's branch."""
     bid = to_int(request.form.get("received_branch_id"))
-    if bid and g.user.in_branch(bid):
+    if bid and (g.user.in_branch(bid) or bid in {b["id"] for b in _received_branches()}):
         return bid
     if not g.user.in_branch(inv["branch_id"]) and g.user.branch_ids:      # paid at another branch: count it where received
         return sorted(g.user.branch_ids)[0]
@@ -58,11 +58,19 @@ def _my_pay_branches():
     return branches_for_user(g.user) if getattr(g, "user", None) else []
 
 
+def _received_branches():
+    """Branches a payment can be recorded as received at: every active branch, so anyone who takes payments can say
+    where the money actually came in (the patient may pay at a branch other than the bill's or the cashier's)."""
+    from .common import branches_for_user
+    return branches_for_user(g.user, include_all=True) if getattr(g, "user", None) else []
+
+
 @bp.app_context_processor
 def _ctx():
     from ..billing import pay_label, pay_options
     return {"PAYMENT_METHODS": PAYMENT_METHODS, "PAYMENT_LABELS": {**PAYMENT_METHODS, CREDIT_METHOD: "Account credit"},
-            "pay_options": pay_options, "pay_label": pay_label, "my_pay_branches": _my_pay_branches}
+            "pay_options": pay_options, "pay_label": pay_label, "my_pay_branches": _my_pay_branches,
+            "received_branches": _received_branches}
 
 
 # ---------------------------------------------------------------------------
