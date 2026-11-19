@@ -52,7 +52,9 @@
 </div>
 <div class="pay-summary"><h3>Payment summary</h3>
 <dl><dt>Total bill</dt><dd>{{ inv.total_cents|peso }}</dd><dt>Total paid</dt><dd class="c-green">{{ paid|peso }}</dd>
-<dt>To pay now</dt><dd class="c-green" data-pay-now>{{ balance|peso }}</dd><dt>Running balance</dt><dd class="c-amber" data-pay-left>₱0.00</dd></dl></div>
+<dt>To pay now</dt><dd class="c-green" data-pay-now>{{ balance|peso }}</dd><dt>Running balance</dt><dd class="c-amber" data-pay-left>₱0.00</dd></dl>
+<div class="pay-extra" data-pay-extra hidden><p class="mb-0"><strong>Extra: <span data-pay-extra-amt>₱0.00</span></strong></p>
+<label class="check"><input type="checkbox" name="extra_to_credit" value="1"> <span>Keep the extra as the patient's account credit (deducted on a next visit)</span></label></div></div>
 </div>
 <div class="row mt-1" style="justify-content:flex-end"><button class="btn">Save payment</button></div>
 </form>

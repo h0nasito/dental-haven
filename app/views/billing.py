@@ -754,8 +754,25 @@ def _multi_payment(conn, inv, paid):
     if not lines:
         return "Add at least one payment line with an amount."
     total = sum(a for _m, a in lines)
-    if total > inv["total_cents"] - paid:
-        return f"That's more than the balance ({peso(inv['total_cents'] - paid)})."
+    balance = inv["total_cents"] - paid
+    extra = max(0, total - balance)
+    if extra and (request.form.get("extra_to_credit") != "1" or balance <= 0):
+        if balance <= 0:
+            return "This bill is fully paid. Record money paid in advance as a deposit on the patient's Billing tab."
+        return (f"That's more than the balance ({peso(balance)}). If the patient paid more on purpose, tick "
+                f"“Keep the extra as the patient's account credit” to save the extra {peso(extra)} as credit.")
+    if extra:                       # what goes on the bill fills the balance; the rest of each line becomes account credit
+        room, on_bill, to_credit = balance, [], []
+        for pm, a in lines:
+            take = min(a, room)
+            room -= take
+            if take:
+                on_bill.append((pm, take))
+            if a - take:
+                to_credit.append((pm, a - take))
+        lines, total = on_bill, balance
+    else:
+        to_credit = []
     received = parse_date(request.form.get("received_at")) or today()
     if received > today():
         return "The payment date can't be in the future."
@@ -796,7 +813,7 @@ def _multi_payment(conn, inv, paid):
             if bp is None:
                 return "Enter the dentist's commission % (0–100), or choose “No commission”."
             comm = {"employee_id": emp["id"], "amount": None, "bp": bp, "base": base}
-    proof_names, err = _save_proofs(_proof_files()) if any(m in PROOF_METHODS for (m, _a), _x in lines) else ([], None)
+    proof_names, err = _save_proofs(_proof_files()) if any(m in PROOF_METHODS for (m, _a), _x in lines + to_credit) else ([], None)
     if err:
         return err
     sig_id = conn.insert("payment_signatures", {"invoice_id": inv["id"], "patient_id": inv["patient_id"], "stored_name": stored,
@@ -814,7 +831,14 @@ def _multi_payment(conn, inv, paid):
             for n in proof_names:
                 conn.insert("payment_proofs", {"invoice_id": inv["id"], "payment_id": pid, "stored_name": n, "uploaded_by": g.user.id,
                                                "created_at": now_str()})
-    comm_note = ""
+    for (m, account), amt in to_credit:
+        cid = conn.insert("patient_credits", {"patient_id": inv["patient_id"], "branch_id": at_branch, "kind": "deposit", "amount_cents": amt,
+                                              "method": m, "account": account, "reference": ref, "invoice_id": inv["id"],
+                                              "entry_date": received.isoformat(), "notes": f"Extra paid on {inv['number']}",
+                                              "created_by": g.user.id, "created_at": now_str()})
+        audit.record("credit_deposit", "patient", inv["patient_id"], f"Extra {peso(amt)} paid on {inv['number']} kept as account credit "
+                     f"via {pay_label(m, account)}", {"credit_id": cid}, at_branch)
+    comm_note = f" The extra {peso(sum(a for _m, a in to_credit))} is now the patient's account credit." if to_credit else ""
     if comm_split:                       # each dentist on the bill earns on their own lines' share of this payment
         from ..billing import split_commission
         from ..payroll import add_manual_commission
@@ -830,14 +854,14 @@ def _multi_payment(conn, inv, paid):
                                               description=(f"Payment on {inv['number']}: " + ", ".join(row["lines"]))[:200])
             if not err:
                 done.append(f"{row['name']} {peso(row['amount'])}")
-        comm_note = (" Dentist commission split: " + "; ".join(done) + "." if done else "") + \
+        comm_note += (" Dentist commission split: " + "; ".join(done) + "." if done else "") + \
                     (f" No employee record (no commission): {', '.join(missing)}." if missing else "")
     elif comm:
         from ..payroll import add_manual_commission
         _cid, err = add_manual_commission(conn, None, comm["employee_id"], received, comm["base"], comm["bp"], comm["amount"], g.user.id,
                                           invoice_id=inv["id"], payment_id=pid,
                                           description=clean(request.form.get("comm_desc"), 200) or f"Payment on {inv['number']}")
-        comm_note = " Dentist commission recorded." if not err else f" Commission not recorded: {err}"
+        comm_note += " Dentist commission recorded." if not err else f" Commission not recorded: {err}"
     flash(f"Payment of {peso(total)} recorded" + (" with the patient's signature." if stored else ".") + comm_note, "success")
     return None
 

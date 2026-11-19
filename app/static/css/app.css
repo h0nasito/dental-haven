@@ -609,6 +609,7 @@ section[id] { scroll-margin-top: 72px; }
 .pay-line .field { margin-bottom: .4rem; }
 .pay-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr); gap: 1rem; align-items: start; }
 .pay-summary { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: .6rem .9rem; background: var(--brand-50); }
+.pay-extra { margin-top: .6rem; padding-top: .5rem; border-top: 1px dashed var(--line); }
 .pay-summary h3 { margin: 0 0 .4rem; font-size: 1rem; }
 .pay-summary dl { display: grid; grid-template-columns: 1fr auto; gap: .45rem 1rem; margin: 0; }
 .pay-summary dt { font-weight: 600; } .pay-summary dd { margin: 0; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }

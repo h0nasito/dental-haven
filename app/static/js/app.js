@@ -254,7 +254,13 @@ document.addEventListener('DOMContentLoaded', function () {
       form.querySelectorAll('[data-pay-amt]').forEach(function (i) { now += cents(i.value); });
       form.querySelector('[data-pay-now]').textContent = peso(now);
       form.querySelector('[data-pay-left]').textContent = peso(Math.max(0, total - paid - now));
-      comm(now);
+      var extra = Math.max(0, now - Math.max(0, total - paid)), xb = form.querySelector('[data-pay-extra]');
+      if (xb) {
+        xb.hidden = !extra;
+        xb.querySelector('[data-pay-extra-amt]').textContent = peso(extra);
+        if (!extra) xb.querySelector('input').checked = false;
+      }
+      comm(Math.min(now, Math.max(0, total - paid)));
     }
     // Dentist commission on this payment: pre-filled with the dentist's usual %, after the bill's lab fee share.
     var box = form.querySelector('[data-comm]');
