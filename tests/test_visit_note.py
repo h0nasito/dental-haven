@@ -460,3 +460,26 @@ class TestZeroTypedOnNote(Base):
         v2 = self.q("SELECT * FROM visit_notes WHERE patient_id = ? AND status = 'saved' ORDER BY id DESC", (self.pid,))
         inv2 = self.q("SELECT status FROM invoices WHERE id = ?", (v2["invoice_id"],)) if v2["invoice_id"] else None
         self.assertTrue(inv2 is None or inv2["status"] == "draft")      # waits for a price, isn't issued at ₱0
+
+
+class TestRenameAndRepriceProcedure(Base):
+    """Renaming a procedure (Replacement → Rebracket) and changing its price in one save updates its own bill line (same tooth)."""
+    _post = TestVisitNote._post
+    setUp = TestProgressNotePrice.setUp
+
+    def test_rename_and_price_same_tooth(self):
+        admin = self.login("admin")
+        self._post(admin, signature="", recall_date="", line_service_id=["", ""], line_desc=["Replacement (demo)", "Replacement (demo)"],
+                   line_tooth=["44", "45"], line_qty=["", ""], line_price=["300", "300"], line_disc=["", ""], bill_disc="")
+        v = self.q("SELECT * FROM visit_notes WHERE patient_id = ? AND status = 'saved' ORDER BY id DESC", (self.pid,))
+        pr = self.q("SELECT * FROM procedures WHERE visit_note_id = ? AND tooth = '45'", (v["id"],))
+        r = admin.post(f"/staff/patients/{self.pid}/procedures/{pr['id']}", data={
+            "action": "edit", "description": "Rebracket (demo)", "tooth": "45", "performed_at": pr["performed_at"], "price": "200",
+            "price_was": "300.00"}, follow_redirects=True)
+        self.assertNotIn("wasn't found", r.data.decode())
+        lines = {ln["tooth"]: ln for ln in self.conn.all("SELECT * FROM invoice_items WHERE invoice_id = ?", (v["invoice_id"],))}
+        self.assertEqual((lines["45"]["description"], lines["45"]["amount_cents"]), ("Rebracket (demo)", 20000))
+        self.assertEqual((lines["44"]["description"], lines["44"]["amount_cents"]), ("Replacement (demo)", 30000))
+        self.assertEqual(self.q("SELECT total_cents FROM invoices WHERE id = ?", (v["invoice_id"],))["total_cents"], 50000)
+        page = admin.get(f"/staff/patients/{self.pid}?tab=notes").data.decode()
+        self.assertIn(f'id="epr{pr["id"]}" name="price" value="200.00"', page)

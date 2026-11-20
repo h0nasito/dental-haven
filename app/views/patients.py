@@ -365,12 +365,15 @@ def progress_groups(conn, patient_id, procedures, notes):
         gr = grp(day, who, branch_names.get(pr["branch_id"], ""))
         price, inv = None, None
         # imported visits: "service\nnote" (MyMedsPH repeats the visit's note on every procedure: show it once)
-        for it in ([] if pr["xray_id"] else pool.get((day, who or ""), [])):
-            same = (pr["service_id"] and it["service_id"] == pr["service_id"]) or svc_key(it["description"]) == svc_key(first)
-            if same and not it.get("_used"):
-                it["_used"] = True
-                price, inv = it["amount_cents"], it
-                break
+        tooth = (pr["tooth"] or "").replace(" ", "")
+        matches = [it for it in ([] if pr["xray_id"] else pool.get((day, who or ""), [])) if not it.get("_used") and (
+            (pr["service_id"] and it["service_id"] == pr["service_id"]) or svc_key(it["description"]) == svc_key(first))]
+        if tooth:          # the line for the same tooth first (two rebrackets on #44 and #45 keep their own prices)
+            matches.sort(key=lambda it: (it.get("tooth") or "").replace(" ", "") != tooth)
+        if matches:
+            it = matches[0]
+            it["_used"] = True
+            price, inv = it["amount_cents"], it
         if inv:
             gr["invoices"][inv["inv_id"]] = inv["number"] or "Draft invoice"
             gr["branches"].add(inv["branch"])
@@ -969,10 +972,14 @@ def assign(patient_id):
 # Progress note actions, attachment delete, patient delete
 # ---------------------------------------------------------------------------
 
-def bill_line_for(conn, pr):
+def bill_line_for(conn, pr, new_description: str | None = None):
     """The bill line of a progress-note procedure: on its own bill (recorded procedure or the visit's bill), else (imported
-    visits) a bill line of the same patient, day and service. Returns (invoice row, line row) or (None, None)."""
-    first = svc_key(pr["description"])
+    visits) a bill line of the same patient, day and service. When the note's description was just changed (e.g. Replacement
+    → Rebracket), the bill line may carry either name. A line for the same tooth wins over one for another tooth.
+    Returns (invoice row, line row) or (None, None)."""
+    names = {svc_key(pr["description"])} | ({svc_key(new_description)} if new_description else set())
+    names.discard("")
+    tooth = (pr["tooth"] or "").replace(" ", "")
     inv_ids = []
     if pr["invoice_id"]:
         inv_ids.append(pr["invoice_id"])
@@ -985,20 +992,27 @@ def bill_line_for(conn, pr):
                      + (f"i.id IN ({','.join('?' * len(inv_ids))})" if inv_ids else
                         "i.patient_id = ? AND COALESCE(ii.done_on, substr(i.issued_at, 1, 10), substr(i.created_at, 1, 10)) = ?"),
                      inv_ids or [pr["patient_id"], day])
-    for ln in cands:
-        if (pr["service_id"] and ln["service_id"] == pr["service_id"]) or svc_key(ln["description"]) == first:
-            if (pr["tooth"] or "") and (ln["tooth"] or "") and (pr["tooth"] or "").replace(" ", "") != (ln["tooth"] or "").replace(" ", ""):
-                continue
-            return conn.one("SELECT * FROM invoices WHERE id = ?", (ln["inv"],)), ln
+    same = [ln for ln in cands if (pr["service_id"] and ln["service_id"] == pr["service_id"]) or svc_key(ln["description"]) in names]
+    if tooth:
+        same = sorted((ln for ln in same if (ln["tooth"] or "").replace(" ", "") in (tooth, "")),
+                      key=lambda ln: (ln["tooth"] or "").replace(" ", "") != tooth)
+    if same:
+        return conn.one("SELECT * FROM invoices WHERE id = ?", (same[0]["inv"],)), same[0]
     return None, None
 
 
-def _set_proc_price(conn, pr, price: int) -> str:
+def _set_proc_price(conn, pr, price: int, new_description: str | None = None) -> str:
     """Change the price of a progress-note procedure, and of its bill line if it has one (only while that bill has no
     payments). Returns an error message, or ''."""
     import json
     from ..billing import line_amount, paid_amount
-    inv, ln = bill_line_for(conn, pr)
+    inv, ln = bill_line_for(conn, pr, new_description)
+    if not inv and (pr["invoice_id"] or (pr["visit_note_id"] and conn.scalar(
+            "SELECT invoice_id FROM visit_notes WHERE id = ?", (pr["visit_note_id"],)))):
+        warn = ("The progress note's price was changed, but its line on the bill wasn't found (the names differ). "
+                "Open the bill and change the price there with “Edit line”.")
+    else:
+        warn = ""
     if inv:
         if paid_amount(conn, inv["id"]) > 0:
             return "This bill already has a payment, so its price can't be changed here. Void the payment first, or use a discount on the bill."
@@ -1018,14 +1032,14 @@ def _set_proc_price(conn, pr, price: int) -> str:
                 raw = json.loads(v["lines_json"] or "[]")
             except ValueError:
                 raw = []
-            first = (pr["description"] or "").split("\n", 1)[0].strip().lower()
+            firsts = {(d or "").split("\n", 1)[0].strip().lower() for d in (pr["description"], new_description) if d}
             for r in raw:
-                if (r.get("desc") or "").strip().lower() == first and (r.get("tooth") or "") == (pr["tooth"] or ""):
+                if (r.get("desc") or "").strip().lower() in firsts and (r.get("tooth") or "") == (pr["tooth"] or ""):
                     r["price"] = f"{price / 100:.2f}"
                     r["price_set"] = True          # set on purpose (₱0 = free), not just "no price yet"
                     break
             conn.execute("UPDATE visit_notes SET lines_json = ? WHERE id = ?", (json.dumps(raw), pr["visit_note_id"]))
-    return ""
+    return warn
 
 
 @bp.route("/<int:patient_id>/procedures/<int:proc_id>", methods=["POST"])
@@ -1064,8 +1078,16 @@ def procedure_action(patient_id, proc_id):
                                      (pr["visit_note_id"], vals["performed_at"]))
                 if not others:
                     conn.execute("UPDATE visit_notes SET visit_date = ? WHERE id = ?", (vals["performed_at"], pr["visit_note_id"]))
+            new_first = (vals["description"] or "").split("\n", 1)[0].strip()
+            if new_first and svc_key(new_first) != svc_key(pr["description"]):      # renamed: the unpaid bill line follows
+                from ..billing import paid_amount
+                inv, ln = bill_line_for(conn, pr)
+                if inv and not paid_amount(conn, inv["id"]) and (inv["status"] != "issued" or g.user.can("bills.edit")):
+                    conn.execute("UPDATE invoice_items SET description = ? WHERE id = ?", (new_first[:200], ln["id"]))
+                    audit.record("invoice_line_renamed", "invoice", inv["id"], f"“{ln['description'][:60]}” renamed to “{new_first[:60]}” "
+                                 "from the progress note", None, inv["branch_id"])
             if new_price is not None and str(request.form.get("price_was") or "") != raw_price:
-                err = _set_proc_price(conn, pr, new_price)
+                err = _set_proc_price(conn, pr, new_price, vals["description"])
         audit.record("progress_edited", "patient", patient_id, "Edited progress note", audit.diff(dict(pr), vals, vals.keys()))
         flash(err, "error") if err else flash("Progress note updated.", "success")
     return redirect(url_for("patients.detail", patient_id=patient_id, tab="clinical"))
