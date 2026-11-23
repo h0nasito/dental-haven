@@ -179,6 +179,36 @@ def _scope(alias="c"):
     return "(" + " OR ".join(parts) + ")", params
 
 
+def reminder_scope(alias="c"):
+    """Cases the reminders cover: the branch(es) in view at the top of the screen (the selected branch, or all the person's
+    branches), for everyone who can see lab cases (receptionists, dentists, supervisors…), plus the cases of the person's
+    own lab. Dentists see the whole branch here, not only their own cases."""
+    parts, params = [], []
+    labs = _my_labs()
+    if labs:
+        parts.append(f"{alias}.lab_id IN ({','.join('?' for _ in labs)})")
+        params += labs
+    if g.user.is_super_admin or g.user.can("lab.view"):
+        ids = list(g.user.scope_branch_ids)
+        if g.user.is_super_admin and not ids:
+            return "1 = 1", []
+        if ids:
+            parts.append(f"{alias}.branch_id IN ({','.join('?' for _ in ids)})")
+            params += ids
+    if not parts:
+        return "1 = 0", []
+    return "(" + " OR ".join(parts) + ")", params
+
+
+def build_reminders(conn, branch=None):
+    from ..lab_reminders import build as lab_reminders
+    frag, params = reminder_scope("c")
+    if branch:
+        frag, params = frag + " AND c.branch_id = ?", [*params, branch]
+    mine = _my_labs()
+    return lab_reminders(conn, frag, params, mine if mine and (g.user.is_super_admin or g.user.can("lab.works")) and not branch else None)
+
+
 def target_dates(form, sent=None) -> tuple[dict, list[str]]:
     """Trial fitting and final installation target dates from a form. No trial fitting = direct to installation."""
     no_try = 1 if form.get("no_try_in") else 0
@@ -334,7 +364,8 @@ def index():
         [t.isoformat(), t.isoformat(), (t + timedelta(days=7)).isoformat(), *params])
     # Only the stages that have cases right now, so the table stays readable.
     workload_cols = [k for k in workload_cols if any(w[k] for w in workload)]
-    return render_template("staff/labs/index.html", rows=rows, status=status, statuses=STATUSES, counts=counts,
+    reminders = build_reminders(conn, branch)
+    return render_template("staff/labs/index.html", reminders=reminders, rows=rows, status=status, statuses=STATUSES, counts=counts,
                            today=t.isoformat(), lab_user=bool(_my_labs()), workload=workload, workload_cols=workload_cols, all_view=all_view,
                            branch_list=branch_list, branch=branch, q=q, soon=(t + timedelta(days=1)).isoformat(), view=view)
 

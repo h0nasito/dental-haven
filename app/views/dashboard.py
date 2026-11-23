@@ -103,6 +103,11 @@ def home():
         data["lab"] = lab_queue.dashboard(conn, user, labs)
         data["lab_only"] = lab_queue.is_lab_only(conn, user)
         data["lab_names"] = [r["name"] for r in conn.all(f"SELECT name FROM laboratories WHERE id IN ({','.join('?' * len(labs))}) ORDER BY name", labs)]
+    from .labs import _can_access as lab_access, build_reminders
+    if lab_access():
+        rem = build_reminders(conn)
+        if rem["overdue"] or rem["due_today"] or rem["due_soon"] or rem["visits"]:
+            data["lab_reminders"] = rem
     from .announcements import active_announcements, duty_on
     mine = None if (g.user.is_super_admin or g.user.can("announcements.manage")) else list(g.user.branch_ids)
     data["duty_today"] = duty_on(conn, today(), mine)

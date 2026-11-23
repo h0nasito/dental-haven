@@ -1,7 +1,7 @@
 """The laboratory's work queue: what the lab receptionist (and lab staff) need to act on, for their own lab(s).
 
 - New cases sent by the branches, waiting to be accepted.
-- Due by tomorrow or overdue (outside-clinic works and branch cases still in production).
+- Due within the next 2 days or overdue (outside-clinic works and branch cases still in production).
 - Ready for pick-up or delivery.
 - On hold, remake, or out for trial fitting.
 - Billing (with lab billing access): delivered work not billed yet, and unpaid invoices past their due date.
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from .lab_status import LATE, sql_list
+from .lab_status import LATE, REMIND_DAYS, sql_list
 from .util import today
 
 LAB_POSITION_WORDS = ("lab", "technician")
@@ -38,7 +38,7 @@ def build(conn, ids: list[int], can_works: bool, can_billing: bool) -> dict:
     if not ids:
         return {}
     t = today()
-    day, tomorrow = t.isoformat(), (t + timedelta(days=1)).isoformat()
+    day, tomorrow = t.isoformat(), (t + timedelta(days=REMIND_DAYS)).isoformat()
     m = _marks(ids)
     case_sel = ("SELECT c.id, c.case_type, c.units, c.status, c.due_on, c.sent_on, c.teeth, b.name AS branch, p.last_name, p.first_name, "
                 "l.name AS lab FROM lab_cases c JOIN branches b ON b.id = c.branch_id JOIN patients p ON p.id = c.patient_id "
@@ -76,10 +76,10 @@ def build(conn, ids: list[int], can_works: bool, can_billing: bool) -> dict:
 
 
 def count(conn, ids: list[int], can_works: bool) -> int:
-    """For the menu badge: new branch cases + work due by tomorrow or overdue."""
+    """For the menu badge: new branch cases + work due within the next 2 days or overdue."""
     if not ids:
         return 0
-    tomorrow = (today() + timedelta(days=1)).isoformat()
+    tomorrow = (today() + timedelta(days=REMIND_DAYS)).isoformat()
     m = _marks(ids)
     n = conn.scalar(f"SELECT COUNT(*) FROM lab_cases WHERE lab_id IN ({m}) AND (status = 'sent' OR (status IN {sql_list(LATE)} "
                     "AND due_on IS NOT NULL AND due_on <= ?))", [*ids, tomorrow]) or 0
@@ -119,6 +119,7 @@ def dashboard(conn, user, ids: list[int]) -> dict:
         delivered_today += conn.scalar(f"SELECT COUNT(*) FROM lab_works WHERE lab_id IN ({m}) AND status = 'delivered' AND delivered_on = ?", [*ids, day]) or 0
     overdue = [r for r in q["due"] if r["due_on"] and r["due_on"] < day]
     due_today = [r for r in q["due"] if r["due_on"] == day]
+    due_soon = [r for r in q["due"] if r["due_on"] and r["due_on"] > day]
     from .lab_status import STAGES
     stages = [(k, stages[k]) for k in STAGES if k in stages]          # in the order of the lab's stages
     out = {"q": q, "ongoing": ongoing, "stages": stages, "overdue": overdue, "due_today": due_today,
@@ -145,6 +146,7 @@ def dashboard(conn, user, ids: list[int]) -> dict:
     add(len(overdue), "overdue: finish or tell the clinic the new date", "/staff/queue?view=lab", "danger")
     add(len(q["new_cases"]), "new case(s) from the branches to accept", "/staff/lab/?status=sent")
     add(len(due_today), "due today", "/staff/queue?view=lab")
+    add(len(due_soon), f"due in the next {REMIND_DAYS} days: finish on time", "/staff/lab/")
     add(len(q["ready"]), "ready: arrange pick-up or delivery, then mark Delivered", "/staff/queue?view=lab", "ok")
     add(len([r for r in q["waiting"] if r["status"] == "on_hold"]), "on hold: follow up with the clinic", "/staff/queue?view=lab")
     add(len([r for r in q["waiting"] if r["status"] == "remake"]), "remake(s) to schedule", "/staff/queue?view=lab", "danger")

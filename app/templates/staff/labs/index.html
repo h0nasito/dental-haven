@@ -7,6 +7,7 @@
 {% if current_user.can('lab.manage') %}<a class="btn" href="{{ url_for('labs.new') }}">+ New lab case</a>{% endif %}</div></div>
 {% if nav_lab_works or nav_lab_billing %}{% set active = 'cases' %}{% include "staff/lab_works/_nav.html" %}{% endif %}
 {% if view %}<nav class="pills" aria-label="Whose cases"><a href="{{ url_for('labs.index', view='mine', status=status, q=q) }}" class="{{ 'active' if view == 'mine' else '' }}">My cases</a><a href="{{ url_for('labs.index', view='branch', status=status, branch=branch or '', q=q) }}" class="{{ 'active' if view == 'branch' else '' }}">Branch cases</a></nav>{% endif %}
+{% include "staff/labs/_reminders.html" %}
 <nav class="tabs" aria-label="Status">
   <a href="{{ url_for('labs.index', status='open', branch=branch or '', q=q, view=view or '') }}" class="{{ 'active' if status == 'open' else '' }}">Open</a>
   {% for k, l in statuses.items() if counts.get(k) or status == k or k == 'delivered' %}<a href="{{ url_for('labs.index', status=k, branch=branch or '', q=q, view=view or '') }}" class="{{ 'active' if status == k else '' }}">{{ l }}{% if counts.get(k) %} ({{ counts[k] }}){% endif %}</a>{% endfor %}

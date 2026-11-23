@@ -28,6 +28,8 @@ OPEN = ("sent", *PRODUCTION, "try_in", "on_hold", "ready", "remake")
 # Still the lab's job to finish by the due date (ready, try-in and delivered pieces are not "late").
 LATE = ("sent", *PRODUCTION, "on_hold", "remake")
 CLOSED = ("delivered", "cancelled")
+# Reminders start this many days before a case's target date (due date, trial fitting or installation).
+REMIND_DAYS = 2
 
 # Old status keys (before October 2026) → new ones.
 OLD = {"received": "accepted", "in_progress": "fabricating"}

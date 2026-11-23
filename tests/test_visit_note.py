@@ -483,3 +483,25 @@ class TestRenameAndRepriceProcedure(Base):
         self.assertEqual(self.q("SELECT total_cents FROM invoices WHERE id = ?", (v["invoice_id"],))["total_cents"], 50000)
         page = admin.get(f"/staff/patients/{self.pid}?tab=notes").data.decode()
         self.assertIn(f'id="epr{pr["id"]}" name="price" value="200.00"', page)
+
+
+class TestAddNoteToProgressRow(Base):
+    """The dentist adds notes later to an existing progress-note row (same date and dentist)."""
+    setUp = TestProgressNotePrice.setUp
+
+    def test_note_joins_the_row(self):
+        d = self.login("dentist.malolos")
+        me = self.q("SELECT name FROM users WHERE email LIKE 'dentist.malolos%'")["name"]
+        self.conn.insert("procedures", {"patient_id": self.pid, "description": "Braces removal (demo)", "performed_by":
+                                        self.q("SELECT id FROM users WHERE email LIKE 'dentist.malolos%'")["id"],
+                                        "performed_at": "2023-06-15", "created_at": "2023-06-15 10:00:00"})
+        page = d.get(f"/staff/patients/{self.pid}?tab=notes").data.decode()
+        self.assertIn("+ Add note", page)
+        d.post(f"/staff/patients/{self.pid}/notes", data={"body": "Retainer advised (demo note 7731)", "visit_date": "2023-06-15",
+                                                           "visit_dentist": me})
+        n = self.q("SELECT * FROM clinical_notes WHERE body LIKE '%7731%'")
+        self.assertEqual((n["visit_date"], n["visit_dentist"]), ("2023-06-15", me))
+        page = d.get(f"/staff/patients/{self.pid}?tab=notes").data.decode()
+        row = page.split("Braces removal (demo)")[0].rsplit("<tr>", 1)[1] + page.split("Braces removal (demo)")[1].split("</tr>")[0]
+        self.assertIn("demo note 7731", row)
+        self.assertIn("Note added", row)

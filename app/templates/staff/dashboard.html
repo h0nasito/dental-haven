@@ -16,6 +16,7 @@
 </div>
 
 {% if d.lab is defined %}{% set L = d.lab %}{% set lab_names = d.lab_names %}{% include "staff/_lab_dashboard.html" %}{% endif %}
+{% if d.lab_reminders %}{% set reminders = d.lab_reminders %}{% set rem_link = True %}{% include "staff/labs/_reminders.html" %}{% endif %}
 {% include "staff/announce/_style.html" %}
 <div class="grid grid-2" style="margin-bottom:1rem">
 <div class="card"><div class="card-head"><h2>On duty today</h2><a class="btn btn-ghost btn-sm" href="{{ url_for('announce.duty') }}">Month →</a></div>

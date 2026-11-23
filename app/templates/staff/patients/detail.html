@@ -132,7 +132,7 @@
 {% set others = gr.made_by|reject('equalto', gr.dentist)|list %}{% if others %}<br><small class="muted">Entered by {{ others|join(', ') }}</small>{% endif %}</td>
 <td>{% if gr.lines %}<ul class="pn-lines">{% for ln in gr.lines %}<li><span>{{ ln.text }}{% if ln.tooth %} <span class="muted">(#{{ ln.tooth }})</span>{% endif %}{% if ln.xray %} {% if current_user.can('xray.view') %}<a class="badge badge-blue" href="{{ url_for('xray.detail', xray_id=ln.xray.id) }}">X-ray {{ ln.xray.number }}</a>{% else %}<span class="badge badge-blue">X-ray</span>{% endif %}{% if ln.xray.status == 'void' %} <span class="badge badge-red">Voided</span>{% endif %}{% endif %}</span>{% if ln.price is not none and current_user.can('billing.view') %}<span class="pn-price">{{ ln.price|peso }}</span>{% endif %}</li>{% endfor %}</ul>{% endif %}
 {% for t in gr.visit_notes_text or [] %}<p class="pre pn-note">{{ t }}</p>{% endfor %}
-{% for n in gr.notes %}<p class="pre pn-note">{% if n.amended %}<span class="badge badge-blue">Amendment</span> {% endif %}{{ n.body }}</p>{% endfor %}
+{% for n in gr.notes %}<p class="pre pn-note">{% if n.amended %}<span class="badge badge-blue">Amendment</span> {% endif %}{{ n.body }}{% if n.visit_date %}<br><small class="muted">Note added {{ n.created_at|date }} by {{ n.author }}</small>{% endif %}</p>{% endfor %}
 {% for vn in gr.visits or [] %}{% if vn.recall_date %}<small class="pn-recall">Recall {{ vn.recall_date|date }}{% if vn.recall_reason %} · {{ vn.recall_reason }}{% endif %}</small><br>{% endif %}{% if vn.signature_name %}<a href="{{ url_for('patients.visit_note_signature', patient_id=p.id, vid=vn.id) }}" target="_blank" rel="noopener"><small>✓ Signed by patient</small></a><br>{% endif %}{% endfor %}
 {% if gr.branch %}<small class="muted">{{ gr.branch }}</small>{% endif %}</td>
 <td>{% if gr.attachments %}<a href="?tab=documents">{{ gr.attachments }} file{{ 's' if gr.attachments != 1 }}</a>{% else %}<span class="muted">—</span>{% endif %}</td>
@@ -167,7 +167,12 @@
 <small class="muted">Removes this visit from the progress notes{% if vn.recall_date %} and cancels its recall on {{ vn.recall_date|date }}{% endif %}. The record{% if vn.signature_name %} and the patient's signature{% endif %} are kept for the clinic's records. Services and notes are removed separately above.</small>
 <label class="sr-only" for="vc{{ vn.id }}">Reason</label><input id="vc{{ vn.id }}" name="reason" placeholder="Reason" required class="mt-1">
 <button class="btn btn-danger btn-sm mt-1" data-confirm="Cancel this visit{% if vn.recall_date %} and its recall{% endif %}?">Cancel visit</button></form></details>{% endfor %}{% endif %}
-{% if current_user.can('progress.add') and gr.notes %}<p class="kebab-h">Notes</p><small class="muted">Notes can't be edited. Add an amendment with “Amends note #{{ gr.notes[0].id }}”.</small>{% endif %}
+{% if current_user.can('progress.add') %}<p class="kebab-h">Notes</p>
+<details><summary>+ Add note</summary><form method="post" action="{{ url_for('patients.add_note', patient_id=p.id) }}" class="mt-1">{{ csrf() }}
+<input type="hidden" name="visit_date" value="{{ gr.date }}"><input type="hidden" name="visit_dentist" value="{{ gr.dentist or '' }}">
+<label for="an{{ loop.index }}">Additional notes for {{ gr.date|date }}</label><textarea id="an{{ loop.index }}" name="body" rows="4" required maxlength="8000"></textarea>
+<small class="muted">Shown under this visit with your name and today's date. Notes can't be edited later.</small>
+<div class="row mt-1"><button class="btn btn-secondary btn-sm">Add note</button></div></form></details>{% endif %}
 {% if current_user.is_super_admin and gr.notes %}{% for n in gr.notes %}<details><summary>Delete note #{{ n.id }}</summary>
 <form method="post" action="{{ url_for('patients.note_delete', patient_id=p.id, note_id=n.id) }}" class="mt-1">{{ csrf() }}
 <label for="dr{{ n.id }}">Reason</label><input id="dr{{ n.id }}" name="reason" required minlength="3" maxlength="300" placeholder="e.g. duplicate, wrong patient">

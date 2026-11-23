@@ -400,6 +400,8 @@ def progress_groups(conn, patient_id, procedures, notes):
     for n in notes:
         if n["id"] in from_visit:
             day, who = from_visit[n["id"]]
+        elif n["visit_date"]:                      # added later to an existing row ("Add note" in the row's ⋯ menu)
+            day, who = n["visit_date"], n["visit_dentist"] or ""
         else:
             day, who = (n["appt_at"] or n["created_at"])[:10], n["author"]
         gr_ = grp(day, who)
@@ -642,14 +644,18 @@ def add_note(patient_id):
     if appt_id and not conn.one("SELECT id FROM appointments WHERE id = ? AND patient_id = ?", (appt_id, patient_id)):
         appt_id = None
     amends = to_int(request.form.get("amends"))
+    visit_date = parse_date(request.form.get("visit_date"))
+    visit_dentist = clean(request.form.get("visit_dentist"), 120) if visit_date else ""
     if not body:
         flash("Write the note first.", "error")
     else:
         nid = conn.insert("clinical_notes", {"patient_id": patient_id, "appointment_id": appt_id, "author_id": g.user.id,
-                                             "body": body, "created_at": now_str(), "amended": 1 if amends else 0})
-        audit.record("clinical_note_added", "patient", patient_id, "Added clinical note" + (f" (amends note #{amends})" if amends else ""),
-                     {"note_id": nid})
-        flash("Clinical note added. Notes can't be edited; add an amendment to correct one.", "success")
+                                             "body": body, "created_at": now_str(), "amended": 1 if amends else 0,
+                                             "visit_date": visit_date.isoformat() if visit_date else None,
+                                             "visit_dentist": visit_dentist or None})
+        audit.record("clinical_note_added", "patient", patient_id, "Added clinical note" + (f" (amends note #{amends})" if amends else "")
+                     + (f" to the progress note of {visit_date.isoformat()}" if visit_date else ""), {"note_id": nid})
+        flash("Note added. Notes can't be edited; add another note to correct one.", "success")
     return redirect(url_for("patients.detail", patient_id=patient_id, tab="clinical"))
 
 

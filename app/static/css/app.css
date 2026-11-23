@@ -1101,3 +1101,15 @@ body.kiosk { background: #f6f2e7; }
 .cashier-note { background: var(--amber-100); border: 1px solid #e4c56d; border-radius: var(--radius-sm); padding: .4em .7em; color: var(--amber-700); font-size: .95em; }
 td .cashier-note { margin-bottom: .3em; }
 .text-warn { color: var(--amber-700); }
+
+/* Laboratory reminders (lab cases page) */
+.lab-remind { margin-bottom: 1rem; }
+.lab-remind-stats { margin-bottom: .8rem; }
+.lab-remind h3 { font-size: 1rem; margin: .6rem 0 .2rem; }
+.lab-remind .lab-lines { list-style: none; margin: 0; padding: 0; }
+.lab-remind .lab-line { padding: .5rem 0; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: .25rem .6rem; align-items: baseline; justify-content: space-between; }
+.lab-remind .lab-line:first-child { border-top: 0; }
+.lab-remind .lab-line > span:first-child { display: flex; flex-direction: column; }
+.lab-remind .lab-meta { display: inline-flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+.lab-remind .c-red { color: var(--red-700); font-weight: 600; }
+@media (max-width: 640px) { .lab-remind-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; } .lab-remind-stats .stat .value { font-size: 1.5rem; } }

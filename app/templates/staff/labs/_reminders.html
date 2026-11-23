@@ -1,0 +1,26 @@
+{# Lab reminders: what has to be finished, starting R.days days before the target date. expects: R (lab_reminders.build) #}
+{% macro when(n) -%}{% if n < -1 %}{{ -n }} days late{% elif n == -1 %}1 day late{% elif n == 0 %}today{% elif n == 1 %}tomorrow{% else %}in {{ n }} days{% endif %}{%- endmacro %}
+{% macro item(r, note, cls='muted', not_ready=False) -%}
+<li class="lab-line">{% if r.kind == 'work' %}<span><a href="{{ url_for('lab_works.work', work_id=r.id) }}"><strong>{{ r.number }}</strong></a>
+<small class="muted">{{ r.case_type }} · {{ r.clinic_name }}{% if r.doctor %} · {{ r.doctor }}{% endif %}</small></span>
+{% else %}<span><a href="{{ url_for('labs.case', case_id=r.id) }}"><strong>{{ r.last_name }}, {{ r.first_name }}</strong></a>
+<small class="muted">{% if r.units and r.units > 1 and ' × ' not in r.case_type and ' + ' not in r.case_type %}{{ r.units }} × {% endif %}{{ r.case_type }}{% if r.teeth %} #{{ r.teeth }}{% endif %} · {{ r.branch }}{% if r.dentist %} · {{ r.dentist }}{% endif %}</small></span>{% endif %}
+<span class="lab-meta">{% if not_ready %}<span class="badge badge-red">Not ready yet</span>{% endif %}<small class="{{ cls }}">{{ note }}</small><span class="badge {{ lab_badge(r.status) }}">{{ r.status|lab_status }}</span></span></li>
+{%- endmacro %}
+{% set R = reminders %}
+<section class="card lab-remind" aria-label="Reminders">
+<div class="card-head"><h2>⏰ Reminders · next {{ R.days }} days</h2><small class="muted">Lab cases of {{ 'your branch' if current_user.scope_branch_ids|length == 1 else 'your branches' }} · starts {{ R.days }} days before the target date{% if rem_link %} · <a href="{{ url_for('labs.index') }}">Laboratory →</a>{% endif %}</small></div>
+<div class="grid grid-4 lab-remind-stats">
+<a class="stat {{ 'danger' if R.overdue }}" href="#rem-overdue"><div class="label">Overdue</div><div class="value">{{ R.overdue|length }}</div><div class="sub">Past the due date, not finished</div></a>
+<a class="stat {{ 'warn' if R.due_today }}" href="#rem-today"><div class="label">Due today</div><div class="value">{{ R.due_today|length }}</div><div class="sub">Finish today</div></a>
+<a class="stat {{ 'warn' if R.due_soon }}" href="#rem-soon"><div class="label">Due in {{ R.days }} days</div><div class="value">{{ R.due_soon|length }}</div><div class="sub">Need to finish soon</div></a>
+<a class="stat {{ 'danger' if R.visits|selectattr('not_ready')|list else '' }}" href="#rem-visits"><div class="label">Patient coming</div><div class="value">{{ R.visits|length }}</div><div class="sub">Trial fitting or installation · {{ R.visits|selectattr('not_ready')|list|length }} not ready</div></a>
+</div>
+{% if not (R.overdue or R.due_today or R.due_soon or R.visits) %}<p class="muted mb-0">Nothing due in the next {{ R.days }} days. All on schedule.</p>{% else %}
+<div class="grid grid-2">
+{% if R.overdue %}<div id="rem-overdue"><h3 class="c-red">Overdue: finish or tell the clinic the new date</h3><ul class="lab-lines">{% for r in R.overdue %}{{ item(r, 'due ' ~ (r.due_on|date) ~ ' · ' ~ when(r.days), 'c-red') }}{% endfor %}</ul></div>{% endif %}
+{% if R.due_today %}<div id="rem-today"><h3>Due today</h3><ul class="lab-lines">{% for r in R.due_today %}{{ item(r, 'due today', 'c-amber') }}{% endfor %}</ul></div>{% endif %}
+{% if R.due_soon %}<div id="rem-soon"><h3>Due in the next {{ R.days }} days</h3><ul class="lab-lines">{% for r in R.due_soon %}{{ item(r, 'due ' ~ (r.due_on|date) ~ ' · ' ~ when(r.days)) }}{% endfor %}</ul></div>{% endif %}
+{% if R.visits %}<div id="rem-visits"><h3>Patient coming for trial fitting or installation</h3><ul class="lab-lines">{% for r in R.visits %}{{ item(r, r.visit ~ ' ' ~ (r.visit_on|date) ~ ' · ' ~ when(r.days), 'c-red' if r.not_ready else 'muted', r.not_ready) }}{% endfor %}</ul></div>{% endif %}
+</div>{% endif %}
+</section>
