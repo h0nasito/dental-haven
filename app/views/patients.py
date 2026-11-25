@@ -470,6 +470,8 @@ def detail(patient_id):
             "FROM payments WHERE invoice_id = i.id AND status = 'valid') AS paid, u.name AS created_by_name FROM invoices i "
             "JOIN branches b ON b.id = i.branch_id LEFT JOIN users u ON u.id = i.created_by "
             "WHERE i.patient_id = ? ORDER BY COALESCE(i.issued_at, substr(i.created_at, 1, 10)) DESC, i.id DESC", (patient_id,))
+        # bills with a balance first (newest first), then the rest by date
+        ctx["invoices"] = sorted(ctx["invoices"], key=lambda i: not (i["status"] not in ("void", "draft") and i["total_cents"] - i["paid"] > 0))
         if tab == "billing":
             from ..billing import commission_dentists, invoice_commission_info
             ctx["to_bill"] = notes_to_bill(conn, g.user.branch_ids, patient_id)

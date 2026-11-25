@@ -583,6 +583,7 @@ section[id] { scroll-margin-top: 72px; }
 .pn-note { margin: .3rem 0; font-size: .92rem; }
 .tag-paid { color: var(--green-700); font-weight: 800; letter-spacing: .04em; }
 .tag-part { color: var(--amber-700); font-weight: 800; letter-spacing: .04em; }
+.tag-unpaid { color: var(--red-700); font-weight: 800; letter-spacing: .04em; }
 
 /* Row "⋯" menu */
 .kebab { position: relative; }

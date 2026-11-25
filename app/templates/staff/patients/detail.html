@@ -382,7 +382,7 @@
 {% set show_void = request.args.get('void') == '1' %}{% set n_void = invoices|selectattr('status', 'equalto', 'void')|list|length %}
 {% for i in invoices if show_void or i.status != 'void' %}{% set bal = i.total_cents - i.paid %}<tr>
 <td><a href="{{ url_for('billing.invoice', invoice_id=i.id) }}"><strong>{{ (i.issued_at or i.created_at)|date }}</strong></a>
-{% if i.status == 'issued' and bal <= 0 %}<br><span class="tag-paid">PAID</span>{% elif i.status == 'issued' and i.paid > 0 %}<br><span class="tag-part">PARTIAL</span>{% elif i.status != 'issued' %}<br>{{ status_badge(i.status) }}{% endif %}</td>
+{% if i.status == 'issued' and bal <= 0 %}<br><span class="tag-paid">PAID</span>{% elif i.status == 'issued' and i.paid > 0 %}<br><span class="tag-part">PARTIAL</span><br><small class="c-red">Balance {{ bal|peso }}</small>{% elif i.status == 'issued' %}<br><span class="tag-unpaid">UNPAID</span>{% elif i.status != 'issued' %}<br>{{ status_badge(i.status) }}{% endif %}</td>
 <td>{{ i.lines or '—' }}<br><small class="muted">{{ i.number or 'Draft' }} · {{ i.branch }}</small></td>
 <td>{{ i.created_by_name or '—' }}</td><td class="num">{{ i.total_cents|peso }}</td><td class="num">{{ i.paid|peso }}</td><td>{% if i.cashier_note %}<div class="cashier-note">📌 {{ i.cashier_note }}</div>{% endif %}{{ i.notes or '' }}</td>
 <td><details class="kebab"><summary aria-label="Actions">⋯</summary><div class="kebab-menu">

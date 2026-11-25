@@ -1002,3 +1002,21 @@ class TestCommissionOtherBranchDentist(Base):
         a.post(f"/staff/invoices/{inv}/dentist-commission", data={"dentist_id": str(other["id"]), "earned_on": "2026-11-14", "amount": "500",
                                                                   "description": "Adjustment (demo)"})
         self.assertEqual(self.conn.scalar("SELECT amount_cents FROM dentist_commissions WHERE invoice_id = ?", (inv,)), 50000)
+
+
+class TestPatientBillsUnpaidFirst(Base):
+    def test_unpaid_bills_come_first(self):
+        from app.util import now_str
+        mal = self.branch("malolos")
+        pid = self.q("SELECT id FROM patients WHERE preferred_branch_id = ? LIMIT 1", (mal,))["id"]
+        def bill(num, day, amount):
+            return self.conn.insert("invoices", {"branch_id": mal, "patient_id": pid, "status": "issued", "number": num, "issued_at": day,
+                                                 "subtotal_cents": amount, "discount_cents": 0, "tax_cents": 0, "total_cents": amount,
+                                                 "created_at": now_str()})
+        new_paid = bill("SORT-NEWPAID", "2030-01-05", 12300)
+        self.conn.insert("payments", {"invoice_id": new_paid, "branch_id": mal, "method": "cash", "amount_cents": 12300, "kind": "payment",
+                                      "status": "valid", "received_at": "2030-01-05", "created_at": now_str()})
+        bill("SORT-OLDUNPAID", "2001-01-05", 45600)
+        page = self.login("admin").get(f"/staff/patients/{pid}?tab=billing").data.decode()
+        self.assertLess(page.index("SORT-OLDUNPAID"), page.index("SORT-NEWPAID"))
+        self.assertIn("UNPAID", page)
