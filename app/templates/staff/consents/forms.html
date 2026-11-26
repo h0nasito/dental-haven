@@ -1,0 +1,12 @@
+{% extends "staff/layout.html" %}
+{% block page_title %}Consent forms{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Consent forms</h1><p class="muted mb-0">The wording patients read and sign. Each form must be approved by a dentist before patients can sign it; editing the wording needs a new approval.</p></div>
+{% if may_edit %}<a class="btn btn-secondary" href="{{ url_for('consents.form_new') }}">+ New form</a>{% endif %}</div>
+<div class="card"><div class="table-wrap"><table><thead><tr><th>Form</th><th>Status</th><th class="num">Signed</th><th></th></tr></thead><tbody>
+{% for r in rows %}<tr><td><strong>{{ r.title }}</strong>{% if r.updated_at %}<br><small class="muted">Edited {{ r.updated_at|dt }}{% if r.updated_by_name %} by {{ r.updated_by_name }}{% endif %}</small>{% endif %}</td>
+<td>{% if not r.active %}<span class="badge">Hidden</span>{% elif r.approved_at %}<span class="badge badge-green">Approved</span><br><small class="muted">{{ r.approved_by_name }} · {{ r.approved_at|date }}</small>{% else %}<span class="badge badge-amber">Draft: needs a dentist's approval</span>{% endif %}</td>
+<td class="num">{{ r.signed }}</td><td><a class="btn btn-ghost btn-sm" href="{{ url_for('consents.form_edit', form_id=r.id) }}">{{ 'Edit' if may_edit else 'Read' }}{% if may_approve and not r.approved_at and r.active %} / approve{% endif %}</a></td></tr>
+{% else %}<tr><td colspan="4" class="muted">No consent forms yet.</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% endblock %}

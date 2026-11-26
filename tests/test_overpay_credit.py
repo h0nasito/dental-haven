@@ -19,6 +19,9 @@ class TestOverpaymentToCredit(Base):
     def test_extra_needs_the_tick_then_becomes_credit(self):
         inv, pid, mal = self._bill("OVR-1", 44720)
         before = self._credit(pid)
+        from app.cash_deposits import net_cash
+        with self.app.app_context():
+            cash_before = net_cash(self.conn, mal, "2026-11-18", "2026-11-18")
         a = self.login("admin")
         data = {"action": "multi", "method": "cash", "amount": "500", "received_at": "2026-11-18", "received_branch_id": mal,
                 "not_signed_reason": "test"}
@@ -31,9 +34,8 @@ class TestOverpaymentToCredit(Base):
         self.assertEqual((c["amount_cents"], c["method"], c["branch_id"]), (5280, "cash", mal))
         self.assertEqual(self._credit(pid) - before, 5280)
         # the whole ₱500 cash counts in the day's cash for the deposit
-        from app.cash_deposits import net_cash
         with self.app.app_context():
-            self.assertGreaterEqual(net_cash(self.conn, mal, "2026-11-18", "2026-11-18"), 50000)
+            self.assertEqual(net_cash(self.conn, mal, "2026-11-18", "2026-11-18") - cash_before, 50000)
 
     def test_split_lines_fill_the_bill_first(self):
         inv, pid, mal = self._bill("OVR-2", 100000)

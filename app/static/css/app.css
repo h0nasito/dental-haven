@@ -1114,3 +1114,14 @@ td .cashier-note { margin-bottom: .3em; }
 .lab-remind .lab-meta { display: inline-flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
 .lab-remind .c-red { color: var(--red-700); font-weight: 600; }
 @media (max-width: 640px) { .lab-remind-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; } .lab-remind-stats .stat .value { font-size: 1.5rem; } }
+
+/* Consent forms */
+.consent-text { background: var(--bg-soft, #f7f8fb); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 1rem 1.1rem; line-height: 1.7; max-height: 60vh; overflow: auto; font-size: 1.02rem; }
+.consent-sign fieldset { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: .6rem .9rem .9rem; margin: 1rem 0 0; }
+.consent-sign legend { font-weight: 700; padding: 0 .3rem; }
+.consent-choices { flex-wrap: wrap; gap: .4rem; }
+.consent-sigs { margin-top: 2rem; gap: 2rem; align-items: flex-end; }
+.consent-sig-img { display: block; max-width: 260px; max-height: 90px; }
+.consent-sig-space { height: 90px; }
+.consent-void { border: 2px solid var(--red-700); color: var(--red-700); font-weight: 800; padding: .4rem .7rem; text-align: center; }
+.consent-fill { background: #fff6d6; border-radius: 3px; padding: 0 .15rem; font-weight: 600; }

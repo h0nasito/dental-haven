@@ -652,6 +652,8 @@ def seed_base(conn):
                 if why:
                     conn.execute("UPDATE leads SET spam = 1, spam_reason = ? WHERE id = ?", ("; ".join(why)[:300], r["id"]))
             _settings2.put("seed.spam_scan_v1", True, None, conn)
+        from .consent import seed_drafts
+        seed_drafts(conn, now_str())
         # Access roles added later (HR, Supervisor, Cashier) start with their recommended access, once.
         if conn.scalar("SELECT COUNT(*) FROM role_permissions"):
             for role in ("hr", "supervisor", "cashier", "technician", "lab_receptionist"):

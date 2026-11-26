@@ -107,6 +107,10 @@ CATALOG: list[Perm] = [
     Perm("cert.delete", "Delete patient certificate", "Patient certificates", True),
     Perm("cert.create", "Create patient certificate", "Patient certificates", True),
     Perm("cert.edit", "Edit patient certificate", "Patient certificates", True),
+    # Consent forms
+    Perm("consent.take", "Have patients sign consent forms, and view them", "Consent forms"),
+    Perm("consent.void", "Void a signed consent form", "Consent forms", True),
+    Perm("consent.templates", "Edit the wording of consent forms", "Consent forms"),
     # Laboratory
     Perm("lab.view", "View lab cases", "Laboratory"),
     Perm("lab.all_branches", "View lab cases and lab workload of all branches (view only; updates stay with each branch)", "Laboratory"),
@@ -186,12 +190,14 @@ _CLINICAL_WRITE = {"progress.add", "progress.actions", "plans.add", "plans.edit"
                    "rx.create", "rx.edit", "cert.create", "cert.edit"}
 ROLE_DEFAULTS: dict[str, set[str]] = {
     "dentist": {
+        "consent.take",
         "dashboard.view", "appointments.view", "appointments.complete", "calendar.birthdays", "calendar.events",
         "followups.view", "followups.manage", "patients.view", "clinical.view", "clinical.edit", *_CLINICAL_WRITE,
         "documents.upload", "lab.view", "lab.all_branches", "lab.manage", "reportcards.generate", "reportcards.review",
         "quotes.view", "quotes.manage", "attendance.clock", "leave.request", "reimburse.request", "evaluations.answer", "xray.view",
     },
     "staff": {
+        "consent.take",
         "dashboard.view", "dashboard.balances", "appointments.view", "calendar.associates", "calendar.birthdays",
         "calendar.events", "bookings.view", "appointments.manage", "appointments.complete", "bookings.manage",
         "patients.view", "patients.contact", "patients.manage", "documents.upload",
@@ -206,6 +212,7 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
         "payroll.prepare", "reports.operations", "calendar.birthdays", "calendar.events",
     },
     "supervisor": {
+        "consent.take",
         "dashboard.view", "dashboard.balances", "appointments.view", "calendar.associates", "calendar.birthdays", "calendar.events",
         "bookings.view", "appointments.manage", "appointments.complete", "bookings.manage", "patients.view", "patients.contact",
         "patients.manage", "documents.upload", "leads.view", "leads.manage", "followups.view", "followups.manage", "reminders.view",
@@ -229,6 +236,7 @@ ROLE_DEFAULTS: dict[str, set[str]] = {
         "xray.view", "xray.manage", "merch.view", "merch.sell",
     },
     "receptionist": {
+        "consent.take",
         "dashboard.view", "appointments.view", "calendar.associates", "calendar.birthdays", "calendar.events",
         "bookings.view", "appointments.manage", "appointments.complete", "bookings.manage",
         "patients.view", "patients.contact", "patients.manage", "documents.upload",

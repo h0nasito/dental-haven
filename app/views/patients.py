@@ -440,7 +440,7 @@ def detail(patient_id):
     p = _load(patient_id)
     tab = request.args.get("tab", "profile")
     tab = {"overview": "profile", "clinical": "notes"}.get(tab, tab)
-    if tab not in ("profile", "notes", "plans", "chart", "billing", "rx", "certs", "xray", "documents", "remarks", "diagnosis", "lab", "changes"):
+    if tab not in ("profile", "notes", "plans", "chart", "billing", "rx", "certs", "xray", "documents", "remarks", "diagnosis", "lab", "changes", "consents"):
         tab = "profile"
     clinical = can_see_clinical(conn, g.user, patient_id)
     if tab in ("notes", "plans", "chart", "rx", "certs", "diagnosis") and not clinical:
@@ -571,6 +571,12 @@ def detail(patient_id):
     doc_where = "d.patient_id = ?" + ("" if clinical else " AND d.clinical = 0")
     ctx["documents"] = conn.all(f"SELECT d.*, u.name AS uploader FROM patient_documents d LEFT JOIN users u ON u.id = d.uploaded_by "
                                 f"WHERE {doc_where} ORDER BY d.uploaded_at DESC", (patient_id,))
+    if tab == "consents":
+        if not (clinical or g.user.can("consent.take")):
+            abort(403)
+        ctx["consent_forms"] = conn.all("SELECT * FROM consent_templates WHERE active = 1 ORDER BY sort_order, id")
+        ctx["consents"] = conn.all("SELECT c.*, u.name AS dentist FROM patient_consents c LEFT JOIN users u ON u.id = c.dentist_id "
+                                   "WHERE c.patient_id = ? ORDER BY c.status = 'void', c.signed_at DESC", (patient_id,))
     if tab == "remarks":
         ctx["remarks"] = conn.all("SELECT r.*, u.name AS author FROM patient_remarks r LEFT JOIN users u ON u.id = r.author_id "
                                   "WHERE r.patient_id = ? AND r.deleted = 0 ORDER BY r.id DESC", (patient_id,))

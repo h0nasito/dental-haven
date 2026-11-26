@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf %}
+{% block title %}{{ c.title }} · {{ p.last_name }}{% endblock %}
+{% block body %}
+<main id="main" class="print-sheet consent-print">
+<div class="no-print row between" style="margin-bottom:1rem"><a href="{{ url_for('patients.detail', patient_id=p.id, tab='consents') }}">← Back</a><span class="muted">Use your browser's Print command to print or save as PDF</span></div>
+{% if c.status == 'void' %}<p class="consent-void">VOID · {{ c.void_reason }} · {{ c.voided_by_name }} · {{ c.voided_at|dt }}</p>{% endif %}
+{% with branch=c.branch, branch_address=c.branch_address, branch_phone=c.branch_phone %}{% include "staff/docs/_letterhead.html" %}{% endwith %}
+<h1 style="text-align:center;text-transform:uppercase;letter-spacing:.06em;font-size:1.2rem;margin:1.2rem 0">{{ c.title }}</h1>
+<p><strong>Patient:</strong> {{ p.first_name }} {{ p.last_name }}{% if p.chart_no %} · Chart no. {{ p.chart_no }}{% endif %}</p>
+<div class="pre" style="line-height:1.7">{{ c.body }}</div>
+<div class="row between consent-sigs">
+<div class="sig-block"><img src="{{ url_for('consents.signature', consent_id=c.id) }}" alt="Signature" class="consent-sig-img"><div class="sig-line"></div>
+<strong>{{ c.signed_by_name }}</strong>{% if c.signed_by_relation %}<br><small>{{ c.signed_by_relation }} of the patient</small>{% else %}<br><small>Patient</small>{% endif %}<br><small>Signed {{ c.signed_at|dt }}</small></div>
+<div class="sig-block"><div class="consent-sig-space"></div><div class="sig-line"></div><strong>{{ c.dentist }}</strong><br><small>Dentist{% if c.license_no %} · PRC Lic. No. {{ c.license_no }}{% endif %}</small></div>
+</div>
+<p class="muted"><small>Witness (staff): {{ c.witness }} · Consent form #{{ c.id }}</small></p>
+{% if c.status == 'valid' and current_user.can('consent.void') %}<details class="no-print mt-1"><summary>Void this consent form</summary>
+<form method="post" action="{{ url_for('consents.void', consent_id=c.id) }}" class="row mt-1">{{ csrf() }}<input name="reason" required maxlength="300" placeholder="Reason (e.g. signed for the wrong procedure)" style="flex:1"><button class="btn btn-danger btn-sm">Void</button></form></details>{% endif %}
+</main>
+{% endblock %}

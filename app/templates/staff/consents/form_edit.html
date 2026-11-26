@@ -1,0 +1,21 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Consent form{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('consents.forms') }}">← Consent forms</a><h1>{{ v.title or 'New consent form' }}</h1>
+{% if t %}{% if t.approved_at %}<p class="mb-0"><span class="badge badge-green">Approved</span> <small class="muted">by {{ t.approved_by_name }} · {{ t.approved_at|dt }}</small></p>
+{% else %}<p class="mb-0"><span class="badge badge-amber">Draft</span> <small class="muted">Patients can't sign it until a dentist approves the wording.</small></p>{% endif %}{% endif %}</div></div>
+{% if errors %}<div class="flash flash-error"><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
+<form method="post" class="card" style="max-width:900px">{{ csrf() }}
+{% if not (t and t.approved_at) %}<p class="notice">This wording is a starting draft. Read it carefully and change it to match how your clinic works before approving. It is not legal advice; if unsure, have it reviewed.</p>{% endif %}
+<div class="field"><label for="title">Title</label><input id="title" name="title" value="{{ v.title }}" maxlength="150" required {{ 'readonly' if not can_edit }}></div>
+<div class="field"><label for="body">Wording</label><textarea id="body" name="body" rows="24" required {{ 'readonly' if not can_edit }}>{{ v.body }}</textarea>
+<small class="muted">Filled in when the patient signs: {% for k in placeholders %}<code>{{ '{' ~ k ~ '}' }}</code>{{ ', ' if not loop.last }}{% endfor %}. The staff types the treatment ({procedure}) and teeth ({teeth}).</small></div>
+{% if can_edit %}<label class="check"><input type="checkbox" name="active" value="1" {{ 'checked' if v.active }}> <span>Show this form on patients' Consents tab</span></label>{% endif %}
+<div class="row mt-1" style="justify-content:flex-end">
+{% if can_edit %}<button class="btn btn-secondary" name="action" value="save">Save</button>{% endif %}
+</div></form>
+{% if t and may_approve and not t.approved_at and t.active %}<form method="post" class="card" style="max-width:900px">{{ csrf() }}
+<p class="mb-0"><strong>Dentist's approval.</strong> Approve the wording as saved above (save your changes first). Patients will sign exactly this text.</p>
+<div class="row mt-1" style="justify-content:flex-end"><button class="btn btn-primary" name="action" value="approve" data-confirm="Approve this wording for patients to sign?">Approve for patients to sign</button></div></form>{% endif %}
+{% endblock %}

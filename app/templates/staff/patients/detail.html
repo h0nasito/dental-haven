@@ -50,7 +50,7 @@
 
 {% set T = [('profile', 'Profile', true), ('notes', 'Progress Notes', clinical), ('plans', 'Treatment Plan', clinical), ('chart', 'Charts', clinical),
             ('billing', 'Bills & Payment', current_user.can('billing.view') or current_user.can('quotes.view')), ('rx', 'Prescriptions', clinical),
-            ('certs', 'Certificates', clinical), ('xray', 'X-rays', current_user.can('xray.view')), ('documents', 'Uploads', true), ('remarks', 'Remarks', true), ('diagnosis', 'Diagnosis', clinical),
+            ('certs', 'Certificates', clinical), ('consents', 'Consents', clinical or current_user.can('consent.take')), ('xray', 'X-rays', current_user.can('xray.view')), ('documents', 'Uploads', true), ('remarks', 'Remarks', true), ('diagnosis', 'Diagnosis', clinical),
             ('changes', 'Change log', clinical or current_user.is_super_admin)] %}
 <nav class="pills" aria-label="Patient sections">{% for key, label, ok in T if ok %}<a href="?tab={{ key }}" class="{% if tab == key %}active{% endif %}" {% if tab == key %}aria-current="page"{% endif %}>{{ label }}{% if key == 'documents' and documents %} <span class="pill-n">{{ documents|length }}</span>{% endif %}</a>{% endfor %}</nav>
 
@@ -447,6 +447,18 @@
 {% if current_user.can('cert.edit') %}<a class="btn btn-ghost btn-sm" href="{{ url_for('docs.cert_edit', cert_id=c.id) }}">Edit</a>{% endif %}
 {% if current_user.can('cert.delete') %}<form method="post" action="{{ url_for('docs.cert_delete', cert_id=c.id) }}" data-confirm="Delete this certificate?">{{ csrf() }}<button class="btn btn-danger btn-sm">Delete</button></form>{% endif %}</div></li>
 {% else %}<li class="muted">No certificates.</li>{% endfor %}</ul></div>
+{% endif %}
+
+{% if tab == 'consents' %}
+<div class="card"><div class="card-head"><h2>Consent forms</h2>{% if current_user.can('consent.templates') or current_user.can('consent.take') %}<a class="btn btn-ghost btn-sm" href="{{ url_for('consents.forms') }}">Form wording</a>{% endif %}</div>
+{% if current_user.can('consent.take') %}<p class="muted mb-0">Have the patient sign:</p><div class="row mt-1 consent-choices">{% for t in consent_forms %}
+{% if t.approved_at %}<a class="btn btn-secondary btn-sm" href="{{ url_for('consents.new', patient_id=p.id, form=t.id) }}">+ {{ t.title }}</a>
+{% else %}<span class="btn btn-ghost btn-sm" aria-disabled="true" title="Waiting for a dentist's approval">{{ t.title }} · not approved yet</span>{% endif %}
+{% else %}<span class="muted">No consent forms yet.</span>{% endfor %}</div>{% endif %}
+<ul class="list-plain mt-1">{% for c in consents %}<li><div class="row between"><span><a href="{{ url_for('consents.view', consent_id=c.id) }}"><strong>{{ c.title }}</strong></a>{% if c.status == 'void' %} <span class="badge badge-red">Void</span>{% endif %}
+{% if c.procedure_text %}<br><small>{{ c.procedure_text }}{% if c.teeth %} · #{{ c.teeth }}{% endif %}</small>{% endif %}</span>
+<small class="muted">Signed {{ c.signed_at|dt }} by {{ c.signed_by_name }}{% if c.signed_by_relation %} ({{ c.signed_by_relation }}){% endif %} · {{ c.dentist or '' }}</small></div></li>
+{% else %}<li class="muted">No signed consent forms yet.</li>{% endfor %}</ul></div>
 {% endif %}
 
 {% if tab == 'xray' %}{% set xray_money = current_user.can('xray.manage') or current_user.can('billing.view') %}

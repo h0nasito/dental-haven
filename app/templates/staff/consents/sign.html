@@ -1,0 +1,30 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}{{ t.title }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('patients.detail', patient_id=p.id, tab='consents') }}">← {{ p.last_name }}, {{ p.first_name }}</a>
+<h1>{{ t.title }}</h1><p class="muted mb-0">Hand the tablet to the patient to read and sign.</p></div></div>
+<form method="post" class="card consent-sign" style="max-width:860px">{{ csrf() }}<input type="hidden" name="form" value="{{ t.id }}">
+{% if errors %}<div class="flash flash-error"><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
+<fieldset class="consent-staff"><legend>Filled in by the staff</legend>
+<div class="form-grid">
+<div class="field"><label for="dentist_id">Dentist who explained the treatment</label><select id="dentist_id" name="dentist_id" required><option value="">Choose…</option>
+{% for d in choices %}<option value="{{ d.id }}" {{ 'selected' if v.dentist_id == d.id }}>{{ d.name }}</option>{% endfor %}</select></div>
+{% if asks_teeth %}<div class="field"><label for="teeth">Tooth / teeth <small class="muted">(optional)</small></label><input id="teeth" name="teeth" value="{{ v.teeth }}" maxlength="120" placeholder="e.g. 36, 46"></div>{% endif %}
+{% if asks_procedure %}<div class="field span-2"><label for="procedure">Treatment / procedure</label><textarea id="procedure" name="procedure" rows="2" maxlength="600" required placeholder="e.g. Surgical removal of lower right wisdom tooth">{{ v.procedure }}</textarea></div>{% endif %}
+</div></fieldset>
+<h2 class="mt-1">Please read carefully</h2>
+<div class="consent-text pre">{{ preview }}</div>
+<fieldset><legend>Signed by</legend>
+{% if minor %}<p class="notice">The patient is {{ age }} years old: a parent or legal guardian reads and signs this form.</p>{% endif %}
+<div class="form-grid">
+<div class="field"><label for="signed_by_name">Name of the person signing</label><input id="signed_by_name" name="signed_by_name" value="{{ v.signed_by_name }}" required maxlength="150"></div>
+<div class="field"><label for="signed_by_relation">Relationship to the patient {% if not minor %}<small class="muted">(if not the patient)</small>{% endif %}</label><input id="signed_by_relation" name="signed_by_relation" value="{{ v.signed_by_relation }}" maxlength="60" placeholder="{{ 'e.g. Mother' if minor else 'Leave blank if the patient signs' }}" {{ 'required' if minor }}></div>
+</div>
+<label class="check mt-1"><input type="checkbox" name="understood" value="1" {{ 'checked' if v.understood }} required> <span>I have read this form (or it was read and explained to me), my questions were answered, and I give my consent.</span></label>
+<div class="sigpad mt-1"><canvas data-sigpad width="700" height="200" aria-label="Signature pad: sign here with your finger or a stylus"></canvas><input type="hidden" name="signature" data-sig-out></div>
+<div class="row between"><small class="muted">Sign inside the box.</small><button type="button" class="btn btn-ghost btn-sm" data-sig-clear>Clear</button></div>
+</fieldset>
+<div class="row mt-1" style="justify-content:flex-end"><a class="btn btn-secondary" href="{{ url_for('patients.detail', patient_id=p.id, tab='consents') }}">Cancel</a><button class="btn btn-primary">Save signed form</button></div>
+</form>
+{% endblock %}
