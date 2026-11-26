@@ -3,11 +3,14 @@
 The drafts below are plain starting points only. They are NOT approved clinic or legal wording: an admin edits each form under
 Administration → Consent forms, and a dentist approves it before patients can sign it. Editing a form clears its approval.
 Blanks the staff fill in when the patient signs: {procedure} and {teeth}. Filled in automatically: {patient}, {age}, {date},
-{branch}, {dentist}.
+{branch}, {dentist}, {address}.
+The orthodontic form uses the clinic's own wording (consent_ortho.py).
 """
 from __future__ import annotations
 
-PLACEHOLDERS = ("patient", "age", "date", "branch", "dentist", "procedure", "teeth")
+from .consent_ortho import BODY as ORTHO_BODY, TITLE as ORTHO_TITLE
+
+PLACEHOLDERS = ("patient", "age", "address", "date", "branch", "dentist", "procedure", "teeth")
 
 _COMMON_END = (
     "\n\nI was given the chance to ask questions, and my questions were answered to my satisfaction. I understand that no result "
@@ -43,19 +46,7 @@ DRAFTS = [
      "I agree to follow the after-care instructions given to me and to return to the clinic or seek care if I have heavy bleeding, "
      "fever or swelling that gets worse."
      + _COMMON_END),
-    ("ortho", "Consent for orthodontic treatment (braces)",
-     "I, {patient}, {age}, consent to orthodontic treatment (braces) by {dentist} at Dental Haven {branch}.\n\n"
-     "Treatment plan: {procedure}\n\n"
-     "The dentist explained to me:\n"
-     "• that the length of treatment is an estimate and may be longer depending on my teeth and on my cooperation;\n"
-     "• that I need to come for adjustments as scheduled; missed visits can lengthen treatment;\n"
-     "• that I need to brush and clean carefully; poor cleaning can cause decay, white spots on the teeth and gum problems;\n"
-     "• that brackets or wires may come loose and may need to be re-attached or replaced;\n"
-     "• possible discomfort, sores in the mouth, root shortening, and jaw joint (TMJ) symptoms;\n"
-     "• that teeth can move back after treatment, and that I need to wear my retainer as instructed;\n"
-     "• the fees, and what is and is not included.\n\n"
-     "I agree to follow the dentist's instructions on food, cleaning, elastics and retainers."
-     + _COMMON_END),
+    ("ortho", ORTHO_TITLE, ORTHO_BODY),
     ("rct_prosth", "Consent for root canal, crown, bridge or denture",
      "I, {patient}, {age}, consent to the following treatment by {dentist} at Dental Haven {branch}:\n\n"
      "Treatment: {procedure}\nTooth / teeth: {teeth}\n\n"
@@ -79,8 +70,13 @@ def fill(body: str, values: dict) -> str:
 
 
 def seed_drafts(conn, now: str) -> None:
-    """Add the starting drafts once (not approved, so they can't be used until a dentist approves them)."""
+    """Add the starting drafts once (not approved, so they can't be used until a dentist approves them). The braces form
+    is switched to the clinic's own wording if it is still the untouched first draft."""
     if conn.scalar("SELECT COUNT(*) FROM consent_templates"):
+        t = conn.one("SELECT * FROM consent_templates WHERE code = 'ortho'")
+        if t and t["updated_at"] is None and t["approved_at"] is None and t["body"] != ORTHO_BODY \
+                and not conn.scalar("SELECT COUNT(*) FROM patient_consents WHERE template_id = ?", (t["id"],)):
+            conn.execute("UPDATE consent_templates SET title = ?, body = ? WHERE id = ?", (ORTHO_TITLE, ORTHO_BODY, t["id"]))
         return
     for i, (code, title, body) in enumerate(DRAFTS):
         conn.insert("consent_templates", {"code": code, "title": title, "body": body, "sort_order": i, "active": 1, "created_at": now})

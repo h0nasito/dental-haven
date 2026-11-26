@@ -21,8 +21,9 @@ class TestConsentForms(Base):
         self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM consent_templates"), 4)
         self.assertIsNone(self.form["approved_at"])
         r = self.login("reception.malolos")
+        before = self.conn.scalar("SELECT COUNT(*) FROM patient_consents")
         self._sign(r)
-        self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM patient_consents"), 0)
+        self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM patient_consents"), before)
         self.assertIn("not approved yet", r.get(f"/staff/patients/{self.pid}?tab=consents").data.decode())
         # a receptionist can't approve
         self.assertEqual(r.post(f"/staff/admin/consent-forms/{self.form['id']}", data={"action": "approve"}).status_code, 403)
@@ -36,7 +37,7 @@ class TestConsentForms(Base):
         page = self._sign(r, understood="").data.decode()
         self.assertIn("tick that they read", page)
         page = self._sign(r).data.decode()
-        c = self.q("SELECT * FROM patient_consents WHERE patient_id = ?", (self.pid,))
+        c = self.q("SELECT * FROM patient_consents WHERE patient_id = ? AND template_id = ? ORDER BY id DESC", (self.pid, self.form["id"]))
         self.assertIn("demo 5521", c["body"])
         self.assertNotIn("{patient}", c["body"])
         self.assertIn("Demo Signer", page)
@@ -50,3 +51,15 @@ class TestConsentForms(Base):
         self.assertEqual(r.post(f"/staff/consents/{c['id']}/void", data={"reason": "x"}).status_code, 403)
         a.post(f"/staff/consents/{c['id']}/void", data={"reason": "Wrong procedure"})
         self.assertEqual(self.q("SELECT status FROM patient_consents WHERE id = ?", (c["id"],))["status"], "void")
+
+    def test_ortho_uses_clinic_wording_with_address(self):
+        from app.consent_ortho import BODY
+        t = self.q("SELECT * FROM consent_templates WHERE code = 'ortho'")
+        self.assertEqual(t["body"], BODY)
+        self.conn.execute("UPDATE consent_templates SET approved_at = '2026-11-26 10:00:00' WHERE id = ?", (t["id"],))
+        self.conn.execute("UPDATE patients SET address = '12 Demo St., Sample City' WHERE id = ?", (self.pid,))
+        self._sign(self.login("reception.malolos"), form=t["id"], procedure="")
+        c = self.q("SELECT body FROM patient_consents WHERE patient_id = ? AND template_id = ? ORDER BY id DESC", (self.pid, t["id"]))
+        self.assertIn("residing at 12 Demo St., Sample City, have read all the terms", c["body"])
+        self.assertIn("Rebonded Ordinary Bracket: ₱200.00", c["body"])
+        self.assertNotIn("{", c["body"])

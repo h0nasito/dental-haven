@@ -75,6 +75,8 @@ def new(patient_id):
             errors.append("Choose the dentist who explained the treatment.")
         if "{procedure}" in t["body"] and not v["procedure"]:
             errors.append("Write the treatment or procedure.")
+        if "{address}" in t["body"] and not (p["address"] or "").strip():
+            errors.append("The patient's address is empty. Add it on the patient's profile first; this form needs it.")
         if not v["signed_by_name"]:
             errors.append("Write the name of the person signing.")
         if minor and not v["signed_by_relation"]:
@@ -119,6 +121,7 @@ def _live_preview(body, values):
 
 def _values(p, age, branch, dentist_name, v):
     return {"patient": f"{p['first_name']} {p['last_name']}", "age": f"{age} years old" if age is not None else "of legal age",
+            "address": p["address"] or "",
             "date": today().strftime("%B %d, %Y"), "branch": branch["name"] if branch else "", "dentist": dentist_name,
             "procedure": v.get("procedure"), "teeth": v.get("teeth")}
 
