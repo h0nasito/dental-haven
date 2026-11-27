@@ -3,7 +3,7 @@
 {% block page_title %}Appointment{% endblock %}
 {% block content %}
 <div class="page-head"><div><a href="{{ url_for('sched.calendar', date=a.start_at[:10]) }}">← Calendar</a>
-<h1>{{ a.service }} · {{ a.start_at|dt }}</h1><p>{{ a.branch }}{% if a.resource %} · {{ a.resource }}{% endif %} · {{ a.start_at|time }}–{{ a.end_at|time }}</p></div>
+<h1>{{ a.service_detail or a.service }} · {{ a.start_at|dt }}</h1>{% if a.service_detail %}<p class="muted mb-0">{{ a.service }}</p>{% endif %}<p>{{ a.branch }}{% if a.resource %} · {{ a.resource }}{% endif %} · {{ a.start_at|time }}–{{ a.end_at|time }}</p></div>
 <div>{{ status_badge(a.status) }}</div></div>
 <div class="grid grid-2">
 <div>
@@ -43,7 +43,7 @@
 {% if a.status in ['requested','confirmed'] and current_user.can('appointments.manage') %}
 <div class="card"><h2>Reschedule</h2>
 <form method="post" action="{{ url_for('sched.appointment_reschedule', appt_id=a.id) }}">{{ csrf() }}
-{% set v = {'branch_id': a.branch_id, 'service_id': a.service_id, 'dentist_id': a.dentist_id, 'resource_id': a.resource_id, 'date': a.start_at[:10], 'time': a.start_at[11:16], 'duration': ''} %}
+{% set v = {'service_detail': a.service_detail, 'branch_id': a.branch_id, 'service_id': a.service_id, 'dentist_id': a.dentist_id, 'resource_id': a.resource_id, 'date': a.start_at[:10], 'time': a.start_at[11:16], 'duration': ''} %}
 {% set errors = {} %}
 {% include "staff/sched/_slot_fields.html" %}
 <button class="btn btn-secondary">Reschedule</button></form></div>

@@ -219,7 +219,7 @@ def appointment_new():
         or (branches[0]["id"] if branches else None)
     v = {"branch_id": default_branch, "service_id": None, "dentist_id": None, "resource_id": None,
          "date": request.args.get("date") or today().isoformat(), "time": request.args.get("time", "09:00"),
-         "duration": "", "status": "confirmed", "source": "staff", "internal_notes": ""}
+         "duration": "", "status": "confirmed", "source": "staff", "internal_notes": "", "service_detail": ""}
     errors = {}
     if request.method == "POST" and request.form.get("action") == "search":
         q = clean(request.form.get("q"), 80)
@@ -231,6 +231,7 @@ def appointment_new():
             "date": clean(request.form.get("date"), 10), "time": clean(request.form.get("time"), 5),
             "duration": clean(request.form.get("duration"), 4), "status": request.form.get("status", "confirmed"),
             "source": request.form.get("source", "staff"), "internal_notes": clean(request.form.get("internal_notes"), 2000),
+            "service_detail": clean(request.form.get("service_detail"), 80),
             "allow_overlap": bool(request.form.get("allow_overlap")),
             "off_schedule": bool(request.form.get("off_schedule")),
         }
@@ -310,6 +311,7 @@ def _validate_and_save(conn, patient, v, appt=None):
                 "patient_id": patient["id"], "branch_id": v["branch_id"], "service_id": v["service_id"],
                 "dentist_id": v["dentist_id"], "resource_id": resource_id, "start_at": fmt_dt(start), "end_at": fmt_dt(end),
                 "status": v["status"], "source": v["source"], "internal_notes": v["internal_notes"],
+                "service_detail": _detail_for(svc, v.get("service_detail")),
                 "created_by": user.id, "created_at": now_str(), "overlap_ok": 1 if overlap else 0, "off_schedule_ok": 1 if off else 0,
             })
             audit.record("appointment_created", "appointment", appt_id,
@@ -319,7 +321,8 @@ def _validate_and_save(conn, patient, v, appt=None):
             before = {k: appt[k] for k in ("branch_id", "service_id", "dentist_id", "resource_id", "start_at", "end_at")}
             after = {"branch_id": v["branch_id"], "service_id": v["service_id"], "dentist_id": v["dentist_id"],
                      "resource_id": resource_id, "start_at": fmt_dt(start), "end_at": fmt_dt(end)}
-            conn.update("appointments", appt_id, {**after, "updated_at": now_str(), "overlap_ok": 1 if overlap else 0,
+            conn.update("appointments", appt_id, {**after, "service_detail": _detail_for(svc, v.get("service_detail")),
+                                                 "updated_at": now_str(), "overlap_ok": 1 if overlap else 0,
                                                  "off_schedule_ok": 1 if off else 0})
             audit.record("appointment_rescheduled", "appointment", appt_id, f"Rescheduled to {fmt_dt(start)}",
                          audit.diff(before, after, after.keys()), v["branch_id"])
@@ -327,6 +330,13 @@ def _validate_and_save(conn, patient, v, appt=None):
         ensure_assignment(conn, patient["id"], v["dentist_id"], user.id)
         schedule_appointment_reminders(conn, appt_id)
     return appt_id
+
+
+def _detail_for(svc, term) -> str:
+    """The specific procedure, kept only if it is one of the chosen service's everyday terms."""
+    from .public import patient_terms
+    term = (term or "").strip()
+    return term if svc and term in patient_terms(svc) else ""
 
 
 @bp.route("/appointments/<int:appt_id>")
@@ -427,6 +437,7 @@ def appointment_reschedule(appt_id):
         "dentist_id": to_int(request.form.get("dentist_id")), "resource_id": to_int(request.form.get("resource_id")),
         "date": clean(request.form.get("date"), 10), "time": clean(request.form.get("time"), 5),
         "duration": clean(request.form.get("duration"), 4), "status": a["status"], "source": a["source"], "internal_notes": "",
+        "service_detail": clean(request.form.get("service_detail"), 80) if "service_detail" in request.form else a["service_detail"],
     }
     patient = conn.one("SELECT * FROM patients WHERE id = ?", (a["patient_id"],))
     result = _validate_and_save(conn, patient, v, appt=a)
@@ -540,7 +551,7 @@ def request_detail(req_id):
     pref = parse_dt(r["preferred_start"])
     v = {"branch_id": r["branch_id"], "service_id": r["service_id"], "dentist_id": r["dentist_id"], "resource_id": None,
          "date": pref.date().isoformat(), "time": pref.strftime("%H:%M"), "duration": "", "status": "confirmed",
-         "source": "website",
+         "source": "website", "service_detail": r["service_detail"] or "",
          "internal_notes": ((f"Patient chose: {r['service_detail']}" + ("\n" if r["message"] else "")) if r["service_detail"] else "") + (r["message"] or "")}
     if request.method == "POST" and not g.user.can("bookings.manage"):
         abort(403)
@@ -564,6 +575,7 @@ def request_detail(req_id):
                 "dentist_id": to_int(request.form.get("dentist_id")), "resource_id": to_int(request.form.get("resource_id")),
                 "date": clean(request.form.get("date"), 10), "time": clean(request.form.get("time"), 5),
                 "duration": clean(request.form.get("duration"), 4), "internal_notes": clean(request.form.get("internal_notes"), 2000),
+                "service_detail": clean(request.form.get("service_detail"), 80) if "service_detail" in request.form else v["service_detail"],
             })
             pid = to_int(request.form.get("patient_id"))
             try:

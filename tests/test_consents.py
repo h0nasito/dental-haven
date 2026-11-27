@@ -63,3 +63,16 @@ class TestConsentForms(Base):
         self.assertIn("residing at 12 Demo St., Sample City, have read all the terms", c["body"])
         self.assertIn("Rebonded Ordinary Bracket: ₱200.00", c["body"])
         self.assertNotIn("{", c["body"])
+
+    def test_old_approved_braces_draft_is_replaced(self):
+        from app.consent import OLD_ORTHO_START, seed_drafts
+        from app.consent_ortho import BODY
+        t = self.q("SELECT * FROM consent_templates WHERE code = 'ortho'")
+        self.conn.execute("DELETE FROM patient_consents WHERE template_id = ?", (t["id"],))
+        self.conn.execute("UPDATE consent_templates SET title = 'Consent for orthodontic treatment (braces)', body = ?, "
+                          "approved_at = '2026-11-26 10:00:00', updated_at = '2026-11-26 09:00:00' WHERE id = ?",
+                          (OLD_ORTHO_START + " by {dentist}.", t["id"]))
+        seed_drafts(self.conn, "2026-11-26 14:00:00")
+        t = self.q("SELECT * FROM consent_templates WHERE id = ?", (t["id"],))
+        self.assertEqual(t["body"], BODY)
+        self.assertIsNone(t["approved_at"])

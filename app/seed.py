@@ -412,6 +412,13 @@ def seed_base(conn):
             for r in conn.all("SELECT id FROM time_records WHERE status = 'excused'"):
                 refresh_record(conn, r["id"])
             _settings_mod().put("seed.excused_late_v1", True, None, conn)
+        if not _settings_mod().get("seed.appt_detail_v1", conn):
+            # online bookings kept the patient's chosen procedure only in the notes ("Patient chose: …"): copy it to the calendar
+            for r in conn.all("SELECT id, internal_notes FROM appointments WHERE service_detail = '' AND internal_notes LIKE 'Patient chose: %'"):
+                term = r["internal_notes"].split("\n", 1)[0][len("Patient chose: "):].strip()[:80]
+                if term:
+                    conn.execute("UPDATE appointments SET service_detail = ? WHERE id = ?", (term, r["id"]))
+            _settings_mod().put("seed.appt_detail_v1", True, None, conn)
         # Permissions added after a database was created are granted once to the roles that have them by default;
         # afterwards the super admin's choices in Role access are kept.
         from . import settings as _settings2

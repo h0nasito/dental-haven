@@ -25,8 +25,8 @@
     {% for c in columns %}
     <div class="cal-col">{% for h in range(hours[0], hours[1]) %}<div class="cal-slot"></div>{% endfor %}
       {% for a in c.appts %}
-      <a class="cal-appt st-{{ a.status }}" style="top:{{ a.top }}px;height:{{ a.height }}px" href="{{ url_for('sched.appointment', appt_id=a.id) }}" title="{{ a.start_at|time }}–{{ a.end_at|time }} {{ a.service }}">
-        <strong>{{ a.start_at|time }}</strong> {{ a.last_name }}, {{ a.first_name[:1] }}.{% if a.alert_flag %} ⚠{% endif %}<br>{{ a.service }}{% if view == 'chairs' %}{% if a.dentist %} · {{ a.dentist }}{% endif %}{% elif a.resource %} · {{ a.resource }}{% endif %}{% if current_user.scope_branch_ids|length > 1 %} · {{ a.branch }}{% endif %}
+      <a class="cal-appt st-{{ a.status }}" style="top:{{ a.top }}px;height:{{ a.height }}px" href="{{ url_for('sched.appointment', appt_id=a.id) }}" title="{{ a.start_at|time }}–{{ a.end_at|time }} {{ a.service_detail or a.service }}">
+        <strong>{{ a.start_at|time }}</strong> {{ a.first_name }} {{ a.last_name[:1] }}.{% if a.alert_flag %} ⚠{% endif %}<br><strong class="cal-what">{{ a.service_detail or a.service }}</strong>{% if view == 'chairs' %}{% if a.dentist %} · {{ a.dentist }}{% endif %}{% elif a.resource %} · {{ a.resource }}{% endif %}{% if current_user.scope_branch_ids|length > 1 %} · {{ a.branch }}{% endif %}
       </a>
       {% endfor %}
     </div>
@@ -40,8 +40,8 @@
     {% for d in days %}
     <div class="cm-day{{ ' cm-other' if d.other_month }}{{ ' cm-today' if d.date.isoformat() == today_iso }}{{ ' cm-empty' if not d.appts }}" role="gridcell">
       <div class="cm-date"><a href="?view=day&date={{ d.date.isoformat() }}&dentist={{ dentist_id or '' }}">{{ d.date.day }}</a><span class="cm-dow">{{ d.date.strftime('%a, %b %d') }}</span>{% if d.appts %}<span class="cm-count">{{ d.appts|length }}</span>{% endif %}</div>
-      {% for a in d.appts %}<a class="cm-appt st-{{ a.status }}" href="{{ url_for('sched.appointment', appt_id=a.id) }}" title="{{ a.start_at|time }} {{ a.last_name }}, {{ a.first_name }} · {{ a.service }}{% if a.dentist %} · {{ a.dentist }}{% endif %}">
-        <span class="cm-time">{{ a.start_at|time }}</span> <span class="cm-name">{{ a.last_name }}, {{ a.first_name }}{% if a.alert_flag %} ⚠{% endif %}</span> <span class="cm-svc">{{ a.service }}</span>{% if not dentist_id and a.dentist %} <span class="cm-doc">· {{ a.dentist }}</span>{% endif %}</a>{% endfor %}
+      {% for a in d.appts %}<a class="cm-appt st-{{ a.status }}" href="{{ url_for('sched.appointment', appt_id=a.id) }}" title="{{ a.start_at|time }} {{ a.first_name }} {{ a.last_name[:1] }}. · {{ a.service_detail or a.service }}{% if a.dentist %} · {{ a.dentist }}{% endif %}">
+        <span class="cm-time">{{ a.start_at|time }}</span> <span class="cm-name">{{ a.first_name }} {{ a.last_name[:1] }}.{% if a.alert_flag %} ⚠{% endif %}</span> <span class="cm-svc">{{ a.service_detail or a.service }}</span>{% if not dentist_id and a.dentist %} <span class="cm-doc">· {{ a.dentist }}</span>{% endif %}</a>{% endfor %}
     </div>
     {% endfor %}
   </div>
@@ -50,7 +50,7 @@
   <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
   {% for d in days %}
     <div class="card" style="padding:.8rem"><h3 style="font-size:.95rem">{{ d.date.strftime('%a %b %d') }}</h3>
-    {% for a in d.appts %}<a class="item" style="display:block;text-decoration:none;color:inherit" href="{{ url_for('sched.appointment', appt_id=a.id) }}"><strong>{{ a.start_at|time }}</strong> {{ status_badge(a.status) }}<div class="meta">{{ a.last_name }}, {{ a.first_name }}<br>{{ a.service }} · {{ a.dentist or 'No dentist' }}</div></a>
+    {% for a in d.appts %}<a class="item" style="display:block;text-decoration:none;color:inherit" href="{{ url_for('sched.appointment', appt_id=a.id) }}"><strong>{{ a.start_at|time }}</strong> {{ status_badge(a.status) }}<div class="meta">{{ a.first_name }} {{ a.last_name[:1] }}.<br><strong>{{ a.service_detail or a.service }}</strong> · {{ a.dentist or 'No dentist' }}</div></a>
     {% else %}<p class="muted" style="font-size:.85rem">No appointments</p>{% endfor %}</div>
   {% endfor %}
   </div>

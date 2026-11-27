@@ -10,6 +10,9 @@ from __future__ import annotations
 
 from .consent_ortho import BODY as ORTHO_BODY, TITLE as ORTHO_TITLE
 
+# How my first braces draft began (replaced by the clinic's own wording, Nov 2026).
+OLD_ORTHO_START = "I, {patient}, {age}, consent to orthodontic treatment (braces)"
+
 PLACEHOLDERS = ("patient", "age", "address", "date", "branch", "dentist", "procedure", "teeth")
 
 _COMMON_END = (
@@ -73,10 +76,13 @@ def seed_drafts(conn, now: str) -> None:
     """Add the starting drafts once (not approved, so they can't be used until a dentist approves them). The braces form
     is switched to the clinic's own wording if it is still the untouched first draft."""
     if conn.scalar("SELECT COUNT(*) FROM consent_templates"):
+        # The braces form still holding my first draft (edited or not, approved or not) gets the clinic's own wording, as long
+        # as no patient has signed it yet. Its approval is cleared: a dentist approves the clinic's wording again.
         t = conn.one("SELECT * FROM consent_templates WHERE code = 'ortho'")
-        if t and t["updated_at"] is None and t["approved_at"] is None and t["body"] != ORTHO_BODY \
+        if t and t["body"] != ORTHO_BODY and t["body"].startswith(OLD_ORTHO_START) \
                 and not conn.scalar("SELECT COUNT(*) FROM patient_consents WHERE template_id = ?", (t["id"],)):
-            conn.execute("UPDATE consent_templates SET title = ?, body = ? WHERE id = ?", (ORTHO_TITLE, ORTHO_BODY, t["id"]))
+            conn.execute("UPDATE consent_templates SET title = ?, body = ?, approved_by = NULL, approved_at = NULL, updated_at = ? "
+                         "WHERE id = ?", (ORTHO_TITLE, ORTHO_BODY, now, t["id"]))
         return
     for i, (code, title, body) in enumerate(DRAFTS):
         conn.insert("consent_templates", {"code": code, "title": title, "body": body, "sort_order": i, "active": 1, "created_at": now})

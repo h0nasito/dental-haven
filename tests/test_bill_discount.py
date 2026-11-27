@@ -167,12 +167,12 @@ class TestCollectionsByService(Base):
 class TestCalendarMonth(Base):
     def test_month_view_shows_patient_and_procedure(self):
         from app.util import today
-        a = self.q("SELECT a.start_at, p.last_name, p.first_name, s.name AS service FROM appointments a JOIN patients p ON p.id = a.patient_id "
+        a = self.q("SELECT a.start_at, p.last_name, p.first_name, COALESCE(NULLIF(a.service_detail, ''), s.name) AS service FROM appointments a JOIN patients p ON p.id = a.patient_id "
                    "JOIN services s ON s.id = a.service_id WHERE a.status != 'cancelled' ORDER BY a.start_at DESC LIMIT 1")
         page = self.login("admin").get(f"/staff/calendar?view=month&date={a['start_at'][:10]}").data.decode()
         self.assertIn("cal-month", page)
         from html import escape
-        self.assertIn(escape(f"{a['last_name']}, {a['first_name']}", quote=False), page)
+        self.assertIn(escape(f"{a['first_name']} {a['last_name'][:1]}.", quote=False), page)
         self.assertIn(escape(a["service"], quote=False), page)
 
     def test_commission_sets_dentist_on_lines_without_one(self):

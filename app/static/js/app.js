@@ -1906,3 +1906,22 @@ document.querySelectorAll('[data-suggest]').forEach(function (input) {
     if (pad && pad.dataset.drawn !== '1') { e.preventDefault(); alert('Please sign inside the box first.'); }
   });
 })();
+
+/* Appointment form: the Procedure list shows only the everyday terms of the chosen service. */
+(function () {
+  document.querySelectorAll('select[data-detail-for]').forEach(function (det) {
+    var svc = document.getElementById(det.dataset.detailFor);
+    if (!svc) return;
+    function sync() {
+      var any = false;
+      Array.prototype.forEach.call(det.options, function (o) {
+        if (!o.dataset.svc) return;
+        var show = o.dataset.svc === svc.value;
+        o.hidden = !show; o.disabled = !show;
+        if (show) any = true; else if (o.selected) det.value = '';
+      });
+      det.closest('.field').hidden = !any;
+    }
+    svc.addEventListener('change', sync); sync();
+  });
+})();
