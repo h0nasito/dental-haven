@@ -1885,11 +1885,13 @@ document.querySelectorAll('[data-suggest]').forEach(function (input) {
 
 /* Online booking: remember which common term the patient picked (e.g. "Pasta (tooth filling)") for the clinic. */
 (function () {
-  var sel = document.querySelector('[data-term-select]'), out = document.querySelector('[data-term-out]');
-  if (!sel || !out) return;
-  function sync() { var o = sel.options[sel.selectedIndex]; out.value = (o && o.dataset.term) || ''; }
-  sel.addEventListener('change', sync);
-  sync();
+  document.querySelectorAll('[data-term-select]').forEach(function (sel) {
+    var out = (sel.form || document).querySelector('[data-term-out]');
+    if (!out) return;
+    function sync() { var o = sel.options[sel.selectedIndex]; out.value = (o && o.dataset.term) || ''; }
+    sel.addEventListener('change', sync);
+    sync();
+  });
 })();
 
 /* Consent form: the text the patient reads follows the dentist, treatment and teeth the staff fill in. */
@@ -1907,21 +1909,3 @@ document.querySelectorAll('[data-suggest]').forEach(function (input) {
   });
 })();
 
-/* Appointment form: the Procedure list shows only the everyday terms of the chosen service. */
-(function () {
-  document.querySelectorAll('select[data-detail-for]').forEach(function (det) {
-    var svc = document.getElementById(det.dataset.detailFor);
-    if (!svc) return;
-    function sync() {
-      var any = false;
-      Array.prototype.forEach.call(det.options, function (o) {
-        if (!o.dataset.svc) return;
-        var show = o.dataset.svc === svc.value;
-        o.hidden = !show; o.disabled = !show;
-        if (show) any = true; else if (o.selected) det.value = '';
-      });
-      det.closest('.field').hidden = !any;
-    }
-    svc.addEventListener('change', sync); sync();
-  });
-})();
