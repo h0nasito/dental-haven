@@ -13,12 +13,13 @@ class TestConsentForms(Base):
 
     def _sign(self, client, **kw):
         data = {"form": self.form["id"], "dentist_id": self.dentist, "procedure": "Removal of tooth (demo 5521)", "teeth": "38",
+                "site": "Lower right (demo 5521)", "anesthesia": "Local anesthesia (injection)",
                 "signed_by_name": "Demo Signer", "understood": "1", "signature": SIG}
         data.update(kw)
         return client.post(f"/staff/patients/{self.pid}/consents/new", data=data, follow_redirects=True)
 
     def test_drafts_need_a_dentists_approval(self):
-        self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM consent_templates"), 4)
+        self.assertEqual(self.conn.scalar("SELECT COUNT(*) FROM consent_templates WHERE active = 1"), 10)
         self.assertIsNone(self.form["approved_at"])
         r = self.login("reception.malolos")
         before = self.conn.scalar("SELECT COUNT(*) FROM patient_consents")
@@ -42,7 +43,8 @@ class TestConsentForms(Base):
         self.assertNotIn("{patient}", c["body"])
         self.assertIn("Demo Signer", page)
         self.assertEqual(r.get(f"/staff/consents/{c['id']}/signature").status_code, 200)
-        self.assertIn("Removal of tooth (demo 5521)", r.get(f"/staff/patients/{self.pid}?tab=consents").data.decode())
+        self.assertIn("surgical site: Lower right (demo 5521)", c["body"])
+        self.assertIn("Anesthesia chosen: Local anesthesia (injection)", c["body"])
         # editing the wording keeps the signed copy as it was and clears the approval
         a = self.login("admin")
         a.post(f"/staff/admin/consent-forms/{self.form['id']}", data={"title": self.form["title"], "body": "Changed wording {patient}", "active": "1"})
@@ -76,3 +78,24 @@ class TestConsentForms(Base):
         t = self.q("SELECT * FROM consent_templates WHERE id = ?", (t["id"],))
         self.assertEqual(t["body"], BODY)
         self.assertIsNone(t["approved_at"])
+
+    def test_clinic_forms_replace_first_drafts(self):
+        from app.consent import seed_drafts
+        from app.consent_clinic import ENDO, EXTRACTION, FORMS
+        ext = self.q("SELECT * FROM consent_templates WHERE code = 'extraction'")
+        self.assertEqual(ext["body"], EXTRACTION)
+        # an older install still holding my first root canal draft, approved and already signed once
+        rct = self.q("SELECT * FROM consent_templates WHERE code = 'rct_prosth'")
+        self.conn.execute("UPDATE consent_templates SET body = ?, approved_at = '2026-11-26 09:00:00' WHERE id = ?",
+                          ("I, {patient}, {age}, consent to the following treatment by {dentist} at Dental Haven {branch}: x", rct["id"]))
+        self.conn.insert("patient_consents", {"patient_id": self.pid, "template_id": rct["id"], "title": "old", "body": "old", "signed_by_name": "x",
+                                              "signature_stored": "x.png", "signed_at": "2026-11-26 10:00:00", "status": "valid",
+                                              "created_at": "2026-11-26 10:00:00"})
+        self.conn.execute("DELETE FROM consent_templates WHERE code = 'denture_tryin'")
+        seed_drafts(self.conn, "2026-11-27 17:00:00")
+        old = self.q("SELECT * FROM consent_templates WHERE id = ?", (rct["id"],))
+        self.assertEqual(old["active"], 0)
+        new = self.q("SELECT * FROM consent_templates WHERE code = 'rct_prosth'")
+        self.assertEqual((new["body"], new["approved_at"]), (ENDO, None))
+        self.assertIsNotNone(self.q("SELECT id FROM consent_templates WHERE code = 'denture_tryin' AND active = 1"))
+        self.assertEqual(len(FORMS), 8)

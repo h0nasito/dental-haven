@@ -1899,10 +1899,11 @@ document.querySelectorAll('[data-suggest]').forEach(function (input) {
   var form = document.querySelector('form.consent-sign');
   if (!form) return;
   function put(key, val) { form.querySelectorAll('[data-fill="' + key + '"]').forEach(function (s) { s.textContent = val || '…'; }); }
-  var d = form.querySelector('#dentist_id'), pr = form.querySelector('#procedure'), te = form.querySelector('#teeth');
+  var d = form.querySelector('#dentist_id');
   if (d) d.addEventListener('change', function () { put('dentist', d.value ? d.options[d.selectedIndex].text : ''); });
-  if (pr) pr.addEventListener('input', function () { put('procedure', pr.value.trim()); });
-  if (te) te.addEventListener('input', function () { put('teeth', te.value.trim()); });
+  form.querySelectorAll('[data-fill-input]').forEach(function (el) {
+    el.addEventListener('input', function () { put(el.dataset.fillInput, el.value.trim()); });
+  });
   form.addEventListener('submit', function (e) {
     var pad = form.querySelector('canvas[data-sigpad]');
     if (pad && pad.dataset.drawn !== '1') { e.preventDefault(); alert('Please sign inside the box first.'); }

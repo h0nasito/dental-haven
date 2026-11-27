@@ -5,7 +5,7 @@ from flask import Blueprint, abort, flash, g, redirect, render_template, request
 
 from .. import audit
 from ..auth import require
-from ..consent import PLACEHOLDERS, fill
+from ..consent import AUTO, PLACEHOLDERS, STAFF_FIELDS, fill, staff_fields
 from ..db import get_db
 from ..permissions import can_see_clinical, can_see_patient
 from ..util import clean, now_str, parse_date, today
@@ -63,12 +63,13 @@ def new(patient_id):
     choices = dentists(g.user.scope_branch_ids) or dentists()
     age = _age_years(p["birth_date"])
     minor = age is not None and age < 18
-    v = {"dentist_id": g.user.id if g.user.role == "dentist" else None, "procedure": "", "teeth": "",
+    asks = staff_fields(t["body"])
+    v = {"dentist_id": g.user.id if g.user.role == "dentist" else None, **{k: "" for k in STAFF_FIELDS},
          "signed_by_name": "" if minor else f"{p['first_name']} {p['last_name']}", "signed_by_relation": "", "understood": False}
     errors = []
     if request.method == "POST":
         f = request.form
-        v = {"dentist_id": f.get("dentist_id", type=int), "procedure": clean(f.get("procedure"), 600), "teeth": clean(f.get("teeth"), 120),
+        v = {"dentist_id": f.get("dentist_id", type=int), **{k: clean(f.get(k), 600 if k == "procedure" else 160) for k in STAFF_FIELDS},
              "signed_by_name": clean(f.get("signed_by_name"), 150), "signed_by_relation": clean(f.get("signed_by_relation"), 60),
              "understood": f.get("understood") == "1"}
         if not any(d["id"] == v["dentist_id"] for d in choices):
@@ -102,8 +103,9 @@ def new(patient_id):
             flash("Consent form signed and saved.", "success")
             return redirect(url_for("consents.view", consent_id=cid))
     preview = _live_preview(t["body"], _values(p, age, branch, next((d["name"] for d in choices if d["id"] == v["dentist_id"]), ""), v))
+    labs = [r["name"] for r in conn.all("SELECT name FROM laboratories WHERE active = 1 ORDER BY name")] if "{lab}" in t["body"] else []
     return render_template("staff/consents/sign.html", p=p, t=t, v=v, errors=errors, choices=choices, preview=preview,
-                           minor=minor, age=age, asks_procedure="{procedure}" in t["body"], asks_teeth="{teeth}" in t["body"])
+                           minor=minor, age=age, asks=asks, labs=labs)
 
 
 def _live_preview(body, values):
@@ -112,7 +114,7 @@ def _live_preview(body, values):
     out = str(escape(body))
     for k in PLACEHOLDERS:
         val = values.get(k) or ""
-        if k in ("dentist", "procedure", "teeth"):
+        if k not in AUTO or k == "dentist":
             out = out.replace("{" + k + "}", f'<span data-fill="{k}" class="consent-fill">{escape(val) or "…"}</span>')
         else:
             out = out.replace("{" + k + "}", str(escape(val or "—")))
@@ -123,7 +125,7 @@ def _values(p, age, branch, dentist_name, v):
     return {"patient": f"{p['first_name']} {p['last_name']}", "age": f"{age} years old" if age is not None else "of legal age",
             "address": p["address"] or "",
             "date": today().strftime("%B %d, %Y"), "branch": branch["name"] if branch else "", "dentist": dentist_name,
-            "procedure": v.get("procedure"), "teeth": v.get("teeth")}
+            **{k: v.get(k) for k in STAFF_FIELDS}}
 
 
 def _load(consent_id):
