@@ -23,7 +23,12 @@ class TestParity(Base):
         r = self.login("dentist.malolos").get(f"/staff/patients/{pid}")
         self.assertEqual(r.status_code, 200)
         self.assertNotIn(phone.encode(), r.data)
-        self.assertIn(b"Hidden", r.data)
+        self.assertNotIn(b"Hidden", r.data)                     # nothing that looks like it's kept from the dentist
+        self.assertNotIn(b"<dt>Mobile</dt>", r.data)
+        addr = self.q("SELECT address FROM patients WHERE id = ?", (pid,))["address"]
+        if addr:
+            from html import escape
+            self.assertIn(escape(addr).encode(), r.data)        # the address is shown to dentists
         # the dentist can't find patients by their mobile number either
         dc = self.login("dentist.malolos")
         page = dc.get("/staff/patients/").data.decode()

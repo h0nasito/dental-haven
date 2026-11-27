@@ -1,0 +1,25 @@
+{% extends "staff/layout.html" %}
+{% from "macros.html" import csrf %}
+{% block page_title %}Merge patient records{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('patients.index') }}">← Patients</a><h1>Merge patient records</h1>
+<p class="muted mb-0">Use this only when both records are the <strong>same person</strong>. Pick the record to keep. Everything from the other one (bills, payments, progress notes, appointments, X-rays, lab cases, uploads, consents) moves to it, and empty details are filled in from the other record. The other record is archived, not erased.</p></div></div>
+<form method="post" class="card">{{ csrf() }}<input type="hidden" name="a" value="{{ a.id }}"><input type="hidden" name="b" value="{{ b.id }}">
+<div class="grid grid-2 merge-pick">
+{% for p, s in ((a, sa), (b, sb)) %}
+<label class="merge-card"><input type="radio" name="keep" value="{{ p.id }}" {{ 'checked' if p.id == suggest }} required>
+<span><strong class="merge-name">{{ p.last_name }}, {{ p.first_name }}{% if p.middle_name %} {{ p.middle_name }}{% endif %}</strong>
+<span class="badge badge-green keep-tag">Keep this one</span>
+<dl class="kv mt-1"><dt>Chart no.</dt><dd>{{ p.chart_no }}</dd>{% if p.legacy_id %}<dt>MyMedsPH</dt><dd>#{{ p.legacy_id }}</dd>{% endif %}
+<dt>Birthday</dt><dd>{{ p.birth_date|date if p.birth_date else '—' }}</dd>
+{% if current_user.can('patients.contact') %}<dt>Mobile</dt><dd>{{ p.phone or '—' }}</dd>{% endif %}
+<dt>Branch</dt><dd>{{ branches.get(p.preferred_branch_id) or ('All branches' if p.shared else '—') }}</dd>
+<dt>Privacy consent</dt><dd>{{ 'Yes' if p.consent_privacy else 'Not recorded' }}</dd><dt>Added</dt><dd>{{ p.created_at|date }}</dd></dl>
+<p class="mb-0 mt-1"><small class="muted">Records:</small> {% for label, n in s %}<span class="badge">{{ label }} {{ n }}</span> {% else %}<span class="muted">none</span>{% endfor %}</p></span></label>
+{% endfor %}
+</div>
+<p class="notice mt-1">This can't be undone with one click. Check the names, birthdays and records first.</p>
+<div class="row" style="justify-content:flex-end"><a class="btn btn-secondary" href="{{ url_for('patients.index') }}">Cancel</a>
+<button class="btn btn-primary" data-confirm="Merge these two records into the one you chose to keep?">Merge records</button></div>
+</form>
+{% endblock %}

@@ -33,6 +33,7 @@
   {% if bulk_delete %}
   <input name="reason" placeholder="Reason, e.g. Junk records from the MyMedsPH import" aria-label="Reason for deleting" class="grow">
   <button class="btn btn-danger btn-sm" name="action" value="delete" data-confirm="Delete the selected patients? They will be hidden from all lists (records are archived, not erased).">Delete selected</button>
+  <button class="btn btn-secondary btn-sm" name="action" value="merge" title="Tick the two records of the same patient">Merge 2 ticked</button>
   {% else %}
   <button class="btn btn-secondary btn-sm" name="action" value="restore">Restore selected</button>
   {% endif %}
@@ -40,12 +41,12 @@
 </div>
 {% endif %}
 <div class="card"><div class="table-wrap"><table>
-<thead><tr>{% if bulk_delete or bulk_restore %}<th><span class="sr-only">Select</span></th>{% endif %}<th>Patient</th><th>Chart no.</th><th>Mobile</th>
+<thead><tr>{% if bulk_delete or bulk_restore %}<th><span class="sr-only">Select</span></th>{% endif %}<th>Patient</th><th>Chart no.</th>{% if current_user.can('patients.contact') %}<th>Mobile</th>{% endif %}
 {% if show == 'deleted' %}<th>Deleted</th><th>Reason</th>{% else %}<th>Preferred branch</th><th>Last visit</th><th>Next visit</th><th>Consent</th>{% endif %}</tr></thead><tbody>
 {% for p in rows %}<tr>
 {% if bulk_delete or bulk_restore %}<td><input type="checkbox" name="ids" value="{{ p.id }}" aria-label="Select {{ p.last_name }}, {{ p.first_name }}" data-check></td>{% endif %}
 <td><a href="{{ url_for('patients.detail', patient_id=p.id) }}"><strong>{{ p.last_name }}, {{ p.first_name }}</strong></a>{% if p.alert_flag %} <span class="badge badge-red" title="{{ p.alert_flag }}">⚠ Alert</span>{% endif %}{% if p.is_demo %} <span class="badge">Demo</span>{% endif %}</td>
-<td>{{ p.chart_no }}</td><td>{{ p.phone|contact }}</td>
+<td>{{ p.chart_no }}</td>{% if current_user.can('patients.contact') %}<td>{{ p.phone or '—' }}</td>{% endif %}
 {% if show == 'deleted' %}<td>{{ p.deleted_at|dt if p.deleted_at else '—' }}{% if p.deleted_by_name %}<br><small class="muted">{{ p.deleted_by_name }}</small>{% endif %}</td><td><small>{{ p.deleted_reason or '—' }}</small></td>
 {% else %}<td>{{ p.branch or ('All branches' if p.shared else '—') }}</td><td>{{ p.last_visit|date }}</td><td>{{ p.next_visit|dt if p.next_visit else '—' }}</td>
 <td>{% if p.consent_privacy %}<span class="badge badge-green">Privacy ✓</span>{% else %}<span class="badge badge-amber">Needs consent</span>{% endif %}{% if p.opt_out_all %} <span class="badge">Opted out</span>{% endif %}</td>{% endif %}</tr>

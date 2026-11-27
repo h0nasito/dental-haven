@@ -60,11 +60,12 @@ def _phones(value):
 
 
 def _contact(value):
-    """Show patient contact details only to users with 'View patient contact number, email address and home address'."""
+    """Show a patient's phone number or email only to users with 'View patient contact number and email address'.
+    Others see nothing at all (not "Hidden"), so the record doesn't look like it is keeping something from them."""
     from flask import g
     user = g.get("user")
     if user is not None and not user.can("patients.contact"):
-        return "Hidden" if value else "—"
+        return ""
     return value or "—"
 
 

@@ -27,7 +27,7 @@ DOC_CATEGORIES = {
 }
 PLAN_STATUSES = ["draft", "presented", "accepted", "in_progress", "completed", "declined"]
 ITEM_STATUSES = ["pending", "scheduled", "done", "declined"]
-CONTACT_FIELDS = ["phone", "email", "address", "emergency_contact", "emergency_phone"]
+CONTACT_FIELDS = ["phone", "email", "emergency_contact", "emergency_phone"]
 PHONE_RE = re.compile(r"^[0-9+()\-\s]{7,20}$")
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -143,9 +143,14 @@ def bulk():
         abort(403)
     if action == "restore" and not g.user.can("users.manage"):
         abort(403)
-    if action not in ("delete", "restore"):
+    if action not in ("delete", "restore", "merge"):
         abort(400)
     ids = sorted({i for i in (to_int(x) for x in request.form.getlist("ids")) if i})[:500]
+    if action == "merge":
+        if len(ids) != 2:
+            flash("Tick exactly two records of the same patient to merge them.", "error")
+            return redirect(back)
+        return redirect(url_for("patients.merge", a=ids[0], b=ids[1]))
     if not ids:
         flash("Tick at least one patient first.", "error")
         return redirect(back)
@@ -1283,6 +1288,45 @@ def photo(patient_id):
                  ("Removed" if new is None else "Updated") + f" profile photo of {p['chart_no']}")
     flash("Photo removed." if new is None else "Photo saved.", "success")
     return redirect(url_for("patients.detail", patient_id=patient_id))
+
+
+@bp.route("/merge", methods=["GET", "POST"])
+@require("patients.delete")
+def merge():
+    """Combine two records of the same patient: pick the one to keep; everything of the other moves to it."""
+    from .. import patient_merge as pm
+    conn = get_db()
+    a_id, b_id = to_int(request.values.get("a")), to_int(request.values.get("b"))
+    if not a_id or not b_id or a_id == b_id:
+        abort(400)
+    a, b = _load(a_id), _load(b_id)
+    if not (a["active"] and b["active"]):
+        flash("Both records must be active (not deleted).", "error")
+        return redirect(url_for("patients.index"))
+    if request.method == "POST":
+        keep = to_int(request.form.get("keep"))
+        if keep not in (a_id, b_id):
+            flash("Choose the record to keep.", "error")
+        else:
+            src, dst = (b, a) if keep == a_id else (a, b)
+            moved = pm.counts(conn, src["id"])
+            with conn.transaction(immediate=True):
+                pm.merge(conn, src["id"], dst["id"], g.user.id, now_str())
+                audit.record("patient_merged", "patient", dst["id"], f"Merged {src['chart_no']} into {dst['chart_no']}",
+                             {"from_patient_id": src["id"], "moved": moved})
+                audit.record("patient_deleted", "patient", src["id"], f"Merged into {dst['chart_no']}", {"merged_into": dst["id"]})
+            flash(f"Merged. Everything from {src['chart_no']} is now under {dst['chart_no']}; {src['chart_no']} is archived.", "success")
+            return redirect(url_for("patients.detail", patient_id=dst["id"]))
+    labels = {"invoices": "Bills", "visit_notes": "Progress notes", "procedures": "Procedures", "appointments": "Appointments",
+              "xrays": "X-rays", "lab_cases": "Lab cases", "patient_documents": "Uploads", "patient_consents": "Consent forms",
+              "prescriptions": "Prescriptions", "certificates": "Certificates", "patient_credits": "Credits", "chart_entries": "Chart entries",
+              "clinical_notes": "Notes", "treatment_plans": "Treatment plans", "legacy_bills": "Old MyMedsPH bills"}
+    def summary(pid):
+        c = pm.counts(conn, pid)
+        return [(labels[k], c[k]) for k in labels if c.get(k)]
+    suggest = max((a, b), key=lambda p: (bool(p["consent_privacy"]), sum(pm.counts(conn, p["id"]).values()), -p["id"]))["id"]
+    return render_template("staff/patients/merge.html", a=a, b=b, sa=summary(a_id), sb=summary(b_id), suggest=suggest,
+                           branches={r["id"]: r["name"] for r in conn.all("SELECT id, name FROM branches")})
 
 
 @bp.route("/<int:patient_id>/delete", methods=["POST"])

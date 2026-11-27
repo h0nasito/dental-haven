@@ -21,7 +21,7 @@
 {{ field('emergency_phone', 'Emergency contact number', v.emergency_phone, type='tel') }}{% endif %}
 {{ select('preferred_branch_id', 'Preferred branch', branches|opts, v.preferred_branch_id, errors=errors, required=True) }}
 </div>
-{% if current_user.can('patients.contact') or not p %}{{ textarea('address', 'Address', v.address, rows=2) }}{% endif %}</fieldset>
+{{ textarea('address', 'Address', v.address, rows=2) }}</fieldset>
 <fieldset><legend>Consent &amp; communication preferences</legend>
 <label class="check"><input type="checkbox" name="consent_privacy" value="1" {% if v.consent_privacy %}checked{% endif %}> <span>Patient has agreed to the privacy notice (collection and use of personal and health information for their care)</span></label>
 {% if p and p.consent_privacy_at %}<p class="hint">Recorded {{ p.consent_privacy_at|dt }}</p>{% endif %}

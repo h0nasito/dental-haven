@@ -1020,3 +1020,31 @@ class TestPatientBillsUnpaidFirst(Base):
         page = self.login("admin").get(f"/staff/patients/{pid}?tab=billing").data.decode()
         self.assertLess(page.index("SORT-OLDUNPAID"), page.index("SORT-NEWPAID"))
         self.assertIn("UNPAID", page)
+
+
+class TestXrayLinesPaidFirst(Base):
+    def test_monthly_payments_after_the_xray_count_in_full(self):
+        from app.billing import collections
+        from app.util import now_str
+        bid = self.branch("bocaue")
+        pid = self.q("SELECT id FROM patients LIMIT 1")["id"]
+        inv = self.conn.insert("invoices", {"branch_id": bid, "patient_id": pid, "status": "issued", "number": "XF-1", "issued_at": "2023-11-17",
+                                            "subtotal_cents": 5700000, "discount_cents": 0, "tax_cents": 0, "total_cents": 5700000, "created_at": now_str()})
+        for desc, amt in (("Orthodontic treatment (demo)", 5500000), ("PANORAMIC XRAY", 100000), ("Cephalo Xray - Lateral View", 100000)):
+            self.conn.insert("invoice_items", {"invoice_id": inv, "description": desc, "qty": 1, "unit_price_cents": amt, "discount_cents": 0,
+                                               "amount_cents": amt})
+        for day, amt in (("2023-11-17", 4100000), ("2031-03-04", 200000)):
+            self.conn.execute("DELETE FROM payments WHERE branch_id = ? AND substr(received_at, 1, 10) = ?", (bid, day))
+            self.conn.execute("DELETE FROM patient_credits WHERE branch_id = ? AND entry_date = ?", (bid, day))
+            self.conn.insert("payments", {"invoice_id": inv, "branch_id": bid, "kind": "payment", "amount_cents": amt, "method": "cash",
+                                          "received_at": day, "status": "valid", "created_at": now_str()})
+        with self.app.app_context():
+            self.assertEqual(collections(self.conn, [bid], "2023-11-17", "2023-11-17")["net"], 4100000 - 200000)  # X-rays paid first
+            self.assertEqual(collections(self.conn, [bid], "2031-03-04", "2031-03-04")["net"], 200000)            # the monthly payment in full
+        # moving an X-ray line takes its share from the first payment, not from the monthly one
+        a = self.login("admin")
+        ln = self.q("SELECT id FROM invoice_items WHERE invoice_id = ? AND description = 'PANORAMIC XRAY'", (inv,))
+        a.post(f"/staff/invoices/{inv}/items/{ln['id']}/to-xray")
+        amts = [r["amount_cents"] for r in self.conn.all("SELECT amount_cents FROM payments WHERE invoice_id = ? AND status = 'valid' "
+                                                           "ORDER BY received_at", (inv,))]
+        self.assertEqual(amts, [4000000, 200000])

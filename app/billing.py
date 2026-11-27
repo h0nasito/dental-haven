@@ -122,14 +122,27 @@ def mark_xray_lines(conn) -> None:
 
 
 def clinic_share(conn, alias: str = "p", amount: str = "", invoice_id: str = "") -> str:
-    """SQL for the part of a payment that is for the clinic's work, not X-rays on the same bill: each payment is shared
-    over its bill's lines in proportion, and the X-ray lines' share is left out. Use as SUM({clinic_share}) etc."""
+    """SQL for the part of a payment that is for the clinic's work, not X-rays on the same bill. Use as SUM({clinic_share}).
+
+    Payments pay a bill's X-ray lines first: until the X-ray lines are covered a payment counts as X-ray money, and every
+    payment after that counts fully for the clinic (so monthly braces payments on a bill with an old X-ray show in full).
+    Refunds, and whole-bill amounts (amount= and invoice_id= given, e.g. a bill's total), are shared in proportion."""
     mark_xray_lines(conn)
     a = alias
-    amount, invoice_id = amount or f"{a}.amount_cents", invoice_id or f"{a}.invoice_id"
-    return (f"CAST(ROUND({amount} * (SELECT CASE WHEN COALESCE(SUM(MAX(ii.amount_cents, 0)), 0) > 0 "
-            f"THEN 1.0 - 1.0 * SUM(CASE WHEN ii.xray = 1 THEN MAX(ii.amount_cents, 0) ELSE 0 END) / SUM(MAX(ii.amount_cents, 0)) ELSE 1.0 END "
-            f"FROM invoice_items ii WHERE ii.invoice_id = {invoice_id})) AS INTEGER)")
+    prop_amount, prop_inv = amount or f"{a}.amount_cents", invoice_id or f"{a}.invoice_id"
+    proportional = (f"CAST(ROUND({prop_amount} * (SELECT CASE WHEN COALESCE(SUM(MAX(ii.amount_cents, 0)), 0) > 0 "
+                    f"THEN 1.0 - 1.0 * SUM(CASE WHEN ii.xray = 1 THEN MAX(ii.amount_cents, 0) ELSE 0 END) / SUM(MAX(ii.amount_cents, 0)) ELSE 1.0 END "
+                    f"FROM invoice_items ii WHERE ii.invoice_id = {prop_inv})) AS INTEGER)")
+    if amount or invoice_id:
+        return proportional
+    xray_due = (f"(SELECT MIN(COALESCE(SUM(CASE WHEN ii.xray = 1 THEN MAX(ii.amount_cents, 0) ELSE 0 END), 0), "
+                f"(SELECT MAX(iv.total_cents, 0) FROM invoices iv WHERE iv.id = {a}.invoice_id)) "
+                f"FROM invoice_items ii WHERE ii.invoice_id = {a}.invoice_id)")
+    paid_before = (f"(SELECT COALESCE(SUM(q.amount_cents), 0) FROM payments q WHERE q.invoice_id = {a}.invoice_id "
+                   f"AND q.status = 'valid' AND q.kind = 'payment' AND (q.received_at < {a}.received_at "
+                   f"OR (q.received_at = {a}.received_at AND q.id < {a}.id)))")
+    xray_part = f"MAX(0, MIN({a}.amount_cents, {xray_due} - {paid_before}))"
+    return f"(CASE WHEN {a}.kind = 'payment' THEN {a}.amount_cents - {xray_part} ELSE {proportional} END)"
 
 
 def collections(conn, branch_ids: list[int], start: str, end: str) -> dict:

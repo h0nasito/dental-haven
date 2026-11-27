@@ -1125,3 +1125,9 @@ td .cashier-note { margin-bottom: .3em; }
 .consent-sig-space { height: 90px; }
 .consent-void { border: 2px solid var(--red-700); color: var(--red-700); font-weight: 800; padding: .4rem .7rem; text-align: center; }
 .consent-fill { background: #fff6d6; border-radius: 3px; padding: 0 .15rem; font-weight: 600; }
+.merge-card { display: flex; gap: .7rem; align-items: flex-start; border: 2px solid var(--line); border-radius: var(--radius-sm); padding: .9rem; cursor: pointer; }
+.merge-card:has(input:checked) { border-color: var(--brand, #2563eb); background: var(--bg-soft, #f5f8ff); }
+.merge-card input { margin-top: .3rem; }
+.merge-card .keep-tag { display: none; margin-left: .4rem; }
+.merge-card:has(input:checked) .keep-tag { display: inline-block; }
+.merge-name { font-size: 1.1rem; }

@@ -68,7 +68,7 @@ CATALOG: list[Perm] = [
     Perm("followups.manage", "Create and complete follow-ups", "Appointments"),
     # Patients
     Perm("patients.view", "View patient list and profiles", "Patients"),
-    Perm("patients.contact", "View patient contact number, email address and home address", "Patients", True),
+    Perm("patients.contact", "View patient contact number and email address", "Patients", True),
     Perm("patients.manage", "Edit patient data", "Patients"),
     Perm("patients.delete", "Can delete patients", "Patient privileges", True),
     # Progress notes / clinical record

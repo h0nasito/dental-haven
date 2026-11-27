@@ -213,7 +213,7 @@ def item_to_xray(invoice_id, item_id):
     back = redirect(url_for("billing.invoice", invoice_id=invoice_id))
     if not ln or inv["status"] != "issued":
         abort(404)
-    pays = conn.all("SELECT * FROM payments WHERE invoice_id = ? AND status = 'valid' ORDER BY id", (invoice_id,))
+    pays = conn.all("SELECT * FROM payments WHERE invoice_id = ? AND status = 'valid' ORDER BY received_at, id", (invoice_id,))
     if any(p["kind"] != "payment" or p["method"] == CREDIT_METHOD for p in pays):
         flash("This bill has a refund or a payment from account credit, so the X-ray can't be moved automatically. "
               "Void those first, or record the X-ray in the X-ray section and remove the line.", "error")
@@ -234,8 +234,14 @@ def item_to_xray(invoice_id, item_id):
         conn.insert("xray_items", {"xray_id": xid, "type_id": t["id"] if t else None, "description": t["name"] if t else ln["description"],
                                    "tooth": ln["tooth"] or "", "price_cents": a})
         moved = 0
+        # payments pay the bill's X-ray lines first (see billing.clinic_share): this line takes its slice of that, in order
+        start = sum(max(0, l["amount_cents"]) for l in lines if l["xray"] and l["id"] < ln["id"]) if ln["xray"] \
+            else sum(max(0, l["amount_cents"]) for l in lines if l["xray"])
+        before = 0
         for p in pays:
-            share = min(p["amount_cents"], round(p["amount_cents"] * a / tot)) if tot else 0
+            lo, hi = max(before, start), min(before + p["amount_cents"], start + a)
+            share = max(0, hi - lo)
+            before += p["amount_cents"]
             if share <= 0:
                 continue
             conn.insert("xray_payments", {"xray_id": xid, "branch_id": p["branch_id"], "amount_cents": share, "method": p["method"],

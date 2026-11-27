@@ -42,7 +42,7 @@
 <details class="pt-more" open><summary>Show / hide details</summary>
 <div class="pt-strip">
 <div><h2>Clinical</h2><p class="{{ 'alert-flag' if p.alert_flag else 'muted' }}">{% if p.alert_flag %}⚠ Medical alert: {{ p.alert_flag }}{% else %}No medical alert recorded{% endif %}</p></div>
-<div><h2>Contact information</h2><p>{{ p.phone|contact or '—' }}<br>{{ p.email|contact or '—' }}{% if p.occupation %}<br><span class="muted">{{ p.occupation }}</span>{% endif %}</p></div>
+<div><h2>{{ 'Contact information' if current_user.can('patients.contact') else 'Address & work' }}</h2><p>{% if current_user.can('patients.contact') %}{{ p.phone or '—' }}<br>{{ p.email or '—' }}<br>{% endif %}{{ p.address or '—' }}{% if p.occupation %}<br><span class="muted">{{ p.occupation }}</span>{% endif %}</p></div>
 <div><h2>Patient record</h2><p><span class="muted">Added</span> {{ p.created_at|date }}<br><span class="muted">Updated</span> {{ (p.updated_at or p.created_at)|date }}<br><span class="muted">Last visit</span> {{ last_visit.start_at|date if last_visit else '—' }}</p></div>
 <div><h2>Care info</h2><p><span class="muted">Clinic</span> {{ p.preferred_branch or ('All branches' if p.shared else '—') }}{% if p.shared and p.preferred_branch %} <small class="muted">(shared with all branches)</small>{% endif %}<br><span class="muted">Provider</span> {{ assigned|map(attribute='name')|join(', ') or (last_visit.dentist if last_visit and last_visit.dentist else '—') }}</p></div>
 </div></details>
@@ -58,12 +58,12 @@
 <div class="grid grid-2">
 <div>
 <div class="card"><h2>Contact &amp; consent</h2>
-<dl class="kv"><dt>Mobile</dt><dd>{{ p.phone|contact }}</dd><dt>Email</dt><dd>{{ p.email|contact }}</dd><dt>Address</dt><dd>{{ p.address|contact }}</dd>
+<dl class="kv">{% if current_user.can('patients.contact') %}<dt>Mobile</dt><dd>{{ p.phone or '—' }}</dd><dt>Email</dt><dd>{{ p.email or '—' }}</dd>{% endif %}<dt>Address</dt><dd>{{ p.address or '—' }}</dd>
 <dt>Privacy consent</dt><dd>{% if p.consent_privacy %}<span class="badge badge-green">Given</span> <small class="muted">{{ p.consent_privacy_at|dt }}</small>{% else %}<span class="badge badge-amber">Not recorded</span>{% endif %}</dd>
 <dt>May contact by</dt><dd>{% if p.opt_out_all %}<span class="badge">Opted out of all messages</span>{% else %}{% set ch = [] %}{% if p.contact_sms %}{% set _ = ch.append('SMS') %}{% endif %}{% if p.contact_email %}{% set _ = ch.append('Email') %}{% endif %}{% if p.contact_messenger %}{% set _ = ch.append('Messenger') %}{% endif %}{{ ch|join(', ') or 'No channels allowed' }}{% endif %}</dd>
 {% if p.occupation %}<dt>Occupation</dt><dd>{{ p.occupation }}</dd>{% endif %}
 {% if p.civil_status %}<dt>Civil status</dt><dd>{{ p.civil_status|label }}</dd>{% endif %}
-{% if p.emergency_contact or p.emergency_phone %}<dt>Emergency contact</dt><dd>{{ p.emergency_contact }} {{ p.emergency_phone|contact }}</dd>{% endif %}
+{% if current_user.can('patients.contact') and (p.emergency_contact or p.emergency_phone) %}<dt>Emergency contact</dt><dd>{{ p.emergency_contact }} {{ p.emergency_phone }}</dd>{% endif %}
 <dt>Preferred channel</dt><dd>{{ p.preferred_channel|label or '—' }}</dd><dt>Promotions</dt><dd>{{ 'Yes' if p.consent_marketing else 'No' }}</dd>
 {% if p.admin_notes %}<dt>Front-desk notes</dt><dd class="pre">{{ p.admin_notes }}</dd>{% endif %}</dl></div>
 
